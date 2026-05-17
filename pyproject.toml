@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiktok-music-downloader"
+version = "0.1.0"
+description = "Download all watermark-free MP4 videos from a TikTok music aggregation page."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "macos" }]
+dependencies = [
+  "playwright>=1.47.0",
+  "yt-dlp>=2025.1.15",
+  "typer>=0.12.0",
+  "tqdm>=4.66.0",
+  "tenacity>=8.5.0",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.10"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+tiktok-music-dl = "tiktok_music_downloader.cli:app"
+tiktok-music-dl-gui = "tiktok_music_downloader.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
