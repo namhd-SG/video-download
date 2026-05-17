@@ -89,11 +89,17 @@ def download_all(
     failure_streak = 0
     since_rest = 0
 
+    def _note(kind: str) -> None:
+        """Inform the UI of a per-video outcome, if it supports `note()`."""
+        if progress is not None and hasattr(progress, "note"):
+            progress.note(kind)
+
     for ref in refs:
         target = output_dir / ref.filename
         if target.exists() and target.stat().st_size > 0:
             log.debug("skip existing %s", ref.filename)
             skipped += 1
+            _note("skipped")
             if progress is not None:
                 progress.update(1)
             continue
@@ -104,14 +110,17 @@ def download_all(
             since_rest = 0
 
         throttle.wait()
+        outcome: str | None = None
         try:
             _download_one(ref.url, opts)
             downloaded += 1
             since_rest += 1
             failure_streak = 0
+            outcome = "downloaded"
             log.info("✓ %s", ref.filename)
         except (DownloadError, RetryError, Exception) as exc:  # noqa: BLE001
             failed.append(ref.video_id)
+            outcome = "failed"
             log.error("✗ %s: %s", ref.video_id, exc)
             if _looks_like_rate_limit(exc):
                 failure_streak += 1
@@ -123,6 +132,8 @@ def download_all(
                 )
                 time.sleep(cool)
         finally:
+            if outcome:
+                _note(outcome)
             if progress is not None:
                 progress.update(1)
 
