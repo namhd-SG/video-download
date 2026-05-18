@@ -50,8 +50,9 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title("TikTok Music Downloader")
-        root.geometry("820x980")
-        root.minsize(720, 820)
+        root.geometry("820x900")
+        root.minsize(640, 540)
+        root.resizable(True, True)
 
         apply_styles(root)
 
@@ -59,6 +60,11 @@ class App:
         self.worker: threading.Thread | None = None
         self.bootstrap_ok = False
         self.stats = {"scraped": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+
+        # Vertical scroll: the form alone is taller than the user's screen on
+        # smaller laptops, so wrap everything in a Canvas + Scrollbar. All
+        # _build_* methods parent their widgets to self.body instead of root.
+        self.body = self._setup_scrollable(root)
 
         self._build_header()
         self._build_form()
@@ -68,12 +74,83 @@ class App:
         self._build_log()
         self._attach_logger()
 
+        # Now that every form widget exists, attach the mousewheel handler to
+        # each of them — see _setup_scrollable for why bind_all alone isn't
+        # enough on macOS Aqua.
+        self._bind_wheel_recursive(self.body)
+
         root.after(POLL_INTERVAL_MS, self._poll_queue)
         self._kickoff_bootstrap()
 
     # ------------------------------------------------------------------ build
+    def _setup_scrollable(self, root: tk.Tk) -> ttk.Frame:
+        """Wrap window contents in a Canvas + Scrollbar so tall forms scroll."""
+        canvas = tk.Canvas(root, bg=BG_WINDOW, highlightthickness=0, bd=0)
+        scrollbar = ttk.Scrollbar(root, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        body = ttk.Frame(canvas)
+        window_id = canvas.create_window((0, 0), window=body, anchor="nw")
+
+        # Resize the inner frame's scrollregion when its content size changes,
+        # and stretch its width to match the canvas so children fill horizontally.
+        body.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window_id, width=e.width),
+        )
+
+        # Mousewheel scrolling — cross-platform.
+        # macOS Aqua doesn't propagate <MouseWheel> from ttk widgets up to
+        # bind_all reliably, so we attach the handler directly on each widget
+        # inside `body` (recursively, after build) and on any later children.
+        def _on_wheel(event):
+            d = event.delta
+            if abs(d) >= 120:           # Windows
+                lines = int(d / 120) * 3
+            else:                        # macOS / Aqua trackpad
+                lines = (1 if d > 0 else -1) * 3
+            canvas.yview_scroll(-lines, "units")
+
+        def _btn4(_e): canvas.yview_scroll(-3, "units")
+        def _btn5(_e): canvas.yview_scroll(3, "units")
+
+        # Save for the recursive binder called after the form is built.
+        self._scroll_handlers = (_on_wheel, _btn4, _btn5)
+        self._scroll_canvas = canvas
+        # Still bind_all as a fallback for the Canvas / Scrollbar themselves.
+        canvas.bind_all("<Button-4>", _btn4)
+        canvas.bind_all("<Button-5>", _btn5)
+        canvas.bind("<MouseWheel>", _on_wheel)
+        return body
+
+    def _bind_wheel_recursive(self, widget) -> None:
+        """Attach the wheel handlers to `widget` and every descendant.
+
+        Skips tk.Text (the log box) so the Text widget's built-in scrolling
+        keeps working without competing with the outer canvas scroll.
+        """
+        on_wheel, btn4, btn5 = self._scroll_handlers
+        def _bind(w):
+            if isinstance(w, tk.Text):
+                return
+            try:
+                w.bind("<MouseWheel>", on_wheel, add="+")
+                w.bind("<Button-4>", btn4, add="+")
+                w.bind("<Button-5>", btn5, add="+")
+            except tk.TclError:
+                pass
+            for c in w.winfo_children():
+                _bind(c)
+        _bind(widget)
+
     def _build_header(self) -> None:
-        bar = ttk.Frame(self.root, padding=(PAD_OUT, PAD_OUT, PAD_OUT, 8))
+        bar = ttk.Frame(self.body, padding=(PAD_OUT, PAD_OUT, PAD_OUT, 8))
         bar.pack(fill="x")
         ttk.Label(bar, text="🎵  TikTok Music Downloader",
                   style="Title.TLabel").pack(side="left")
@@ -81,7 +158,7 @@ class App:
         self.status_pill.pack(side="right")
 
     def _build_form(self) -> None:
-        src = ttk.Labelframe(self.root, text="  🔗  Source  ",
+        src = ttk.Labelframe(self.body, text="  🔗  Source  ",
                               style="Section.TLabelframe", padding=14)
         src.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
         ttk.Label(src, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 10))
@@ -90,7 +167,7 @@ class App:
             row=0, column=1, sticky="ew", ipady=4)
         src.columnconfigure(1, weight=1)
 
-        opt = ttk.Labelframe(self.root, text="  ⚙  Options  ",
+        opt = ttk.Labelframe(self.body, text="  ⚙  Options  ",
                               style="Section.TLabelframe", padding=14)
         opt.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
@@ -152,7 +229,7 @@ class App:
 
     def _build_watermark(self) -> None:
         """Optional watermark section: static logo + animated text/image."""
-        wm = ttk.Labelframe(self.root, text="  ✨  Watermark (optional)  ",
+        wm = ttk.Labelframe(self.body, text="  ✨  Watermark (optional)  ",
                              style="Section.TLabelframe", padding=14)
         wm.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
@@ -242,7 +319,7 @@ class App:
         wm.columnconfigure(1, weight=1)
 
     def _build_action_row(self) -> None:
-        wrap = ttk.Frame(self.root, padding=(PAD_OUT, 4, PAD_OUT, 8))
+        wrap = ttk.Frame(self.body, padding=(PAD_OUT, 4, PAD_OUT, 8))
         wrap.pack(fill="x")
         self.start_btn = ttk.Button(wrap, text="▶  START",
                                     style="Primary.TButton",
@@ -250,7 +327,7 @@ class App:
         self.start_btn.pack()
 
     def _build_progress_and_stats(self) -> None:
-        wrap = ttk.Frame(self.root, padding=(PAD_OUT, 0, PAD_OUT, 8))
+        wrap = ttk.Frame(self.body, padding=(PAD_OUT, 0, PAD_OUT, 8))
         wrap.pack(fill="x")
 
         row = ttk.Frame(wrap)
@@ -276,7 +353,7 @@ class App:
             cards.columnconfigure(i, weight=1)
 
     def _build_log(self) -> None:
-        wrap = ttk.Labelframe(self.root, text=" Activity log ", padding=10)
+        wrap = ttk.Labelframe(self.body, text=" Activity log ", padding=10)
         wrap.pack(fill="both", expand=True, padx=PAD_OUT, pady=(0, PAD_OUT))
 
         # Hand-built Text + Scrollbar so we can apply dark bg + tags.
