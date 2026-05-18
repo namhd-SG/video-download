@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import tempfile
 import time
 from pathlib import Path
 from typing import Iterable
@@ -23,7 +24,7 @@ BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
 
-def _ydl_opts(output_dir: Path, proxy: str | None) -> dict:
+def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> dict:
     """yt-dlp options for TikTok no-watermark MP4."""
     opts: dict = {
         # Prefer no-watermark h264 formats; fall back to best MP4 if extractor changes.
@@ -43,7 +44,44 @@ def _ydl_opts(output_dir: Path, proxy: str | None) -> dict:
     }
     if proxy:
         opts["proxy"] = proxy
+    if cookiefile:
+        # yt-dlp uses cookies to bypass "Log in for access" gates (age-gated /
+        # sensitive videos that the music page lists but won't serve to anon).
+        opts["cookiefile"] = cookiefile
     return opts
+
+
+def _write_netscape_cookies(json_path: Path) -> Path:
+    """Convert Playwright/Cookie-Editor JSON cookies to Netscape format for yt-dlp.
+
+    yt-dlp's `cookiefile` expects the Netscape (curl) text format. We reuse the
+    same JSON the scraper uses, normalize, and write a temp file. Caller is
+    responsible for deleting the returned path.
+
+    Netscape format columns (tab-separated):
+        domain  include_subdomains  path  secure  expires  name  value
+    """
+    # Reuse the scraper's loader so format quirks (RTF, storage_state wrapper,
+    # sameSite normalization) are handled in one place.
+    from tiktok_music_downloader.scraper import _load_cookies
+
+    cookies = _load_cookies(json_path)
+    fd, tmp = tempfile.mkstemp(prefix="ttmd-cookies-", suffix=".txt")
+    with open(fd, "w", encoding="utf-8") as f:
+        f.write("# Netscape HTTP Cookie File\n")
+        for c in cookies:
+            domain = c.get("domain") or ""
+            if not domain:
+                continue
+            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
+            path = c.get("path") or "/"
+            secure = "TRUE" if c.get("secure") else "FALSE"
+            expires = int(c.get("expires", 0) or 0)
+            name = c.get("name", "")
+            value = c.get("value", "")
+            f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
+    log.info("wrote %d cookies to yt-dlp jar %s", len(cookies), tmp)
+    return Path(tmp)
 
 
 @retry(
@@ -69,6 +107,7 @@ def download_all(
     progress=None,
     batch_size: int = BATCH_SIZE,
     batch_rest: float = BATCH_REST_SECONDS,
+    cookies_path: str | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     Download each VideoRef.
@@ -76,11 +115,19 @@ def download_all(
     Anti-block: jitter delay between calls, adaptive backoff on rate-limit-like
     errors, mandatory rest after every `batch_size` successful downloads.
     Resumable: skip if file already on disk.
+    Auth: `cookies_path` (the same JSON used by the scraper) is converted to
+    Netscape format and passed to yt-dlp — unlocks age-gated videos.
 
     Returns (downloaded, skipped, failed_ids).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    opts = _ydl_opts(output_dir, proxy)
+    cookiefile_tmp: Path | None = None
+    if cookies_path:
+        try:
+            cookiefile_tmp = _write_netscape_cookies(Path(cookies_path))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("could not load cookies for yt-dlp (%s) — continuing without", exc)
+    opts = _ydl_opts(output_dir, proxy, str(cookiefile_tmp) if cookiefile_tmp else None)
     throttle = JitterThrottle(delay_seconds)
 
     downloaded = 0
@@ -94,47 +141,54 @@ def download_all(
         if progress is not None and hasattr(progress, "note"):
             progress.note(kind)
 
-    for ref in refs:
-        target = output_dir / ref.filename
-        if target.exists() and target.stat().st_size > 0:
-            log.debug("skip existing %s", ref.filename)
-            skipped += 1
-            _note("skipped")
-            if progress is not None:
-                progress.update(1)
-            continue
+    try:
+        for ref in refs:
+            target = output_dir / ref.filename
+            if target.exists() and target.stat().st_size > 0:
+                log.debug("skip existing %s", ref.filename)
+                skipped += 1
+                _note("skipped")
+                if progress is not None:
+                    progress.update(1)
+                continue
 
-        if since_rest >= batch_size:
-            log.info("batch of %d done — resting %.0fs", batch_size, batch_rest)
-            time.sleep(batch_rest)
-            since_rest = 0
+            if since_rest >= batch_size:
+                log.info("batch of %d done — resting %.0fs", batch_size, batch_rest)
+                time.sleep(batch_rest)
+                since_rest = 0
 
-        throttle.wait()
-        outcome: str | None = None
-        try:
-            _download_one(ref.url, opts)
-            downloaded += 1
-            since_rest += 1
-            failure_streak = 0
-            outcome = "downloaded"
-            log.info("✓ %s", ref.filename)
-        except (DownloadError, RetryError, Exception) as exc:  # noqa: BLE001
-            failed.append(ref.video_id)
-            outcome = "failed"
-            log.error("✗ %s: %s", ref.video_id, exc)
-            if _looks_like_rate_limit(exc):
-                failure_streak += 1
-                cool = adaptive_backoff(failure_streak)
-                log.warning(
-                    "rate-limit signal (streak=%d) → cooling %.0fs",
-                    failure_streak,
-                    cool,
-                )
-                time.sleep(cool)
-        finally:
-            if outcome:
-                _note(outcome)
-            if progress is not None:
-                progress.update(1)
+            throttle.wait()
+            outcome: str | None = None
+            try:
+                _download_one(ref.url, opts)
+                downloaded += 1
+                since_rest += 1
+                failure_streak = 0
+                outcome = "downloaded"
+                log.info("✓ %s", ref.filename)
+            except (DownloadError, RetryError, Exception) as exc:  # noqa: BLE001
+                failed.append(ref.video_id)
+                outcome = "failed"
+                log.error("✗ %s: %s", ref.video_id, exc)
+                if _looks_like_rate_limit(exc):
+                    failure_streak += 1
+                    cool = adaptive_backoff(failure_streak)
+                    log.warning(
+                        "rate-limit signal (streak=%d) → cooling %.0fs",
+                        failure_streak,
+                        cool,
+                    )
+                    time.sleep(cool)
+            finally:
+                if outcome:
+                    _note(outcome)
+                if progress is not None:
+                    progress.update(1)
+    finally:
+        if cookiefile_tmp is not None:
+            try:
+                cookiefile_tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
 
     return downloaded, skipped, failed

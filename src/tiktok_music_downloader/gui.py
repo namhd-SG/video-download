@@ -24,7 +24,7 @@ from tiktok_music_downloader.gui_style import (
     FONT_LOG,
     TEXT,
 )
-from tiktok_music_downloader.scraper import scrape_music_page
+from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.utils import is_music_page, setup_logger
 
 POLL_INTERVAL_MS = 100
@@ -95,17 +95,38 @@ class App:
                     textvariable=self.delay_var, width=8).grid(
             row=1, column=3, sticky="w", pady=(10, 0))
 
+        # Passes: TikTok music pages return a randomized slice per visit.
+        # Re-scraping 2-3× with delay accumulates more uniques; > 3 risks block.
+        ttk.Label(opt, text="Passes").grid(row=1, column=4, sticky="e", padx=(12, 8), pady=(10, 0))
+        self.passes_var = tk.IntVar(value=1)
+        ttk.Spinbox(opt, from_=1, to=5, textvariable=self.passes_var,
+                    width=4).grid(row=1, column=5, sticky="w", pady=(10, 0))
+
         ttk.Label(opt, text="Proxy").grid(row=2, column=0, sticky="w", pady=(10, 0))
         self.proxy_var = tk.StringVar()
         ttk.Entry(opt, textvariable=self.proxy_var).grid(
-            row=2, column=1, columnspan=4, sticky="ew", ipady=3, pady=(10, 0))
+            row=2, column=1, columnspan=5, sticky="ew", ipady=3, pady=(10, 0))
+
+        # Cookies JSON (Playwright storage_state / EditThisCookie export) — used to
+        # bypass TikTok's guest video limit (~28) by reusing a logged-in session.
+        ttk.Label(opt, text="Cookies").grid(row=3, column=0, sticky="w", pady=(10, 0))
+        self.cookies_var = tk.StringVar()
+        ttk.Entry(opt, textvariable=self.cookies_var).grid(
+            row=3, column=1, columnspan=4, sticky="ew", ipady=3, pady=(10, 0))
+        ttk.Button(opt, text="Browse…", command=self._pick_cookies).grid(
+            row=3, column=5, padx=(8, 0), pady=(10, 0))
 
         self.headful_var = tk.BooleanVar(value=False)
         self.verbose_var = tk.BooleanVar(value=False)
+        # Persistent profile: TikTok sees a returning user → less likely to
+        # captcha or rate-limit than a fresh ephemeral context every run.
+        self.keep_session_var = tk.BooleanVar(value=True)
         flags = ttk.Frame(opt)
-        flags.grid(row=3, column=0, columnspan=5, sticky="w", pady=(10, 0))
+        flags.grid(row=4, column=0, columnspan=6, sticky="w", pady=(10, 0))
         ttk.Checkbutton(flags, text="Show browser (headful)",
                         variable=self.headful_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(flags, text="Keep session",
+                        variable=self.keep_session_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(flags, text="Verbose log",
                         variable=self.verbose_var).pack(side="left")
 
@@ -170,6 +191,15 @@ class App:
         if chosen:
             self.out_var.set(chosen)
 
+    def _pick_cookies(self) -> None:
+        chosen = filedialog.askopenfilename(
+            title="Select cookies JSON",
+            filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+            initialdir=str(Path.home()),
+        )
+        if chosen:
+            self.cookies_var.set(chosen)
+
     def _attach_logger(self) -> None:
         logger = setup_logger(self.verbose_var.get())
         for h in list(logger.handlers):
@@ -218,11 +248,22 @@ class App:
 
     def _run_pipeline(self, url: str) -> None:
         try:
-            refs = scrape_music_page(
+            # "Keep session" persists Playwright profile under the user's app-support
+            # dir — TikTok then sees a returning client across runs (less captcha).
+            profile_dir: str | None = None
+            if self.keep_session_var.get():
+                p = (Path.home() / "Library" / "Application Support"
+                     / "tiktok-music-downloader" / "playwright-profile")
+                profile_dir = str(p)
+
+            refs = scrape_music_page_multi(
                 url,
+                passes=self.passes_var.get(),
                 max_videos=self.max_var.get(),
                 headless=not self.headful_var.get(),
                 proxy=self.proxy_var.get().strip() or None,
+                cookies_path=self.cookies_var.get().strip() or None,
+                profile_dir=profile_dir,
             )
             if not refs:
                 self.log_queue.put("no videos found — try Show browser (headful)")
@@ -237,6 +278,7 @@ class App:
                 delay_seconds=self.delay_var.get(),
                 proxy=self.proxy_var.get().strip() or None,
                 progress=UiProgress(self.log_queue),
+                cookies_path=self.cookies_var.get().strip() or None,
             )
             self.log_queue.put(
                 f"DONE — downloaded={downloaded} skipped={skipped} failed={len(failed)}"

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import time
 from pathlib import Path
 from typing import Iterable
@@ -26,6 +27,81 @@ log = logging.getLogger("ttmd")
 # Video anchors on a music page render as <a href="https://www.tiktok.com/@user/video/123...">
 _VIDEO_LINK_SELECTOR = 'a[href*="/video/"]'
 
+# Cookie-Editor / EditThisCookie export keys mapped to Playwright's expected keys.
+# Playwright rejects unknown fields and uses different names / sameSite values, so
+# we normalize on load to avoid `add_cookies()` errors.
+_SAMESITE_MAP = {
+    "no_restriction": "None",
+    "unspecified": "Lax",
+    "lax": "Lax",
+    "strict": "Strict",
+    "none": "None",
+}
+_PW_COOKIE_KEYS = {
+    "name", "value", "domain", "path", "url",
+    "expires", "httpOnly", "secure", "sameSite",
+}
+
+
+def _normalize_cookie(raw: dict) -> dict:
+    """Coerce one cookie dict from common exporter formats into Playwright shape."""
+    c: dict = {}
+    for k, v in raw.items():
+        if k == "expirationDate":
+            c["expires"] = int(v)
+        elif k == "sameSite":
+            c["sameSite"] = _SAMESITE_MAP.get(str(v).lower(), "Lax")
+        elif k in _PW_COOKIE_KEYS:
+            c[k] = v
+    # Playwright needs either url or domain — strip leading dot is fine for it,
+    # but some exports omit it for host-only cookies; fall back to the value.
+    if "domain" not in c and "url" not in c:
+        return {}
+    return c
+
+
+def _load_cookies(path: Path) -> list[dict]:
+    """Read JSON cookies file and return a list Playwright can accept.
+
+    Common user mistakes (RTF save, BOM, Cookie-Editor "Header String" format)
+    are detected upfront so the error message points to a fix, not at a cryptic
+    JSON parser position.
+    """
+    import json
+
+    raw = path.read_text(encoding="utf-8", errors="replace").lstrip("﻿").lstrip()
+    if raw.startswith(r"{\rtf"):
+        raise ValueError(
+            f"{path.name} looks like Rich Text (RTF), not JSON. In TextEdit do "
+            "Format → Make Plain Text (Cmd+Shift+T) before pasting cookies and "
+            "saving."
+        )
+    if not raw.startswith(("[", "{")):
+        raise ValueError(
+            f"{path.name} doesn't look like JSON (starts with {raw[:20]!r}). "
+            "Re-export from Cookie-Editor and pick the JSON format, not 'Header "
+            "String' or 'Netscape'."
+        )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"{path.name} is not valid JSON at line {exc.lineno} col {exc.colno}: "
+            f"{exc.msg}. First 80 chars: {raw[:80]!r}"
+        ) from exc
+
+    # storage_state format: {"cookies": [...], "origins": [...]} — unwrap it.
+    if isinstance(data, dict) and "cookies" in data:
+        data = data["cookies"]
+    if not isinstance(data, list):
+        raise ValueError(
+            f"{path.name}: expected a JSON array of cookies, got {type(data).__name__}."
+        )
+    cookies = [_normalize_cookie(c) for c in data if isinstance(c, dict)]
+    cookies = [c for c in cookies if c.get("name") and c.get("value")]
+    log.info("loaded %d cookies from %s", len(cookies), path.name)
+    return cookies
+
 
 def _collect_links(page: Page) -> set[VideoRef]:
     """Snapshot all currently rendered video links on the page."""
@@ -45,7 +121,13 @@ def _auto_scroll(
     scroll_pause: float,
     idle_rounds: int,
 ) -> set[VideoRef]:
-    """Scroll until target reached, end of feed, or `idle_rounds` with no growth."""
+    """Scroll until target reached, end of feed, or `idle_rounds` with no growth.
+
+    Uses window.scrollBy() in JS instead of mouse.wheel — the latter targets
+    the current mouse position (often outside the scrollable feed) and may not
+    trigger TikTok's intersection observer. Scroll pause is jittered to avoid
+    the uniform-cadence pattern bot detectors flag.
+    """
     seen: set[VideoRef] = set()
     stale = 0
     while True:
@@ -66,8 +148,12 @@ def _auto_scroll(
         else:
             stale = 0
 
-        page.mouse.wheel(0, 4000)
-        time.sleep(scroll_pause)
+        # Human-ish scroll: ~90% viewport via JS (real scroll event, fires
+        # IntersectionObserver) + slight overshoot variance.
+        page.evaluate(
+            "window.scrollBy(0, Math.round(window.innerHeight * (0.8 + Math.random() * 0.3)))"
+        )
+        time.sleep(random.uniform(scroll_pause * 0.8, scroll_pause * 1.6))
 
     return seen
 
@@ -109,7 +195,7 @@ def scrape_music_page(
     max_videos: int = 200,
     headless: bool = True,
     scroll_pause: float = 1.5,
-    idle_rounds: int = 4,
+    idle_rounds: int = 8,
     cookies_path: str | None = None,
     proxy: str | None = None,
     profile_dir: str | None = None,
@@ -134,9 +220,7 @@ def scrape_music_page(
             user_agent=ua,
         )
         if cookies_path:
-            import json
-
-            ctx.add_cookies(json.loads(Path(cookies_path).read_text()))
+            ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
         try:
@@ -154,6 +238,81 @@ def scrape_music_page(
 
     ordered = sorted(refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
     log.info("collected %d unique video URLs", len(ordered))
+    return ordered
+
+
+def scrape_music_page_multi(
+    music_url: str,
+    passes: int = 1,
+    pass_delay_min: float = 60.0,
+    pass_delay_max: float = 180.0,
+    min_new_rate: float = 0.30,
+    max_videos: int = 200,
+    **kwargs,
+) -> list[VideoRef]:
+    """Run scrape_music_page N times, dedupe, with anti-block safeguards.
+
+    Rationale: a TikTok music page renders a randomized ~30-60 video slice per
+    visit, so multiple visits accumulate more unique IDs. But hammering the
+    same URL is the #1 bot signal, so we:
+
+      - cap passes (caller should keep ≤3, this fn enforces ≥1)
+      - close the browser context fully between passes (each scrape_music_page
+        call opens & closes its own context) so each pass looks like a fresh
+        session, not a tab in the same session.
+      - sleep `pass_delay_min..max` seconds (jittered) between passes — long
+        enough to fall outside short-window rate counters.
+      - stop early on diminishing returns (new-rate < `min_new_rate`) or on a
+        zero-result pass (likely soft block — back off, don't retry).
+
+    On account-flag risk: even with these safeguards, doing many passes with
+    the SAME logged-in cookies is the riskiest variant. Prefer ephemeral
+    context (no cookies) for passes ≥ 2 if the user is worried about their
+    account. Right now we don't downgrade cookies between passes — caller can
+    choose to omit cookies_path for safer multipass.
+    """
+    if passes < 1:
+        passes = 1
+    passes = min(passes, 5)  # hard cap; >5 is "spray-and-pray" territory.
+
+    all_refs: set[VideoRef] = set()
+    for i in range(passes):
+        before = len(all_refs)
+        if i > 0:
+            delay = random.uniform(pass_delay_min, pass_delay_max)
+            log.info(
+                "pass %d/%d: waiting %.0fs to avoid rate-limit pattern…",
+                i + 1, passes, delay,
+            )
+            time.sleep(delay)
+
+        log.info("=== pass %d/%d ===", i + 1, passes)
+        batch = scrape_music_page(music_url, max_videos=max_videos, **kwargs)
+        if not batch:
+            log.warning("pass %d returned 0 videos — likely soft block, stopping", i + 1)
+            break
+
+        all_refs.update(batch)
+        added = len(all_refs) - before
+        rate = added / len(batch) if batch else 0.0
+        log.info(
+            "pass %d/%d: +%d new (%d/%d = %.0f%% novel), total unique %d",
+            i + 1, passes, added, added, len(batch), rate * 100, len(all_refs),
+        )
+
+        if len(all_refs) >= max_videos:
+            log.info("reached max_videos=%d across passes, stopping", max_videos)
+            break
+        if i > 0 and rate < min_new_rate:
+            log.info(
+                "novelty %.0f%% < %.0f%% threshold — diminishing returns, stopping",
+                rate * 100, min_new_rate * 100,
+            )
+            break
+
+    ordered = sorted(all_refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
+    log.info("multipass total: %d unique videos across %d passes",
+             len(ordered), min(i + 1, passes))
     return ordered
 
 

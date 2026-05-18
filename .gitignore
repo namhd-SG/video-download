@@ -20,3 +20,7 @@ dist/
 
 # Downloads / cache
 downloads/
+
+# Cookies / secrets — never commit
+*cookies*.json
+tiktok-cookies*.json
