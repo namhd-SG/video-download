@@ -16,6 +16,9 @@ dependencies = [
   "typer>=0.12.0",
   "tqdm>=4.66.0",
   "tenacity>=8.5.0",
+  # Pillow: render watermark text → PNG. Homebrew's ffmpeg ships without
+  # libfreetype, so drawtext is unavailable; pre-rendering side-steps that.
+  "Pillow>=10.0",
 ]
 
 [project.optional-dependencies]

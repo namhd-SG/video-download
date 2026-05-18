@@ -17,6 +17,7 @@ from tiktok_music_downloader.utils import (
     adaptive_backoff,
     random_user_agent,
 )
+from tiktok_music_downloader.watermark import WatermarkConfig, apply_watermark
 
 log = logging.getLogger("ttmd")
 
@@ -108,6 +109,7 @@ def download_all(
     batch_size: int = BATCH_SIZE,
     batch_rest: float = BATCH_REST_SECONDS,
     cookies_path: str | None = None,
+    watermark: WatermarkConfig | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     Download each VideoRef.
@@ -161,6 +163,10 @@ def download_all(
             outcome: str | None = None
             try:
                 _download_one(ref.url, opts)
+                # Post-process: apply watermark in-place if configured. Failures
+                # are non-fatal — the un-watermarked file remains on disk.
+                if watermark is not None and not watermark.is_empty:
+                    apply_watermark(target, watermark)
                 downloaded += 1
                 since_rest += 1
                 failure_streak = 0

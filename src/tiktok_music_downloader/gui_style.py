@@ -105,6 +105,33 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
                         insertcolor=TEXT)
         style.map(cls, fieldbackground=[("disabled", BG_SURFACE)])
 
+    # Combobox — clam theme alone leaves the dropdown looking like macOS aqua
+    # (light gray pill on our dark UI). Force the value display + arrow well to
+    # match Entry styling, and patch the popup listbox via the Tk option DB.
+    style.configure("TCombobox",
+                    fieldbackground=BG_ELEVATED, background=BG_ELEVATED,
+                    foreground=TEXT, arrowcolor=TEXT,
+                    bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                    selectbackground=BG_ELEVATED, selectforeground=TEXT,
+                    padding=(6, 4))
+    style.map("TCombobox",
+              fieldbackground=[("readonly", BG_ELEVATED),
+                               ("disabled", BG_SURFACE)],
+              foreground=[("readonly", TEXT), ("disabled", TEXT_FAINT)],
+              background=[("readonly", BG_ELEVATED), ("active", BORDER)],
+              selectbackground=[("readonly", BG_ELEVATED)],
+              selectforeground=[("readonly", TEXT)],
+              arrowcolor=[("disabled", TEXT_FAINT)])
+
+    # Popup listbox (rendered by Tk, not ttk — option DB only).
+    root.option_add("*TCombobox*Listbox.background", BG_ELEVATED)
+    root.option_add("*TCombobox*Listbox.foreground", TEXT)
+    root.option_add("*TCombobox*Listbox.selectBackground", ACCENT)
+    root.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+    root.option_add("*TCombobox*Listbox.borderWidth", 0)
+    root.option_add("*TCombobox*Listbox.relief", "flat")
+    root.option_add("*TCombobox*Listbox.font", FONT_UI)
+
     # Secondary button (Browse).
     style.configure("TButton",
                     background=BG_ELEVATED, foreground=TEXT,
@@ -143,6 +170,15 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
                     foreground=TEXT, font=FONT_TITLE)
     style.configure("Progress.TLabel", background=BG_WINDOW,
                     foreground=TEXT_DIM, font=FONT_UI)
+    # Hint / tip label — muted, smaller, used for inline help text below fields.
+    style.configure("Hint.TLabel", background=BG_WINDOW,
+                    foreground=TEXT_FAINT,
+                    font=(FONT_UI[0], max(FONT_UI[1] - 2, 9), "italic"))
+    # Section header inside a Labelframe.
+    style.configure("Section.TLabelframe", background=BG_WINDOW,
+                    bordercolor=BORDER, relief="solid", borderwidth=1)
+    style.configure("Section.TLabelframe.Label", background=BG_WINDOW,
+                    foreground=TEXT, font=FONT_UI_BOLD)
 
     return style
 

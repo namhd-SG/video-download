@@ -25,6 +25,21 @@ from tiktok_music_downloader.gui_style import (
     TEXT,
 )
 from tiktok_music_downloader.scraper import scrape_music_page_multi
+from tiktok_music_downloader.watermark import (
+    PATTERN_LABELS_VI,
+    PATTERNS,
+    QUALITY_FILTERS,
+    WatermarkConfig,
+)
+
+# Combobox values: "<key> — <Vietnamese description>" so users see both.
+# _pattern_key() strips back to the bare key for storage in WatermarkConfig.
+PATTERN_CHOICES = [f"{k} — {PATTERN_LABELS_VI[k]}" for k in PATTERNS]
+
+
+def _pattern_key(combo_value: str) -> str:
+    """Extract pattern key from a 'key — label' combobox value."""
+    return (combo_value or "").split(" — ", 1)[0].strip() or "orbit"
 from tiktok_music_downloader.utils import is_music_page, setup_logger
 
 POLL_INTERVAL_MS = 100
@@ -35,8 +50,8 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title("TikTok Music Downloader")
-        root.geometry("780x720")
-        root.minsize(640, 600)
+        root.geometry("820x980")
+        root.minsize(720, 820)
 
         apply_styles(root)
 
@@ -47,6 +62,7 @@ class App:
 
         self._build_header()
         self._build_form()
+        self._build_watermark()
         self._build_action_row()
         self._build_progress_and_stats()
         self._build_log()
@@ -65,16 +81,18 @@ class App:
         self.status_pill.pack(side="right")
 
     def _build_form(self) -> None:
-        src = ttk.Labelframe(self.root, text=" Source ", padding=12)
-        src.pack(fill="x", padx=PAD_OUT, pady=(0, 8))
-        ttk.Label(src, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        src = ttk.Labelframe(self.root, text="  🔗  Source  ",
+                              style="Section.TLabelframe", padding=14)
+        src.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
+        ttk.Label(src, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 10))
         self.url_var = tk.StringVar()
         ttk.Entry(src, textvariable=self.url_var).grid(
-            row=0, column=1, sticky="ew", ipady=3)
+            row=0, column=1, sticky="ew", ipady=4)
         src.columnconfigure(1, weight=1)
 
-        opt = ttk.Labelframe(self.root, text=" Options ", padding=12)
-        opt.pack(fill="x", padx=PAD_OUT, pady=(0, 8))
+        opt = ttk.Labelframe(self.root, text="  ⚙  Options  ",
+                              style="Section.TLabelframe", padding=14)
+        opt.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
         ttk.Label(opt, text="Output").grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.out_var = tk.StringVar(
@@ -131,6 +149,97 @@ class App:
                         variable=self.verbose_var).pack(side="left")
 
         opt.columnconfigure(1, weight=1)
+
+    def _build_watermark(self) -> None:
+        """Optional watermark section: static logo + animated text/image."""
+        wm = ttk.Labelframe(self.root, text="  ✨  Watermark (optional)  ",
+                             style="Section.TLabelframe", padding=14)
+        wm.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
+
+        # Master toggle. Even when ON, individual fields can be empty to skip
+        # that specific overlay — the downloader treats an "all empty" config
+        # as a no-op so the videos pass through untouched.
+        self.wm_enable_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(wm, text="Apply watermark to downloads",
+                        variable=self.wm_enable_var).grid(
+            row=0, column=0, columnspan=6, sticky="w", pady=(0, 8))
+
+        # Static logo (top-left corner).
+        ttk.Label(wm, text="Static logo").grid(row=1, column=0, sticky="w", padx=(0, 8))
+        self.wm_logo_var = tk.StringVar()
+        ttk.Entry(wm, textvariable=self.wm_logo_var).grid(
+            row=1, column=1, columnspan=3, sticky="ew", ipady=3)
+        ttk.Button(wm, text="Browse…",
+                   command=lambda: self._pick_image(self.wm_logo_var)).grid(
+            row=1, column=4, padx=(8, 0))
+        ttk.Label(wm, text="Size %").grid(row=1, column=5, sticky="e", padx=(12, 6))
+        self.wm_logo_size_var = tk.IntVar(value=12)
+        ttk.Spinbox(wm, from_=2, to=50, textvariable=self.wm_logo_size_var,
+                    width=4).grid(row=1, column=6, sticky="w")
+        # Tip about logo file size — small text, helps users get good results.
+        ttk.Label(wm, style="Hint.TLabel",
+                  text="💡 Tip: use PNG < 500×500px with transparent background "
+                       "for best results"
+                  ).grid(row=2, column=1, columnspan=6, sticky="w", pady=(2, 0))
+
+        # Animated text overlay — has its own pattern dropdown (independent of icon).
+        ttk.Label(wm, text="Animated text").grid(row=3, column=0, sticky="w",
+                                                  padx=(0, 8), pady=(10, 0))
+        self.wm_text_var = tk.StringVar()
+        ttk.Entry(wm, textvariable=self.wm_text_var).grid(
+            row=3, column=1, columnspan=3, sticky="ew", ipady=3, pady=(10, 0))
+        ttk.Label(wm, text="Pattern").grid(row=3, column=4, sticky="e",
+                                            padx=(12, 6), pady=(10, 0))
+        self.wm_text_pattern_var = tk.StringVar(value=PATTERN_CHOICES[0])
+        ttk.Combobox(wm, textvariable=self.wm_text_pattern_var,
+                     values=PATTERN_CHOICES,
+                     state="readonly", width=24).grid(
+            row=3, column=5, columnspan=2, sticky="w", pady=(10, 0))
+
+        # Animated image overlay — own pattern dropdown so it can move
+        # independently of the text overlay.
+        ttk.Label(wm, text="Animated icon").grid(row=4, column=0, sticky="w",
+                                                  padx=(0, 8), pady=(10, 0))
+        self.wm_anim_img_var = tk.StringVar()
+        ttk.Entry(wm, textvariable=self.wm_anim_img_var).grid(
+            row=4, column=1, columnspan=2, sticky="ew", ipady=3, pady=(10, 0))
+        ttk.Button(wm, text="Browse…",
+                   command=lambda: self._pick_image(self.wm_anim_img_var)).grid(
+            row=4, column=3, padx=(8, 0), pady=(10, 0))
+        ttk.Label(wm, text="Pattern").grid(row=4, column=4, sticky="e",
+                                            padx=(12, 6), pady=(10, 0))
+        self.wm_image_pattern_var = tk.StringVar(value=PATTERN_CHOICES[2])  # bounce
+        ttk.Combobox(wm, textvariable=self.wm_image_pattern_var,
+                     values=PATTERN_CHOICES,
+                     state="readonly", width=24).grid(
+            row=4, column=5, columnspan=2, sticky="w", pady=(10, 0))
+
+        # Opacity + hint about size.
+        ttk.Label(wm, text="Opacity %").grid(row=5, column=0, sticky="w",
+                                               padx=(0, 8), pady=(10, 0))
+        self.wm_opacity_var = tk.IntVar(value=35)
+        ttk.Spinbox(wm, from_=5, to=100, textvariable=self.wm_opacity_var,
+                    width=4).grid(row=5, column=1, sticky="w", pady=(10, 0))
+        ttk.Label(wm, style="Hint.TLabel",
+                  text="Text và icon có thể bay cùng lúc — mỗi cái pattern riêng. "
+                       "Size % dùng chung với Static logo"
+                  ).grid(row=5, column=2, columnspan=5, sticky="w",
+                         padx=(12, 0), pady=(10, 0))
+
+        # Output quality (applied after overlay during re-encode).
+        ttk.Label(wm, text="Quality").grid(row=7, column=0, sticky="w",
+                                            padx=(0, 8), pady=(10, 0))
+        self.wm_quality_var = tk.StringVar(value="hd")
+        ttk.Combobox(wm, textvariable=self.wm_quality_var,
+                     values=list(QUALITY_FILTERS.keys()),
+                     state="readonly", width=14).grid(
+            row=7, column=1, sticky="w", pady=(10, 0))
+        ttk.Label(wm, style="Hint.TLabel",
+                  text="HD / FullHD force exact frame size — logo stays consistent"
+                  ).grid(row=7, column=2, columnspan=5, sticky="w",
+                         padx=(10, 0), pady=(10, 0))
+
+        wm.columnconfigure(1, weight=1)
 
     def _build_action_row(self) -> None:
         wrap = ttk.Frame(self.root, padding=(PAD_OUT, 4, PAD_OUT, 8))
@@ -199,6 +308,37 @@ class App:
         )
         if chosen:
             self.cookies_var.set(chosen)
+
+    def _pick_image(self, var: tk.StringVar) -> None:
+        chosen = filedialog.askopenfilename(
+            title="Select image",
+            filetypes=[("Image files", "*.png *.jpg *.jpeg *.webp *.gif"),
+                       ("All files", "*.*")],
+            initialdir=str(Path.home()),
+        )
+        if chosen:
+            var.set(chosen)
+
+    def _build_watermark_config(self) -> WatermarkConfig | None:
+        """Read watermark UI fields into a WatermarkConfig, or None if disabled."""
+        if not self.wm_enable_var.get():
+            return None
+        # Clamp opacity to [5, 100] in case user typed an out-of-range value into
+        # the spinbox; convert to 0..1 float for the dataclass.
+        op_pct = max(5, min(100, int(self.wm_opacity_var.get() or 35)))
+        logo_pct = int(self.wm_logo_size_var.get() or 25)
+        return WatermarkConfig(
+            logo_path=self.wm_logo_var.get().strip() or None,
+            logo_size_pct=logo_pct,
+            animated_text=self.wm_text_var.get().strip() or None,
+            animated_image=self.wm_anim_img_var.get().strip() or None,
+            # Animated overlay shares the static logo's size — one knob, predictable.
+            animated_size_pct=logo_pct,
+            text_pattern=_pattern_key(self.wm_text_pattern_var.get()),
+            image_pattern=_pattern_key(self.wm_image_pattern_var.get()),
+            output_quality=self.wm_quality_var.get() or "original",
+            opacity=op_pct / 100,
+        )
 
     def _attach_logger(self) -> None:
         logger = setup_logger(self.verbose_var.get())
@@ -279,6 +419,7 @@ class App:
                 proxy=self.proxy_var.get().strip() or None,
                 progress=UiProgress(self.log_queue),
                 cookies_path=self.cookies_var.get().strip() or None,
+                watermark=self._build_watermark_config(),
             )
             self.log_queue.put(
                 f"DONE — downloaded={downloaded} skipped={skipped} failed={len(failed)}"
