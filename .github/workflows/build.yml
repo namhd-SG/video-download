@@ -1,0 +1,111 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch: {}
+
+jobs:
+  build-macos:
+    name: macOS .app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]"
+
+      - name: Build .app
+        run: bash build-scripts/build-app.sh
+
+      - name: Zip bundle
+        working-directory: dist
+        run: zip -qr tiktok-music-downloader-mac.zip "TikTok Music Downloader.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-music-downloader-mac
+          path: dist/tiktok-music-downloader-mac.zip
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows .exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.12 ships Tk and matches the local dev version.
+          python-version: '3.12'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]"
+
+      - name: Build .exe (PyInstaller)
+        shell: pwsh
+        run: |
+          pyinstaller build-scripts/tiktok-music-downloader.spec `
+            --noconfirm --distpath dist --workpath build
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\tiktok-music-dl-gui" `
+            -DestinationPath "dist\tiktok-music-downloader-win.zip" `
+            -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-music-downloader-win
+          path: dist/tiktok-music-downloader-win.zip
+          if-no-files-found: error
+
+  release:
+    # On tagged pushes, attach both artifacts to a GitHub Release.
+    name: Publish Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/tiktok-music-downloader-mac/tiktok-music-downloader-mac.zip
+            artifacts/tiktok-music-downloader-win/tiktok-music-downloader-win.zip
+          body: |
+            ## Install
+
+            **macOS**:
+            ```bash
+            unzip tiktok-music-downloader-mac.zip
+            xattr -dr com.apple.quarantine "TikTok Music Downloader.app"
+            # then right-click → Open → Open
+            ```
+
+            **Windows**:
+            ```pwsh
+            Expand-Archive tiktok-music-downloader-win.zip
+            # run: tiktok-music-dl-gui\tiktok-music-dl-gui.exe
+            ```
+
+            First launch downloads Chromium (~150 MB) automatically.
+          draft: false
+          prerelease: false

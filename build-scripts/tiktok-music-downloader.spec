@@ -1,10 +1,24 @@
-# PyInstaller spec for TikTok Music Downloader (.app bundle, macOS).
+# PyInstaller spec for TikTok Music Downloader — cross-platform.
 # Build: pyinstaller build-scripts/tiktok-music-downloader.spec --noconfirm
 #
+# Produces: .app bundle on macOS, plain dist folder + .exe on Windows/Linux.
 # Chromium is NOT bundled — too brittle / large. The app calls
 # `playwright install chromium` on first launch via bootstrap.py.
 
+import sys
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+IS_MAC = sys.platform == "darwin"
+IS_WIN = sys.platform.startswith("win")
+ASSETS = Path("../assets")
+# Platform icon (PyInstaller silently skips if path is None / missing).
+ICON_FILE = None
+if IS_MAC and (ASSETS / "icon.icns").exists():
+    ICON_FILE = str(ASSETS / "icon.icns")
+elif IS_WIN and (ASSETS / "icon.ico").exists():
+    ICON_FILE = str(ASSETS / "icon.ico")
 
 block_cipher = None
 
@@ -14,15 +28,21 @@ pw_datas, pw_binaries, pw_hidden = collect_all("playwright")
 # yt_dlp uses dynamic extractor imports; collect them defensively.
 ytdlp_hidden = collect_submodules("yt_dlp")
 
-hiddenimports = pw_hidden + ytdlp_hidden + [
+# Pillow used by watermark text rendering; PyInstaller usually picks it up
+# but explicit listing avoids surprises on Windows.
+pil_hidden = collect_submodules("PIL")
+
+hiddenimports = pw_hidden + ytdlp_hidden + pil_hidden + [
     "tiktok_music_downloader",
     "tiktok_music_downloader.bootstrap",
     "tiktok_music_downloader.cli",
     "tiktok_music_downloader.downloader",
     "tiktok_music_downloader.gui",
     "tiktok_music_downloader.gui_helpers",
+    "tiktok_music_downloader.gui_style",
     "tiktok_music_downloader.scraper",
     "tiktok_music_downloader.utils",
+    "tiktok_music_downloader.watermark",
     "tenacity",
     "tqdm",
     "typer",
@@ -61,6 +81,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=ICON_FILE,
 )
 
 coll = COLLECT(
@@ -74,17 +95,21 @@ coll = COLLECT(
     name="tiktok-music-dl-gui",
 )
 
-app = BUNDLE(
-    coll,
-    name="TikTok Music Downloader.app",
-    icon="../assets/icon.icns",
-    bundle_identifier="ai.astronex.tiktok-music-downloader",
-    info_plist={
-        "CFBundleName": "TikTok Music Downloader",
-        "CFBundleDisplayName": "TikTok Music Downloader",
-        "CFBundleShortVersionString": "0.2.0",
-        "CFBundleVersion": "0.2.0",
-        "NSHighResolutionCapable": True,
-        "LSMinimumSystemVersion": "10.15.0",
-    },
-)
+# macOS-only .app bundle. PyInstaller silently ignores BUNDLE on Windows/Linux
+# but constructing it there with an .icns icon path raises an error, so we
+# gate the whole call.
+if IS_MAC:
+    app = BUNDLE(
+        coll,
+        name="TikTok Music Downloader.app",
+        icon=ICON_FILE,
+        bundle_identifier="ai.astronex.tiktok-music-downloader",
+        info_plist={
+            "CFBundleName": "TikTok Music Downloader",
+            "CFBundleDisplayName": "TikTok Music Downloader",
+            "CFBundleShortVersionString": "0.2.0",
+            "CFBundleVersion": "0.2.0",
+            "NSHighResolutionCapable": True,
+            "LSMinimumSystemVersion": "10.15.0",
+        },
+    )
