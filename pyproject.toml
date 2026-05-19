@@ -19,6 +19,9 @@ dependencies = [
   # Pillow: render watermark text → PNG. Homebrew's ffmpeg ships without
   # libfreetype, so drawtext is unavailable; pre-rendering side-steps that.
   "Pillow>=10.0",
+  # requests: streaming HTTP download for signed FBCDN URLs (Facebook Ads
+  # Library) — yt-dlp can't authenticate those, so we fetch them directly.
+  "requests>=2.31",
 ]
 
 [project.optional-dependencies]

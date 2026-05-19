@@ -11,6 +11,11 @@ _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
 # Slug allows: \w (Unicode word chars — Vietnamese, Russian, etc.),
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
+_FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
+# FBCDN MP4 URLs embed `xpv_asset_id` inside a base64-encoded `efg=` query
+# param. Extracting it lets us name the downloaded file deterministically so
+# resume-on-rerun works without re-downloading.
+_FB_ASSET_RE = re.compile(r'"xpv_asset_id":(\d+)')
 
 # Pool of recent Chrome desktop UA strings. Rotated per scrape session.
 USER_AGENTS = (
@@ -68,6 +73,42 @@ def parse_video_url(url: str) -> VideoRef | None:
 def is_music_page(url: str) -> bool:
     """True if url is a TikTok music aggregation page."""
     return bool(_MUSIC_RE.search(url))
+
+
+def is_fb_ads_library(url: str) -> bool:
+    """True if url targets Facebook's Ads Library (any filter combination)."""
+    return bool(_FB_ADS_RE.search(url))
+
+
+def parse_fb_video_url(url: str) -> "VideoRef | None":
+    """Extract a stable id from a FBCDN MP4 URL.
+
+    The `efg=` query param holds base64-encoded JSON that contains the
+    `xpv_asset_id`. We base64-decode and regex it out. Falls back to a hash of
+    the URL's path if decoding fails — file naming stays deterministic either
+    way, so resume / dedup still work.
+    """
+    import base64
+    import hashlib
+    import urllib.parse
+
+    try:
+        qs = urllib.parse.urlparse(url).query
+        params = urllib.parse.parse_qs(qs)
+        efg = params.get("efg", [""])[0]
+        if efg:
+            # FB uses standard base64 (with '%3D' = '=' padding) in URL form.
+            efg_pad = efg + "=" * (-len(efg) % 4)
+            decoded = base64.b64decode(efg_pad).decode("utf-8", "replace")
+            m = _FB_ASSET_RE.search(decoded)
+            if m:
+                return VideoRef(video_id=f"fb-{m.group(1)}", url=url)
+    except Exception:  # noqa: BLE001 — fall back rather than refuse to download
+        pass
+    # Fallback: short hash of the URL path (auth params stripped).
+    path = urllib.parse.urlparse(url).path
+    digest = hashlib.sha1(path.encode()).hexdigest()[:12]
+    return VideoRef(video_id=f"fb-{digest}", url=url)
 
 
 def random_user_agent(rng: random.Random | None = None) -> str:

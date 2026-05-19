@@ -25,6 +25,7 @@ from tiktok_music_downloader.gui_style import (
     TEXT,
 )
 from tiktok_music_downloader.scraper import scrape_music_page_multi
+from tiktok_music_downloader.scraper_fb import scrape_ads_library
 from tiktok_music_downloader.watermark import (
     PATTERN_LABELS_VI,
     PATTERNS,
@@ -40,7 +41,11 @@ PATTERN_CHOICES = [f"{k} — {PATTERN_LABELS_VI[k]}" for k in PATTERNS]
 def _pattern_key(combo_value: str) -> str:
     """Extract pattern key from a 'key — label' combobox value."""
     return (combo_value or "").split(" — ", 1)[0].strip() or "orbit"
-from tiktok_music_downloader.utils import is_music_page, setup_logger
+from tiktok_music_downloader.utils import (
+    is_fb_ads_library,
+    is_music_page,
+    setup_logger,
+)
 
 POLL_INTERVAL_MS = 100
 PAD_OUT = 16  # outer section padding
@@ -449,8 +454,10 @@ class App:
             self._append_log("setup not finished — please wait")
             return
         url = self.url_var.get().strip()
-        if not is_music_page(url):
-            self._append_log("ERROR: URL must be a TikTok /music/ page")
+        if not (is_music_page(url) or is_fb_ads_library(url)):
+            self._append_log(
+                "ERROR: URL must be a TikTok /music/ page or Facebook /ads/library/"
+            )
             return
         if self.worker and self.worker.is_alive():
             return
@@ -466,22 +473,33 @@ class App:
     def _run_pipeline(self, url: str) -> None:
         try:
             # "Keep session" persists Playwright profile under the user's app-support
-            # dir — TikTok then sees a returning client across runs (less captcha).
+            # dir — both TikTok and FB then see a returning client across runs.
             profile_dir: str | None = None
             if self.keep_session_var.get():
                 p = (Path.home() / "Library" / "Application Support"
                      / "tiktok-music-downloader" / "playwright-profile")
                 profile_dir = str(p)
 
-            refs = scrape_music_page_multi(
-                url,
-                passes=self.passes_var.get(),
-                max_videos=self.max_var.get(),
-                headless=not self.headful_var.get(),
-                proxy=self.proxy_var.get().strip() or None,
-                cookies_path=self.cookies_var.get().strip() or None,
-                profile_dir=profile_dir,
-            )
+            if is_fb_ads_library(url):
+                # FB is more rate-aggressive than TikTok; default cap is lower
+                # and we do a single pass (no multi-visit — FB notices that).
+                refs = scrape_ads_library(
+                    url,
+                    max_videos=self.max_var.get(),
+                    headless=not self.headful_var.get(),
+                    proxy=self.proxy_var.get().strip() or None,
+                    profile_dir=profile_dir,
+                )
+            else:
+                refs = scrape_music_page_multi(
+                    url,
+                    passes=self.passes_var.get(),
+                    max_videos=self.max_var.get(),
+                    headless=not self.headful_var.get(),
+                    proxy=self.proxy_var.get().strip() or None,
+                    cookies_path=self.cookies_var.get().strip() or None,
+                    profile_dir=profile_dir,
+                )
             if not refs:
                 self.log_queue.put("no videos found — try Show browser (headful)")
                 self.log_queue.put(("status", "Error"))

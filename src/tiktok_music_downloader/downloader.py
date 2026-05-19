@@ -7,7 +7,13 @@ import time
 from pathlib import Path
 from typing import Iterable
 
-from tenacity import RetryError, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    RetryError,
+    retry,
+    retry_if_not_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
@@ -100,6 +106,46 @@ def _looks_like_rate_limit(exc: BaseException) -> bool:
     return any(s in msg for s in ("429", "rate", "too many", "blocked", "captcha"))
 
 
+def _fb_download_headers() -> dict:
+    """Build fresh headers per download — UA is rotated, not frozen at import."""
+    return {
+        "Referer": "https://www.facebook.com/",
+        "Origin": "https://www.facebook.com",
+        "User-Agent": random_user_agent(),
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=20),
+    retry=retry_if_not_exception_type(RuntimeError),
+    reraise=True,
+)
+def _download_url_direct(url: str, target: Path, proxy: str | None) -> None:
+    """Stream a signed MP4 URL to disk. Retries transient errors; bails on 410.
+
+    410 means the FBCDN HMAC expired between scrape and download — no point
+    retrying (raises RuntimeError which the retry decorator skips).
+    """
+    import requests  # lazy import so users without `requests` see a clean error
+
+    proxies = {"http": proxy, "https": proxy} if proxy else None
+    with requests.get(url, headers=_fb_download_headers(), stream=True,
+                      proxies=proxies, timeout=(10, 60)) as r:
+        if r.status_code == 410:
+            # Don't retry — URL is permanently expired.
+            raise RuntimeError("FBCDN URL expired (410 Gone) — re-scrape needed")
+        r.raise_for_status()
+        tmp = target.with_suffix(target.suffix + ".part")
+        with open(tmp, "wb") as f:
+            for chunk in r.iter_content(chunk_size=64 * 1024):
+                if chunk:
+                    f.write(chunk)
+        tmp.replace(target)
+
+
 def download_all(
     refs: Iterable[VideoRef],
     output_dir: Path,
@@ -162,7 +208,13 @@ def download_all(
             throttle.wait()
             outcome: str | None = None
             try:
-                _download_one(ref.url, opts)
+                # FB Ads Library refs carry a signed FBCDN MP4 URL — yt-dlp
+                # can't authenticate them, so use a direct HTTP stream.
+                # TikTok refs go through yt-dlp as before.
+                if ref.video_id.startswith("fb-"):
+                    _download_url_direct(ref.url, target, proxy)
+                else:
+                    _download_one(ref.url, opts)
                 # Post-process: apply watermark in-place if configured. Failures
                 # are non-fatal — the un-watermarked file remains on disk.
                 if watermark is not None and not watermark.is_empty:
