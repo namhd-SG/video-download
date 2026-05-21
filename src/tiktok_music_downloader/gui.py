@@ -44,6 +44,8 @@ def _pattern_key(combo_value: str) -> str:
 from tiktok_music_downloader.utils import (
     is_fb_ads_library,
     is_music_page,
+    is_search_page,
+    is_tiktok_collection,
     setup_logger,
 )
 
@@ -454,11 +456,19 @@ class App:
             self._append_log("setup not finished — please wait")
             return
         url = self.url_var.get().strip()
-        if not (is_music_page(url) or is_fb_ads_library(url)):
+        if not (is_tiktok_collection(url) or is_fb_ads_library(url)):
             self._append_log(
-                "ERROR: URL must be a TikTok /music/ page or Facebook /ads/library/"
+                "ERROR: URL must be TikTok /music/, TikTok /search?q=…, "
+                "or Facebook /ads/library/"
             )
             return
+        # TikTok search blocks anonymous viewers ('Sorry, something wrong…'
+        # banner). Cookies are effectively required — warn but don't refuse.
+        if is_search_page(url) and not self.cookies_var.get().strip():
+            self._append_log(
+                "⚠ Search page usually needs Cookies (logged-in TikTok session). "
+                "Anonymous attempts often return 0 videos."
+            )
         if self.worker and self.worker.is_alive():
             return
         self._attach_logger()
@@ -491,6 +501,10 @@ class App:
                     profile_dir=profile_dir,
                 )
             else:
+                # Both /music/ and /search?q= reuse scrape_music_page_multi —
+                # the scraper is generic (any TikTok page with `a[href*=/video/]`
+                # cards). Search additionally tends to need cookies for results
+                # to render, which the user is warned about in _start().
                 refs = scrape_music_page_multi(
                     url,
                     passes=self.passes_var.get(),

@@ -193,7 +193,7 @@ def download_all(
         for ref in refs:
             target = output_dir / ref.filename
             if target.exists() and target.stat().st_size > 0:
-                log.debug("skip existing %s", ref.filename)
+                log.info("⊙ skip (already on disk) %s", ref.filename)
                 skipped += 1
                 _note("skipped")
                 if progress is not None:

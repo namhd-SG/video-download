@@ -115,6 +115,48 @@ def _collect_links(page: Page) -> set[VideoRef]:
     return refs
 
 
+# JS helper: find the actual scrollable container (TikTok search uses an inner
+# div with its own overflow, not the document body). We probe all elements
+# and return the largest one whose scrollHeight exceeds its clientHeight.
+_FIND_SCROLLER_JS = """
+() => {
+  const all = document.querySelectorAll('*');
+  let best = null, bestExtra = 0;
+  for (const el of all) {
+    const s = getComputedStyle(el);
+    if ((s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+        el.scrollHeight > el.clientHeight + 50) {
+      const extra = el.scrollHeight - el.clientHeight;
+      if (extra > bestExtra) { best = el; bestExtra = extra; }
+    }
+  }
+  return best
+    ? { kind: 'inner', height: best.scrollHeight, client: best.clientHeight }
+    : { kind: 'window', height: document.scrollingElement.scrollHeight,
+        client: window.innerHeight };
+}
+"""
+
+_SCROLL_DOWN_JS = """
+() => {
+  const all = document.querySelectorAll('*');
+  let best = null, bestExtra = 0;
+  for (const el of all) {
+    const s = getComputedStyle(el);
+    if ((s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+        el.scrollHeight > el.clientHeight + 50) {
+      const extra = el.scrollHeight - el.clientHeight;
+      if (extra > bestExtra) { best = el; bestExtra = extra; }
+    }
+  }
+  const target = best || document.scrollingElement;
+  const step = Math.round(window.innerHeight * (0.8 + Math.random() * 0.3));
+  target.scrollBy(0, step);
+  return target.scrollHeight;
+}
+"""
+
+
 def _auto_scroll(
     page: Page,
     max_videos: int,
@@ -123,13 +165,22 @@ def _auto_scroll(
 ) -> set[VideoRef]:
     """Scroll until target reached, end of feed, or `idle_rounds` with no growth.
 
-    Uses window.scrollBy() in JS instead of mouse.wheel — the latter targets
-    the current mouse position (often outside the scrollable feed) and may not
-    trigger TikTok's intersection observer. Scroll pause is jittered to avoid
-    the uniform-cadence pattern bot detectors flag.
+    Handles both layouts TikTok uses:
+      - Music page: document.body itself scrolls (window.scrollBy works).
+      - /search?q=…: an inner <div> with overflow:auto holds the results, so
+        scrolling the window has no effect. We probe at runtime for the
+        largest overflow:scroll element and target it directly.
+    Additionally we dispatch mouse.wheel events at the viewport centre —
+    real wheel events fire IntersectionObservers attached deep inside React,
+    which JS scrolling sometimes misses.
     """
     seen: set[VideoRef] = set()
     stale = 0
+    last_height = 0
+    # Detect layout once up front so log shows which path we picked.
+    layout = page.evaluate(_FIND_SCROLLER_JS)
+    log.debug("scroll layout: %s", layout)
+
     while True:
         new_batch = _collect_links(page)
         before = len(seen)
@@ -148,12 +199,24 @@ def _auto_scroll(
         else:
             stale = 0
 
-        # Human-ish scroll: ~90% viewport via JS (real scroll event, fires
-        # IntersectionObserver) + slight overshoot variance.
-        page.evaluate(
-            "window.scrollBy(0, Math.round(window.innerHeight * (0.8 + Math.random() * 0.3)))"
-        )
+        # Scroll the right container (inner div on /search, body on /music).
+        cur_height = int(page.evaluate(_SCROLL_DOWN_JS) or 0)
+        # ALSO emit a real wheel event at viewport centre — some lazy-load
+        # observers only listen for wheel/touch, not programmatic scrollBy.
+        try:
+            page.mouse.move(700, 450)
+            page.mouse.wheel(0, 1200)
+        except Exception:  # noqa: BLE001
+            pass
         time.sleep(random.uniform(scroll_pause * 0.8, scroll_pause * 1.6))
+
+        # Real end-of-feed signal: scrollHeight of the active scroller stops
+        # growing for half an idle window AND no new links appeared.
+        if cur_height == last_height and stale >= idle_rounds // 2:
+            log.info("scroller stuck at height %d for %d rounds — end of feed",
+                     cur_height, stale)
+            break
+        last_height = cur_height
 
     return seen
 
@@ -195,7 +258,7 @@ def scrape_music_page(
     max_videos: int = 200,
     headless: bool = True,
     scroll_pause: float = 1.5,
-    idle_rounds: int = 8,
+    idle_rounds: int = 12,
     cookies_path: str | None = None,
     proxy: str | None = None,
     profile_dir: str | None = None,

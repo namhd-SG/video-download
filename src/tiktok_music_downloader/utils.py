@@ -11,6 +11,7 @@ _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
 # Slug allows: \w (Unicode word chars — Vietnamese, Russian, etc.),
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
+_SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
 _FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
 # FBCDN MP4 URLs embed `xpv_asset_id` inside a base64-encoded `efg=` query
 # param. Extracting it lets us name the downloaded file deterministically so
@@ -73,6 +74,16 @@ def parse_video_url(url: str) -> VideoRef | None:
 def is_music_page(url: str) -> bool:
     """True if url is a TikTok music aggregation page."""
     return bool(_MUSIC_RE.search(url))
+
+
+def is_search_page(url: str) -> bool:
+    """True if url is a TikTok search results page (`/search?q=...`)."""
+    return bool(_SEARCH_RE.search(url))
+
+
+def is_tiktok_collection(url: str) -> bool:
+    """Any TikTok URL the scraper can enumerate — music page or search."""
+    return is_music_page(url) or is_search_page(url)
 
 
 def is_fb_ads_library(url: str) -> bool:
