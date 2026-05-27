@@ -136,9 +136,37 @@ class WatermarkConfig:
         return not has_overlay and self.output_quality == "original"
 
 
+# Common ffmpeg install locations to probe when it isn't on PATH. macOS .app
+# bundles launched from Finder get a minimal PATH (/usr/bin:/bin:…) that omits
+# Homebrew, so shutil.which() returns None even though ffmpeg is installed.
+_FFMPEG_FALLBACK_PATHS = (
+    "/opt/homebrew/bin/ffmpeg",   # Apple-silicon Homebrew
+    "/usr/local/bin/ffmpeg",      # Intel Homebrew
+    "/usr/bin/ffmpeg",            # system / linux
+    "/opt/local/bin/ffmpeg",      # MacPorts
+)
+
+
 def find_ffmpeg() -> str | None:
-    """Return path to ffmpeg or None if not on PATH."""
-    return shutil.which("ffmpeg")
+    """Locate ffmpeg. Priority:
+      1. Bundled binary inside the PyInstaller .app (sys._MEIPASS) — works on
+         machines with no system ffmpeg.
+      2. PATH (dev / terminal launches).
+      3. Common install dirs (Finder .app PATH is minimal and misses Homebrew).
+    """
+    import sys
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        bundled = Path(meipass) / "ffmpeg"
+        if bundled.is_file():
+            return str(bundled)
+    found = shutil.which("ffmpeg")
+    if found:
+        return found
+    for cand in _FFMPEG_FALLBACK_PATHS:
+        if Path(cand).is_file():
+            return cand
+    return None
 
 
 def _probe_dimensions(path: Path) -> tuple[int, int] | None:

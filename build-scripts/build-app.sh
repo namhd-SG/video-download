@@ -20,6 +20,19 @@ if ! command -v pyinstaller >/dev/null 2>&1; then
   exit 1
 fi
 
+# Fetch the static ffmpeg we bundle for watermarking (gitignored — too big to
+# commit). evermeet.cx ships a self-contained macOS build (x86_64; runs via
+# Rosetta on Apple Silicon). The spec skips bundling if this file is absent.
+FFMPEG_BIN="$PROJECT_ROOT/assets/ffmpeg-static/ffmpeg"
+if [[ ! -f "$FFMPEG_BIN" ]]; then
+  echo "[0/3] Fetching static ffmpeg for bundling…"
+  mkdir -p "$PROJECT_ROOT/assets/ffmpeg-static"
+  curl -sL -o /tmp/ffmpeg-static.zip "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip"
+  unzip -o -q /tmp/ffmpeg-static.zip -d "$PROJECT_ROOT/assets/ffmpeg-static"
+  chmod +x "$FFMPEG_BIN"
+  rm -f /tmp/ffmpeg-static.zip
+fi
+
 echo "[1/3] Cleaning previous build…"
 rm -rf "$PROJECT_ROOT/build" "$PROJECT_ROOT/dist"
 

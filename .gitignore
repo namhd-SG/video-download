@@ -24,3 +24,6 @@ downloads/
 # Cookies / secrets — never commit
 *cookies*.json
 tiktok-cookies*.json
+
+# Bundled static ffmpeg (~76MB) — fetched by build-app.sh, not committed
+assets/ffmpeg-static/
