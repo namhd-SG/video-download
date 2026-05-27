@@ -13,6 +13,12 @@ _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
 _SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
 _FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
+# Google Drive folder share link. Covers all three URL shapes the share UI
+# emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
+# ID is base64-ish — word chars and dashes.
+_GDRIVE_FOLDER_RE = re.compile(
+    r"https?://drive\.google\.com/(?:drive/(?:u/\d+/)?)?folders/([\w\-]+)"
+)
 # FBCDN MP4 URLs embed `xpv_asset_id` inside a base64-encoded `efg=` query
 # param. Extracting it lets us name the downloaded file deterministically so
 # resume-on-rerun works without re-downloading.
@@ -84,6 +90,11 @@ def is_search_page(url: str) -> bool:
 def is_tiktok_collection(url: str) -> bool:
     """Any TikTok URL the scraper can enumerate — music page or search."""
     return is_music_page(url) or is_search_page(url)
+
+
+def is_gdrive_folder(url: str) -> bool:
+    """True if url is a public Google Drive folder share link."""
+    return bool(_GDRIVE_FOLDER_RE.search(url))
 
 
 def is_fb_ads_library(url: str) -> bool:

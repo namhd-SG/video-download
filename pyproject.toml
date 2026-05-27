@@ -22,6 +22,8 @@ dependencies = [
   # requests: streaming HTTP download for signed FBCDN URLs (Facebook Ads
   # Library) — yt-dlp can't authenticate those, so we fetch them directly.
   "requests>=2.31",
+  # gdown: download public Google Drive files / folders without OAuth.
+  "gdown>=5.0",
 ]
 
 [project.optional-dependencies]

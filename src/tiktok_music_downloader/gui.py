@@ -24,6 +24,8 @@ from tiktok_music_downloader.gui_style import (
     FONT_LOG,
     TEXT,
 )
+from tiktok_music_downloader.gdrive import download_folder as gdrive_download_folder
+from tiktok_music_downloader.local_watermark import iter_mp4s, watermark_folder
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
 from tiktok_music_downloader.watermark import (
@@ -43,6 +45,7 @@ def _pattern_key(combo_value: str) -> str:
     return (combo_value or "").split(" — ", 1)[0].strip() or "orbit"
 from tiktok_music_downloader.utils import (
     is_fb_ads_library,
+    is_gdrive_folder,
     is_music_page,
     is_search_page,
     is_tiktok_collection,
@@ -74,7 +77,9 @@ class App:
         self.body = self._setup_scrollable(root)
 
         self._build_header()
-        self._build_form()
+        self._build_tabs()
+        self._build_form()           # populates Download tab
+        self._build_folder_form()    # populates Watermark-folder tab
         self._build_watermark()
         self._build_action_row()
         self._build_progress_and_stats()
@@ -164,8 +169,22 @@ class App:
         self.status_pill = StatusPill(bar, state="Idle")
         self.status_pill.pack(side="right")
 
+    def _build_tabs(self) -> None:
+        """Notebook with two pipelines: Download URLs vs. Watermark a folder.
+
+        Each tab carries its own source-side inputs. Watermark settings, action
+        button, progress bar, and log live BELOW the notebook so they're shared
+        across modes — there's only one pipeline running at a time anyway.
+        """
+        self.notebook = ttk.Notebook(self.body)
+        self.notebook.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
+        self.tab_download = ttk.Frame(self.notebook, padding=4)
+        self.tab_folder = ttk.Frame(self.notebook, padding=4)
+        self.notebook.add(self.tab_download, text="  ⬇  Download  ")
+        self.notebook.add(self.tab_folder, text="  🗂  Watermark folder  ")
+
     def _build_form(self) -> None:
-        src = ttk.Labelframe(self.body, text="  🔗  Source  ",
+        src = ttk.Labelframe(self.tab_download, text="  🔗  Source  ",
                               style="Section.TLabelframe", padding=14)
         src.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
         ttk.Label(src, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 10))
@@ -174,7 +193,7 @@ class App:
             row=0, column=1, sticky="ew", ipady=4)
         src.columnconfigure(1, weight=1)
 
-        opt = ttk.Labelframe(self.body, text="  ⚙  Options  ",
+        opt = ttk.Labelframe(self.tab_download, text="  ⚙  Options  ",
                               style="Section.TLabelframe", padding=14)
         opt.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
@@ -233,6 +252,47 @@ class App:
                         variable=self.verbose_var).pack(side="left")
 
         opt.columnconfigure(1, weight=1)
+
+    def _build_folder_form(self) -> None:
+        """Tab 2 inputs: source folder + recursive + output folder.
+
+        Watermark settings come from the shared section below the notebook,
+        so this tab only needs the I/O paths and the recursion flag.
+        """
+        wrap = ttk.Labelframe(self.tab_folder, text="  🗂  Folder paths  ",
+                              style="Section.TLabelframe", padding=14)
+        wrap.pack(fill="x", padx=0, pady=(0, 0))
+
+        ttk.Label(wrap, text="Source").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.folder_src_var = tk.StringVar()
+        ttk.Entry(wrap, textvariable=self.folder_src_var).grid(
+            row=0, column=1, columnspan=3, sticky="ew", ipady=3)
+        ttk.Button(wrap, text="Browse…",
+                   command=lambda: self._pick_dir_into(self.folder_src_var)).grid(
+            row=0, column=4, padx=(8, 0))
+
+        ttk.Label(wrap, text="Output").grid(row=1, column=0, sticky="w",
+                                             padx=(0, 8), pady=(10, 0))
+        self.folder_out_var = tk.StringVar(
+            value=str(Path.home() / "Downloads" / "tiktok-music-watermarked"))
+        ttk.Entry(wrap, textvariable=self.folder_out_var).grid(
+            row=1, column=1, columnspan=3, sticky="ew", ipady=3, pady=(10, 0))
+        ttk.Button(wrap, text="Browse…",
+                   command=lambda: self._pick_dir_into(self.folder_out_var)).grid(
+            row=1, column=4, padx=(8, 0), pady=(10, 0))
+
+        # Recursive walk — when on, mirrors the subfolder tree into output.
+        self.folder_recursive_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(wrap, text="Recursive (walk subfolders, mirror structure)",
+                        variable=self.folder_recursive_var).grid(
+            row=2, column=1, columnspan=4, sticky="w", pady=(10, 0))
+
+        ttk.Label(wrap, style="Hint.TLabel",
+                  text="Source files stay intact — every mp4 is copied to a mirrored "
+                       "path under Output, then watermarked there."
+                  ).grid(row=3, column=1, columnspan=4, sticky="w", pady=(4, 0))
+
+        wrap.columnconfigure(1, weight=1)
 
     def _build_watermark(self) -> None:
         """Optional watermark section: static logo + animated text/image."""
@@ -384,6 +444,12 @@ class App:
         if chosen:
             self.out_var.set(chosen)
 
+    def _pick_dir_into(self, var: tk.StringVar) -> None:
+        """Generic folder picker — writes the chosen path into `var`."""
+        chosen = filedialog.askdirectory(initialdir=var.get() or str(Path.home()))
+        if chosen:
+            var.set(chosen)
+
     def _pick_cookies(self) -> None:
         chosen = filedialog.askopenfilename(
             title="Select cookies JSON",
@@ -455,22 +521,54 @@ class App:
         if not self.bootstrap_ok:
             self._append_log("setup not finished — please wait")
             return
+        if self.worker and self.worker.is_alive():
+            return
+
+        active_tab = self.notebook.index(self.notebook.select())
+        if active_tab == 1:
+            # Watermark-folder mode — validate paths then run.
+            src = self.folder_src_var.get().strip()
+            out = self.folder_out_var.get().strip()
+            if not src or not Path(src).is_dir():
+                self._append_log("ERROR: Source folder is empty or doesn't exist")
+                return
+            if not out:
+                self._append_log("ERROR: Output folder is required")
+                return
+            if Path(src).resolve() == Path(out).resolve():
+                self._append_log(
+                    "ERROR: Source and Output must be different folders"
+                )
+                return
+            self._attach_logger()
+            self._reset_stats()
+            # Progress max is computed in the worker once the file list is known.
+            self.progress.config(value=0, maximum=1)
+            self._update_progress_label()
+            self.start_btn.config(state="disabled", text="Working…")
+            self.status_pill.set("Working")
+            self.worker = threading.Thread(
+                target=self._run_folder_pipeline,
+                args=(src, out, self.folder_recursive_var.get()),
+                daemon=True,
+            )
+            self.worker.start()
+            return
+
+        # Download mode (tab 0) — URL-driven pipeline.
         url = self.url_var.get().strip()
-        if not (is_tiktok_collection(url) or is_fb_ads_library(url)):
+        if not (is_tiktok_collection(url) or is_fb_ads_library(url)
+                or is_gdrive_folder(url)):
             self._append_log(
                 "ERROR: URL must be TikTok /music/, TikTok /search?q=…, "
-                "or Facebook /ads/library/"
+                "Facebook /ads/library/, or a Google Drive folder share link"
             )
             return
-        # TikTok search blocks anonymous viewers ('Sorry, something wrong…'
-        # banner). Cookies are effectively required — warn but don't refuse.
         if is_search_page(url) and not self.cookies_var.get().strip():
             self._append_log(
                 "⚠ Search page usually needs Cookies (logged-in TikTok session). "
                 "Anonymous attempts often return 0 videos."
             )
-        if self.worker and self.worker.is_alive():
-            return
         self._attach_logger()
         self._reset_stats()
         self.progress.config(value=0, maximum=max(1, self.max_var.get()))
@@ -482,6 +580,12 @@ class App:
 
     def _run_pipeline(self, url: str) -> None:
         try:
+            # Google Drive folder — no scraper, no yt-dlp; gdown pulls files
+            # directly into the output dir, then we watermark them in place.
+            if is_gdrive_folder(url):
+                self._run_gdrive_pipeline(url)
+                return
+
             # "Keep session" persists Playwright profile under the user's app-support
             # dir — both TikTok and FB then see a returning client across runs.
             profile_dir: str | None = None
@@ -532,6 +636,102 @@ class App:
             )
             self.log_queue.put(
                 f"DONE — downloaded={downloaded} skipped={skipped} failed={len(failed)}"
+            )
+            self.log_queue.put(("status", "Done"))
+        except Exception as exc:  # noqa: BLE001
+            self.log_queue.put(f"ERROR: {exc}")
+            self.log_queue.put(("status", "Error"))
+        finally:
+            self.log_queue.put(("enable_start", None))
+
+    def _run_gdrive_pipeline(self, url: str) -> None:
+        """Download a public Drive folder, then watermark each mp4 in place."""
+        import re as _re
+        import time as _time
+        from tiktok_music_downloader.watermark import apply_watermark
+        from tiktok_music_downloader.gdrive import iter_mp4s_under
+        try:
+            # gdown sets the output folder's mtime when it finishes — macOS
+            # blocks that on directories with extended attrs (Downloads/, etc.
+            # carry com.apple.quarantine). Always drop into a fresh subfolder
+            # we own to side-step the EPERM. Subfolder name derives from the
+            # Drive folder ID for stability across runs.
+            m = _re.search(r"folders/([\w\-]+)", url)
+            sub = f"drive-{m.group(1)[:12] if m else int(_time.time())}"
+            out_dir = Path(self.out_var.get()) / sub
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.log_queue.put(("status", "Downloading"))
+            self.log_queue.put(f"Drive: pulling folder → {out_dir}")
+            downloaded_files = gdrive_download_folder(url, out_dir)
+            # Only mp4s are watermark targets; gdown may have pulled non-video
+            # files (thumbnails, srt, etc.) — those stay on disk untouched.
+            mp4s = [p for p in downloaded_files if p.suffix.lower() == ".mp4"]
+            # Fallback: if gdown returned no list, rescan output recursively.
+            if not mp4s:
+                mp4s = iter_mp4s_under(out_dir)
+            total = len(mp4s)
+            self.log_queue.put(f"Drive: {total} mp4 file(s) ready")
+            if total == 0:
+                self.log_queue.put("no mp4 files in this Drive folder")
+                self.log_queue.put(("status", "Done"))
+                return
+
+            self.log_queue.put(("stat_set", ("scraped", total)))
+            self.log_queue.put(("max", total))
+
+            cfg = self._build_watermark_config()
+            processed = skipped = 0
+            failed: list[str] = []
+            progress = UiProgress(self.log_queue)
+
+            for f in mp4s:
+                try:
+                    if cfg is not None and not cfg.is_empty:
+                        ok = apply_watermark(f, cfg)
+                        if not ok:
+                            log.warning("watermark failed for %s", f.name)
+                    processed += 1
+                    progress.note("downloaded")
+                    self.log_queue.put(f"✓ {f.name}")
+                except Exception as exc:  # noqa: BLE001
+                    failed.append(f.name)
+                    progress.note("failed")
+                    self.log_queue.put(f"✗ {f.name}: {exc}")
+                finally:
+                    progress.update(1)
+
+            self.log_queue.put(
+                f"DONE — watermarked={processed} skipped={skipped} failed={len(failed)}"
+            )
+            self.log_queue.put(("status", "Done"))
+        except Exception as exc:  # noqa: BLE001
+            self.log_queue.put(f"ERROR: {exc}")
+            self.log_queue.put(("status", "Error"))
+        finally:
+            self.log_queue.put(("enable_start", None))
+
+    def _run_folder_pipeline(self, src: str, out: str, recursive: bool) -> None:
+        """Watermark-only worker — walks `src` and applies overlays into `out`."""
+        try:
+            src_path = Path(src)
+            out_path = Path(out)
+            files = iter_mp4s(src_path, recursive)
+            total = len(files)
+            self.log_queue.put(f"Found {total} mp4 file(s) in {src_path}"
+                               + (" (recursive)" if recursive else ""))
+            if total == 0:
+                self.log_queue.put(("status", "Done"))
+                return
+            self.log_queue.put(("stat_set", ("scraped", total)))
+            self.log_queue.put(("max", total))
+
+            processed, skipped, failed = watermark_folder(
+                src_path, out_path, self._build_watermark_config() or WatermarkConfig(),
+                recursive=recursive,
+                progress=UiProgress(self.log_queue),
+            )
+            self.log_queue.put(
+                f"DONE — watermarked={processed} skipped={skipped} failed={len(failed)}"
             )
             self.log_queue.put(("status", "Done"))
         except Exception as exc:  # noqa: BLE001
