@@ -97,13 +97,18 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
               background=[("active", BG_WINDOW)],
               foreground=[("disabled", TEXT_FAINT)])
 
-    # Entries / Spinboxes — elevated bg.
+    # Entries / Spinboxes — elevated bg, roomier padding for a softer feel, and
+    # an accent border on focus so the active field reads clearly.
     for cls in ("TEntry", "TSpinbox"):
         style.configure(cls,
                         fieldbackground=BG_ELEVATED, foreground=TEXT,
                         bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
-                        insertcolor=TEXT)
-        style.map(cls, fieldbackground=[("disabled", BG_SURFACE)])
+                        insertcolor=TEXT, padding=(8, 6))
+        style.map(cls,
+                  fieldbackground=[("disabled", BG_SURFACE)],
+                  bordercolor=[("focus", ACCENT)],
+                  lightcolor=[("focus", ACCENT)],
+                  darkcolor=[("focus", ACCENT)])
 
     # Combobox — clam theme alone leaves the dropdown looking like macOS aqua
     # (light gray pill on our dark UI). Force the value display + arrow well to
@@ -113,7 +118,7 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
                     foreground=TEXT, arrowcolor=TEXT,
                     bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
                     selectbackground=BG_ELEVATED, selectforeground=TEXT,
-                    padding=(6, 4))
+                    padding=(8, 6))
     style.map("TCombobox",
               fieldbackground=[("readonly", BG_ELEVATED),
                                ("disabled", BG_SURFACE)],
@@ -132,20 +137,23 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
     root.option_add("*TCombobox*Listbox.relief", "flat")
     root.option_add("*TCombobox*Listbox.font", FONT_UI)
 
-    # Secondary button (Browse).
+    # Secondary button (Browse) — flat, roomier, subtle hover lift.
     style.configure("TButton",
                     background=BG_ELEVATED, foreground=TEXT,
-                    bordercolor=BORDER, focuscolor=BG_WINDOW,
-                    padding=(10, 6))
+                    bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                    focuscolor=BG_WINDOW, relief="flat",
+                    padding=(13, 8))
     style.map("TButton",
-              background=[("active", BORDER), ("disabled", BG_SURFACE)],
+              background=[("active", BORDER), ("pressed", BORDER),
+                          ("disabled", BG_SURFACE)],
               foreground=[("disabled", TEXT_FAINT)])
 
     # Primary button (Start) — accent.
     style.configure("Primary.TButton",
                     background=ACCENT, foreground="#ffffff",
-                    bordercolor=ACCENT, focuscolor=ACCENT,
-                    padding=(22, 10), font=FONT_BUTTON)
+                    bordercolor=ACCENT, lightcolor=ACCENT, darkcolor=ACCENT,
+                    focuscolor=ACCENT, relief="flat",
+                    padding=(24, 11), font=FONT_BUTTON)
     style.map("Primary.TButton",
               background=[("active", ACCENT_HOVER),
                           ("disabled", ACCENT_DISABLED)],
@@ -157,9 +165,10 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
                     bordercolor=BG_SURFACE, lightcolor=ACCENT, darkcolor=ACCENT,
                     thickness=14)
 
-    # Stat card styles (used by StatCard frame children).
+    # Stat card styles (used by StatCard frame children) — flat 1px border.
     style.configure("Card.TFrame", background=BG_SURFACE,
-                    bordercolor=BORDER, relief="solid", borderwidth=1)
+                    bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                    relief="solid", borderwidth=1)
     style.configure("StatLabel.TLabel", background=BG_SURFACE,
                     foreground=TEXT_DIM, font=FONT_STAT_LABEL)
     style.configure("StatValue.TLabel", background=BG_SURFACE,
@@ -170,13 +179,17 @@ def apply_styles(root: tk.Tk) -> ttk.Style:
                     foreground=TEXT, font=FONT_TITLE)
     style.configure("Progress.TLabel", background=BG_WINDOW,
                     foreground=TEXT_DIM, font=FONT_UI)
-    # Hint / tip label — muted, smaller, used for inline help text below fields.
+    # Hint / tip label — muted but still readable (a touch brighter than faint).
     style.configure("Hint.TLabel", background=BG_WINDOW,
-                    foreground=TEXT_FAINT,
-                    font=(FONT_UI[0], max(FONT_UI[1] - 2, 9), "italic"))
-    # Section header inside a Labelframe.
+                    foreground="#8b8d97",
+                    font=(FONT_UI[0], max(FONT_UI[1] - 1, 10)))
+    # Highlighted tip — amber text in a subtle box, for attention-worthy notes.
+    style.configure("Tip.TLabel", background=BG_SURFACE, foreground=WARNING,
+                    font=(FONT_UI[0], FONT_UI[1], "bold"), padding=(14, 9))
+    # Section header inside a Labelframe — flat 1px border (no clam bevel).
     style.configure("Section.TLabelframe", background=BG_WINDOW,
-                    bordercolor=BORDER, relief="solid", borderwidth=1)
+                    bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER,
+                    relief="solid", borderwidth=1)
     style.configure("Section.TLabelframe.Label", background=BG_WINDOW,
                     foreground=TEXT, font=FONT_UI_BOLD)
 

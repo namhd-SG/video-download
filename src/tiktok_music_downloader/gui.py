@@ -6,7 +6,7 @@ import queue
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from tiktok_music_downloader.bootstrap import ensure_chromium
 from tiktok_music_downloader.downloader import download_all
@@ -17,12 +17,15 @@ from tiktok_music_downloader.gui_helpers import (
     UiProgress,
 )
 from tiktok_music_downloader.gui_style import (
+    ACCENT,
+    BG_SURFACE,
     BG_WINDOW,
     apply_styles,
     classify_log,
     configure_log_tags,
     FONT_LOG,
     TEXT,
+    TEXT_DIM,
 )
 from tiktok_music_downloader.gdrive import download_folder as gdrive_download_folder
 from tiktok_music_downloader.local_watermark import iter_mp4s, watermark_folder
@@ -59,8 +62,10 @@ class App:
     def __init__(self, root: tk.Tk):
         self.root = root
         root.title("Video Download")
-        root.geometry("820x900")
-        root.minsize(640, 540)
+        # Wide enough that the Source/Cookies hint lines show in full by default
+        # (they were being clipped at the old 820px width).
+        root.geometry("1240x940")
+        root.minsize(900, 560)
         root.resizable(True, True)
 
         apply_styles(root)
@@ -92,6 +97,8 @@ class App:
 
         root.after(POLL_INTERVAL_MS, self._poll_queue)
         self._kickoff_bootstrap()
+        # First launch: show a short guided tour once the window is drawn.
+        root.after(500, self._maybe_first_run_tour)
 
     # ------------------------------------------------------------------ build
     def _setup_scrollable(self, root: tk.Tk) -> ttk.Frame:
@@ -167,6 +174,9 @@ class App:
                   style="Title.TLabel").pack(side="left")
         self.status_pill = StatusPill(bar, state="Idle")
         self.status_pill.pack(side="right")
+        # Re-openable guided tour (also shown automatically on first launch).
+        ttk.Button(bar, text="❔ Hướng dẫn", command=self._show_welcome).pack(
+            side="right", padx=(0, 10))
 
     def _build_tabs(self) -> None:
         """Notebook with two pipelines: Download URLs vs. Watermark a folder.
@@ -184,7 +194,7 @@ class App:
 
     def _build_form(self) -> None:
         src = ttk.Labelframe(self.tab_download, text="  🔗  Source  ",
-                              style="Section.TLabelframe", padding=14)
+                              style="Section.TLabelframe", padding=18)
         src.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
         ttk.Label(src, text="URL").grid(row=0, column=0, sticky="w", padx=(0, 10))
         self.url_var = tk.StringVar()
@@ -200,7 +210,7 @@ class App:
         src.columnconfigure(1, weight=1)
 
         opt = ttk.Labelframe(self.tab_download, text="  ⚙  Options  ",
-                              style="Section.TLabelframe", padding=14)
+                              style="Section.TLabelframe", padding=18)
         opt.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
         ttk.Label(opt, text="Output").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -212,7 +222,7 @@ class App:
             row=0, column=4, padx=(8, 0))
 
         ttk.Label(opt, text="Max videos").grid(row=1, column=0, sticky="w", pady=(10, 0))
-        self.max_var = tk.IntVar(value=200)
+        self.max_var = tk.IntVar(value=100)
         ttk.Spinbox(opt, from_=1, to=2000, textvariable=self.max_var,
                     width=8).grid(row=1, column=1, sticky="w", pady=(10, 0))
 
@@ -229,19 +239,34 @@ class App:
         ttk.Spinbox(opt, from_=1, to=5, textvariable=self.passes_var,
                     width=4).grid(row=1, column=5, sticky="w", pady=(10, 0))
 
-        ttk.Label(opt, text="Proxy").grid(row=2, column=0, sticky="w", pady=(10, 0))
+        # Note so users know these are freely adjustable.
+        ttk.Label(opt, style="Hint.TLabel",
+                  text="💡 Chỉnh tự do: Max videos = số video tối đa (1–2000)  •  "
+                       "Delay = giãn cách giây giữa mỗi video (tăng nếu bị chặn)  •  "
+                       "Passes = quét lại nhiều lần để gom thêm video (TikTok)"
+                  ).grid(row=2, column=1, columnspan=5, sticky="w", pady=(2, 0))
+
+        ttk.Label(opt, text="Proxy").grid(row=3, column=0, sticky="w", pady=(10, 0))
         self.proxy_var = tk.StringVar()
         ttk.Entry(opt, textvariable=self.proxy_var).grid(
-            row=2, column=1, columnspan=5, sticky="ew", ipady=3, pady=(10, 0))
+            row=3, column=1, columnspan=5, sticky="ew", ipady=3, pady=(10, 0))
 
         # Cookies JSON (Playwright storage_state / EditThisCookie export) — used to
         # bypass TikTok's guest video limit (~28) by reusing a logged-in session.
-        ttk.Label(opt, text="Cookies").grid(row=3, column=0, sticky="w", pady=(10, 0))
+        ttk.Label(opt, text="Cookies").grid(row=4, column=0, sticky="w", pady=(10, 0))
         self.cookies_var = tk.StringVar()
         ttk.Entry(opt, textvariable=self.cookies_var).grid(
-            row=3, column=1, columnspan=4, sticky="ew", ipady=3, pady=(10, 0))
+            row=4, column=1, columnspan=4, sticky="ew", ipady=3, pady=(10, 0))
         ttk.Button(opt, text="Browse…", command=self._pick_cookies).grid(
-            row=3, column=5, padx=(8, 0), pady=(10, 0))
+            row=4, column=5, padx=(8, 0), pady=(10, 0))
+        # Cookies are TikTok-only — explain that and offer a how-to so users don't
+        # think they need it for Facebook / Google Drive.
+        ttk.Label(opt, style="Hint.TLabel",
+                  text="🔒 Chỉ cần cho TikTok (trang /search, hoặc để vượt giới hạn "
+                       "~28 video khi chưa đăng nhập). Facebook / Google Drive KHÔNG cần."
+                  ).grid(row=5, column=1, columnspan=4, sticky="w", pady=(2, 0))
+        ttk.Button(opt, text="Cách lấy cookie", command=self._show_cookie_help).grid(
+            row=5, column=5, padx=(8, 0), pady=(2, 0))
 
         self.headful_var = tk.BooleanVar(value=False)
         self.verbose_var = tk.BooleanVar(value=False)
@@ -249,7 +274,7 @@ class App:
         # captcha or rate-limit than a fresh ephemeral context every run.
         self.keep_session_var = tk.BooleanVar(value=True)
         flags = ttk.Frame(opt)
-        flags.grid(row=4, column=0, columnspan=6, sticky="w", pady=(10, 0))
+        flags.grid(row=6, column=0, columnspan=6, sticky="w", pady=(10, 0))
         ttk.Checkbutton(flags, text="Show browser (headful)",
                         variable=self.headful_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(flags, text="Keep session",
@@ -266,7 +291,7 @@ class App:
         so this tab only needs the I/O paths and the recursion flag.
         """
         wrap = ttk.Labelframe(self.tab_folder, text="  🗂  Folder paths  ",
-                              style="Section.TLabelframe", padding=14)
+                              style="Section.TLabelframe", padding=18)
         wrap.pack(fill="x", padx=0, pady=(0, 0))
 
         ttk.Label(wrap, text="Source").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -303,7 +328,7 @@ class App:
     def _build_watermark(self) -> None:
         """Optional watermark section: animated text only."""
         wm = ttk.Labelframe(self.body, text="  ✨  Watermark (optional)  ",
-                             style="Section.TLabelframe", padding=14)
+                             style="Section.TLabelframe", padding=18)
         wm.pack(fill="x", padx=PAD_OUT, pady=(0, 10))
 
         # Master toggle. Even when ON, the text field can be empty to skip the
@@ -361,6 +386,14 @@ class App:
                                     style="Primary.TButton",
                                     command=self._start)
         self.start_btn.pack()
+        # Highlighted tip: the very first run often fails a few videos (TikTok
+        # cold-start) — pressing START again resumes and picks up the rest.
+        ttk.Label(
+            wrap,
+            text="💡 Lần đầu tải đôi khi lỗi vài video (TikTok khởi động) — "
+                 "cứ bấm START lại: app TỰ BỎ QUA video đã tải và lấy nốt phần còn thiếu.",
+            style="Tip.TLabel", wraplength=760, justify="center",
+        ).pack(pady=(10, 0))
 
     def _build_progress_and_stats(self) -> None:
         wrap = ttk.Frame(self.body, padding=(PAD_OUT, 0, PAD_OUT, 8))
@@ -427,6 +460,146 @@ class App:
         )
         if chosen:
             self.cookies_var.set(chosen)
+
+    def _show_cookie_help(self) -> None:
+        """Explain how to export a TikTok cookies JSON the scraper accepts."""
+        messagebox.showinfo(
+            "Cách lấy cookie TikTok",
+            "Cookie chỉ cần cho TikTok — trang tìm kiếm (/search), hoặc để tải "
+            "hơn ~28 video (giới hạn khi CHƯA đăng nhập).\n\n"
+            "Các bước (dùng tiện ích trình duyệt Cookie-Editor):\n"
+            "1. Cài extension \"Cookie-Editor\" (Chrome / Edge / Firefox).\n"
+            "2. Mở tiktok.com và ĐĂNG NHẬP tài khoản.\n"
+            "3. Bấm icon Cookie-Editor → nút Export → chọn định dạng \"JSON\" "
+            "(KHÔNG chọn 'Header String').\n"
+            "4. Dán vào một file mới, lưu tên ví dụ  tiktok-cookies.json\n"
+            "5. Quay lại app, bấm Browse… ở ô Cookies và chọn file đó.\n\n"
+            "Cũng chấp nhận file storage_state của Playwright "
+            "({\"cookies\": [...]}).\n"
+            "Lưu ý: cookie hết hạn theo thời gian — nếu bị chặn, export lại file mới."
+        )
+
+    def _first_run_marker(self) -> Path:
+        return Path.home() / ".video-download" / "onboarded"
+
+    def _maybe_first_run_tour(self) -> None:
+        """Show the tour once, on the very first launch. Marker survives restarts."""
+        marker = self._first_run_marker()
+        if marker.exists():
+            return
+        self._show_welcome()
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("1", encoding="utf-8")
+        except OSError:
+            pass  # non-fatal — worst case the tour shows again next launch
+
+    # Detailed guide content: list of (text, tag). Tags: "h1" title, "h2" section
+    # header, "b" bold sub-item, "" normal body.
+    _GUIDE = [
+        ("VIDEO DOWNLOAD — HƯỚNG DẪN SỬ DỤNG", "h1"),
+        ("Tải video hàng loạt về một thư mục trên máy. Đọc 1 lần là dùng được.", ""),
+        ("2 tab ở trên cùng", "h2"),
+        ("• Download — tải video từ một đường link (URL).", ""),
+        ("• Watermark folder — đóng chữ chạy lên các video .mp4 CÓ SẴN trong một "
+         "thư mục (không tải gì, chỉ xử lý video bạn đã có).", ""),
+        ("Tải video — 3 bước tối thiểu", "h2"),
+        ("1) Dán link vào ô URL.  2) Chọn thư mục lưu ở Output.  3) Bấm START.", ""),
+        ("Nguồn hỗ trợ (dán vào ô URL)", "h2"),
+        ("• TikTok — trang nhạc (…/music/…) hoặc trang tìm kiếm (…/search?q=…).", ""),
+        ("• Facebook — trang Ads Library (…/ads/library?…).", ""),
+        ("• Google Drive — link folder chia sẻ (tải mọi .mp4 trong folder đó).", ""),
+        ("Link khác sẽ bị báo lỗi ngay khi bấm START.", ""),
+        ("Các ô trong Options", "h2"),
+        ("• Output — thư mục lưu video. Bấm Browse… để chọn.", ""),
+        ("• Max videos — số video tối đa muốn tải (1–2000, mặc định 100).", ""),
+        ("• Delay (s) — nghỉ mấy giây giữa mỗi video. Để 2. Hay bị chặn thì tăng 3–5.", ""),
+        ("• Passes — số lần quét lại trang (chỉ TikTok). TikTok mỗi lần trả về một "
+         "phần video ngẫu nhiên; quét 2–3 lần gom được nhiều hơn. Trên 3 dễ bị chặn.", ""),
+        ("• Proxy — để TRỐNG. Chỉ điền nếu bạn có proxy riêng.", ""),
+        ("• Cookies — CHỈ dùng cho TikTok. Xem nút “Cách lấy cookie”.", ""),
+        ("3 ô tick — có nên tick không?", "h2"),
+        ("☐ Show browser (headful) — mặc định TẮT.", "b"),
+        ("   Hiện cửa sổ trình duyệt lúc quét. Bình thường để TẮT (chạy ẩn, nhanh). "
+         "BẬT khi bị bắt giải captcha / bị chặn: cửa sổ hiện ra cho bạn giải bằng "
+         "tay rồi app chạy tiếp.", ""),
+        ("☑ Keep session — NÊN ĐỂ BẬT (mặc định bật).", "b"),
+        ("   Ghi nhớ phiên đăng nhập/cookies giữa các lần chạy → TikTok thấy “người "
+         "quen” nên ít bắt captcha, ít giới hạn hơn. Chỉ tắt nếu muốn chạy sạch hoàn toàn.", ""),
+        ("☐ Verbose log — thường KHÔNG cần.", "b"),
+        ("   Ghi log chi tiết để soi lỗi. Chỉ bật khi cần gửi log cho người hỗ trợ "
+         "kỹ thuật; bình thường để tắt cho log gọn.", ""),
+        ("Cookies (chỉ TikTok)", "h2"),
+        ("Chỉ cần khi tải trang /search, hoặc để tải HƠN ~28 video (giới hạn khi "
+         "chưa đăng nhập). Facebook và Google Drive KHÔNG cần. Bấm nút “Cách lấy "
+         "cookie” cạnh ô Cookies để xem các bước lấy file.", ""),
+        ("Watermark (tuỳ chọn — đóng chữ chạy lên video)", "h2"),
+        ("• Tick “Apply watermark to downloads” để bật.", ""),
+        ("• Animated text — chữ muốn hiển thị (tên bạn / thương hiệu). Bỏ trống = "
+         "không đóng chữ.", ""),
+        ("• Pattern — kiểu chuyển động của chữ (xoay vòng, số 8, lắc ngang, trượt "
+         "chéo, xoắn ốc, hoặc đứng yên giữa video).", ""),
+        ("• Opacity % — độ mờ của chữ (35 = mờ nhẹ, 100 = rõ đặc).", ""),
+        ("• Quality — HD/FullHD ép khung hình về kích thước chuẩn (chữ luôn cân đối); "
+         "chọn “original” để giữ nguyên.", ""),
+        ("Bản này chỉ có watermark CHỮ (đã bỏ logo tĩnh và icon động).", ""),
+        ("Lần đầu chạy", "h2"),
+        ("Bấm START lần đầu, app tự tải trình duyệt Chromium (~150MB, chỉ 1 lần). "
+         "Chờ trạng thái báo sẵn sàng rồi việc tải bắt đầu.", ""),
+        ("⚠ Lần đầu tải hay lỗi vài video (TikTok khởi động). ĐỪNG LO — cứ bấm "
+         "START lại: app tự bỏ qua video đã tải và lấy nốt phần còn thiếu. Chạy "
+         "lại 1–2 lần là đủ 100%.", "b"),
+        ("Kết quả", "h2"),
+        ("Video lưu dạng <mã>.mp4 trong thư mục Output. Chạy lại cùng link sẽ TỰ BỎ "
+         "QUA video đã có — an toàn khi dừng giữa chừng rồi chạy tiếp.", ""),
+        ("Mở lại hướng dẫn này bất cứ lúc nào bằng nút “❔ Hướng dẫn” ở góc trên.", ""),
+    ]
+
+    def _show_welcome(self) -> None:
+        """Detailed, scrollable guide window (used by first-run tour + the button)."""
+        # If already open, just bring it to front instead of stacking copies.
+        existing = getattr(self, "_help_win", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
+
+        win = tk.Toplevel(self.root)
+        self._help_win = win
+        win.title("Hướng dẫn sử dụng — Video Download")
+        win.geometry("720x640")
+        win.minsize(520, 400)
+        win.configure(bg=BG_WINDOW)
+        win.transient(self.root)
+
+        wrap = tk.Frame(win, bg=BG_WINDOW)
+        wrap.pack(fill="both", expand=True, padx=0, pady=0)
+
+        sb = ttk.Scrollbar(wrap, orient="vertical")
+        sb.pack(side="right", fill="y")
+        txt = tk.Text(
+            wrap, wrap="word", bg=BG_WINDOW, fg=TEXT, bd=0,
+            padx=22, pady=18, spacing1=2, spacing3=6,
+            font=("Helvetica", 13), yscrollcommand=sb.set, cursor="arrow",
+        )
+        txt.pack(side="left", fill="both", expand=True)
+        sb.config(command=txt.yview)
+
+        txt.tag_configure("h1", font=("Helvetica", 17, "bold"), foreground=ACCENT,
+                           spacing1=4, spacing3=12)
+        txt.tag_configure("h2", font=("Helvetica", 14, "bold"), foreground=TEXT,
+                           spacing1=14, spacing3=6)
+        txt.tag_configure("b", font=("Helvetica", 13, "bold"), foreground=TEXT)
+        txt.tag_configure("", foreground=TEXT_DIM)
+
+        for line, tag in self._GUIDE:
+            txt.insert("end", line + "\n", tag)
+        txt.config(state="disabled")
+
+        btnbar = tk.Frame(win, bg=BG_SURFACE)
+        btnbar.pack(fill="x")
+        ttk.Button(btnbar, text="Đã hiểu", command=win.destroy,
+                   style="Primary.TButton").pack(side="right", padx=14, pady=10)
 
     def _build_watermark_config(self) -> WatermarkConfig | None:
         """Read watermark UI fields into a WatermarkConfig, or None if disabled."""
@@ -726,6 +899,13 @@ class App:
             self.status_pill.set(str(payload))
         elif kind == "enable_start":
             self.start_btn.config(state="normal", text="▶  START")
+            # First-run TikTok cold-start often fails a few — nudge to re-run.
+            if self.stats.get("failed", 0) > 0:
+                self._append_log(
+                    f"⚠ {self.stats['failed']} video bị lỗi — cứ bấm START LẠI để "
+                    "lấy nốt (app tự bỏ qua video đã tải). Lần đầu hay bị vậy, "
+                    "chạy lại 1–2 lần là đủ."
+                )
         elif kind == "bootstrap_done":
             self.bootstrap_ok = bool(payload)
             self.start_btn.config(

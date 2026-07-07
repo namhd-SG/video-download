@@ -17,6 +17,22 @@ Bulk-download MP4 videos into a folder — runs on **Windows and macOS**.
 
 Anything else is rejected up front. Everything downloads to plain `.mp4`.
 
+### Cookies — TikTok only
+
+The **Cookies** field is only for TikTok: the search page (`/search`) needs it,
+and a logged-in session lets you download **more than ~28 videos** (the guest
+limit). **Facebook and Google Drive don't need cookies** — leave it empty.
+
+How to export a TikTok cookies file (the GUI also has a **"Cách lấy cookie"** button):
+1. Install the **Cookie-Editor** browser extension (Chrome / Edge / Firefox).
+2. Open `tiktok.com` and **log in**.
+3. Click Cookie-Editor → **Export** → choose **JSON** (not "Header String").
+4. Save it as e.g. `tiktok-cookies.json`.
+5. In the app, click **Browse…** next to Cookies and pick that file.
+
+A Playwright `storage_state` file (`{"cookies": [...]}`) also works. Cookies
+expire over time — if you start getting blocked, export a fresh file.
+
 ## 🚀 Quick start (for the team — no build needed)
 
 Everything is bundled in this repo (including ffmpeg). Just:
@@ -36,6 +52,9 @@ in the repo, so nothing else to install.
 > Later runs are instant — the launcher skips setup once the environment exists.
 
 **Good to know**
+- **First run often fails a few videos** (TikTok cold-start). This is normal —
+  just press **START again**: the app skips already-downloaded files and picks
+  up the rest. Running 1–2 times usually gets you the full set.
 - **Downloading never needs ffmpeg** — it's only used for the optional watermark.
   If ffmpeg is somehow unavailable, downloads still succeed; the watermark step
   is skipped with a log warning.
