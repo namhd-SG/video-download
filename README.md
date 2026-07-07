@@ -6,6 +6,41 @@ Bulk-download MP4 videos into a folder — runs on **Windows and macOS**.
 > **animated text**. The static corner logo and animated image/icon overlays
 > have been removed.
 
+## 🚀 Quick start (for the team — no build needed)
+
+Everything is bundled in this repo (including ffmpeg). Just:
+
+1. **Install Python 3.10+** once — [macOS](https://www.python.org/downloads/macos/) · [Windows](https://www.python.org/downloads/windows/) (on Windows tick *"Add python.exe to PATH"*).
+2. Get the repo. The bundled ffmpeg lives in **Git LFS**, so:
+   - Install **Git LFS** once: `brew install git-lfs` (macOS) or the [installer](https://git-lfs.com) (Windows), then run `git lfs install`.
+   - Then clone:
+     ```bash
+     git clone https://github.com/namhd-SG/video-download.git
+     ```
+     LFS pulls the real ffmpeg automatically.
+   - ⚠️ GitHub's **"Download ZIP"** does **NOT** include LFS files (you'd get a tiny pointer, so the watermark won't work — downloads still do). Prefer `git clone`.
+3. **Double-click the launcher** inside the folder:
+   - **macOS** → `run-mac.command`  *(first time: right-click → Open → Open)*
+   - **Windows** → `run-windows.bat`
+
+That's it. The launcher auto-creates a local environment and installs
+dependencies on the **first run** (needs internet, ~1-2 min). The app then opens
+a window — paste a URL, pick a folder, click **START**. The very first launch
+also downloads Chromium (~150 MB, one-time). ffmpeg for the watermark is already
+in the repo, so nothing else to install.
+
+> Later runs are instant — the launcher skips setup once the environment exists.
+
+**Good to know**
+- **First run often fails a few videos** (TikTok cold-start). This is normal —
+  just press **START again**: the app skips already-downloaded files and picks
+  up the rest. Running 1–2 times usually gets you the full set.
+- **Downloading never needs ffmpeg** — it's only used for the optional watermark.
+- **macOS:** the bundled mac ffmpeg is a **universal binary** (arm64 + x86_64),
+  so it runs natively on both Apple Silicon and Intel — no Rosetta needed.
+- The launcher picks a Python that is **3.10+ AND has Tk** — if it can't find
+  one it tells you to install the python.org build.
+
 ## Supported sources (what you can paste as the URL)
 
 | Source | URL shape | Notes |
@@ -32,41 +67,6 @@ How to export a TikTok cookies file (the GUI also has a **"Cách lấy cookie"**
 
 A Playwright `storage_state` file (`{"cookies": [...]}`) also works. Cookies
 expire over time — if you start getting blocked, export a fresh file.
-
-## 🚀 Quick start (for the team — no build needed)
-
-Everything is bundled in this repo (including ffmpeg). Just:
-
-1. **Install Python 3.10+** once — [macOS](https://www.python.org/downloads/macos/) · [Windows](https://www.python.org/downloads/windows/) (on Windows tick *"Add python.exe to PATH"*).
-2. Get the repo. The bundled ffmpeg lives in **Git LFS**, so:
-   - Install **Git LFS** once: `brew install git-lfs` (macOS) or the [installer](https://git-lfs.com) (Windows), then run `git lfs install`.
-   - Then `git clone <repo-url>` — LFS pulls the real ffmpeg automatically.
-   - ⚠️ GitHub's **"Download ZIP"** does **NOT** include LFS files (you'd get a tiny pointer, so the watermark won't work — downloads still do). Prefer `git clone`.
-3. **Double-click the launcher:**
-   - **macOS** → `run-mac.command`  *(first time: right-click → Open → Open)*
-   - **Windows** → `run-windows.bat`
-
-That's it. The launcher auto-creates a local environment and installs
-dependencies on the **first run** (needs internet, ~1-2 min). The app then opens
-a window — paste a URL, pick a folder, click **START**. The very first launch
-also downloads Chromium (~150 MB, one-time). ffmpeg for the watermark is already
-in the repo, so nothing else to install.
-
-> Later runs are instant — the launcher skips setup once the environment exists.
-
-**Good to know**
-- **First run often fails a few videos** (TikTok cold-start). This is normal —
-  just press **START again**: the app skips already-downloaded files and picks
-  up the rest. Running 1–2 times usually gets you the full set.
-- **Downloading never needs ffmpeg** — it's only used for the optional watermark.
-  If ffmpeg is somehow unavailable, downloads still succeed; the watermark step
-  is skipped with a log warning.
-- **macOS:** the bundled mac ffmpeg is a **universal binary** (arm64 + x86_64),
-  so it runs natively on both Apple Silicon and Intel — no Rosetta needed.
-- The launcher picks a Python that is **3.10+ AND has Tk** — if it can't find
-  one it tells you to install the python.org build.
-
----
 
 Two entry points (for developers):
 - **CLI** — `tiktok-music-dl` (for power users)
