@@ -38,7 +38,10 @@ expire over time — if you start getting blocked, export a fresh file.
 Everything is bundled in this repo (including ffmpeg). Just:
 
 1. **Install Python 3.10+** once — [macOS](https://www.python.org/downloads/macos/) · [Windows](https://www.python.org/downloads/windows/) (on Windows tick *"Add python.exe to PATH"*).
-2. Get the repo folder (clone or download-zip → unzip).
+2. Get the repo. The bundled ffmpeg lives in **Git LFS**, so:
+   - Install **Git LFS** once: `brew install git-lfs` (macOS) or the [installer](https://git-lfs.com) (Windows), then run `git lfs install`.
+   - Then `git clone <repo-url>` — LFS pulls the real ffmpeg automatically.
+   - ⚠️ GitHub's **"Download ZIP"** does **NOT** include LFS files (you'd get a tiny pointer, so the watermark won't work — downloads still do). Prefer `git clone`.
 3. **Double-click the launcher:**
    - **macOS** → `run-mac.command`  *(first time: right-click → Open → Open)*
    - **Windows** → `run-windows.bat`
