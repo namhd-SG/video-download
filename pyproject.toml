@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tiktok-music-downloader"
+version = "0.1.0"
+description = "Video Download — bulk-download MP4s from TikTok (music/search), Facebook Ads Library, or a Google Drive folder. Optional animated-text watermark."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "macos" }]
+dependencies = [
+  "playwright>=1.47.0",
+  "yt-dlp>=2025.1.15",
+  "typer>=0.12.0",
+  "tqdm>=4.66.0",
+  "tenacity>=8.5.0",
+  # Pillow: render watermark text → PNG. Homebrew's ffmpeg ships without
+  # libfreetype, so drawtext is unavailable; pre-rendering side-steps that.
+  "Pillow>=10.0",
+  # requests: streaming HTTP download for signed FBCDN URLs (Facebook Ads
+  # Library) — yt-dlp can't authenticate those, so we fetch them directly.
+  "requests>=2.31",
+  # gdown: download public Google Drive files / folders without OAuth.
+  "gdown>=5.0",
+]
+
+[project.optional-dependencies]
+build = ["pyinstaller>=6.10"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+tiktok-music-dl = "tiktok_music_downloader.cli:app"
+tiktok-music-dl-gui = "tiktok_music_downloader.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

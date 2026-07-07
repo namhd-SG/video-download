@@ -1,0 +1,115 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch: {}
+
+jobs:
+  build-macos:
+    name: macOS .app
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true   # pull the real ffmpeg binary, not the LFS pointer
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]"
+
+      - name: Build .app
+        run: bash build-scripts/build-app.sh
+
+      - name: Zip bundle
+        working-directory: dist
+        run: zip -qr video-download-mac.zip "Video Download.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-download-mac
+          path: dist/video-download-mac.zip
+          if-no-files-found: error
+
+  build-windows:
+    name: Windows .exe
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true   # pull the real ffmpeg.exe, not the LFS pointer
+
+      - uses: actions/setup-python@v5
+        with:
+          # 3.12 ships Tk and matches the local dev version.
+          python-version: '3.12'
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[build]"
+
+      - name: Build .exe (PyInstaller)
+        shell: pwsh
+        # Reuse the same launcher-agnostic build script (it Push-Locations into
+        # build-scripts/ so the spec's relative paths resolve correctly).
+        run: powershell -ExecutionPolicy Bypass -File build-scripts\build-app.ps1
+
+      - name: Zip Windows build
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist\video-download" `
+            -DestinationPath "dist\video-download-win.zip" `
+            -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: video-download-win
+          path: dist/video-download-win.zip
+          if-no-files-found: error
+
+  release:
+    # On tagged pushes, attach both artifacts to a GitHub Release.
+    name: Publish Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/video-download-mac/video-download-mac.zip
+            artifacts/video-download-win/video-download-win.zip
+          body: |
+            ## Install
+
+            **macOS**:
+            ```bash
+            unzip video-download-mac.zip
+            xattr -dr com.apple.quarantine "Video Download.app"
+            # then right-click → Open → Open
+            ```
+
+            **Windows**:
+            ```pwsh
+            Expand-Archive video-download-win.zip
+            # run: video-download\video-download.exe
+            ```
+
+            First launch downloads Chromium (~150 MB) automatically.
+          draft: false
+          prerelease: false

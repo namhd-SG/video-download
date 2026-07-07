@@ -1,0 +1,2 @@
+assets/ffmpeg-static/ffmpeg filter=lfs diff=lfs merge=lfs -text
+assets/ffmpeg-static/ffmpeg.exe filter=lfs diff=lfs merge=lfs -text

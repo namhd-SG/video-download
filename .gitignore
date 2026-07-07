@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# PyInstaller artifacts
+build/
+dist/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# Local Claude Code tooling (per-machine settings + agent scratch memory)
+.claude/
+
+# Downloads / cache
+downloads/
+
+# Cookies / secrets — never commit
+*cookies*.json
+tiktok-cookies*.json
+
+# NOTE: assets/ffmpeg-static/ (universal mac ffmpeg ~139MiB + ffmpeg.exe ~97MiB)
+# IS committed on purpose so the team can clone and watermark with zero setup.
+# These are tracked via Git LFS (see .gitattributes) — the mac binary exceeds
+# GitHub's 100MiB hard limit, so LFS is REQUIRED. Do NOT re-ignore this folder.
