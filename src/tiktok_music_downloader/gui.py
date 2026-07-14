@@ -193,6 +193,13 @@ class App:
         ttk.Entry(src, textvariable=self.url_var).grid(
             row=0, column=1, sticky="ew", ipady=4)
         src.columnconfigure(1, weight=1)
+        # Hint: which URL shapes the download pipeline accepts. Profile pages
+        # (/@handle) and search need Cookies to load all videos — noted on Start.
+        ttk.Label(
+            src, style="Hint.TLabel",
+            text="TikTok /music/ · /@profile · /search?q=… · Facebook /ads/library/ "
+                 "· Google Drive folder   (💡 /@profile & search need Cookies)",
+        ).grid(row=1, column=1, sticky="w", pady=(4, 0))
 
         opt = ttk.Labelframe(self.tab_download, text="  ⚙  Options  ",
                               style="Section.TLabelframe", padding=14)
