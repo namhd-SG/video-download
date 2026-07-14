@@ -47,6 +47,7 @@ from tiktok_music_downloader.utils import (
     is_fb_ads_library,
     is_gdrive_folder,
     is_music_page,
+    is_profile_page,
     is_search_page,
     is_tiktok_collection,
     setup_logger,
@@ -192,6 +193,13 @@ class App:
         ttk.Entry(src, textvariable=self.url_var).grid(
             row=0, column=1, sticky="ew", ipady=4)
         src.columnconfigure(1, weight=1)
+        # Hint: which URL shapes the download pipeline accepts. Profile pages
+        # (/@handle) and search need Cookies to load all videos — noted on Start.
+        ttk.Label(
+            src, style="Hint.TLabel",
+            text="TikTok /music/ · /@profile · /search?q=… · Facebook /ads/library/ "
+                 "· Google Drive folder   (💡 /@profile & search need Cookies)",
+        ).grid(row=1, column=1, sticky="w", pady=(4, 0))
 
         opt = ttk.Labelframe(self.tab_download, text="  ⚙  Options  ",
                               style="Section.TLabelframe", padding=14)
@@ -561,13 +569,15 @@ class App:
                 or is_gdrive_folder(url)):
             self._append_log(
                 "ERROR: URL must be TikTok /music/, TikTok /search?q=…, "
-                "Facebook /ads/library/, or a Google Drive folder share link"
+                "TikTok /@profile, Facebook /ads/library/, or a Google Drive "
+                "folder share link"
             )
             return
-        if is_search_page(url) and not self.cookies_var.get().strip():
+        if (is_search_page(url) or is_profile_page(url)) and not self.cookies_var.get().strip():
             self._append_log(
-                "⚠ Search page usually needs Cookies (logged-in TikTok session). "
-                "Anonymous attempts often return 0 videos."
+                "⚠ Search/profile pages usually need Cookies (logged-in TikTok "
+                "session) to load all videos. Anonymous attempts often return "
+                "few or 0 videos."
             )
         self._attach_logger()
         self._reset_stats()

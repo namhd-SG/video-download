@@ -12,6 +12,11 @@ _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
 _SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
+# User profile page, e.g. https://www.tiktok.com/@cataldotez5 (with optional
+# trailing slash or query string). Must NOT match a single video URL
+# (…/@user/video/123): the handle group forbids `/`, so anything after the
+# handle other than `?`, `#`, or end-of-string (i.e. `/video/…`) fails to match.
+_PROFILE_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/?(?:[?#]|$)")
 _FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
 # Google Drive folder share link. Covers all three URL shapes the share UI
 # emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
@@ -87,9 +92,14 @@ def is_search_page(url: str) -> bool:
     return bool(_SEARCH_RE.search(url))
 
 
+def is_profile_page(url: str) -> bool:
+    """True if url is a TikTok user profile page (`/@handle`), not a video."""
+    return bool(_PROFILE_RE.search(url))
+
+
 def is_tiktok_collection(url: str) -> bool:
-    """Any TikTok URL the scraper can enumerate — music page or search."""
-    return is_music_page(url) or is_search_page(url)
+    """Any TikTok URL the scraper can enumerate — music page, search, or profile."""
+    return is_music_page(url) or is_search_page(url) or is_profile_page(url)
 
 
 def is_gdrive_folder(url: str) -> bool:

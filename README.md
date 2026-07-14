@@ -1,9 +1,17 @@
 # tiktok-music-downloader
 
-Bulk-download watermark-free MP4 videos from a TikTok music aggregation page
-(e.g. `https://www.tiktok.com/music/original-sound-7374515087526136619`).
+Bulk-download watermark-free MP4 videos from a TikTok page. Supported sources:
 
-Built for creators who want to archive all videos using their own sound.
+- **Music page** — `https://www.tiktok.com/music/original-sound-7374515087526136619`
+- **Profile page** — `https://www.tiktok.com/@cataldotez5` (all videos of a user)
+- **Search page** — `https://www.tiktok.com/search?q=...`
+
+Built for creators who want to archive all videos using their own sound or a
+whole profile's catalogue.
+
+> **Profile & search pages need Cookies** (a logged-in TikTok session) to load
+> every video — anonymous runs often return few or 0. See the `--cookies` flag /
+> GUI *Cookies* field below.
 
 Two entry points:
 - **CLI** — `tiktok-music-dl` (for power users)
@@ -55,10 +63,17 @@ Logs stream live in the bottom pane; progress bar tracks downloads.
 ### CLI
 
 ```bash
+# Music page
 tiktok-music-dl "https://www.tiktok.com/music/original-sound-7374515087526136619" \
   --output ./downloads \
   --max 200 \
   --delay 2.0
+
+# Whole profile (needs cookies to load all videos)
+tiktok-music-dl "https://www.tiktok.com/@cataldotez5" \
+  --output ./downloads \
+  --cookies ./tiktok-cookies.json \
+  --max 200
 ```
 
 #### CLI flags

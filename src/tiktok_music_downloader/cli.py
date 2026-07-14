@@ -10,17 +10,22 @@ from tqdm import tqdm
 
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.scraper import scrape_music_page
-from tiktok_music_downloader.utils import is_music_page, setup_logger
+from tiktok_music_downloader.utils import (
+    is_profile_page,
+    is_search_page,
+    is_tiktok_collection,
+    setup_logger,
+)
 
 app = typer.Typer(
     add_completion=False,
-    help="Download all watermark-free MP4 videos from a TikTok music page.",
+    help="Download all watermark-free MP4 videos from a TikTok music, search, or profile page.",
 )
 
 
 @app.command()
 def main(
-    music_url: str = typer.Argument(..., help="TikTok music page URL"),
+    music_url: str = typer.Argument(..., help="TikTok music, search, or profile (/@user) URL"),
     output: Path = typer.Option(Path("./downloads"), "--output", "-o", help="Output directory"),
     max_videos: int = typer.Option(200, "--max", "-n", min=1, max=2000, help="Max videos"),
     delay: float = typer.Option(2.0, "--delay", "-d", min=0.0, help="Base seconds between downloads (jittered)"),
@@ -37,11 +42,21 @@ def main(
     """Scrape music page, then download every video as MP4 (no watermark)."""
     log = setup_logger(verbose)
 
-    if not is_music_page(music_url):
+    if not is_tiktok_collection(music_url):
         typer.secho(
-            "URL doesn't look like a TikTok /music/ page", fg=typer.colors.RED, err=True
+            "URL doesn't look like a TikTok /music/, /search?q=…, or /@profile page",
+            fg=typer.colors.RED,
+            err=True,
         )
         raise typer.Exit(code=2)
+
+    if (is_search_page(music_url) or is_profile_page(music_url)) and not cookies:
+        typer.secho(
+            "⚠ Search/profile pages usually need --cookies (logged-in TikTok "
+            "session) to load all videos; anonymous runs often return few or 0.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     refs = scrape_music_page(
         music_url,
