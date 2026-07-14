@@ -11,6 +11,8 @@ from tiktok_music_downloader.utils import (
     VideoRef,
     adaptive_backoff,
     is_music_page,
+    is_profile_page,
+    is_tiktok_collection,
     parse_video_url,
     random_user_agent,
 )
@@ -48,6 +50,24 @@ def test_is_music_page_non_ascii_slug():
     )
     # Decoded Unicode slug (Vietnamese).
     assert is_music_page("https://www.tiktok.com/music/nhạc-buồn-1234567890")
+
+
+def test_is_profile_page():
+    # Bare handle, trailing slash, and query string all count as a profile.
+    assert is_profile_page("https://www.tiktok.com/@cataldotez5")
+    assert is_profile_page("https://www.tiktok.com/@cataldotez5/")
+    assert is_profile_page("https://www.tiktok.com/@creator.name?lang=en")
+    assert is_profile_page("https://tiktok.com/@user_123")
+    # A single video URL is NOT a profile page.
+    assert not is_profile_page("https://www.tiktok.com/@user/video/7374515087526136619")
+    assert not is_profile_page("https://www.tiktok.com/music/original-sound-123")
+    assert not is_profile_page("https://example.com/@user")
+
+
+def test_is_tiktok_collection_includes_profile():
+    assert is_tiktok_collection("https://www.tiktok.com/@cataldotez5")
+    assert is_tiktok_collection("https://www.tiktok.com/music/original-sound-123")
+    assert not is_tiktok_collection("https://www.tiktok.com/@user/video/123")
 
 
 def test_jitter_throttle_within_range():
