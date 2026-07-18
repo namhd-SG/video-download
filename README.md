@@ -29,22 +29,28 @@ Two entry points:
 
 ### Python with Tkinter (GUI requirement)
 
-Homebrew Python 3.13/3.14 **does not ship Tk**. Pick one:
+Homebrew Python 3.13/3.14 **does not ship Tk** — importing `tkinter` fails
+with `ModuleNotFoundError: No module named '_tkinter'`. Pick one:
 
 | Choice | Install | Notes |
 |--------|---------|-------|
-| python.org installer | https://www.python.org/downloads/macos/ | Ships Tk 9.x. **Recommended.** |
-| Homebrew + Tk bottle | `brew install python-tk@3.12` | Works with `python3.12` |
+| Homebrew + Tk bottle | `brew install python@3.13 python-tk@3.13` | Ships Tk 9.x. **Recommended** — pairs with the venv command below. |
+| python.org installer | https://www.python.org/downloads/macos/ | Ships Tk 9.x. |
 | System Python | already there at `/usr/bin/python3` | Old Tk 8.5, but works for GUI |
 
 CLI only (no GUI)? Any Python ≥3.10 works — skip the Tk step.
 
 ### Install the package
 
+> **Create the venv with a Tk-enabled interpreter.** Bare `python3` on
+> Homebrew points at 3.14 (no Tk) and the GUI will crash on launch. Pin the
+> version explicitly:
+
 ```bash
 cd Projects/tiktok-music-downloader
-python3 -m venv .venv
+python3.13 -m venv .venv          # must be a python that has Tk (see table above)
 source .venv/bin/activate
+python -c "import tkinter"         # sanity check — must print nothing (no error)
 pip install -e .
 playwright install chromium
 ```
