@@ -7,20 +7,23 @@ import re
 import time
 from dataclasses import dataclass
 
-_VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
+# `re.I`: hosts are case-insensitive per RFC 3986, and `.match()` is not.
+# Chromium already lowercases `.href` from the DOM, so this only covers a
+# hand-typed or autocapitalised paste like `Https://WWW.TikTok.com/tag/x`.
+_VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)", re.I)
 # Slug allows: \w (Unicode word chars — Vietnamese, Russian, etc.),
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
-_MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
-_SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
+_MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)", re.I)
+_SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?", re.I)
 # Hashtag page: /tag/<slug>. Same slug charset as music (Unicode word chars,
 # hyphen, percent-encoding) but with no trailing numeric id to anchor on.
-_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/[\w\-%]+")
-_FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
+_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/[\w\-%]+", re.I)
+_FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?", re.I)
 # Google Drive folder share link. Covers all three URL shapes the share UI
 # emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
 # ID is base64-ish — word chars and dashes.
 _GDRIVE_FOLDER_RE = re.compile(
-    r"https?://drive\.google\.com/(?:drive/(?:u/\d+/)?)?folders/([\w\-]+)"
+    r"https?://drive\.google\.com/(?:drive/(?:u/\d+/)?)?folders/([\w\-]+)", re.I
 )
 # FBCDN MP4 URLs embed `xpv_asset_id` inside a base64-encoded `efg=` query
 # param. Extracting it lets us name the downloaded file deterministically so

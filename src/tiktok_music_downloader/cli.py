@@ -68,10 +68,12 @@ def main(
         # here rather than in the response handler (which also sees /music/).
         if is_tag_page(music_url) or is_search_page(music_url):
             hint = (
-                "No video URLs found. A '0-byte body' warning above means the "
-                "server returned no items for this page type; a /music/ page "
-                "uses a different endpoint and may still work. Without that "
-                "warning, try --headful or --cookies."
+                "No video URLs found. An empty-feed warning above means the "
+                "server returned no items for this page type, and a /music/ "
+                "page may still work. No warning is not an all-clear: it only "
+                "means none of the feed endpoints this build watches came back "
+                "empty. Run with --verbose to see every /api/ response, or try "
+                "--headful or --cookies."
             )
         else:
             hint = "No video URLs found. Try --headful or --cookies."

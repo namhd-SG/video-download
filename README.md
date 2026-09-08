@@ -53,22 +53,30 @@ in the repo, so nothing else to install.
 
 Anything else is rejected up front. Everything downloads to plain `.mp4`.
 
-> **Known issue — hashtag and search feeds, measured 2026-09-08.** TikTok answers
+> **Known issue — hashtag and search feeds, measured 2026-09-08.** TikTok answered
 > `/api/challenge/item_list/` (hashtag) and `/api/search/general/…` (search) with
-> HTTP 200 and a **zero-length body**, so those two pages come back with 0 videos.
-> Reproduced with a logged-in cookies file and with a visible browser, while a
-> `/music/` page returned 30 items under the same conditions — so it is a
-> server-side decision, not a cookie or setup problem. The app now prints a
-> `0-byte body` line when it sees this, instead of blaming your cookies. Music
-> pages, Facebook Ads Library and Google Drive are unaffected. If TikTok starts
-> serving these feeds again the app picks them up with no code change.
+> HTTP 200 and a **zero-length body**, so those two pages came back with 0 videos.
+> Reproduced with a logged-in cookies file and with a visible browser; a `/music/`
+> page returned 30 items under the same conditions, from the same machine on the
+> same day. **Not tested:** a non-automated browser, a persistent profile
+> (`--profile-dir`), or a different IP — so "the server withheld it" is what was
+> observed, and setup factors beyond those three are not ruled out.
+>
+> The app prints an empty-feed warning when a watched endpoint **declares**
+> `Content-Length: 0`, and a separate warning when a body cannot be read at all.
+> Absence of a warning is not an all-clear: the watched-endpoint list is a
+> snapshot of one day's traffic. `--verbose` logs every `/api/` response so an
+> unlisted feed endpoint is visible. Music pages, Facebook Ads Library and Google
+> Drive were unaffected. If TikTok serves these feeds again, no change is needed
+> on our side for the app to pick them up.
 
 ### Cookies — TikTok only
 
 The **Cookies** field is only for TikTok: the search page (`/search`) needs it,
 and a logged-in session lets you download **more than ~28 videos** (the guest
 limit). **Facebook and Google Drive don't need cookies** — leave it empty.
-Cookies do **not** unblock the hashtag/search empty-feed issue above.
+Cookies did **not** unblock the hashtag/search empty-feed issue above when it
+was measured on 2026-09-08.
 
 How to export a TikTok cookies file (the GUI also has a **"Cách lấy cookie"** button):
 1. Install the **Cookie-Editor** browser extension (Chrome / Edge / Firefox).

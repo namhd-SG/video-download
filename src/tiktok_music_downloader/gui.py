@@ -750,10 +750,12 @@ class App:
                 # Page type is known here, not in the response handler.
                 if is_tag_page(url) or is_search_page(url):
                     self.log_queue.put(
-                        "no videos found — nếu phía trên có dòng '0-byte body' "
+                        "no videos found — nếu phía trên có cảnh báo feed rỗng "
                         "thì server không trả item nào cho loại trang này "
-                        "(trang /music/ dùng endpoint khác, vẫn chạy); không "
-                        "có dòng đó thì thử bật Show browser / thêm Cookie"
+                        "(trang /music/ dùng endpoint khác, có thể vẫn chạy). "
+                        "KHÔNG có cảnh báo thì chưa chắc là server ổn: nó chỉ "
+                        "có nghĩa mấy endpoint bản này canh đều không rỗng — "
+                        "thử bật Show browser / thêm Cookie"
                     )
                 else:
                     self.log_queue.put(

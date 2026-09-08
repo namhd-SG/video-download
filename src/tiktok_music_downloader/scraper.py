@@ -107,12 +107,21 @@ def _load_cookies(path: Path) -> list[dict]:
 def _collect_links(page: Page) -> set[VideoRef]:
     """Snapshot all currently rendered video links on the page."""
     refs: set[VideoRef] = set()
-    for href in page.eval_on_selector_all(
+    hrefs = page.eval_on_selector_all(
         _VIDEO_LINK_SELECTOR, "els => els.map(e => e.href)"
-    ):
+    )
+    unparsed = 0
+    for href in hrefs:
         ref = parse_video_url(href)
-        if ref is not None:
-            refs.add(ref)
+        if ref is None:
+            unparsed += 1
+            continue
+        refs.add(ref)
+    # Every href here matched `a[href*="/video/"]`, so one the parser rejects
+    # is a URL shape we do not recognise — dropped with no other symptom than
+    # fewer videos. Count it so --verbose shows the loss.
+    if unparsed:
+        log.debug("links: %d hrefs seen, %d not parsed", len(hrefs), unparsed)
     return refs
 
 
@@ -128,48 +137,88 @@ _FEED_API_MARKERS = (
 )
 
 
+def _warn_empty_feed(marker: str, status: int, how: str) -> None:
+    log.warning(
+        "%s answered HTTP %d with a 0-byte body (measured via %s): the "
+        "response carried no items.",
+        marker, status, how,
+    )
+
+
 def _watch_feed_api(page: Page) -> None:
     """Log feed endpoints that answer with no body, and say when we can't tell.
 
-    Reports only what it read off the response: the endpoint, the HTTP status,
-    the byte count, and which of the two measurements produced it. It draws no
-    conclusion about WHY the body is empty — cookies, rate limiting and a
-    server-side gate all look identical from here, and the caller knows the
-    page type while this handler does not.
+    Reports only what it read off the response: endpoint, HTTP status, byte
+    count, and which measurement produced it. It draws no conclusion about WHY
+    a feed is empty — cookies, rate limiting and a server-side gate look
+    identical from here, and the caller knows the page type while this handler
+    does not.
 
-    Two measurements, because they cover different response framings:
-      - `Content-Length: 0` is a positive detection and costs no transfer.
-      - Chunked replies carry no length, so fall back to reading the body.
-    Chromium keeps no retrievable body for some zero-length and all redirect
-    responses, so `body()` raises there; that is logged at debug level rather
-    than swallowed, so a blind detector shows up under --verbose instead of
-    looking like a healthy feed.
+    The endpoint list is a snapshot of observed traffic, so absence of a
+    warning is NOT proof the feeds were healthy; every `/api/` response is
+    debug-logged so an unlisted feed endpoint shows up under --verbose.
     """
 
     def on_response(resp: Response) -> None:
-        marker = next((m for m in _FEED_API_MARKERS if m in resp.url), None)
-        if marker is None:
-            return
+        # Nothing may escape this listener. Playwright stores an escaped
+        # exception and re-raises it on the NEXT channel call
+        # (_connection.py: "Save the error to throw at the next API call"),
+        # which would abort a scrape that had already collected refs.
+        try:
+            if "/api/" in resp.url:
+                log.debug("api response %s -> %d", resp.url.split("?")[0], resp.status)
 
-        if resp.header_value("content-length") == "0":
-            size, how = 0, "Content-Length"
-        else:
-            try:
-                size, how = len(resp.body()), "body read"
-            except Exception as exc:  # noqa: BLE001 — record it, never swallow
-                log.debug(
-                    "feed %s: HTTP %d, body unreadable (%s) — cannot tell "
-                    "empty from full for this response",
-                    marker, resp.status, exc,
-                )
+            marker = next((m for m in _FEED_API_MARKERS if m in resp.url), None)
+            if marker is None:
                 return
 
-        if size == 0:
-            log.warning(
-                "%s answered HTTP %d with a 0-byte body (measured via %s): "
-                "the response carried no items.",
-                marker, resp.status, how,
-            )
+            # A redirect or a non-GET carries no feed payload of its own: a 302
+            # with Content-Length: 0 is routine, and calling it an empty feed
+            # would be a false alarm while the target returns items fine.
+            if not (200 <= resp.status < 300) or resp.request.method != "GET":
+                log.debug("feed %s: skipped HTTP %d %s",
+                          marker, resp.status, resp.request.method)
+                return
+
+            declared = resp.header_value("content-length")
+            encoding = (resp.header_value("content-encoding") or "").strip().lower()
+
+            if declared == "0":
+                # Encoding-independent: zero octets decode to nothing.
+                _warn_empty_feed(marker, resp.status, "Content-Length: 0")
+                return
+            if declared is not None and declared.isdigit() and encoding in ("", "identity"):
+                # Uncompressed, so the declared length IS the decoded length —
+                # a non-zero value settles it without moving the payload.
+                return
+            # Either chunked (no length) or compressed, where Content-Length is
+            # the COMPRESSED size: gzip of an empty body is still 20 bytes, so
+            # the header cannot answer the question. Read the body.
+            try:
+                if len(resp.body()) == 0:
+                    _warn_empty_feed(marker, resp.status, "body read")
+            except Exception as exc:  # noqa: BLE001
+                if "No data found for resource" in str(exc):
+                    # Chromium keeps no retrievable body for a zero-length
+                    # reply; it says the same for one it has already evicted,
+                    # so this must not claim to know which.
+                    log.warning(
+                        "%s answered HTTP %d but its body could not be read "
+                        "(%s). Chromium reports this both for a 0-byte body "
+                        "and for a response it already dropped — this cannot "
+                        "tell which.",
+                        marker, resp.status, exc,
+                    )
+                else:
+                    # Measured on a SUCCESSFUL /music/ run: a feed response
+                    # landing during ctx.close() raises "Target page, context
+                    # or browser has been closed". That says nothing about the
+                    # feed, so warning here would cry wolf on the healthy path
+                    # — and a warning users learn to ignore protects nobody.
+                    log.debug("feed %s: HTTP %d, body unreadable (%s)",
+                              marker, resp.status, exc)
+        except Exception as exc:  # noqa: BLE001 — never escape the listener
+            log.debug("feed watcher gave up on %s: %s", resp.url[:120], exc)
 
     page.on("response", on_response)
 
