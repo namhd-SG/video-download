@@ -46,17 +46,29 @@ in the repo, so nothing else to install.
 | Source | URL shape | Notes |
 |--------|-----------|-------|
 | **TikTok — music page** | `https://www.tiktok.com/music/...-<id>` | all videos using that sound |
+| **TikTok — hashtag page** | `https://www.tiktok.com/tag/<hashtag>` | all videos under that hashtag |
 | **TikTok — search page** | `https://www.tiktok.com/search?q=...` | usually needs a Cookies file (logged-in session) |
 | **Facebook Ads Library** | `https://www.facebook.com/ads/library/?...` | downloads each ad's MP4 |
 | **Google Drive** | a shared **folder** link | downloads every MP4 in the folder |
 
 Anything else is rejected up front. Everything downloads to plain `.mp4`.
 
+> **Known issue — hashtag and search feeds, measured 2026-09-08.** TikTok answers
+> `/api/challenge/item_list/` (hashtag) and `/api/search/general/…` (search) with
+> HTTP 200 and a **zero-length body**, so those two pages come back with 0 videos.
+> Reproduced with a logged-in cookies file and with a visible browser, while a
+> `/music/` page returned 30 items under the same conditions — so it is a
+> server-side decision, not a cookie or setup problem. The app now prints a
+> `0-byte body` line when it sees this, instead of blaming your cookies. Music
+> pages, Facebook Ads Library and Google Drive are unaffected. If TikTok starts
+> serving these feeds again the app picks them up with no code change.
+
 ### Cookies — TikTok only
 
 The **Cookies** field is only for TikTok: the search page (`/search`) needs it,
 and a logged-in session lets you download **more than ~28 videos** (the guest
 limit). **Facebook and Google Drive don't need cookies** — leave it empty.
+Cookies do **not** unblock the hashtag/search empty-feed issue above.
 
 How to export a TikTok cookies file (the GUI also has a **"Cách lấy cookie"** button):
 1. Install the **Cookie-Editor** browser extension (Chrome / Edge / Firefox).

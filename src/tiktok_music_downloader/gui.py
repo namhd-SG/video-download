@@ -50,6 +50,7 @@ from tiktok_music_downloader.utils import (
     is_fb_ads_library,
     is_gdrive_folder,
     is_search_page,
+    is_tag_page,
     is_tiktok_collection,
     setup_logger,
 )
@@ -203,7 +204,7 @@ class App:
         # Platform note — the tool only downloads from these sources, so users
         # know what to paste. Keep in sync with the URL validator in _start().
         ttk.Label(src, style="Hint.TLabel",
-                  text="Hỗ trợ tải từ:  TikTok (trang /music/ • /search)  •  "
+                  text="Hỗ trợ tải từ:  TikTok (trang /music/ • /tag/ • /search)  •  "
                        "Facebook Ads Library (/ads/library)  •  "
                        "Google Drive (link folder chia sẻ)"
                   ).grid(row=1, column=1, sticky="w", pady=(4, 0))
@@ -506,7 +507,8 @@ class App:
         ("Tải video — 3 bước tối thiểu", "h2"),
         ("1) Dán link vào ô URL.  2) Chọn thư mục lưu ở Output.  3) Bấm START.", ""),
         ("Nguồn hỗ trợ (dán vào ô URL)", "h2"),
-        ("• TikTok — trang nhạc (…/music/…) hoặc trang tìm kiếm (…/search?q=…).", ""),
+        ("• TikTok — trang nhạc (…/music/…), trang hashtag (…/tag/…) hoặc trang "
+         "tìm kiếm (…/search?q=…).", ""),
         ("• Facebook — trang Ads Library (…/ads/library?…).", ""),
         ("• Google Drive — link folder chia sẻ (tải mọi .mp4 trong folder đó).", ""),
         ("Link khác sẽ bị báo lỗi ngay khi bấm START.", ""),
@@ -685,7 +687,7 @@ class App:
         if not (is_tiktok_collection(url) or is_fb_ads_library(url)
                 or is_gdrive_folder(url)):
             self._append_log(
-                "ERROR: URL must be TikTok /music/, TikTok /search?q=…, "
+                "ERROR: URL must be TikTok /music/, /tag/<hashtag>, /search?q=…, "
                 "Facebook /ads/library/, or a Google Drive folder share link"
             )
             return
@@ -730,10 +732,11 @@ class App:
                     profile_dir=profile_dir,
                 )
             else:
-                # Both /music/ and /search?q= reuse scrape_music_page_multi —
-                # the scraper is generic (any TikTok page with `a[href*=/video/]`
-                # cards). Search additionally tends to need cookies for results
-                # to render, which the user is warned about in _start().
+                # /music/, /tag/ and /search?q= all reuse scrape_music_page_multi
+                # — the scraper is generic (any TikTok page with
+                # `a[href*=/video/]` cards). Search additionally tends to need
+                # cookies for results to render, which the user is warned about
+                # in _start().
                 refs = scrape_music_page_multi(
                     url,
                     passes=self.passes_var.get(),
@@ -744,7 +747,19 @@ class App:
                     profile_dir=profile_dir,
                 )
             if not refs:
-                self.log_queue.put("no videos found — try Show browser (headful)")
+                # Page type is known here, not in the response handler.
+                if is_tag_page(url) or is_search_page(url):
+                    self.log_queue.put(
+                        "no videos found — nếu phía trên có dòng '0-byte body' "
+                        "thì server không trả item nào cho loại trang này "
+                        "(trang /music/ dùng endpoint khác, vẫn chạy); không "
+                        "có dòng đó thì thử bật Show browser / thêm Cookie"
+                    )
+                else:
+                    self.log_queue.put(
+                        "no videos found — thử bật Show browser (headful) "
+                        "hoặc thêm Cookie"
+                    )
                 self.log_queue.put(("status", "Error"))
                 return
             self.log_queue.put(("stat_set", ("scraped", len(refs))))

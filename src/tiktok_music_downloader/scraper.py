@@ -11,6 +11,7 @@ from playwright.sync_api import (
     Browser,
     BrowserContext,
     Page,
+    Response,
     TimeoutError as PWTimeout,
     sync_playwright,
 )
@@ -113,6 +114,64 @@ def _collect_links(page: Page) -> set[VideoRef]:
         if ref is not None:
             refs.add(ref)
     return refs
+
+
+# Feed endpoints, one per page type. TikTok answers these with HTTP 200 and a
+# ZERO-LENGTH body when it withholds a feed, so every request looks healthy
+# while the page renders nothing at all. We watch for exactly that shape and
+# log it where it happens, so a zero-video scrape reports which side dropped
+# the data instead of sending the user off to re-export cookies.
+_FEED_API_MARKERS = (
+    "/api/challenge/item_list",   # hashtag page  (/tag/<slug>)
+    "/api/search/general",        # search page   (/search?q=...)
+    "/api/music/item_list",       # music page    (/music/...)
+)
+
+
+def _watch_feed_api(page: Page) -> None:
+    """Log feed endpoints that answer with no body, and say when we can't tell.
+
+    Reports only what it read off the response: the endpoint, the HTTP status,
+    the byte count, and which of the two measurements produced it. It draws no
+    conclusion about WHY the body is empty — cookies, rate limiting and a
+    server-side gate all look identical from here, and the caller knows the
+    page type while this handler does not.
+
+    Two measurements, because they cover different response framings:
+      - `Content-Length: 0` is a positive detection and costs no transfer.
+      - Chunked replies carry no length, so fall back to reading the body.
+    Chromium keeps no retrievable body for some zero-length and all redirect
+    responses, so `body()` raises there; that is logged at debug level rather
+    than swallowed, so a blind detector shows up under --verbose instead of
+    looking like a healthy feed.
+    """
+
+    def on_response(resp: Response) -> None:
+        marker = next((m for m in _FEED_API_MARKERS if m in resp.url), None)
+        if marker is None:
+            return
+
+        if resp.header_value("content-length") == "0":
+            size, how = 0, "Content-Length"
+        else:
+            try:
+                size, how = len(resp.body()), "body read"
+            except Exception as exc:  # noqa: BLE001 — record it, never swallow
+                log.debug(
+                    "feed %s: HTTP %d, body unreadable (%s) — cannot tell "
+                    "empty from full for this response",
+                    marker, resp.status, exc,
+                )
+                return
+
+        if size == 0:
+            log.warning(
+                "%s answered HTTP %d with a 0-byte body (measured via %s): "
+                "the response carried no items.",
+                marker, resp.status, how,
+            )
+
+    page.on("response", on_response)
 
 
 # JS helper: find the actual scrollable container (TikTok search uses an inner
@@ -286,12 +345,20 @@ def scrape_music_page(
             ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
+        _watch_feed_api(page)
         try:
             page.goto(music_url, wait_until="domcontentloaded", timeout=30_000)
             try:
                 page.wait_for_selector(_VIDEO_LINK_SELECTOR, timeout=15_000)
             except PWTimeout:
-                log.warning("no video links after 15s — try --headful or --cookies")
+                # Neutral wording on purpose: the 0-byte feed warning above
+                # (if any) already names the real cause; cookies/headful are
+                # only worth trying when the server DID send items.
+                log.warning(
+                    "no video links rendered after 15s — if a '0-byte body' "
+                    "warning appeared above, the server sent no items; "
+                    "otherwise try --headful or --cookies"
+                )
 
             refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
         finally:

@@ -12,6 +12,9 @@ _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
 _SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
+# Hashtag page: /tag/<slug>. Same slug charset as music (Unicode word chars,
+# hyphen, percent-encoding) but with no trailing numeric id to anchor on.
+_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/[\w\-%]+")
 _FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
 # Google Drive folder share link. Covers all three URL shapes the share UI
 # emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
@@ -71,7 +74,7 @@ class VideoRef:
 
 def parse_video_url(url: str) -> VideoRef | None:
     """Extract video_id from a TikTok video URL. Returns None if no match."""
-    m = _VIDEO_RE.search(url)
+    m = _VIDEO_RE.match(url.strip())
     if not m:
         return None
     return VideoRef(video_id=m.group(1), url=url)
@@ -79,27 +82,36 @@ def parse_video_url(url: str) -> VideoRef | None:
 
 def is_music_page(url: str) -> bool:
     """True if url is a TikTok music aggregation page."""
-    return bool(_MUSIC_RE.search(url))
+    return bool(_MUSIC_RE.match(url.strip()))
 
 
 def is_search_page(url: str) -> bool:
     """True if url is a TikTok search results page (`/search?q=...`)."""
-    return bool(_SEARCH_RE.search(url))
+    return bool(_SEARCH_RE.match(url.strip()))
+
+
+def is_tag_page(url: str) -> bool:
+    """True if url is a TikTok hashtag page (`/tag/<slug>`)."""
+    return bool(_TAG_RE.match(url.strip()))
 
 
 def is_tiktok_collection(url: str) -> bool:
-    """Any TikTok URL the scraper can enumerate — music page or search."""
-    return is_music_page(url) or is_search_page(url)
+    """Any TikTok URL the scraper can enumerate — music, search, or hashtag.
+
+    All three render the same `a[href*="/video/"]` cards inside a lazy-loading
+    scroller, so `scrape_music_page` handles them without page-type branching.
+    """
+    return is_music_page(url) or is_search_page(url) or is_tag_page(url)
 
 
 def is_gdrive_folder(url: str) -> bool:
     """True if url is a public Google Drive folder share link."""
-    return bool(_GDRIVE_FOLDER_RE.search(url))
+    return bool(_GDRIVE_FOLDER_RE.match(url.strip()))
 
 
 def is_fb_ads_library(url: str) -> bool:
     """True if url targets Facebook's Ads Library (any filter combination)."""
-    return bool(_FB_ADS_RE.search(url))
+    return bool(_FB_ADS_RE.match(url.strip()))
 
 
 def parse_fb_video_url(url: str) -> "VideoRef | None":
