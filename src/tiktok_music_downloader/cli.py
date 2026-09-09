@@ -9,8 +9,10 @@ import typer
 from tqdm import tqdm
 
 from tiktok_music_downloader.downloader import download_all
+from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.scraper import scrape_music_page
 from tiktok_music_downloader.utils import (
+    parse_tag_slug,
     is_profile_page,
     is_search_page,
     is_tag_page,
@@ -64,16 +66,23 @@ def main(
             err=True,
         )
 
-    refs = scrape_music_page(
-        music_url,
-        max_videos=max_videos,
-        headless=not headful,
-        scroll_pause=scroll_pause,
-        idle_rounds=idle_rounds,
-        cookies_path=str(cookies) if cookies else None,
-        proxy=proxy,
-        profile_dir=str(profile_dir) if profile_dir else None,
-    )
+    # A hashtag never reaches the browser: TikTok serves its feed as HTTP 200
+    # with an empty body, so scraping the page can only ever collect nothing
+    # (and shows the user a captcha on the way to that nothing).
+    tag = parse_tag_slug(music_url)
+    if tag is not None:
+        refs = enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy)
+    else:
+        refs = scrape_music_page(
+            music_url,
+            max_videos=max_videos,
+            headless=not headful,
+            scroll_pause=scroll_pause,
+            idle_rounds=idle_rounds,
+            cookies_path=str(cookies) if cookies else None,
+            proxy=proxy,
+            profile_dir=str(profile_dir) if profile_dir else None,
+        )
 
     if not refs:
         # Only this layer knows the page type, so the page-specific hint lives

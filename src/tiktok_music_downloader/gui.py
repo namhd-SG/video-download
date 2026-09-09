@@ -28,6 +28,7 @@ from tiktok_music_downloader.gui_style import (
     TEXT_DIM,
 )
 from tiktok_music_downloader.gdrive import download_folder as gdrive_download_folder
+from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.local_watermark import iter_mp4s, watermark_folder
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
@@ -47,6 +48,7 @@ def _pattern_key(combo_value: str) -> str:
     """Extract pattern key from a 'key — label' combobox value."""
     return (combo_value or "").split(" — ", 1)[0].strip() or "orbit"
 from tiktok_music_downloader.utils import (
+    parse_tag_slug,
     is_fb_ads_library,
     is_gdrive_folder,
     is_profile_page,
@@ -693,6 +695,14 @@ class App:
                 "Drive folder share link"
             )
             return
+        if is_tag_page(url):
+            self._append_log(
+                "ℹ Trang hashtag không mở browser và không cần Cookie. "
+                "TikTok trả feed hashtag rỗng, nên danh sách video được lấy "
+                "qua dịch vụ ngoài tikwm.com — chỉ TÊN hashtag và địa chỉ IP "
+                "của bạn đi ra ngoài, không có cookie hay dữ liệu nào khác. "
+                "Sau đó từng video tải thẳng từ TikTok."
+            )
         if (is_search_page(url) or is_profile_page(url)) and not self.cookies_var.get().strip():
             self._append_log(
                 "⚠ Trang search / @profile thường cần Cookies (phiên TikTok đã "
@@ -723,7 +733,14 @@ class App:
                      / "tiktok-music-downloader" / "playwright-profile")
                 profile_dir = str(p)
 
-            if is_fb_ads_library(url):
+            # Hashtags skip the browser entirely — see hashtag_enumerator.
+            tag = parse_tag_slug(url)
+            if tag is not None:
+                self.log_queue.put(("status", "Listing"))
+                refs = enumerate_hashtag(
+                    tag, max_videos=self.max_var.get(),
+                    proxy=self.proxy_var.get().strip() or None)
+            elif is_fb_ads_library(url):
                 # FB is more rate-aggressive than TikTok; default cap is lower
                 # and we do a single pass (no multi-visit — FB notices that).
                 refs = scrape_ads_library(
@@ -734,11 +751,11 @@ class App:
                     profile_dir=profile_dir,
                 )
             else:
-                # /music/, /tag/ and /search?q= all reuse scrape_music_page_multi
+                # /music/, /search?q= and /@profile reuse scrape_music_page_multi
                 # — the scraper is generic (any TikTok page with
-                # `a[href*=/video/]` cards). Search additionally tends to need
-                # cookies for results to render, which the user is warned about
-                # in _start().
+                # `a[href*=/video/]` cards). Hashtags never get here; they are
+                # handled above. Search additionally tends to need cookies for
+                # results to render, which the user is warned about in _start().
                 refs = scrape_music_page_multi(
                     url,
                     passes=self.passes_var.get(),

@@ -14,6 +14,7 @@ from tiktok_music_downloader.utils import (
     adaptive_backoff,
     is_music_page,
     is_profile_page,
+    parse_tag_slug,
     is_tag_page,
     is_tiktok_collection,
     parse_video_url,
@@ -206,3 +207,33 @@ def test_profile_page_is_a_tiktok_collection():
     assert not is_profile_page("https://www.tiktok.com/tag/ai80slook")
     assert not is_tag_page("https://www.tiktok.com/@tiktok")
     assert not is_music_page("https://www.tiktok.com/@tiktok")
+
+
+# --- parse_tag_slug: it decides WHICH hashtag gets enumerated --------------
+
+def test_parse_tag_slug_basic():
+    assert parse_tag_slug("https://www.tiktok.com/tag/anos80") == "anos80"
+    assert parse_tag_slug("https://tiktok.com/tag/fyp/") == "fyp"
+    assert parse_tag_slug("https://www.tiktok.com/tag/x?lang=en") == "x"
+    assert parse_tag_slug("  https://www.tiktok.com/tag/y  ") == "y"
+
+
+def test_parse_tag_slug_uppercase_host():
+    # `_TAG_RE` is re.I precisely for an autocapitalised paste; the slug reader
+    # must survive it too (it used to raise IndexError here).
+    assert parse_tag_slug("Https://WWW.TikTok.com/tag/anos80") == "anos80"
+    assert parse_tag_slug("HTTPS://WWW.TIKTOK.COM/tag/anos80") == "anos80"
+
+
+def test_parse_tag_slug_percent_encoded_and_unicode():
+    assert parse_tag_slug("https://www.tiktok.com/tag/%D8%A7%D9%84%D8%B5") == "%D8%A7%D9%84%D8%B5"
+    assert parse_tag_slug("https://www.tiktok.com/tag/nhạcbuồn") == "nhạcbuồn"
+
+
+def test_parse_tag_slug_rejects_non_tag_urls():
+    for u in ("https://www.tiktok.com/@u/video/123",
+              "https://www.tiktok.com/music/sound-1",
+              "https://example.com/tag/x",
+              "https://www.tiktok.com/tag/",
+              "https://evil.com/r?u=https://www.tiktok.com/tag/x"):
+        assert parse_tag_slug(u) is None, u

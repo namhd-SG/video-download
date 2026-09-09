@@ -17,7 +17,7 @@ _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)", r
 _SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?", re.I)
 # Hashtag page: /tag/<slug>. Same slug charset as music (Unicode word chars,
 # hyphen, percent-encoding) but with no trailing numeric id to anchor on.
-_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/[\w\-%]+", re.I)
+_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/([\w\-%]+)", re.I)
 # Profile page: /@handle with nothing after it. The trailing anchor keeps
 # /@handle/video/<id> out — that is one video, not a page to enumerate.
 # Ported from the MacBook lineage (macbook-legacy-main, dec9fdc), re-anchored
@@ -103,16 +103,31 @@ def is_tag_page(url: str) -> bool:
     return bool(_TAG_RE.match(url.strip()))
 
 
+def parse_tag_slug(url: str) -> str | None:
+    """Extract the hashtag name from a /tag/<slug> URL, or None.
+
+    Reads the slug out of the match group. Splitting on the literal
+    "tiktok.com/tag/" looked equivalent but is case-SENSITIVE, while the
+    pattern is `re.I` — so a hand-typed "Https://WWW.TikTok.com/tag/x" matched
+    the gate and then raised IndexError, which is exactly the paste `re.I` was
+    added to accept.
+    """
+    m = _TAG_RE.match(url.strip())
+    return m.group(1) if m else None
+
+
 def is_profile_page(url: str) -> bool:
     """True if url is a TikTok profile page (`/@handle`, nothing after it)."""
     return bool(_PROFILE_RE.match(url.strip()))
 
 
 def is_tiktok_collection(url: str) -> bool:
-    """Any TikTok URL the scraper can enumerate — music, search, tag, profile.
+    """Any TikTok URL this tool can enumerate — music, search, tag, profile.
 
-    All four render the same `a[href*="/video/"]` cards inside a lazy-loading
-    scroller, so `scrape_music_page` handles them without page-type branching.
+    Music, search and profile pages render the same `a[href*="/video/"]` cards
+    in a lazy-loading scroller, so `scrape_music_page` handles them without
+    page-type branching. A hashtag does NOT come from the browser at all — see
+    `hashtag_enumerator` for why TikTok makes that impossible.
     """
     return (is_music_page(url) or is_search_page(url)
             or is_tag_page(url) or is_profile_page(url))

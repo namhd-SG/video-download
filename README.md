@@ -53,22 +53,29 @@ in the repo, so nothing else to install.
 
 Anything else is rejected up front. Everything downloads to plain `.mp4`.
 
-> **Known issue — hashtag and search feeds, measured 2026-09-08.** TikTok answered
-> `/api/challenge/item_list/` (hashtag) and `/api/search/general/…` (search) with
-> HTTP 200 and a **zero-length body**, so those two pages came back with 0 videos.
-> Reproduced with a logged-in cookies file and with a visible browser; a `/music/`
-> page returned 30 items under the same conditions, from the same machine on the
-> same day. **Not tested:** a non-automated browser, a persistent profile
-> (`--profile-dir`), or a different IP — so "the server withheld it" is what was
-> observed, and setup factors beyond those three are not ruled out.
+> **Hashtag pages use an external index — and why.** TikTok answers its own
+> hashtag feed (`/api/challenge/item_list/`) and search feed
+> (`/api/search/general/…`) with HTTP 200 and a **zero-length body**. Measured
+> 2026-09-08 and 2026-09-09 across headless, headful, anonymous, a logged-in
+> cookies file, a persistent profile, two hashtags, two days and two machines,
+> while `/api/music/item_list/` returned 30 items under identical conditions.
+> yt-dlp hits the same wall from the other side: its `tiktok:tag` extractor is
+> flagged as broken, and supplying app-info arguments only gets an empty body
+> from the mobile endpoint instead. **Not tested:** a non-automated browser or
+> a different IP.
 >
-> The app prints an empty-feed warning when a watched endpoint **declares**
-> `Content-Length: 0`, and a separate warning when a body cannot be read at all.
-> Absence of a warning is not an all-clear: the watched-endpoint list is a
-> snapshot of one day's traffic. `--verbose` logs every `/api/` response so an
-> unlisted feed endpoint is visible. Music pages, Facebook Ads Library and Google
-> Drive were unaffected. If TikTok serves these feeds again, no change is needed
-> on our side for the app to pick them up.
+> So a hashtag URL never opens a browser. The video list comes from
+> **`tikwm.com`**, a third-party index: the **public hashtag name** and your IP
+> address reach it — no cookie, session or file ever does — and each video is
+> then downloaded straight from TikTok. `tikwm` is unofficial and may stop
+> working; it is isolated behind one function (`_provider_page` in
+> `hashtag_enumerator.py`) so it can be replaced without touching the rest.
+> A `--proxy` is honoured for the listing step too.
+>
+> **`/search?q=` still returns nothing** and has no such workaround yet; the
+> app prints an empty-feed warning when a watched endpoint declares
+> `Content-Length: 0`, and says when a listing came back incomplete rather
+> than reporting a short list as a finished one.
 
 ### Cookies — TikTok only
 
