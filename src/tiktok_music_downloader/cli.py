@@ -11,6 +11,7 @@ from tqdm import tqdm
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.scraper import scrape_music_page
 from tiktok_music_downloader.utils import (
+    is_profile_page,
     is_search_page,
     is_tag_page,
     is_tiktok_collection,
@@ -19,14 +20,14 @@ from tiktok_music_downloader.utils import (
 
 app = typer.Typer(
     add_completion=False,
-    help="Download all watermark-free MP4 videos from a TikTok music, hashtag, or search page.",
+    help="Download all watermark-free MP4 videos from a TikTok music, hashtag, search, or profile page.",
 )
 
 
 @app.command()
 def main(
     music_url: str = typer.Argument(
-        ..., help="TikTok page URL: /music/…, /tag/<hashtag>, or /search?q=…"
+        ..., help="TikTok page URL: /music/…, /tag/<hashtag>, /search?q=…, or /@profile"
     ),
     output: Path = typer.Option(Path("./downloads"), "--output", "-o", help="Output directory"),
     max_videos: int = typer.Option(200, "--max", "-n", min=1, max=2000, help="Max videos"),
@@ -46,11 +47,22 @@ def main(
 
     if not is_tiktok_collection(music_url):
         typer.secho(
-            "URL doesn't look like a TikTok /music/, /tag/, or /search page",
+            "URL doesn't look like a TikTok /music/, /tag/, /search, or "
+            "/@profile page",
             fg=typer.colors.RED,
             err=True,
         )
         raise typer.Exit(code=2)
+
+    # The GUI has warned about this since search support landed; the CLI never
+    # did, so a cookie-less search/profile run just ended in "no videos found".
+    if (is_search_page(music_url) or is_profile_page(music_url)) and not cookies:
+        typer.secho(
+            "Search and profile pages usually need --cookies (a logged-in "
+            "TikTok session); anonymous attempts often return 0 videos.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
 
     refs = scrape_music_page(
         music_url,

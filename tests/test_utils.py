@@ -13,6 +13,7 @@ from tiktok_music_downloader.utils import (
     VideoRef,
     adaptive_backoff,
     is_music_page,
+    is_profile_page,
     is_tag_page,
     is_tiktok_collection,
     parse_video_url,
@@ -174,3 +175,34 @@ def test_gate_still_accepts_valid_urls_after_anchoring():
     assert parse_video_url(
         "https://www.tiktok.com/@creator.name/video/7374515087526136619"
     ) is not None
+
+
+# --- profile pages (ported from macbook-legacy-main, dec9fdc) ---------------
+
+def test_is_profile_page():
+    assert is_profile_page("https://www.tiktok.com/@tiktok")
+    assert is_profile_page("https://tiktok.com/@some.user")
+    assert is_profile_page("https://www.tiktok.com/@user-name/")
+    assert is_profile_page("https://www.tiktok.com/@user?lang=en")
+    assert is_profile_page("https://www.tiktok.com/@user#tab")
+
+
+def test_profile_predicate_rejects_a_single_video_url():
+    # The costly confusion: /@user/video/<id> is ONE video, not a page to
+    # enumerate. Treating it as a profile would scrape the wrong thing.
+    assert not is_profile_page("https://www.tiktok.com/@user/video/7374515087526136619")
+    assert not is_profile_page("https://www.tiktok.com/@user/video/123?lang=en")
+
+
+def test_profile_predicate_rejects_smuggled_and_lookalike():
+    assert not is_profile_page("https://example.com/r?u=https://www.tiktok.com/@user")
+    assert not is_profile_page("https://evil.tiktok.com/@user")
+    assert not is_profile_page("https://www.tiktok.com/@")
+
+
+def test_profile_page_is_a_tiktok_collection():
+    assert is_tiktok_collection("https://www.tiktok.com/@tiktok")
+    # And the four page types stay distinct from one another.
+    assert not is_profile_page("https://www.tiktok.com/tag/ai80slook")
+    assert not is_tag_page("https://www.tiktok.com/@tiktok")
+    assert not is_music_page("https://www.tiktok.com/@tiktok")

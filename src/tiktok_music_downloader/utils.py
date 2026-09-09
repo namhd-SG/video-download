@@ -18,6 +18,11 @@ _SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?", re.I)
 # Hashtag page: /tag/<slug>. Same slug charset as music (Unicode word chars,
 # hyphen, percent-encoding) but with no trailing numeric id to anchor on.
 _TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/[\w\-%]+", re.I)
+# Profile page: /@handle with nothing after it. The trailing anchor keeps
+# /@handle/video/<id> out — that is one video, not a page to enumerate.
+# Ported from the MacBook lineage (macbook-legacy-main, dec9fdc), re-anchored
+# to this tree's .match() convention.
+_PROFILE_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/?(?:[?#]|$)", re.I)
 _FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?", re.I)
 # Google Drive folder share link. Covers all three URL shapes the share UI
 # emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
@@ -98,13 +103,19 @@ def is_tag_page(url: str) -> bool:
     return bool(_TAG_RE.match(url.strip()))
 
 
-def is_tiktok_collection(url: str) -> bool:
-    """Any TikTok URL the scraper can enumerate — music, search, or hashtag.
+def is_profile_page(url: str) -> bool:
+    """True if url is a TikTok profile page (`/@handle`, nothing after it)."""
+    return bool(_PROFILE_RE.match(url.strip()))
 
-    All three render the same `a[href*="/video/"]` cards inside a lazy-loading
+
+def is_tiktok_collection(url: str) -> bool:
+    """Any TikTok URL the scraper can enumerate — music, search, tag, profile.
+
+    All four render the same `a[href*="/video/"]` cards inside a lazy-loading
     scroller, so `scrape_music_page` handles them without page-type branching.
     """
-    return is_music_page(url) or is_search_page(url) or is_tag_page(url)
+    return (is_music_page(url) or is_search_page(url)
+            or is_tag_page(url) or is_profile_page(url))
 
 
 def is_gdrive_folder(url: str) -> bool:

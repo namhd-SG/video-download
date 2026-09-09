@@ -49,6 +49,7 @@ def _pattern_key(combo_value: str) -> str:
 from tiktok_music_downloader.utils import (
     is_fb_ads_library,
     is_gdrive_folder,
+    is_profile_page,
     is_search_page,
     is_tag_page,
     is_tiktok_collection,
@@ -204,7 +205,7 @@ class App:
         # Platform note — the tool only downloads from these sources, so users
         # know what to paste. Keep in sync with the URL validator in _start().
         ttk.Label(src, style="Hint.TLabel",
-                  text="Hỗ trợ tải từ:  TikTok (trang /music/ • /tag/ • /search)  •  "
+                  text="Hỗ trợ tải từ:  TikTok (/music/ • /tag/ • /search • /@profile)  •  "
                        "Facebook Ads Library (/ads/library)  •  "
                        "Google Drive (link folder chia sẻ)"
                   ).grid(row=1, column=1, sticky="w", pady=(4, 0))
@@ -507,8 +508,8 @@ class App:
         ("Tải video — 3 bước tối thiểu", "h2"),
         ("1) Dán link vào ô URL.  2) Chọn thư mục lưu ở Output.  3) Bấm START.", ""),
         ("Nguồn hỗ trợ (dán vào ô URL)", "h2"),
-        ("• TikTok — trang nhạc (…/music/…), trang hashtag (…/tag/…) hoặc trang "
-         "tìm kiếm (…/search?q=…).", ""),
+        ("• TikTok — trang nhạc (…/music/…), hashtag (…/tag/…), tìm kiếm "
+         "(…/search?q=…) hoặc trang cá nhân (…/@tên).", ""),
         ("• Facebook — trang Ads Library (…/ads/library?…).", ""),
         ("• Google Drive — link folder chia sẻ (tải mọi .mp4 trong folder đó).", ""),
         ("Link khác sẽ bị báo lỗi ngay khi bấm START.", ""),
@@ -687,14 +688,15 @@ class App:
         if not (is_tiktok_collection(url) or is_fb_ads_library(url)
                 or is_gdrive_folder(url)):
             self._append_log(
-                "ERROR: URL must be TikTok /music/, /tag/<hashtag>, /search?q=…, "
-                "Facebook /ads/library/, or a Google Drive folder share link"
+                "ERROR: URL must be TikTok /music/, /tag/<hashtag>, "
+                "/search?q=…, /@profile, Facebook /ads/library/, or a Google "
+                "Drive folder share link"
             )
             return
-        if is_search_page(url) and not self.cookies_var.get().strip():
+        if (is_search_page(url) or is_profile_page(url)) and not self.cookies_var.get().strip():
             self._append_log(
-                "⚠ Search page usually needs Cookies (logged-in TikTok session). "
-                "Anonymous attempts often return 0 videos."
+                "⚠ Trang search / @profile thường cần Cookies (phiên TikTok đã "
+                "đăng nhập). Không có cookie thì hay về 0 video."
             )
         self._attach_logger()
         self._reset_stats()
