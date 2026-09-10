@@ -35,7 +35,14 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
     """yt-dlp options for TikTok no-watermark MP4."""
     opts: dict = {
         # Prefer no-watermark h264 formats; fall back to best MP4 if extractor changes.
-        "format": "bv*[vcodec^=h264][protocol^=http]+ba/best[ext=mp4]/best",
+        # Every branch must carry a VIDEO stream. A TikTok photo/slideshow post
+        # offers exactly one format — `vcodec=none, acodec=mp3` — so an
+        # unconstrained `/best` tail accepts it and yt-dlp reports success for
+        # an .mp3 that is not a video at all. Measured 2026-09-10 on #trendanos80:
+        # 151 of 259 "downloads" came back as .mp3/.m4a that way. With
+        # `[vcodec!=none]` on every branch such a post fails loudly instead.
+        "format": ("bv*[vcodec^=h264][protocol^=http]+ba/"
+                   "best[ext=mp4][vcodec!=none]/best[vcodec!=none]"),
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
         "quiet": True,
