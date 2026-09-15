@@ -1,4 +1,4 @@
-# Bàn giao — video-download ra domain: 4 việc XONG, còn 3 phép đo cần người
+# Bàn giao — video-download ra domain: XONG, chỉ còn merge PR #192
 
 **Từ:** `macos-aa` · **Ngày:** 15/09/2026 11:05 · **Nhận từ:** `macos-cb`
 **Kế hoạch:** `plans/260914-1412-tool-len-mini-va-domain/`
@@ -13,7 +13,7 @@ Cả 4 việc trong bàn giao trước đã làm xong. Dịch vụ **đang sốn
 |---|---|---|
 | 1 | `web/auth.py` — kiểm JWT Access | XONG, đã deploy lên mini, đo trên máy thật |
 | 2 | hostname vào tunnel | XONG + DNS đã tạo |
-| 3 | nghiệm thu toàn hệ | **3/6 tiêu chí ĐO ĐƯỢC**, 3 tiêu chí còn lại cần người |
+| 3 | nghiệm thu toàn hệ | **6/6 tiêu chí phase-04 xanh** (3 do user đo) |
 | 4 | link vào nav meta-auto | XONG — PR #192 |
 
 Ngoài scope bàn giao nhưng đã làm vì `macos-cb` báo nguy cơ mất trắng: **toàn bộ công
@@ -39,8 +39,8 @@ promax.nobidigital.asia         → 302, >12 lượt tại 4 thời điểm, 0 l
 launchctl list | grep -c astronex → 5 trước và sau mỗi lần đụng launchctl
 
 # Test
-pytest tests/ -q  → 163 passed rc=0   (máy dev VÀ trên mini)
-đột biến          → 4/4 ĐỎ            (chi tiết mục 4)
+pytest tests/ -q  → 166 passed rc=0   (máy dev VÀ trên mini)
+đột biến          → 5/5 ĐỎ            (4 ở mục 4 + bỏ chmod quyền, mục 9)
 ```
 
 Commit: `27e7fb4 … e9032ac` (6 commit) trên `feat/tiktok-tag-page-support`,
@@ -108,14 +108,19 @@ Cách sửa `config.yml` của Promax — file production của người khác: 
 `config.yml.bak-260915` → sinh **bản nháp** → `ingress validate` trên **bản nháp** →
 kiểm `ingress rule` cho cả hostname mới **và** promax (đối chứng hàng xóm vẫn ra
 7860) → chỉ khi đó mới `mv` đè file sống. File sống không bao giờ ở trạng thái chưa
-kiểm. Không restart (cloudflared tự nạp lại), không `bootout`.
+kiểm. Không `bootout`.
+⚠ Nhưng **phải restart** — xem bẫy 1 mục 9: cloudflared KHÔNG tự nạp lại.
 
 ## 6. Tôi đã sai một chỗ
 
 **Probe auth bằng `POST /jobs` → tạo job thật id=3 trên dịch vụ đang chạy.** Đáng lẽ
-dùng `GET /jobs`. Hậu quả đo được: `done`, `tong=0 xong=0 loi=0`, không có link Drive,
-thư mục làm việc rỗng — URL music giả không ra ref nào, **0 tác động**, không đụng
-trần rủi ro TikTok. Nhưng đó là may, không phải thiết kế.
+dùng `GET /jobs`. Hậu quả đo được: `done`, `tong=0 xong=0 loi=0`, không có link Drive —
+URL music giả không ra ref nào, **0 tác động**, không đụng trần rủi ro TikTok. Nhưng
+đó là may, không phải thiết kế.
+⚠ Và **bằng chứng tôi đưa lúc đó SAI**: tôi soi `~/.local/share/videodl/downloads`
+(rỗng) trong khi production dùng `web/data/downloads` — xem bẫy 2 mục 9. Đo lại đúng
+chỗ: không có thư mục `3`, `find -type f` đếm **0** file sót. Kết luận không đổi,
+nhưng nó đúng do may.
 
 Và **probe đầu tiên của tôi về google-auth có lỗi**: `gjwt.encode` trả `bytes`, tôi
 `split(".")` bằng str nên "test chữ ký hỏng" ném `TypeError` — nó chưa hề thử chữ ký
