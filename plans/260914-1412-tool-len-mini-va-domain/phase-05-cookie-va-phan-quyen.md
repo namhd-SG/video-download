@@ -166,6 +166,34 @@ là **cả nhóm account cùng IP bị đánh dấu một lượt**.
 Cách làm: một câu `COUNT` trên `jobs` theo `tao_luc` + `nguoi_tao`, chặn ở `POST /jobs`
 cùng chỗ với `should_reject_new_job()`. ~10 dòng.
 
+### Bốn tham số — USER CHỐT 15/09 18:40, THI CÔNG XONG `e9e5b2d`
+
+Chốt 14/09 nói **có** trần nhưng không nói số, đơn vị, phạm vi hay cửa sổ; bốn ô trống đó
+đứng nguyên tới 15/09. Điền im lặng ô nào cũng là tự đặt ngưỡng hộ user, nên đã hỏi.
+
+| tham số | chốt | ghi chú |
+|---|---|---|
+| số | **20** | **KHÔNG có nhịp dùng thật đứng sau**: `jobs.db` máy dev đếm được **0** job lúc chọn. Đây là vạch xuất phát, xem lại khi mini có vài tuần dữ liệu |
+| phạm vi | **mỗi cookie** ("tạm thời 1 cookie trước") | không phải mỗi người, không phải cả máy |
+| cửa sổ | **ngày giờ VN**, reset nửa đêm | |
+| đơn vị | **job** | ⚠ chưa bó số VIDEO — xem dưới |
+
+**Vì sao khoá vào cookie chứ không phải `nguoi_tao` như câu 14/09 viết:** hôm nay
+`nguoi_tao` **luôn** là `"khach"` (`web/cookies.py`, client không gửi được trường này nữa
+từ khi nó bị gỡ làm véc-tơ path-traversal) ⇒ đếm theo người hay theo cookie **ra cùng một
+số**. Nhưng ngày phase-05 nối danh tính thật, bản đếm-theo-người sẽ **âm thầm đổi nghĩa**
+thành trần mỗi người, trong khi thứ TikTok khoá là cái nick sau cookie. Cùng con số, khác
+mệnh đề.
+
+**Mã trả về 429, không dùng lại 503.** 503 của `should_reject_new_job` nghĩa "máy đang
+kẹt, lát nữa thử lại"; trần ngày chỉ hết vào nửa đêm. Chung mã là chỉ sai cách chữa.
+
+**Job hỏng vẫn tính** — nó đã tiêu lượt gọi TikTok, thứ đang được chia khẩu phần.
+
+⚠ **Lỗ đã biết, CHƯA bịt:** trần đếm **job**, mà một job xin tới `MAX_SO_LUONG = 2000`
+video (`web/app.py:48`). 20 job × 2000 = 40 000 video/ngày vẫn lọt trần. Muốn bó lưu lượng
+thật thì phải trần trên `SUM(so_luong)`. Chưa chốt, chưa làm.
+
 Ba biện pháp khác đã cân, xếp theo hiệu quả/công:
 1. cap job/ngày — **làm trong MVP**
 2. dùng account phụ thay account chính — **0 dòng code**, hiệu quả nhất; user chọn

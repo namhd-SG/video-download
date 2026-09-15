@@ -52,12 +52,21 @@ vô hình với bộ đếm. Mỗi mục đã tick phải kèm bằng chứng; t
       không có `UPDATE`/`DELETE` nào trên bảng
 - [x] Lọc trùng khâu liệt kê, duyệt sâu cho đủ N cái MỚI — `5a7782e`;
       `test_music_page_results_are_deduped_too`, `test_repeated_sightings_of_the_same_pair_collapse`
-- [x] Trang thư viện + 6 hộp xổ lọc — `fa665b2`, `345374f`; `scripts/kiem-ui.sh`
+- [x] Trang thư viện + 6 hộp xổ lọc — `fa665b2`, `345374f`. ⚠ `scripts/kiem-ui.sh`
+      **không phải bằng chứng đã kiểm**: nó là bảng kiểm THỦ CÔNG in ra màn hình, không
+      assert gì. Đã chạy: kiểm 1 (tương phản axe + ca âm). Chưa có dấu vết chạy: kiểm 3
+      (Access hết hạn), 4 (>500 video), 5 (ảnh thiếu)
 - [x] Tách `app.css`/`app.js` khỏi `index.html` (1107→96 dòng) — `1d338ac`; khối CSS/JS
       byte-identical với bản gốc (sha256 khớp, ca âm +1 ký tự ⇒ khác), bản gốc và bản tách
-      dựng cạnh nhau cho fingerprint DOM trùng khít
+      dựng cạnh nhau cho fingerprint DOM trùng khít.
+      ⚠ **CODE XONG, CHƯA LÊN MINI** — phiên này không deploy; bản mini đo lúc 17:50 là
+      bản inline, commit này 18:25. Tick này chỉ được đọc là "xong" theo nghĩa code
+- [x] Trần job/ngày — `e9e5b2d`; 20 job/cookie/ngày giờ VN (user chốt 15/09 18:40, bốn
+      tham số ghi ở `phase-05`). Đột biến: gỡ lời gọi khỏi route ⇒ test mối nối ĐỎ; đổi
+      múi giờ VN→UTC ⇒ 2 test biên ĐỎ. 229 passed sau khi hoàn nguyên
 - [ ] Nút "Xoá" — **chặn**: user chưa trả lời 4 lần hỏi
-- [ ] Trần job/ngày — user chốt 14/09
+- [ ] Trần theo SỐ VIDEO (`SUM(so_luong)`) — trần job không bó được lưu lượng: 1 job xin
+      tới `MAX_SO_LUONG=2000` video. Chưa chốt
 - [ ] Backfill video cũ (thư viện khởi đầu rỗng + chống-trùng mù lịch sử)
 - [ ] Form "Thêm bộ tự tìm" đọc taxonomy sống — **chặn**: chưa chọn đường (a/b/c ở mục CHẶN)
 - [ ] Copy sang Shared Drive của Creative Desk
@@ -146,7 +155,9 @@ Khuyến nghị: **(b)** — ít mã hơn, không phải giữ token dài hạn,
 1. **Nút "Xoá" xoá gì** — hỏi **4 lần** chưa có đáp. Hai nghĩa: xoá *giỏ* (video còn
    nguyên) hay xoá *video trên Drive* (khó lui, cần xác nhận). Thư viện dùng chung ⇒ xoá
    Drive của một người là xoá của cả team. Chưa có đường xoá nào trong `models.py`.
-2. **Trần job/ngày** — user chốt 14/09, chưa thi công.
+2. **Trần theo số VIDEO** — trần job đã thi công (`e9e5b2d`) nhưng đếm *job*, mà một job
+   xin tới 2000 video ⇒ 20 job vẫn là 40 000 video/ngày. Bó lưu lượng thật cần trần trên
+   `SUM(so_luong)`. Chưa hỏi user.
 
 ### Ba mục từng nằm ở đây — ĐÃ XONG, kiểm lại ở HEAD 15/09 18:30
 
