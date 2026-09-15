@@ -116,6 +116,23 @@ def _connect(db_path: Path):
         conn.close()
 
 
+def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
+    """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
+
+    A bare `except sqlite3.OperationalError: pass` swallows "database is
+    locked" and "disk I/O error" alongside "duplicate column". That is the
+    dangerous shape: a migration that failed for a real reason passes
+    silently, then every later INSERT dies on `no such column` — and those
+    INSERTs are themselves inside a swallow (`_record_video_quietly`), so
+    the library would simply stop recording anything, without a sound.
+    """
+    try:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    except sqlite3.OperationalError as exc:
+        if "duplicate column" not in str(exc).lower():
+            raise
+
+
 def init_db(db_path: Path) -> None:
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
@@ -127,19 +144,13 @@ def init_db(db_path: Path) -> None:
         # already-created table needs them added. Same ad hoc migration the
         # jobs table uses above; duplicate-column means it is already done.
         for column, decl in (("music_id", "TEXT"), ("drive_file_id", "TEXT")):
-            try:
-                conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {decl}")
-            except sqlite3.OperationalError:
-                pass
+            _add_column_if_missing(conn, "videos", column, decl)
         # `CREATE TABLE IF NOT EXISTS` above does nothing for a `jobs.db`
         # that already existed before `drive_folder_link` was added — this
         # ad hoc migration is the only thing that backfills the column onto
         # a pre-existing table. sqlite3.OperationalError (duplicate column)
         # means it is already there; that is the expected steady state.
-        try:
-            conn.execute("ALTER TABLE jobs ADD COLUMN drive_folder_link TEXT")
-        except sqlite3.OperationalError:
-            pass
+        _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:

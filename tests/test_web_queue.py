@@ -395,7 +395,7 @@ def test_hashtag_urls_never_reach_the_scraper(monkeypatch):
 
     monkeypatch.setattr(queue_mod, "scrape_music_page", _boom)
     monkeypatch.setattr(queue_mod, "enumerate_hashtag",
-                         lambda tag, max_videos, proxy=None: [])
+                         lambda tag, max_videos, proxy=None, **kw: [])
     queue_mod._fetch_refs("https://www.tiktok.com/tag/anos80", max_videos=10,
                           cookies_path=None)
 
@@ -695,3 +695,126 @@ def test_provider_page_survives_wrongly_typed_metadata(monkeypatch):
     assert refs[0].duration is None
     assert refs[0].region is None
     assert refs[0].play_count is None
+
+
+# ---------------------------------------------------------------------------
+# Lọc trùng + ghi nguồn, ĐI QUA `_fetch_refs`. Các test model trực tiếp không
+# canh được lớp này: schema có thể đúng hoàn toàn mà không ai gọi tới nó, và
+# đó chính là trạng thái commit 47e3ee1 để lại — bảng dựng xong, 0 hàng.
+# ---------------------------------------------------------------------------
+
+def test_hashtag_listing_skips_videos_the_library_already_has(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ `already_have` khỏi lời gọi enumerate_hashtag ⇒ ĐỎ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="111", url="u")   # đã có
+
+    pages = [{"data": {"videos": [
+        {"video_id": "111", "author": {"unique_id": "a"}},
+        {"video_id": "222", "author": {"unique_id": "a"}},
+    ], "cursor": 0, "hasMore": False}}]
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "9")
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(pages[0]).encode())
+
+    refs = queue_mod._fetch_refs("https://www.tiktok.com/tag/anos80", max_videos=10,
+                                  cookies_path=None, db_path=db, job_id=2)
+
+    assert [r.video_id for r in refs] == ["222"], "video đã có phải bị loại"
+
+
+def test_a_skipped_duplicate_still_records_its_source(tmp_path, monkeypatch):
+    """Đây là lý do bảng sightings tồn tại: video bị bỏ qua KHÔNG bao giờ đi
+    vào đường tải, nên nếu không ghi ở đây thì hashtag thứ hai của nó biến
+    mất vĩnh viễn — và thẻ lọc theo nguồn thiếu đúng dữ liệu nó cần."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="111", url="u")
+
+    payload = {"data": {"videos": [{"video_id": "111", "author": {"unique_id": "a"}}],
+                         "cursor": 0, "hasMore": False}}
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "9")
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(payload).encode())
+
+    queue_mod._fetch_refs("https://www.tiktok.com/tag/80ssaudi", max_videos=10,
+                           cookies_path=None, db_path=db, job_id=2)
+
+    assert models.sources_for_videos(db, ["111"]) == {"111": ["#80ssaudi"]}
+
+
+def test_music_page_results_are_deduped_too(tmp_path, monkeypatch):
+    """Không chỉ hashtag: chạy lại một music page hôm nay sẽ upload BẢN THỨ
+    HAI lên Drive, trong khi `ON CONFLICT DO NOTHING` giữ hàng cũ — nên file
+    thứ hai tồn tại mà không gì trỏ tới."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="333", url="u")
+    monkeypatch.setattr(queue_mod, "scrape_music_page",
+                         lambda *a, **kw: [VideoRef(video_id="333", url="u1"),
+                                            VideoRef(video_id="444", url="u2")])
+
+    refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
+                                  cookies_path=None, db_path=db, job_id=2)
+
+    assert [r.video_id for r in refs] == ["444"]
+    assert models.sources_for_videos(db, ["333"]) == {
+        "333": ["https://www.tiktok.com/music/x-1"]}
+
+
+def test_listing_without_a_db_keeps_every_ref(tmp_path, monkeypatch):
+    """Ca âm: CLI và GUI gọi cùng đường này mà không có DB nào. Thiếu db_path
+    thì không được lọc mất gì — nếu không, ba test trên có thể xanh chỉ vì
+    hàm luôn trả rỗng."""
+    monkeypatch.setattr(queue_mod, "scrape_music_page",
+                         lambda *a, **kw: [VideoRef(video_id="555", url="u")])
+
+    refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
+                                  cookies_path=None)
+
+    assert [r.video_id for r in refs] == ["555"]
+
+
+def test_source_label_shape_is_fixed_before_the_first_row(tmp_path):
+    """Đổi hình dạng nhãn sau khi đã ghi hàng là migrate dữ liệu, không phải
+    sửa code — nên khoá nó bằng test ngay từ bây giờ."""
+    assert queue_mod.source_label("https://www.tiktok.com/tag/anos80") == "#anos80"
+    assert queue_mod.source_label("https://www.tiktok.com/music/x-1") == \
+        "https://www.tiktok.com/music/x-1"
+
+
+def test_owned_videos_do_not_stop_the_hashtag_walk_early(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: cho "đã có trong thư viện" nuôi bộ đếm stall ⇒ ĐỎ.
+
+    Một hashtag mà team đã tải hết trang đầu vẫn phải duyệt tiếp để tìm video
+    mới. Gộp hai khái niệm "mới với lượt này" và "mới với thư viện" làm nó
+    dừng sau 2 trang với 0 kết quả, trong khi index vẫn trả dữ liệu tốt.
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    for vid in ("1", "2", "3", "4"):
+        models.record_video(db, job_id=1, video_id=vid, url="u")
+
+    pages = [
+        {"data": {"videos": [{"video_id": "1", "author": {"unique_id": "a"}},
+                              {"video_id": "2", "author": {"unique_id": "a"}}],
+                   "cursor": 1, "hasMore": True}},
+        {"data": {"videos": [{"video_id": "3", "author": {"unique_id": "a"}},
+                              {"video_id": "4", "author": {"unique_id": "a"}}],
+                   "cursor": 2, "hasMore": True}},
+        {"data": {"videos": [{"video_id": "99", "author": {"unique_id": "a"}}],
+                   "cursor": 3, "hasMore": False}},
+    ]
+    calls = {"n": 0}
+
+    def _fake_fetch(*a, **kw):
+        i = min(calls["n"], len(pages) - 1)
+        calls["n"] += 1
+        return json.dumps(pages[i]).encode()
+
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "9")
+    monkeypatch.setattr(he, "_fetch", _fake_fetch)
+    monkeypatch.setattr(he.time, "sleep", lambda *_: None)
+
+    refs = queue_mod._fetch_refs("https://www.tiktok.com/tag/t", max_videos=5,
+                                  cookies_path=None, db_path=db, job_id=2)
+
+    assert [r.video_id for r in refs] == ["99"], "phải đi tới trang 3 mới thấy cái mới"

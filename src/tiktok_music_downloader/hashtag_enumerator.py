@@ -27,6 +27,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from typing import Callable
 
 from tiktok_music_downloader.utils import VideoRef
 
@@ -182,7 +183,9 @@ def _provider_page(challenge_id: str, cursor: int,
 
 
 def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
-                      proxy: str | None = None) -> list[VideoRef]:
+                      proxy: str | None = None,
+                       already_have: Callable[[list[str]], set[str]] | None = None,
+                       on_skip: Callable[[VideoRef], None] | None = None) -> list[VideoRef]:
     """Return up to max_videos unique VideoRefs for a hashtag.
 
     An empty list means the hashtag could not be enumerated, and a SHORT list
@@ -207,16 +210,36 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
         if not ok:
             truncated_because = "the index failed to answer"
             break
-        added = 0
+        # "Mới với LƯỢT NÀY" và "mới với THƯ VIỆN" là hai thứ khác nhau, và
+        # gộp chúng làm hỏng cả hai: một hashtag mà team đã tải hết trang đầu
+        # sẽ có `added == 0` liên tiếp và bị bộ đếm stall cắt sau 2 trang —
+        # trong khi index vẫn đang trả dữ liệu tốt và video mới nằm ở trang
+        # sau. Nên `fresh` (chưa thấy ở lượt này) nuôi bộ đếm stall, còn
+        # `added` (chưa có trong thư viện) mới đếm về `max_videos`.
+        fresh = []
         for ref in page_refs:
             if ref.video_id in seen:
                 continue
             seen.add(ref.video_id)
+            fresh.append(ref)
+
+        owned = already_have([r.video_id for r in fresh]) if already_have and fresh else set()
+        added = 0
+        for ref in fresh:
+            if ref.video_id in owned:
+                # Bỏ qua vì đã có — nhưng PHẢI báo ra ngoài: video này không
+                # bao giờ đi tiếp vào đường tải, nên đây là lúc DUY NHẤT
+                # nguồn lần này của nó còn quan sát được.
+                if on_skip is not None:
+                    on_skip(ref)
+                continue
             refs.append(ref)
             added += 1
             if len(refs) >= max_videos:
                 break
-        log.info("page %d: %d listed, %d new, %d total", page, len(page_refs), added, len(refs))
+        skipped_here = len(fresh) - added
+        log.info("page %d: %d listed, %d new to this run, %d already owned, %d total",
+                  page, len(page_refs), len(fresh), skipped_here, len(refs))
         if len(refs) >= max_videos:
             break
         if not has_more:
@@ -224,7 +247,7 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
             break
         # `has_more` has been observed true on a page that added nothing, so a
         # run of such pages is a stall, not progress towards the target.
-        stalled = stalled + 1 if added == 0 else 0
+        stalled = stalled + 1 if not fresh else 0
         if stalled >= _STALL_PAGES:
             truncated_because = (f"the index kept reporting more pages while adding "
                                  f"nothing for {stalled} pages")

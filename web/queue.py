@@ -121,9 +121,31 @@ def cookies_path_for_user(cookies_dir: Path, nguoi_tao: str) -> str | None:
     return str(candidate) if candidate.is_file() else None
 
 
+def source_label(url: str) -> str:
+    """How this job's source is named in `video_sightings`.
+
+    Fixed now, before the first row is written: changing the shape later is a
+    data migration, not an edit. `#tag` for a hashtag, the URL otherwise —
+    music, search and profile pages are already distinguished by their path.
+    """
+    tag = parse_tag_slug(url)
+    return f"#{tag}" if tag is not None else url
+
+
 def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
-                 proxy: str | None = None) -> list[VideoRef]:
+                 proxy: str | None = None, db_path: Path | None = None,
+                 job_id: int | None = None) -> list[VideoRef]:
     """Enumerate (hashtag) or scrape (music/search/profile) refs for one job.
+
+    Videos the library already owns are dropped here, before anything is
+    downloaded. That is the cheap place to do it: the expensive, rate-limited,
+    account-risking step is fetching the video itself, and skipping early also
+    means the hashtag is walked deeper until `max_videos` NEW ones are found
+    rather than returning a short list padded with things we already have.
+
+    Every skip is still written to `video_sightings`: a skipped video never
+    reaches the download path, so this is the only moment its source for this
+    run can be recorded, and the source filter reads exactly that table.
 
     `profile_dir` is HARDCODED to None on the scrape call below — never
     threaded in from any caller. `launch_persistent_context` (used only when
@@ -132,16 +154,50 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     job. See phase-02 constraint 6, and
     `test_web_queue.py::test_scraper_call_always_passes_profile_dir_none`.
     """
+    nguon = source_label(url)
+
+    def _already_have(ids: list[str]) -> set[str]:
+        if db_path is None:
+            return set()
+        return models.known_video_ids(db_path, ids)
+
+    def _note_skip(ref: VideoRef) -> None:
+        if db_path is None or job_id is None:
+            return
+        try:
+            models.record_sighting(db_path, video_id=ref.video_id, job_id=job_id,
+                                    nguon=nguon, da_tai=False)
+        except Exception as exc:  # noqa: BLE001 — a bookkeeping row must never kill a job
+            log.warning("job %s: không ghi được sighting cho %s (%s)",
+                        job_id, ref.video_id, type(exc).__name__)
+
     tag = parse_tag_slug(url)
     if tag is not None:
-        return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy)
-    return scrape_music_page(
+        # The hashtag path filters page by page, so "go deeper until N new"
+        # works; the scrapers below hand back one finished list, so they are
+        # filtered once at the end.
+        return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
+                                  already_have=_already_have, on_skip=_note_skip)
+
+    refs = scrape_music_page(
         url,
         max_videos=max_videos,
         cookies_path=cookies_path,
         proxy=proxy,
         profile_dir=None,
     )
+    # Every source, not just hashtags: re-running a music page today uploads a
+    # SECOND copy of the same video to Drive (Drive allows duplicate names),
+    # while `ON CONFLICT DO NOTHING` keeps the first row — so the second file
+    # exists with nothing pointing at it.
+    owned = _already_have([r.video_id for r in refs])
+    kept = []
+    for ref in refs:
+        if ref.video_id in owned:
+            _note_skip(ref)
+        else:
+            kept.append(ref)
+    return kept
 
 
 class _JobProgress:
@@ -156,13 +212,36 @@ class _JobProgress:
     """
 
     def __init__(self, db_path: Path, job_id: int, refs: list[VideoRef],
-                 output_dir: Path, lifecycle_hook: LifecycleHook):
+                 output_dir: Path, lifecycle_hook: LifecycleHook,
+                 nguon: str = ""):
         self._db_path = db_path
         self._job_id = job_id
+        # Carried in rather than looked up per video: `on_video_verified` only
+        # receives the job id, and re-reading the job row once per download to
+        # recover its URL would be a query per file for a value that cannot
+        # change during the run.
+        self._nguon = nguon
         self._refs = refs
         self._output_dir = output_dir
         self._lifecycle_hook = lifecycle_hook
         self._idx = 0
+
+    def _note_sighting(self, ref: VideoRef, *, da_tai: bool) -> None:
+        """Record that this job saw this video under its source.
+
+        Written only after the upload succeeded, so `da_tai=True` means the
+        same thing the `videos` row means: this file is on Drive. Its twin —
+        `da_tai=False` — is written in `_fetch_refs` for videos skipped as
+        already-owned, and together the two make the source filter complete.
+        """
+        if not self._nguon:
+            return
+        try:
+            models.record_sighting(self._db_path, video_id=ref.video_id,
+                                    job_id=self._job_id, nguon=self._nguon, da_tai=da_tai)
+        except Exception as exc:  # noqa: BLE001 — bookkeeping must not fail a job
+            log.warning("job %s: không ghi được sighting cho %s (%s)",
+                        self._job_id, ref.video_id, type(exc).__name__)
 
     def note(self, kind: str) -> None:
         ref = self._refs[self._idx]
@@ -182,6 +261,7 @@ class _JobProgress:
                                                db_path=self._db_path)
                 if result.ok:
                     models.increment_job_counts(self._db_path, self._job_id, xong_delta=1)
+                    self._note_sighting(ref, da_tai=True)
                 else:
                     log.warning(
                         "job %s: %s xác minh có luồng video nhưng lifecycle hook báo %s (%s)"
@@ -213,13 +293,15 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     job_id = job["id"]
     try:
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"])
-        refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path)
+        refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
+                            db_path=db_path, job_id=job_id)
         models.set_job_total(db_path, job_id, len(refs))
         if not refs:
             models.finish_job(db_path, job_id, "done")
             return
         output_dir = downloads_dir / str(job_id)
-        progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook)
+        progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
+                                 nguon=source_label(job["url"]))
         download_all(refs, output_dir, cookies_path=cookies_path, progress=progress)
         # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
         # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
