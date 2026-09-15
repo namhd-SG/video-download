@@ -1,7 +1,7 @@
 ---
 phase: 7
 title: "Thư viện creative + nối sang bộ tự tìm"
-status: pending
+status: in-progress
 priority: P1
 effort: "2-3d"
 dependencies: [2, 3, 5]
@@ -10,7 +10,10 @@ dependencies: [2, 3, 5]
 # Phase 7: Thư viện creative + nối sang bộ tự tìm
 
 Ghi lại các quyết định user chốt trong phiên 15/09, kèm phép đo đứng sau mỗi cái.
-Chưa thi công phần nào trong file này trừ lớp chụp ảnh (đã xong, commit `a326b1b`).
+
+⚠ Câu cũ ở đây — *"chưa thi công phần nào trừ lớp chụp ảnh"* — **đã sai từ chiều 15/09**:
+lớp thư viện, lọc trùng, ghi nguồn và UI đều xong sau đó. Xem mục **Việc** ngay dưới để
+biết cái gì xong, bằng chứng nào. Trạng thái cập nhật 15/09 18:35.
 
 ## Đã XONG trước file này
 
@@ -35,6 +38,35 @@ Lớp chụp ảnh + chỉ mục (`a326b1b`): bảng `videos`, ảnh cắt bằn
 | 11 | "Thêm bộ tự tìm" = **dựng lại hộp thoại trong Video Desk**, KHÔNG nhảy sang Creative Desk | user: "nhảy qua bên creative desk thì nhìn bị tù quá" |
 | 12 | Nhưng form phải **luôn đúng taxonomy** | ⇒ đọc sống từ API, cấm chép cứng danh sách |
 | 13 | "Tìm thêm giống cái này" **giữ**, nhưng là **đề xuất cho user duyệt** | agy quét video / đọc text, hashtag, link nhạc → đề xuất → user check. Không tự chạy |
+
+## Việc — bộ đếm đọc mục này
+
+Viết thành checkbox vì `ak plan status` **chỉ đếm checkbox**: phase này viết bằng bảng văn
+xuôi nên 6 phase kia góp 39 việc (5+6+7+6+9+6) còn phase-07 góp **0** ⇒ cả lớp thư viện
+vô hình với bộ đếm. Mỗi mục đã tick phải kèm bằng chứng; tick trơn thì bỏ tick.
+
+- [x] Lớp chụp ảnh + chỉ mục `videos`, `/videos`, `/thumbs/{id}` — `a326b1b`, đột biến 6/6 ĐỎ
+- [x] `music_id` + `drive_file_id` (từ `result.file_id`) — `47e3ee1`; đột biến
+      `file_id`→`drive_id` ⇒ test ĐỎ rc=1, hoàn nguyên cây sạch
+- [x] `video_sightings` append-only + `ON CONFLICT DO NOTHING` — `47e3ee1`, `5a7782e`;
+      không có `UPDATE`/`DELETE` nào trên bảng
+- [x] Lọc trùng khâu liệt kê, duyệt sâu cho đủ N cái MỚI — `5a7782e`;
+      `test_music_page_results_are_deduped_too`, `test_repeated_sightings_of_the_same_pair_collapse`
+- [x] Trang thư viện + 6 hộp xổ lọc — `fa665b2`, `345374f`; `scripts/kiem-ui.sh`
+- [x] Tách `app.css`/`app.js` khỏi `index.html` (1107→96 dòng) — `1d338ac`; khối CSS/JS
+      byte-identical với bản gốc (sha256 khớp, ca âm +1 ký tự ⇒ khác), bản gốc và bản tách
+      dựng cạnh nhau cho fingerprint DOM trùng khít
+- [ ] Nút "Xoá" — **chặn**: user chưa trả lời 4 lần hỏi
+- [ ] Trần job/ngày — user chốt 14/09
+- [ ] Backfill video cũ (thư viện khởi đầu rỗng + chống-trùng mù lịch sử)
+- [ ] Form "Thêm bộ tự tìm" đọc taxonomy sống — **chặn**: chưa chọn đường (a/b/c ở mục CHẶN)
+- [ ] Copy sang Shared Drive của Creative Desk
+- [ ] Phân tích nội dung tầng 3 theo lô đã chọn (chốt #9)
+- [ ] "Tìm thêm giống cái này" — đề xuất chờ user duyệt (chốt #13)
+
+⚠ Các mục *chưa* tick là việc phase này đã nêu nhưng chưa ai làm — để chúng vắng mặt thì
+bộ đếm sẽ báo phase xong sớm hơn sự thật. (Không ghi số đếm ở đây: đếm tay sẽ trôi khi
+thêm mục.)
 
 ## Ba tầng dữ liệu cho bộ lọc — đo được
 
@@ -111,22 +143,42 @@ Khuyến nghị: **(b)** — ít mã hơn, không phải giữ token dài hạn,
 
 ## Còn treo, chưa có đáp
 
-1. **Nút "Xoá" xoá gì** — hỏi 3 lần chưa có đáp. Giờ có hai nghĩa: xoá *giỏ* (video còn
-   nguyên) hay xoá *video trên Drive* (khó lui, cần xác nhận).
-2. **Bấm vào thẻ mở gì** — chỉ lưu link thư mục job, không lưu id từng video.
-   `upload_file` đã trả về id đó, đang vứt đi.
-3. **Một video ở hai hashtag** — `INSERT OR REPLACE` ghi đè, mất hashtag đầu. Thẻ lọc
-   "theo nguồn" (chốt #6) cần quan hệ nhiều-nhiều. Làm sau thì dữ liệu cũ đã mất.
-4. **`music_info.id`** — cần cho chốt #13 (tìm theo nhạc). Chưa lưu. Chờ thì mất vĩnh viễn.
-5. **Trần job/ngày** — user chốt 14/09, chưa thi công.
+1. **Nút "Xoá" xoá gì** — hỏi **4 lần** chưa có đáp. Hai nghĩa: xoá *giỏ* (video còn
+   nguyên) hay xoá *video trên Drive* (khó lui, cần xác nhận). Thư viện dùng chung ⇒ xoá
+   Drive của một người là xoá của cả team. Chưa có đường xoá nào trong `models.py`.
+2. **Trần job/ngày** — user chốt 14/09, chưa thi công.
+
+### Ba mục từng nằm ở đây — ĐÃ XONG, kiểm lại ở HEAD 15/09 18:30
+
+Ghi lại vì file này đứng "chưa làm" vài giờ sau khi chúng xong; người thứ ba đọc sẽ đi
+làm lại. Bằng chứng đo ở **HEAD hiện tại**, không phải "đã từng commit".
+
+- **Id từng video** — cột `drive_file_id` (`models.py:53-54`), ghi từ
+  `result.file_id` (`lifecycle.py:361`). ⚠ **`file_id` chứ không phải `drive_id`**: cái
+  sau là id Shared Drive, giống hệt nhau cho mọi file ⇒ mọi thẻ sẽ trỏ về cùng một chỗ.
+  Đột biến đổi `file_id`→`drive_id` ⇒ `test_drive_file_id_is_the_file_not_the_shared_drive`
+  **ĐỎ (rc=1)**; hoàn nguyên, `git status --porcelain` rỗng, 220 passed. (`47e3ee1`)
+- **Một video ở hai nguồn** — `INSERT OR REPLACE` đã thay bằng
+  `ON CONFLICT(video_id) DO NOTHING` (`models.py:280`) + bảng `video_sightings`
+  (`models.py:73`) append-only: `grep` không thấy `UPDATE`/`DELETE` nào trên bảng đó.
+  (`47e3ee1`, `5a7782e`)
+- **`music_info.id`** — cột `music_id` (`models.py:53`), có migration cho `jobs.db` cũ
+  (`models.py:149-152`). (`47e3ee1`)
 
 ## Ba thứ "chờ thì mất vĩnh viễn"
 
 Ghi riêng vì chúng khác mọi việc khác trong file này: hoãn không làm chúng rẻ đi.
 
 - ảnh thumbnail — **ĐÃ XONG** `a326b1b`
-- `music_info.id` — chưa
-- quan hệ video↔nguồn (nhiều-nhiều) — chưa
+- `music_info.id` — **ĐÃ XONG** `47e3ee1` (cột `music_id`, `models.py:53`)
+- quan hệ video↔nguồn (nhiều-nhiều) — **ĐÃ XONG** `47e3ee1`+`5a7782e` (`video_sightings`,
+  append-only, `models.py:73`)
+
+⇒ Cả ba đã chụp. Nhưng **video tải TRƯỚC 15/09 thì không có hàng nào**: `[CHƯA ĐO —
+số 1 074 lấy từ bàn giao 17:50, chưa ai đếm lại]` video cũ nằm trên Drive mà không có
+`videos`/`video_sightings`. Backfill dựng lại được (tên file là `<video_id>.mp4`, khớp
+1-1). `[SUY RA, chưa đo]` `music_id` của chúng thì không — nó chỉ có ở response index
+(tầng 2), mà index không trả lại danh sách đã tải.
 
 Index chỉ trả video *hiện tại* của một hashtag, không trả lại danh sách ta đã tải. Video
 tải xong mà chưa chụp ba thứ trên thì không có đường lấy lại.
