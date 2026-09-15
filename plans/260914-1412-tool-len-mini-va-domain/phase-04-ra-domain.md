@@ -90,15 +90,29 @@ Hostname đề xuất: `video.nobidigital.asia` (cùng zone với promax và met
 
 ## Success Criteria
 
-- [ ] **Không đăng nhập** → `curl -I https://video.nobidigital.asia` trả **302 về
+- [x] **Không đăng nhập** → `curl -I https://video.nobidigital.asia` trả **302 về
       trang đăng nhập Access**, KHÔNG phải 200 từ tool. Đây là tiêu chí quan trọng
       nhất của phase; thiếu nó là mở cửa cho cả internet
+      — ĐO 15/09 11:0x: **3/3 lượt 302**, `redirect_url` =
+      `https://nobidigital.cloudflareaccess.com/cdn-cgi/access/login/video.nobidigital.asia`.
+      Chuỗi redirect **gọi tên đích danh hostname** ⇒ đó là bằng chứng Access phủ
+      đúng subdomain này, không phải suy đoán từ việc AUD nằm trong env.
+      Đo trên **hai mạng**: từ mini, và từ máy dev qua `curl --resolve` (resolver
+      của máy dev còn cache NXDOMAIN cũ nên phải đi đường đó — `000` lúc đầu là
+      lỗi resolver, không phải lỗi dịch vụ).
 - [ ] Đăng nhập rồi → mở được tool, **3/3 lần**
-- [ ] `curl -I https://promax.nobidigital.asia` vẫn 302, **3/3 lần** — hàng xóm
+      — CHƯA ĐO: cần người đăng nhập bằng trình duyệt, không tự động được.
+- [x] `curl -I https://promax.nobidigital.asia` vẫn 302, **3/3 lần** — hàng xóm
       không bị đụng
+      — ĐO: 302 ở mọi lượt, tại 4 thời điểm (trước sửa config, sau sửa config,
+      sau `kickstart` videodl, sau khi tạo DNS). Tổng >12 lượt, 0 lượt khác 302.
 - [ ] Từ máy ngoài mạng LAN (dùng 4G) vẫn mở được sau đăng nhập — chứng minh đi qua
       tunnel thật, không phải nhờ cùng LAN
-- [ ] `launchctl list | grep astronex` trả **đúng bộ label như trước**, không thiếu
+      — CHƯA ĐO: cần người cầm máy 4G.
+- [x] `launchctl list | grep astronex` trả **đúng bộ label như trước**, không thiếu
+      — ĐO: 5 label (`promax`, `cloudflared`, `glances`, `promax-awake`, `videodl`)
+      trước và sau mỗi lần đụng launchctl. Chỉ `kickstart -k` đúng label
+      `com.astronex.videodl`; **không** `bootout` label nào.
 - [ ] Ép guard đĩa (Phase 03) xuống dưới ngưỡng → endpoint công khai **từ chối** job
       mới. Không có cửa nào từ internet đẩy đĩa máy người khác xuống 0
 

@@ -120,8 +120,16 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
       hình**: theo thiết kế cookie **không bao giờ** vào DB, nên grep luôn rỗng dù
       code có lẫn cookie hay không
 - [ ] **Đột biến:** bỏ tham số `nguoi_tao` khỏi job ⇒ test phải ĐỎ
-- [ ] **Đột biến:** gửi header `Cf-Access-Authenticated-User-Email` **giả**, không
+- [x] **Đột biến:** gửi header `Cf-Access-Authenticated-User-Email` **giả**, không
       kèm JWT hợp lệ ⇒ phải **401**. Bỏ bước kiểm JWT ⇒ test phải ĐỎ
+      — XONG 15/09, `web/auth.py`. Đo hai tầng:
+      (a) test `test_forged_email_header_without_jwt_is_401` + ca dương
+      `test_same_request_WITH_a_valid_jwt_passes` (cùng request, chỉ khác JWT);
+      (b) trên MINI sau khi deploy: header email giả → **401**, JWT rác → **401**,
+      không header → **401**, `healthz` vẫn **200**. Trước deploy cùng endpoint
+      trả **200** — đó là ca âm chứng minh phép đo có sức phân định.
+      Đột biến đã chạy, 4/4 ĐỎ: gỡ `Depends(require_user)` · `verify=False` ·
+      bỏ xử lý `aud` dạng list · bỏ tiền-kiểm "chưa cấu hình".
 - [ ] **Đột biến:** đưa file cookie hỏng/hết hạn ⇒ job phải **FAIL**, không được
       chạy anonymous. Bỏ tiền-kiểm ⇒ test phải ĐỎ
 - [ ] **Đột biến:** mọi lời gọi scraper từ lớp web phải có `profile_dir=None`;
