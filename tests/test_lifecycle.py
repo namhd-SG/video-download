@@ -686,8 +686,14 @@ def test_thumbnail_is_cut_from_a_real_video_by_the_bundled_ffmpeg(tmp_path):
 
 
 def test_same_video_seen_under_two_hashtags_stays_one_row(tmp_path):
-    """One file on Drive is one row. Two hashtags legitimately surface the
-    same video, and a second sighting must refresh, not duplicate or raise."""
+    """One file on Drive is one row, and the row keeps its FIRST sighting.
+
+    This test used to assert the opposite — that a second sighting refreshed
+    the row — because the first implementation used INSERT OR REPLACE. That
+    was the bug: REPLACE rewrote `job_id` and `tao_luc`, so the "who
+    downloaded it" and "when" filters silently reported the most recent
+    re-download. Later sightings belong in `video_sightings`, not here.
+    """
     db = tmp_path / "jobs.db"
     models.init_db(db)
     models.record_video(db, job_id=1, video_id="7006", url="u", region="MY")
@@ -695,6 +701,86 @@ def test_same_video_seen_under_two_hashtags_stays_one_row(tmp_path):
 
     rows = models.list_videos(db)
     assert len(rows) == 1
-    assert rows[0]["region"] == "SG"
-    assert rows[0]["job_id"] == 2
+    assert rows[0]["region"] == "MY", "lần đầu thắng, không phải lần sau"
+    assert rows[0]["job_id"] == 1
     assert models.count_videos(db) == 1
+
+
+# ---------------------------------------------------------------------------
+# First sighting wins (15/09). The first version used INSERT OR REPLACE, which
+# is DELETE+INSERT: meeting the same video under a second hashtag rewrote
+# `job_id` and `tao_luc`, and those two columns are precisely what the
+# "who downloaded it" and "when" filters read. The filters would have answered
+# with the most recent RE-download — a wrong answer shaped like a right one.
+# ---------------------------------------------------------------------------
+
+def test_second_sighting_does_not_rewrite_who_or_when(tmp_path):
+    """ĐỘT BIẾN: đổi lại thành INSERT OR REPLACE ⇒ test này ĐỎ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="9001", url="u", region="MY")
+    first = models.list_videos(db)[0]
+
+    models.record_video(db, job_id=2, video_id="9001", url="u", region="SG")
+    after = models.list_videos(db)[0]
+
+    assert after["job_id"] == 1, "job_id phải giữ lần ĐẦU — nó nuôi bộ lọc 'người tải'"
+    assert after["tao_luc"] == first["tao_luc"], "tao_luc phải giữ lần ĐẦU — bộ lọc 'ngày tải'"
+    assert models.count_videos(db) == 1
+
+
+def test_sightings_keep_every_source_including_skipped_ones(tmp_path):
+    """Thẻ lọc theo nguồn đọc bảng này, không đọc `videos.job_id`.
+
+    Ca `da_tai=False` là ca quan trọng: video bị bỏ qua vì trùng KHÔNG bao giờ
+    đi vào đường tải, nên đây là chỗ DUY NHẤT hashtag thứ hai được ghi lại.
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="9002", url="u")
+    models.record_sighting(db, video_id="9002", job_id=1, nguon="#80ssaudi", da_tai=True)
+    models.record_sighting(db, video_id="9002", job_id=2, nguon="#retro", da_tai=False)
+
+    sources = models.sources_for_videos(db, ["9002"])
+
+    assert sources["9002"] == ["#80ssaudi", "#retro"]
+
+
+def test_known_video_ids_only_reports_what_we_actually_have(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="9003", url="u")
+
+    assert models.known_video_ids(db, ["9003", "9004"]) == {"9003"}
+    # Ca âm: danh sách rỗng không được nổ, và không được trả nhầm cả bảng.
+    assert models.known_video_ids(db, []) == set()
+
+
+def test_music_id_and_drive_file_id_survive_the_round_trip(tmp_path):
+    """Cả hai đều là thứ 'chờ thì mất': music id chỉ có trong response index,
+    file id chỉ có trong kết quả upload."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="9005", url="u",
+                        music_id="7218", drive_file_id="1AbC")
+
+    row = models.list_videos(db)[0]
+    assert row["music_id"] == "7218"
+    assert row["drive_file_id"] == "1AbC"
+
+
+def test_drive_file_id_is_the_file_not_the_shared_drive(tmp_path):
+    """`UploadResult` mang CẢ `file_id` lẫn `drive_id`; `drive_id` giống hệt
+    nhau cho mọi file, nên nhầm hai cái là mọi thẻ trỏ về cùng một chỗ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "9006.mp4"
+    video.write_bytes(b"fake video bytes")
+    lifecycle.set_uploader(FakeUploader([_success()]))
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref("9006"), path=video, db_path=db)
+
+    row = models.list_videos(db)[0]
+    success = _success()
+    assert row["drive_file_id"] == success.file_id
+    assert row["drive_file_id"] != success.drive_id

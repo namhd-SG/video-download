@@ -88,6 +88,11 @@ class VideoRef:
     region: str | None = None
     duration: int | None = None
     play_count: int | None = None
+    # The sound this video uses. Kept because "more like this" starts from the
+    # sound more often than from the hashtag — a music page is one of the two
+    # sources that actually enumerate well here, and TikTok trends cluster by
+    # sound. Like the rest, it rides along free in the index response.
+    music_id: str | None = None
 
     @property
     def filename(self) -> str:

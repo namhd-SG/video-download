@@ -49,9 +49,40 @@ CREATE TABLE IF NOT EXISTS videos (
     region TEXT,
     duration INTEGER,
     play_count INTEGER,
+    music_id TEXT,
+    drive_file_id TEXT,
     tao_luc TEXT NOT NULL
 )
 """
+
+# Every time a video is SEEN under some source, including the times it is
+# skipped because we already have it. Append-only, and the reason it exists:
+#
+# `videos` answers "what do we have"; it holds first-seen `job_id` and
+# `tao_luc`, which is what the "who downloaded" and "when" filters must mean.
+# But one video legitimately appears under several hashtags, and the source
+# filter has to list all of them. Putting that on `videos` cost us one or the
+# other — the first version used INSERT OR REPLACE, which quietly rewrote
+# `job_id` and `tao_luc` to the LAST re-sighting, breaking both filters.
+#
+# Sightings also have to be written when a video is skipped as a duplicate:
+# a skipped video never reaches the download path at all, so that is the only
+# moment its second hashtag is ever observable.
+_SIGHTINGS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_sightings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id TEXT NOT NULL,
+    job_id INTEGER NOT NULL,
+    nguon TEXT NOT NULL,
+    da_tai INTEGER NOT NULL DEFAULT 0,
+    thay_luc TEXT NOT NULL
+)
+"""
+
+_SIGHTINGS_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_sightings_video ON video_sightings(video_id)",
+    "CREATE INDEX IF NOT EXISTS idx_sightings_nguon ON video_sightings(nguon)",
+)
 
 # One row per video that reached Drive — the index the library grid reads.
 # `video_id` is the PRIMARY KEY, not an autoincrement id: the same TikTok video
@@ -89,6 +120,17 @@ def init_db(db_path: Path) -> None:
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
+        conn.execute(_SIGHTINGS_SCHEMA)
+        for statement in _SIGHTINGS_INDEX:
+            conn.execute(statement)
+        # `videos` shipped before `music_id`/`drive_file_id` existed, so an
+        # already-created table needs them added. Same ad hoc migration the
+        # jobs table uses above; duplicate-column means it is already done.
+        for column, decl in (("music_id", "TEXT"), ("drive_file_id", "TEXT")):
+            try:
+                conn.execute(f"ALTER TABLE videos ADD COLUMN {column} {decl}")
+            except sqlite3.OperationalError:
+                pass
         # `CREATE TABLE IF NOT EXISTS` above does nothing for a `jobs.db`
         # that already existed before `drive_folder_link` was added — this
         # ad hoc migration is the only thing that backfills the column onto
@@ -196,22 +238,81 @@ def finish_job(db_path: Path, job_id: int, trang_thai: str) -> None:
 def record_video(db_path: Path, job_id: int, video_id: str, url: str,
                   title: str | None = None, author: str | None = None,
                   region: str | None = None, duration: int | None = None,
-                  play_count: int | None = None) -> None:
-    """Index one video that is now on Drive.
+                  play_count: int | None = None, music_id: str | None = None,
+                  drive_file_id: str | None = None) -> None:
+    """Index one video that is now on Drive. First sighting wins.
 
     Called only after the upload reported success, so a row here means "this
-    video is in the Shared Drive" and nothing weaker. `INSERT OR REPLACE`
-    because the same video can be reached through two different hashtags:
-    that is one file on Drive, so it is one row, and the second sighting
-    refreshes the metadata rather than raising.
+    video is in the Shared Drive" and nothing weaker.
+
+    `ON CONFLICT DO NOTHING`, NOT `INSERT OR REPLACE`. REPLACE is a DELETE
+    plus an INSERT, so meeting the same video under a second hashtag rewrote
+    `job_id` and `tao_luc` — and those two columns are exactly what the
+    "who downloaded it" and "when" filters read. The filters would have shown
+    the most recent RE-download instead of the original, which is a wrong
+    answer that looks like a right one. Later sightings go to
+    `video_sightings`, which is what that table is for.
     """
     with _connect(db_path) as conn:
         conn.execute(
-            "INSERT OR REPLACE INTO videos "
-            "(video_id, job_id, url, title, author, region, duration, play_count, tao_luc) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (video_id, job_id, url, title, author, region, duration, play_count, _now()),
+            "INSERT INTO videos "
+            "(video_id, job_id, url, title, author, region, duration, play_count, "
+            " music_id, drive_file_id, tao_luc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(video_id) DO NOTHING",
+            (video_id, job_id, url, title, author, region, duration, play_count,
+             music_id, drive_file_id, _now()),
         )
+
+
+def record_sighting(db_path: Path, video_id: str, job_id: int, nguon: str,
+                     da_tai: bool) -> None:
+    """Note that this job saw this video under `nguon`, downloaded or not.
+
+    `da_tai=False` is the duplicate case, and it is the whole point: a video
+    skipped as already-owned never reaches the download path, so this is the
+    only place its second hashtag is ever recorded.
+    """
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO video_sightings (video_id, job_id, nguon, da_tai, thay_luc) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (video_id, job_id, nguon, 1 if da_tai else 0, _now()),
+        )
+
+
+def sources_for_videos(db_path: Path, video_ids: list[str]) -> dict[str, list[str]]:
+    """`{video_id: [nguồn, …]}` — every source each video has been seen under."""
+    if not video_ids:
+        return {}
+    marks = ",".join("?" * len(video_ids))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT DISTINCT video_id, nguon FROM video_sightings "
+            f"WHERE video_id IN ({marks}) ORDER BY nguon",
+            video_ids,
+        ).fetchall()
+    out: dict[str, list[str]] = {}
+    for r in rows:
+        out.setdefault(r["video_id"], []).append(r["nguon"])
+    return out
+
+
+def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
+    """Which of these do we already have? Drives the duplicate skip.
+
+    Takes the candidate list rather than loading the whole table: the library
+    is meant to grow without bound, and a per-job SELECT of every row would
+    quietly become the slowest part of enumerating.
+    """
+    if not video_ids:
+        return set()
+    marks = ",".join("?" * len(video_ids))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT video_id FROM videos WHERE video_id IN ({marks})", video_ids
+        ).fetchall()
+    return {r["video_id"] for r in rows}
 
 
 def list_videos(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict]:

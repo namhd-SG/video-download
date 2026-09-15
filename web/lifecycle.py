@@ -305,7 +305,8 @@ def _cut_thumbnail_quietly(path: Path, db_path: Path, video_id: str) -> bool:
     return out.exists()
 
 
-def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef) -> bool:
+def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef,
+                           drive_file_id: str | None = None) -> bool:
     """Index the video for the library grid. Never raises, same reason as above.
 
     Losing this row costs the INDEX, not the data: the video is already on
@@ -317,6 +318,7 @@ def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef) -> bool:
             db_path, job_id=job_id, video_id=ref.video_id, url=ref.url,
             title=ref.title, author=ref.author, region=ref.region,
             duration=ref.duration, play_count=ref.play_count,
+            music_id=ref.music_id, drive_file_id=drive_file_id,
         )
         return True
     except Exception as exc:  # noqa: BLE001
@@ -353,7 +355,10 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
         # leave the mp4 behind with no row to find it by.
         if db_path is not None:
             _cut_thumbnail_quietly(path, db_path, ref.video_id)
-            _record_video_quietly(db_path, job_id, ref)
+            # `result.file_id` is this video's own Drive id — `result.drive_id`
+            # is the Shared Drive's, identical for every file, and mixing them
+            # up would make every card link to the same place.
+            _record_video_quietly(db_path, job_id, ref, drive_file_id=result.file_id)
 
         try:
             path.unlink()

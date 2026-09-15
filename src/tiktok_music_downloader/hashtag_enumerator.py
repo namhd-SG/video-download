@@ -168,6 +168,8 @@ def _provider_page(challenge_id: str, cursor: int,
                 region=_clean_str(item.get("region")),
                 duration=_clean_int(item.get("duration")),
                 play_count=_clean_int(item.get("play_count")),
+                music_id=_clean_str((item.get("music_info") or {}).get("id")
+                                     if isinstance(item.get("music_info"), dict) else None),
             ))
         next_cursor = int(data.get("cursor") or 0)
     except (AttributeError, TypeError, ValueError) as exc:
