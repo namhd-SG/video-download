@@ -94,6 +94,26 @@ def resolve_challenge_id(tag: str, proxy: str | None = None) -> str | None:
     return ids.pop()
 
 
+def _clean_str(value: object) -> str | None:
+    """A usable string, or None. Blank and non-string both mean "absent"."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
+
+
+def _clean_int(value: object) -> int | None:
+    """A non-negative int, or None.
+
+    `bool` is excluded explicitly: it is a subclass of int in Python, so a
+    stray `True` would otherwise be stored as a duration of 1 second.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = int(value)
+    return number if number >= 0 else None
+
+
 def _provider_page(challenge_id: str, cursor: int,
                    proxy: str | None = None) -> tuple[list[VideoRef], int, bool, bool]:
     """One page from the provider: (refs, next_cursor, has_more, ok).
@@ -137,7 +157,18 @@ def _provider_page(challenge_id: str, cursor: int,
                 continue    # without a handle the post URL cannot be built
             refs.append(VideoRef(
                 video_id=vid,
-                url=f"https://www.tiktok.com/@{handle}/video/{vid}"))
+                url=f"https://www.tiktok.com/@{handle}/video/{vid}",
+                # Catalogue metadata, already paid for: it rides along in the
+                # same response and used to be discarded. Read defensively —
+                # this index is unofficial, so a missing or oddly-typed field
+                # must degrade to None, never abort a page that is otherwise
+                # usable. Measured 2026-09-15: an item carries 31 fields.
+                title=_clean_str(item.get("title")),
+                author=handle,
+                region=_clean_str(item.get("region")),
+                duration=_clean_int(item.get("duration")),
+                play_count=_clean_int(item.get("play_count")),
+            ))
         next_cursor = int(data.get("cursor") or 0)
     except (AttributeError, TypeError, ValueError) as exc:
         # The index is unofficial; the day its shape changes must not surface

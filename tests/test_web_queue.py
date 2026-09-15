@@ -7,12 +7,16 @@ test — no shared state, no network, no real Chromium/yt-dlp calls.
 """
 from __future__ import annotations
 
+import json
+
 import hashlib
 import sqlite3
 import time
 from pathlib import Path
 
 import pytest
+
+from tiktok_music_downloader import hashtag_enumerator as he
 
 from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
 from tiktok_music_downloader.utils import VideoRef
@@ -602,3 +606,92 @@ def test_cookies_path_for_user_traversal_never_resolves_outside_cookies_dir(tmp_
         assert result is None or Path(result).parent == cookies_dir.resolve(), (
             f"nguoi_tao={payload!r} resolved outside cookies_dir: {result!r}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Catalogue metadata read off the hashtag index (15/09). The index response
+# carries 31 fields per item; this tool used to read two. Everything below is
+# free data that was being discarded, and the grid's market/duration filters
+# depend on it.
+# ---------------------------------------------------------------------------
+
+def test_clean_int_refuses_bool():
+    """`bool` is a subclass of `int` in Python, so an unguarded `isinstance`
+    would silently store `True` as a 1-second duration."""
+    assert he._clean_int(True) is None
+    assert he._clean_int(False) is None
+    # Ca dương: số thật vẫn qua, nếu không thì test trên vô nghĩa.
+    assert he._clean_int(14) == 14
+    assert he._clean_int(14.9) == 14
+
+
+@pytest.mark.parametrize("value", [None, "", "  ", 12, [], {}])
+def test_clean_str_treats_absent_and_blank_alike(value):
+    assert he._clean_str(value) is None
+
+
+def test_clean_int_refuses_negative_and_non_numbers():
+    assert he._clean_int(-1) is None
+    assert he._clean_int("14") is None
+    assert he._clean_int(None) is None
+
+
+def test_provider_page_carries_catalogue_metadata(monkeypatch):
+    """Đột biến: bỏ các trường metadata khỏi `_provider_page` ⇒ ĐỎ."""
+    payload = {
+        "data": {"videos": [{
+            "video_id": "7100",
+            "author": {"unique_id": "someone"},
+            "title": "  bản 80s  ",
+            "region": "MY",
+            "duration": 14,
+            "play_count": 1200000,
+        }], "cursor": 30, "hasMore": True},
+    }
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(payload).encode())
+
+    refs, cursor, has_more, ok = he._provider_page("123", 0)
+
+    assert ok and has_more and cursor == 30
+    assert len(refs) == 1
+    ref = refs[0]
+    assert ref.video_id == "7100"
+    assert ref.title == "bản 80s"        # đã trim
+    assert ref.author == "someone"
+    assert ref.region == "MY"
+    assert ref.duration == 14
+    assert ref.play_count == 1200000
+
+
+def test_provider_page_still_works_when_metadata_is_missing(monkeypatch):
+    """Ca âm + hồi quy: index là bên thứ ba không chính thức. Ngày nó bỏ một
+    trường thì trang vẫn phải dùng được, chỉ mất metadata."""
+    payload = {"data": {"videos": [{"video_id": "7101",
+                                     "author": {"unique_id": "someone"}}],
+                         "cursor": 0, "hasMore": False}}
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(payload).encode())
+
+    refs, _, _, ok = he._provider_page("123", 0)
+
+    assert ok and len(refs) == 1
+    assert refs[0].video_id == "7101"
+    assert refs[0].region is None and refs[0].duration is None
+
+
+def test_provider_page_survives_wrongly_typed_metadata(monkeypatch):
+    """A field that changes type must degrade to None, never abort a page that
+    is otherwise usable."""
+    payload = {"data": {"videos": [{"video_id": "7102",
+                                     "author": {"unique_id": "someone"},
+                                     "duration": "mười bốn",
+                                     "region": 99,
+                                     "play_count": True}],
+                         "cursor": 0, "hasMore": False}}
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(payload).encode())
+
+    refs, _, _, ok = he._provider_page("123", 0)
+
+    assert ok and len(refs) == 1
+    assert refs[0].duration is None
+    assert refs[0].region is None
+    assert refs[0].play_count is None

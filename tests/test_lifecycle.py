@@ -10,7 +10,9 @@ network call or real service-account key is ever needed.
 """
 from __future__ import annotations
 
+import sqlite3
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,7 @@ from tiktok_music_downloader.gdrive_upload import (
     _tighten_credential_permissions,
 )
 from tiktok_music_downloader.utils import VideoRef
+from tiktok_music_downloader.watermark import find_ffmpeg
 from web import lifecycle
 from web import models
 from web import queue as queue_mod
@@ -565,3 +568,133 @@ def test_get_credentials_is_loaded_once_and_cached_across_calls(tmp_path, monkey
 
     assert first is second
     assert len(load_calls) == 1, "credentials phải load MỘT LẦN rồi cache, không load lại mỗi call"
+
+
+# ---------------------------------------------------------------------------
+# Thumbnail + catalogue capture (15/09). The whole point of this block is the
+# window between "upload succeeded" and `path.unlink()`: it is the only moment
+# the file both exists and is known to be on Drive, and ANY escape from it
+# strands a multi-megabyte mp4 on a disk this tool does not own, with no DB row
+# left to find it by. agy caught that in review; these tests are what stop it
+# coming back.
+# ---------------------------------------------------------------------------
+
+def _ref(video_id: str = "7001", **kw) -> VideoRef:
+    return VideoRef(video_id=video_id, url=f"https://www.tiktok.com/@a/video/{video_id}", **kw)
+
+
+def test_local_file_is_deleted_even_when_recording_the_video_row_explodes(tmp_path):
+    """ĐỘT BIẾN: để `record_video` văng ra ngoài ⇒ test này ĐỎ.
+
+    Losing the row costs the INDEX (the video is on Drive, the store of
+    record, and the row can be rebuilt). Letting the exception escape costs
+    the DISK, and that cannot be rebuilt.
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "7001.mp4"
+    video.write_bytes(b"fake video bytes")
+    lifecycle.set_uploader(FakeUploader([_success()]))
+
+    def _boom(*a, **kw):
+        raise sqlite3.OperationalError("database is locked")
+
+    original = models.record_video
+    models.record_video = _boom
+    try:
+        lifecycle.on_video_verified(job_id=1, ref=_ref(), path=video, db_path=db)
+    finally:
+        models.record_video = original
+
+    assert not video.exists(), "DB lỗi KHÔNG được biến file mp4 thành rác mồ côi"
+
+
+def test_local_file_is_deleted_even_when_the_thumbnail_step_explodes(tmp_path, monkeypatch):
+    """Same window, the other new call."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "7002.mp4"
+    video.write_bytes(b"fake video bytes")
+    lifecycle.set_uploader(FakeUploader([_success()]))
+    monkeypatch.setattr(lifecycle, "find_ffmpeg",
+                        lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref("7002"), path=video, db_path=db)
+
+    assert not video.exists()
+
+
+def test_video_row_survives_a_thumbnail_that_could_not_be_cut(tmp_path, monkeypatch):
+    """A missing picture must not cost the catalogue entry: the video IS on
+    Drive, and the grid can show a placeholder."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "7003.mp4"
+    video.write_bytes(b"not really a video")
+    lifecycle.set_uploader(FakeUploader([_success()]))
+    monkeypatch.setattr(lifecycle, "find_ffmpeg", lambda: None)
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref("7003", region="VN"), path=video, db_path=db)
+
+    rows = models.list_videos(db)
+    assert [r["video_id"] for r in rows] == ["7003"]
+    assert rows[0]["region"] == "VN"
+    assert not lifecycle.thumb_path_for(db, "7003").exists()
+
+
+def test_a_failed_upload_records_nothing(tmp_path):
+    """Ca âm cho ba test trên: hàng `videos` khẳng định "video này ở trên
+    Drive". Upload trượt thì không được có hàng nào, nếu không cả bảng thành
+    lời nói dối."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "7004.mp4"
+    video.write_bytes(b"fake video bytes")
+    lifecycle.set_uploader(FakeUploader([_failed()]))
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref("7004"), path=video, db_path=db)
+
+    assert models.list_videos(db) == []
+    assert video.exists()
+
+
+def test_thumbnail_is_cut_from_a_real_video_by_the_bundled_ffmpeg(tmp_path):
+    """Đường thật, không giả: dựng một mp4 bằng chính ffmpeg đi kèm repo, rồi
+    bắt lifecycle cắt ảnh từ nó. Bỏ bước cắt ảnh ⇒ test ĐỎ."""
+    ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        pytest.skip("repo's bundled ffmpeg not available here")
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "7005.mp4"
+    made = subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi",
+         "-i", "testsrc=duration=3:size=320x568:rate=10", str(video)],
+        capture_output=True, timeout=60)
+    assert made.returncode == 0, made.stderr[:200]
+    lifecycle.set_uploader(FakeUploader([_success()]))
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref("7005"), path=video, db_path=db)
+
+    thumb = lifecycle.thumb_path_for(db, "7005")
+    assert thumb.is_file(), "phải có ảnh sau khi cắt từ video thật"
+    assert thumb.stat().st_size > 0
+    # Không tin đuôi file: đọc lại bằng chính ffmpeg xem có phải ảnh thật không.
+    probe = subprocess.run([ffmpeg, "-i", str(thumb)], capture_output=True,
+                           text=True, timeout=30)
+    assert "Video: webp" in probe.stderr, probe.stderr[:300]
+
+
+def test_same_video_seen_under_two_hashtags_stays_one_row(tmp_path):
+    """One file on Drive is one row. Two hashtags legitimately surface the
+    same video, and a second sighting must refresh, not duplicate or raise."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="7006", url="u", region="MY")
+    models.record_video(db, job_id=2, video_id="7006", url="u", region="SG")
+
+    rows = models.list_videos(db)
+    assert len(rows) == 1
+    assert rows[0]["region"] == "SG"
+    assert rows[0]["job_id"] == 2
+    assert models.count_videos(db) == 1

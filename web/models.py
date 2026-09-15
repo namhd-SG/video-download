@@ -39,6 +39,31 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 
+_VIDEOS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS videos (
+    video_id TEXT PRIMARY KEY,
+    job_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    title TEXT,
+    author TEXT,
+    region TEXT,
+    duration INTEGER,
+    play_count INTEGER,
+    tao_luc TEXT NOT NULL
+)
+"""
+
+# One row per video that reached Drive — the index the library grid reads.
+# `video_id` is the PRIMARY KEY, not an autoincrement id: the same TikTok video
+# legitimately shows up under two hashtags, and it is one video on Drive, so it
+# must be one row. That also makes re-running a job idempotent here.
+#
+# Deliberately NO `thumb_path` column. The thumbnail lives at a path derived
+# from `video_id`, so its presence on disk IS the fact; a column would be a
+# second copy of that fact, written in a separate step, and a crash between
+# the two would leave an orphan file no DB-driven sweep could ever find.
+
+
 def _now() -> str:
     """ISO-8601 UTC with microseconds — sorts correctly as plain TEXT, and is
     fine-grained enough to order two jobs claimed a few ms apart."""
@@ -63,6 +88,7 @@ def _connect(db_path: Path):
 def init_db(db_path: Path) -> None:
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
+        conn.execute(_VIDEOS_SCHEMA)
         # `CREATE TABLE IF NOT EXISTS` above does nothing for a `jobs.db`
         # that already existed before `drive_folder_link` was added — this
         # ad hoc migration is the only thing that backfills the column onto
@@ -165,6 +191,43 @@ def finish_job(db_path: Path, job_id: int, trang_thai: str) -> None:
             "UPDATE jobs SET trang_thai = ?, xong_luc = ? WHERE id = ?",
             (trang_thai, _now(), job_id),
         )
+
+
+def record_video(db_path: Path, job_id: int, video_id: str, url: str,
+                  title: str | None = None, author: str | None = None,
+                  region: str | None = None, duration: int | None = None,
+                  play_count: int | None = None) -> None:
+    """Index one video that is now on Drive.
+
+    Called only after the upload reported success, so a row here means "this
+    video is in the Shared Drive" and nothing weaker. `INSERT OR REPLACE`
+    because the same video can be reached through two different hashtags:
+    that is one file on Drive, so it is one row, and the second sighting
+    refreshes the metadata rather than raising.
+    """
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO videos "
+            "(video_id, job_id, url, title, author, region, duration, play_count, tao_luc) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (video_id, job_id, url, title, author, region, duration, play_count, _now()),
+        )
+
+
+def list_videos(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict]:
+    """Newest first. Paged because the grid renders every row it is handed."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT * FROM videos ORDER BY tao_luc DESC, video_id DESC "
+            "LIMIT ? OFFSET ?",
+            (limit, offset),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def count_videos(db_path: Path) -> int:
+    with _connect(db_path) as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
 
 
 def mark_running_as_interrupted(db_path: Path) -> int:

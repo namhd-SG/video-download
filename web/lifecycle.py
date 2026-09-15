@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ from typing import Protocol
 
 from tiktok_music_downloader.gdrive_upload import DriveUploader, UploadOutcome, UploadResult
 from tiktok_music_downloader.utils import VideoRef
+from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
 
 log = logging.getLogger("videodl.web.lifecycle")
@@ -224,6 +226,105 @@ def should_reject_new_job(*, downloads_dir: Path | None = None,
     return None
 
 
+# Grid thumbnail: one frame, one second in, 200px wide. Measured 2026-09-15 on
+# a real download — 0.08s and 2 KB of webp, against 26 KB and a network round
+# trip for the index's own cover image, which additionally expires in 24 hours
+# (`x-expires`) and only exists for the hashtag source. Cutting locally covers
+# every source and never expires.
+THUMB_WIDTH = 200
+THUMB_SEEK_SECONDS = 1
+# Same ceiling as `verify_video_stream`'s probe: ffmpeg must never be able to
+# wedge the single worker thread, and this call runs on every video.
+THUMB_TIMEOUT_SECONDS = 20.0
+
+
+def thumbs_dir_for(db_path: Path) -> Path:
+    """`web/data/thumbs/`, derived from where the DB lives so the two always
+    travel together."""
+    return db_path.parent / "thumbs"
+
+
+def thumb_path_for(db_path: Path, video_id: str) -> Path:
+    """The thumbnail's address is computed, never stored.
+
+    There is no `thumb_path` column on purpose: the file being on disk IS the
+    fact. A column would be a second copy of that fact written in a separate
+    step, and a crash in between would strand a file that no DB-driven sweep
+    could ever find.
+    """
+    return thumbs_dir_for(db_path) / f"{video_id}.webp"
+
+
+def _cut_thumbnail_quietly(path: Path, db_path: Path, video_id: str) -> bool:
+    """Cut one frame out of the downloaded video. Never raises.
+
+    "Never raises" is load-bearing, not politeness: the caller runs
+    `path.unlink()` after this, and an exception escaping here would strand a
+    multi-megabyte mp4 on a disk this tool does not own, with no DB row to
+    find it by.
+
+    Swallowing is acceptable here — and NOT the silent-default failure this
+    repo has been bitten by — because the only consequence is a card without a
+    picture, which is visible in the grid itself. Contrast `downloader.py`'s
+    swallowed cookie error, which left no trace anywhere.
+    """
+    try:
+        ffmpeg_bin = find_ffmpeg()
+        if not ffmpeg_bin:
+            log.warning("thumbnail %s: không tìm thấy ffmpeg — bỏ qua", video_id)
+            return False
+        out = thumb_path_for(db_path, video_id)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        result = subprocess.run(
+            [ffmpeg_bin, "-y", "-loglevel", "error",
+             "-ss", str(THUMB_SEEK_SECONDS), "-i", str(path),
+             "-frames:v", "1", "-vf", f"scale={THUMB_WIDTH}:-2", str(out)],
+            capture_output=True, text=True, timeout=THUMB_TIMEOUT_SECONDS,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        # Could not run the tool at all: disk full, no write permission, binary
+        # killed. Says nothing about the video itself.
+        log.warning("thumbnail %s: ffmpeg không chạy được (%s) — lỗi môi trường",
+                    video_id, type(exc).__name__)
+        return False
+    except Exception as exc:  # noqa: BLE001 — see docstring; unlink must be reached
+        # EVERYTHING is inside the try, including `find_ffmpeg()` and the
+        # mkdir: the "never raises" contract has to hold by construction, not
+        # by each call happening to sit in the right place. A test that made
+        # `find_ffmpeg` throw caught exactly that gap.
+        log.warning("thumbnail %s: lỗi ngoài dự kiến (%s)", video_id, type(exc).__name__)
+        return False
+    if result.returncode != 0:
+        # ffmpeg ran and refused. `verify_video_stream` only read this file's
+        # header, never decoded it, so the payload may genuinely be damaged —
+        # but a non-zero code can equally mean low memory or an argument this
+        # build dislikes, so this reports the symptom and does not name a cause.
+        log.warning("thumbnail %s: ffmpeg rc=%s — chưa kết luận nguyên nhân",
+                    video_id, result.returncode)
+        return False
+    return out.exists()
+
+
+def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef) -> bool:
+    """Index the video for the library grid. Never raises, same reason as above.
+
+    Losing this row costs the INDEX, not the data: the video is already on
+    Drive, which is the store of record, so a row can be rebuilt. Letting a DB
+    error escape would instead cost the local disk, which cannot.
+    """
+    try:
+        models.record_video(
+            db_path, job_id=job_id, video_id=ref.video_id, url=ref.url,
+            title=ref.title, author=ref.author, region=ref.region,
+            duration=ref.duration, play_count=ref.play_count,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log.error("job %s: không ghi được hàng videos cho %s (%s) — video VẪN ở "
+                  "trên Drive, chỉ mất chỉ mục", job_id, ref.video_id, type(exc).__name__)
+        return False
+
+
 def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
                        db_path: Path | None = None) -> UploadResult:
     """`web/queue.py`'s `LifecycleHook` implementation.
@@ -246,6 +347,14 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
     _note_upload_outcome(result)
 
     if result.ok:
+        # Both calls below swallow their own failures by contract. Nothing may
+        # raise between here and `path.unlink()`: this is the only window where
+        # the file both exists and is known to be on Drive, and an escape would
+        # leave the mp4 behind with no row to find it by.
+        if db_path is not None:
+            _cut_thumbnail_quietly(path, db_path, ref.video_id)
+            _record_video_quietly(db_path, job_id, ref)
+
         try:
             path.unlink()
         except OSError as exc:

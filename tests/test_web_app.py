@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import os
 import stat
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
 from web import app as app_mod
+from web import lifecycle
 from web import models
 from web.auth import require_user
 
@@ -202,3 +204,101 @@ def test_prepare_data_dir_survives_a_missing_db(tmp_path):
     app_mod.prepare_data_dir(data, data / "downloads", data / "cookies",
                               data / "jobs.db")
     assert not (data / "jobs.db").exists()
+
+
+# ---------------------------------------------------------------------------
+# Library grid endpoints (15/09)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("bad_id", [
+    "../../../etc/passwd", "..", "abc", "7001.webp", "7001/../x", "", "7001 ",
+])
+def test_thumb_endpoint_refuses_anything_that_is_not_digits(bad_id, tmp_path, monkeypatch):
+    """`video_id` reaches the filesystem, so it is constrained by SHAPE: a
+    digits-only string cannot contain "/", ".." or NUL. Structural, not a
+    blocklist — same reasoning as the sha256 cookie filename."""
+    monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.get_thumb(bad_id, nguoi_tao=TEST_USER)
+    assert exc_info.value.status_code == 404
+
+
+def test_thumb_endpoint_serves_a_digits_id_that_exists(tmp_path, monkeypatch):
+    """Ca dương cho test trên: chứng minh 404 ở đó đến từ HÌNH DẠNG id, không
+    phải vì endpoint này chẳng bao giờ trả được file nào."""
+    db = tmp_path / "jobs.db"
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    thumb = lifecycle.thumb_path_for(db, "7001")
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    thumb.write_bytes(b"RIFF....WEBP")
+
+    response = app_mod.get_thumb("7001", nguoi_tao=TEST_USER)
+
+    assert Path(response.path) == thumb
+    assert response.media_type == "image/webp"
+
+
+def test_thumb_endpoint_404s_when_the_picture_was_never_cut(tmp_path, monkeypatch):
+    """Absent is ordinary: ffmpeg may have failed for this one video, or it
+    predates capture. Must be a clean 404, not a crash."""
+    monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.get_thumb("7001", nguoi_tao=TEST_USER)
+    assert exc_info.value.status_code == 404
+
+
+def test_videos_endpoint_returns_the_whole_team_catalogue(tmp_path, monkeypatch):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    models.record_video(db, job_id=1, video_id="1", url="u1", region="MY")
+    models.record_video(db, job_id=2, video_id="2", url="u2", region="BR")
+
+    out = app_mod.list_videos(nguoi_tao=TEST_USER)
+
+    assert out["tong"] == 2
+    assert {v["video_id"] for v in out["videos"]} == {"1", "2"}
+
+
+@pytest.mark.parametrize("limit,offset", [(0, 0), (-1, 0), (1001, 0), (10, -1)])
+def test_videos_endpoint_rejects_out_of_range_paging(limit, offset, tmp_path, monkeypatch):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.list_videos(limit=limit, offset=offset, nguoi_tao=TEST_USER)
+    assert exc_info.value.status_code == 400
+
+
+@pytest.mark.parametrize("path,method", [("/videos", "GET"), ("/thumbs/{video_id}", "GET")])
+def test_library_routes_require_a_verified_user(path, method):
+    """Same mutation guard as the job routes: the catalogue names who
+    downloaded what, and the thumbnails are the team's material."""
+    routes = [r for r in app_mod.app.routes
+              if getattr(r, "path", None) == path and method in getattr(r, "methods", set())]
+    assert routes, f"không tìm thấy route {method} {path}"
+    assert require_user in _dependency_calls(routes[0])
+
+
+def test_thumb_endpoint_will_not_serve_a_file_outside_the_thumbs_dir(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ `video_id.isdigit()` ⇒ test này ĐỎ.
+
+    The parametrised shape test above CANNOT catch that on its own: with the
+    guard gone, a traversal path still points at nothing, so it 404s either
+    way — green for the wrong reason. This test plants a real file exactly
+    where `../` would land, so the two cases finally differ: guarded → 404,
+    unguarded → the file is served.
+    """
+    db = tmp_path / "data" / "jobs.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    lifecycle.thumbs_dir_for(db).mkdir(parents=True, exist_ok=True)
+
+    # thumbs/../khong-phai-cua-ban.webp  →  data/khong-phai-cua-ban.webp
+    planted = db.parent / "khong-phai-cua-ban.webp"
+    planted.write_bytes("nội dung KHÔNG được phục vụ".encode())
+    assert planted.is_file()  # ca dương: file có thật, nên nếu lọt là lọt thật
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.get_thumb("../khong-phai-cua-ban", nguoi_tao=TEST_USER)
+    assert exc_info.value.status_code == 404

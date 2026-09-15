@@ -70,10 +70,24 @@ def setup_logger(verbose: bool = False) -> logging.Logger:
 
 @dataclass(frozen=True)
 class VideoRef:
-    """Stable reference to one TikTok video."""
+    """Stable reference to one TikTok video.
+
+    Everything after `url` is optional catalogue metadata: the hashtag index
+    hands it to us for free (its response carries 31 fields; this tool used to
+    read two), while the Playwright scrapers and the Facebook Ads path have no
+    equivalent and leave it None. Nothing in the download path reads these —
+    they exist so the library grid can filter by market and show duration
+    without a second round trip, and a source that cannot supply them still
+    works exactly as before.
+    """
 
     video_id: str
     url: str
+    title: str | None = None
+    author: str | None = None
+    region: str | None = None
+    duration: int | None = None
+    play_count: int | None = None
 
     @property
     def filename(self) -> str:

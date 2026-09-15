@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
@@ -22,7 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web.auth import require_user
-from web.lifecycle import should_reject_new_job
+from web.lifecycle import should_reject_new_job, thumb_path_for, thumbs_dir_for
 from web.queue import JobWorker
 
 log = logging.getLogger("videodl.web")
@@ -33,6 +34,14 @@ DB_PATH = DATA_DIR / "jobs.db"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 COOKIES_DIR = DATA_DIR / "cookies"
 STATIC_DIR = BASE_DIR / "static"
+# Derived the same way `web/lifecycle.py` derives it from the DB path, so the
+# writer and the reader can never disagree about where thumbnails live.
+THUMBS_DIR = thumbs_dir_for(DB_PATH)
+
+# One page of the library grid. The grid renders every row it is given, so the
+# ceiling is the render cost, not the query.
+VIDEOS_PAGE_SIZE = 200
+MAX_VIDEOS_PAGE_SIZE = 1000
 
 # Matches the CLI's own --max ceiling (cli.py: max=2000) — same core, same cap.
 MAX_SO_LUONG = 2000
@@ -63,6 +72,7 @@ def prepare_data_dir(data_dir: Path, downloads_dir: Path, cookies_dir: Path,
     _make_private_dir(data_dir)
     _make_private_dir(downloads_dir)
     _make_private_dir(cookies_dir)
+    _make_private_dir(thumbs_dir_for(db_path))
     # jobs.db carries every job's URL and the email of whoever created it.
     # sqlite creates it on first connect, so tighten it here rather than at
     # creation; a path that does not exist yet is not worth crashing boot over.
@@ -125,6 +135,44 @@ def create_job(payload: CreateJobRequest,
 @app.get("/jobs")
 def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
     return models.list_jobs(DB_PATH)
+
+
+@app.get("/videos")
+def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
+                nguoi_tao: str = Depends(require_user)) -> dict:
+    """The library grid's rows. Every member sees the whole team's catalogue
+    (user's call 15/09) — one shared library is the point, so that two people
+    do not download the same hashtag twice without knowing."""
+    if limit < 1 or limit > MAX_VIDEOS_PAGE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset không được âm")
+    return {
+        "tong": models.count_videos(DB_PATH),
+        "videos": models.list_videos(DB_PATH, limit=limit, offset=offset),
+    }
+
+
+@app.get("/thumbs/{video_id}")
+def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResponse:
+    """One grid thumbnail.
+
+    `video_id` reaches the filesystem, so it is checked by SHAPE before it is
+    used: TikTok ids are digits, and a digits-only string cannot contain "/",
+    ".." or a NUL. That is a structural guarantee rather than a blocklist —
+    the same reasoning as the sha256 filename in `cookies_path_for_user`.
+    """
+    if not video_id.isdigit():
+        raise HTTPException(status_code=404, detail="video_id không hợp lệ")
+    path = thumb_path_for(DB_PATH, video_id)
+    if not path.is_file():
+        # Absent is ordinary, not broken: ffmpeg may have failed on this one,
+        # or the video predates thumbnail capture. The grid shows its own
+        # placeholder rather than a broken image.
+        raise HTTPException(status_code=404, detail="chưa có ảnh cho video này")
+    return FileResponse(path, media_type="image/webp")
 
 
 @app.get("/jobs/{job_id}")
