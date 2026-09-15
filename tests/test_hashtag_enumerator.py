@@ -195,15 +195,36 @@ def test_rate_limit_message_from_the_index_is_surfaced(monkeypatch, caplog):
     assert "Free Api Limit" in " ".join(r.getMessage() for r in caplog.records)
 
 
-def test_stalls_instead_of_burning_every_page(monkeypatch, caplog):
-    # has_more set forever while the same ids come back.
+def test_stalls_instead_of_burning_every_page(monkeypatch):
+    """Dừng sớm, và NÓI RA vì sao — bằng mã, không bằng câu văn.
+
+    Bản trước khẳng định chữ "nothing" trong log. Đó là khẳng định mong manh
+    theo đúng nghĩa: ai sửa câu log cho dễ đọc là test đỏ, còn hành vi thì
+    không đổi. Mã lý do thì so sánh được và đi ra ngoài được.
+    """
     same = _page([("1", "a"), ("2", "b")], 10, True)
     _wire(monkeypatch, pages=[same] * 40)
-    with caplog.at_level(logging.WARNING, logger="ttmd"):
-        refs = he.enumerate_hashtag("t", max_videos=200, max_pages=40)
+    seen = []
+
+    refs = he.enumerate_hashtag("t", max_videos=200, max_pages=40,
+                                 on_stop=seen.append)
+
     assert len(refs) == 2
-    assert "adding\nnothing" in " ".join(r.getMessage() for r in caplog.records).replace(" ", "\n") \
-        or "nothing" in " ".join(r.getMessage() for r in caplog.records)
+    assert seen == [he.STOP_STALLED]
+
+
+def test_a_complete_listing_reports_no_stop_reason(monkeypatch):
+    """Ca âm cho test trên: lấy đủ số đã xin thì KHÔNG được gọi `on_stop`.
+
+    Thiếu ca này, một cài đặt gọi `on_stop` vô điều kiện vẫn xanh — và mọi job
+    sẽ mang một lý do dừng dù chẳng có gì bị cắt."""
+    _wire(monkeypatch, pages=[_page([("1", "a"), ("2", "b")], 0, False)])
+    seen = []
+
+    refs = he.enumerate_hashtag("t", max_videos=2, on_stop=seen.append)
+
+    assert len(refs) == 2
+    assert seen == []
 
 
 def test_refuses_when_the_page_offers_several_challenge_ids(monkeypatch, caplog):

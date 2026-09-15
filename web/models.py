@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     bat_dau_luc TEXT,
     xong_luc TEXT,
     nguoi_tao TEXT NOT NULL DEFAULT 'khach',
-    drive_folder_link TEXT
+    drive_folder_link TEXT,
+    ly_do_dung TEXT
 )
 """
 
@@ -82,6 +83,11 @@ CREATE TABLE IF NOT EXISTS video_sightings (
 _SIGHTINGS_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_sightings_video ON video_sightings(video_id)",
     "CREATE INDEX IF NOT EXISTS idx_sightings_nguon ON video_sightings(nguon)",
+    # Một lượt chạy gặp lại cùng video dưới cùng nguồn nhiều lần là chuyện
+    # thường; không có ràng buộc này thì mỗi lượt lại đắp thêm một hàng giống
+    # hệt, và bảng phình theo số lần chạy chứ không theo số sự việc.
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_sightings_unique "
+    "ON video_sightings(video_id, job_id, nguon)",
 )
 
 # One row per video that reached Drive — the index the library grid reads.
@@ -151,6 +157,7 @@ def init_db(db_path: Path) -> None:
         # a pre-existing table. sqlite3.OperationalError (duplicate column)
         # means it is already there; that is the expected steady state.
         _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
+        _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
@@ -286,8 +293,8 @@ def record_sighting(db_path: Path, video_id: str, job_id: int, nguon: str,
     """
     with _connect(db_path) as conn:
         conn.execute(
-            "INSERT INTO video_sightings (video_id, job_id, nguon, da_tai, thay_luc) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO video_sightings "
+            "(video_id, job_id, nguon, da_tai, thay_luc) VALUES (?, ?, ?, ?, ?)",
             (video_id, job_id, nguon, 1 if da_tai else 0, _now()),
         )
 
@@ -340,6 +347,18 @@ def list_videos(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict]:
 def count_videos(db_path: Path) -> int:
     with _connect(db_path) as conn:
         return int(conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
+
+
+def set_job_stop_reason(db_path: Path, job_id: int, ly_do: str) -> None:
+    """Vì sao lượt liệt kê dừng sớm. Rỗng/None = lấy đủ số đã xin.
+
+    Sống trên hàng job chứ không chỉ trong log: sau khi có lọc trùng, một
+    hashtag đã tải nhiều lần sẽ chạm trần trang và trả về 0 video mới. Từ bên
+    ngoài, ca đó trông y hệt "hashtag rỗng" và y hệt "index chết" — ba ca cần
+    ba phản ứng khác nhau, nên UI phải phân biệt được.
+    """
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET ly_do_dung = ? WHERE id = ?", (ly_do, job_id))
 
 
 def mark_running_as_interrupted(db_path: Path) -> int:

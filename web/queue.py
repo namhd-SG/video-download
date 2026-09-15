@@ -171,13 +171,22 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         job_id, ref.video_id, type(exc).__name__)
 
+    def _note_stop(ly_do: str) -> None:
+        if db_path is None or job_id is None:
+            return
+        try:
+            models.set_job_stop_reason(db_path, job_id, ly_do)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("job %s: không ghi được lý do dừng (%s)", job_id, type(exc).__name__)
+
     tag = parse_tag_slug(url)
     if tag is not None:
         # The hashtag path filters page by page, so "go deeper until N new"
         # works; the scrapers below hand back one finished list, so they are
         # filtered once at the end.
         return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
-                                  already_have=_already_have, on_skip=_note_skip)
+                                  already_have=_already_have, on_skip=_note_skip,
+                                  on_stop=_note_stop)
 
     refs = scrape_music_page(
         url,

@@ -887,3 +887,56 @@ def test_process_job_names_the_source_so_downloaded_sightings_exist(tmp_path, mo
 
     assert models.sources_for_videos(db_path, ["333"]) == {
         "333": ["https://www.tiktok.com/music/x-1"]}
+
+
+def test_stop_reason_reaches_the_job_row(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ `on_stop=_note_stop` ⇒ ĐỎ.
+
+    Sau khi có lọc trùng, một hashtag team đã tải nhiều lần sẽ chạm trần trang
+    và trả về 0 video mới. Từ ngoài nhìn, ca đó trông Y HỆT "hashtag rỗng" và
+    Y HỆT "index chết" — ba ca cần ba phản ứng khác nhau. Nếu lý do chỉ nằm
+    trong log thì UI không phân biệt được.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "https://www.tiktok.com/tag/t", 200, "a")
+
+    same = {"data": {"videos": [{"video_id": "1", "author": {"unique_id": "a"}}],
+                      "cursor": 1, "hasMore": True}}
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "9")
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(same).encode())
+    monkeypatch.setattr(he.time, "sleep", lambda *_: None)
+
+    queue_mod._fetch_refs("https://www.tiktok.com/tag/t", max_videos=200,
+                           cookies_path=None, db_path=db_path, job_id=job_id)
+
+    assert models.get_job(db_path, job_id)["ly_do_dung"] == he.STOP_STALLED
+
+
+def test_a_job_that_got_what_it_asked_for_has_no_stop_reason(tmp_path, monkeypatch):
+    """Ca âm: không được dán lý do dừng lên một lượt chạy trọn vẹn."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "https://www.tiktok.com/tag/t", 1, "a")
+
+    page = {"data": {"videos": [{"video_id": "1", "author": {"unique_id": "a"}}],
+                      "cursor": 0, "hasMore": False}}
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "9")
+    monkeypatch.setattr(he, "_fetch", lambda *a, **kw: json.dumps(page).encode())
+
+    queue_mod._fetch_refs("https://www.tiktok.com/tag/t", max_videos=1,
+                           cookies_path=None, db_path=db_path, job_id=job_id)
+
+    assert models.get_job(db_path, job_id)["ly_do_dung"] is None
+
+
+def test_repeated_sightings_of_the_same_pair_collapse(tmp_path):
+    """Một lượt gặp lại cùng video dưới cùng nguồn nhiều lần là chuyện thường;
+    bảng phải phình theo số SỰ VIỆC, không theo số lần chạy."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    for _ in range(3):
+        models.record_sighting(db_path, video_id="1", job_id=7,
+                                nguon="#t", da_tai=False)
+
+    assert models.sources_for_videos(db_path, ["1"]) == {"1": ["#t"]}

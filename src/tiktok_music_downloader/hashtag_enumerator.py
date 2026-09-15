@@ -45,6 +45,13 @@ _PAGE_SIZE = 30
 _REQUEST_GAP_SECONDS = 1.2   # provider's free tier is about one request/second
 _STALL_PAGES = 2             # consecutive pages adding nothing before giving up
 
+# Mã lý do dừng. Cố ý là hằng ngắn chứ không phải câu văn: caller phải SO SÁNH
+# được, và chuỗi tiếng Anh dài sẽ bị ai đó sửa cho "dễ đọc" rồi làm hỏng so sánh.
+STOP_COMPLETE = ""            # lấy đủ số đã xin
+STOP_INDEX_FAILED = "index_failed"
+STOP_STALLED = "stalled"
+STOP_PAGE_CAP = "page_cap"
+
 
 def _fetch(url: str, user_agent: str, timeout: float = 25.0,
            proxy: str | None = None) -> bytes | None:
@@ -185,7 +192,8 @@ def _provider_page(challenge_id: str, cursor: int,
 def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
                       proxy: str | None = None,
                        already_have: Callable[[list[str]], set[str]] | None = None,
-                       on_skip: Callable[[VideoRef], None] | None = None) -> list[VideoRef]:
+                       on_skip: Callable[[VideoRef], None] | None = None,
+                       on_stop: Callable[[str], None] | None = None) -> list[VideoRef]:
     """Return up to max_videos unique VideoRefs for a hashtag.
 
     An empty list means the hashtag could not be enumerated, and a SHORT list
@@ -208,7 +216,7 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
     for page in range(1, max_pages + 1):
         page_refs, cursor, has_more, ok = _provider_page(challenge_id, cursor, proxy=proxy)
         if not ok:
-            truncated_because = "the index failed to answer"
+            truncated_because = STOP_INDEX_FAILED
             break
         # "Mới với LƯỢT NÀY" và "mới với THƯ VIỆN" là hai thứ khác nhau, và
         # gộp chúng làm hỏng cả hai: một hashtag mà team đã tải hết trang đầu
@@ -249,19 +257,24 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
         # run of such pages is a stall, not progress towards the target.
         stalled = stalled + 1 if not fresh else 0
         if stalled >= _STALL_PAGES:
-            truncated_because = (f"the index kept reporting more pages while adding "
-                                 f"nothing for {stalled} pages")
+            truncated_because = STOP_STALLED
             break
         time.sleep(_REQUEST_GAP_SECONDS)
     else:
         if len(refs) < max_videos:
-            truncated_because = f"the page cap ({max_pages}) was reached"
+            truncated_because = STOP_PAGE_CAP
 
     if not refs:
         log.warning("no videos listed for #%s. TikTok's own hashtag feed returns "
                     "an empty body, so this tool relies on an external index; "
                     "that index answered with nothing usable.", tag)
     elif truncated_because and len(refs) < max_videos:
-        log.warning("listing for #%s is INCOMPLETE: asked for %d, got %d, because "
-                    "%s.", tag, max_videos, len(refs), truncated_because)
+        log.warning("listing for #%s is INCOMPLETE: asked for %d, got %d, reason=%s",
+                    tag, max_videos, len(refs), truncated_because)
+    # Lý do dừng phải ĐI RA NGOÀI, không chỉ vào log. Sau khi có lọc trùng, một
+    # hashtag team dùng nhiều sẽ chạm trần trang và trả về rỗng — nhìn từ ngoài
+    # KHÔNG phân biệt được với "hashtag rỗng" hay "index chết", mà ba ca đó cần
+    # ba phản ứng khác nhau.
+    if on_stop is not None and truncated_because and len(refs) < max_videos:
+        on_stop(truncated_because)
     return refs[:max_videos]
