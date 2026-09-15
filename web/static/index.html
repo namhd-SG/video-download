@@ -135,6 +135,13 @@
   }
   .app { max-width: 1180px; margin: 0 auto; padding: 20px 20px 100px; }
 
+  .session-expired {
+    margin: 0 0 16px; padding: 10px 14px; border-radius: var(--radius);
+    background: var(--warn-bg); color: var(--warn);
+    border: 1px solid currentColor; font-size: .88rem;
+  }
+  .session-expired a { color: inherit; }
+
   /* ---- top bar --------------------------------------------------------- */
   .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .brand { display: flex; align-items: center; gap: .5rem; font-size: 1.05rem; font-weight: 700; }
@@ -383,6 +390,14 @@
     <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
   </header>
 
+  <!-- Phiên Access hết hạn. Hiện ở đầu trang và KHÔNG tự tắt: mọi lời gọi từ
+       lúc này đều trượt, nên một thông báo thoáng qua chỉ làm người dùng tưởng
+       trang vẫn sống. -->
+  <p id="session-expired" class="session-expired" role="alert" hidden>
+    Phiên đăng nhập đã hết hạn — <a href="">tải lại trang</a> để đăng nhập lại.
+    Số liệu bên dưới là của lần cập nhật cuối, không còn mới.
+  </p>
+
   <!-- ================= DẢI ĐIỀU KHIỂN (trên) ================= -->
   <section class="control-strip" aria-label="Điều khiển tải">
     <div class="panel">
@@ -613,10 +628,25 @@
   // ========================================================================
   // API
   // ========================================================================
+  // Ném khi phiên Cloudflare Access đã hết hạn. Tách thành lớp riêng vì nó
+  // cần một phản ứng khác hẳn mọi lỗi mạng: tải lại trang thì đăng nhập lại
+  // được, còn thử lại ngầm thì không bao giờ khỏi.
+  class PhienHetHan extends Error {}
+
   async function apiGet(path) {
-    const res = await fetch(path);
+    // `redirect: "manual"` là phần quan trọng. Khi phiên Access hết hạn,
+    // Cloudflare trả 302 sang trang đăng nhập; `fetch` mặc định đi theo, gặp
+    // CORS và ném `TypeError` — mà vòng poll 5 giây lại nuốt mọi lỗi, nên
+    // hàng đợi đứng hình vĩnh viễn, không một lời nào trên màn hình.
+    const res = await fetch(path, { redirect: "manual" });
+    if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
     if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
     return res.json();
+  }
+
+  function baoPhienHetHan() {
+    const el = document.getElementById("session-expired");
+    if (el) el.hidden = false;
   }
 
   function errorDetailText(data) {
@@ -752,10 +782,16 @@
     emptyState.hidden = true;
 
     const filtered = state.videos.filter(videoMatchesFilters);
-    document.getElementById("library-count").textContent =
-      filtered.length === state.videos.length
-        ? `${state.videos.length} video`
-        : `${filtered.length}/${state.videos.length} video`;
+    // Nhãn phải phân biệt được BA con số: số khớp bộ lọc, số đã nạp, và số
+    // thật trong thư viện. Gộp hai cái sau là cách con số sai mang hình dạng
+    // con số đúng.
+    const total = state.videosTotal ?? state.videos.length;
+    const loaded = state.videos.length;
+    const parts = [];
+    parts.push(filtered.length === loaded ? `${loaded}` : `${filtered.length}/${loaded}`);
+    parts.push("video");
+    if (loaded < total) parts.push(`(đang hiện ${loaded} trong ${total})`);
+    document.getElementById("library-count").textContent = parts.join(" ");
 
     noMatch.hidden = filtered.length > 0;
     grid.hidden = filtered.length === 0;
@@ -983,7 +1019,7 @@
         state.openStreams.delete(jobId);
         // Job vừa xong (hoặc lỗi/bị ngắt) — nạp lại thư viện để creative mới
         // (nếu có) xuất hiện mà không cần user tự bấm "Làm mới".
-        loadVideos().catch(() => {});
+        loadVideos().catch((e) => { if (e instanceof PhienHetHan) baoPhienHetHan(); });
       }
     });
     es.onerror = () => {
@@ -994,9 +1030,30 @@
     };
   }
 
+  // Trần cứng cho số video giữ trong trình duyệt. Có trần là vì lưới dựng DOM
+  // cho từng thẻ; không có trần thì thư viện lớn dần sẽ làm treo tab của người
+  // dùng, và đó là kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện 2000/5000".
+  const LIBRARY_PAGE = 500;
+  const LIBRARY_MAX = 2000;
+
   async function loadVideos() {
-    const data = await apiGet(`/videos`);
-    state.videos = data.videos;
+    // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định
+    // của server, KHÔNG đọc `tong`, và in nhãn theo số đã nạp. Hậu quả: video
+    // thứ 201 trở đi không tồn tại với người dùng, mọi bộ lọc chạy trên tập
+    // con, và nhãn "200 video" trông y hệt một con số đúng. Thư viện dùng
+    // chung cả team mà cắt im lặng như vậy là hỏng đúng thứ nó sinh ra để làm.
+    const first = await apiGet(`/videos?limit=${LIBRARY_PAGE}&offset=0`);
+    const videos = first.videos.slice();
+    const tong = first.tong;
+
+    while (videos.length < tong && videos.length < LIBRARY_MAX) {
+      const next = await apiGet(`/videos?limit=${LIBRARY_PAGE}&offset=${videos.length}`);
+      if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
+      videos.push(...next.videos);
+    }
+
+    state.videos = videos;
+    state.videosTotal = tong;
     renderLibrary();
   }
 
@@ -1040,7 +1097,11 @@
   });
   // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel
   // rớt) — chạy lại dù không còn EventSource nào mở.
-  setInterval(() => loadJobs().catch(() => {}), 5000);
+  setInterval(() => loadJobs().catch((e) => {
+    // Lỗi mạng thoáng qua thì im lặng là đúng — lượt poll sau sẽ tự khỏi.
+    // Phiên hết hạn thì không bao giờ tự khỏi, nên nó phải lên màn hình.
+    if (e instanceof PhienHetHan) baoPhienHetHan();
+  }), 5000);
 })();
 </script>
 </body>
