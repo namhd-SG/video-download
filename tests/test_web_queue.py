@@ -818,3 +818,72 @@ def test_owned_videos_do_not_stop_the_hashtag_walk_early(tmp_path, monkeypatch):
                                   cookies_path=None, db_path=db, job_id=2)
 
     assert [r.video_id for r in refs] == ["99"], "phải đi tới trang 3 mới thấy cái mới"
+
+
+# ---------------------------------------------------------------------------
+# Mối nối, không phải cái được nối. Hai vòng liên tiếp tôi đột biến BÊN TRONG
+# lớp vừa viết và bỏ sót chỗ nó được gọi — vòng trước là schema không ai gọi,
+# vòng này là `_fetch_refs` nhận đúng kwargs mà lời gọi trong `process_job`
+# không truyền. Cả hai lần suite vẫn xanh. Hai test dưới canh đúng cái seam đó.
+# ---------------------------------------------------------------------------
+
+def _drive_one_job(tmp_path, monkeypatch, url, refs, db_path):
+    """Chạy trọn `process_job` với downloader giả: không mạng, không ffmpeg."""
+    job_id = models.create_job(db_path, url, 10, "namhd@astronex.ai")
+    job = models.get_job(db_path, job_id)
+    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: list(refs))
+    monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
+
+    def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for r in refs_:
+            (output_dir / r.filename).write_bytes(b"x")
+            if progress is not None:
+                progress.note("downloaded")
+        return len(refs_), 0, []
+
+    monkeypatch.setattr(queue_mod, "download_all", _fake_download)
+    process_job(db_path, tmp_path / "dl", tmp_path / "ck", job,
+                lifecycle_hook=lambda **kw: _UPLOAD_OK)
+    return job_id
+
+
+def test_process_job_passes_the_db_through_so_dedupe_actually_runs(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: xoá `db_path=`/`job_id=` khỏi lời gọi `_fetch_refs` trong
+    `process_job` ⇒ ĐỎ.
+
+    Không có test này, đột biến đó để lại một suite XANH và một tính năng đã
+    TẮT: `_already_have` trả `set()` rỗng nên mọi video trùng lại được tải.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    models.record_video(db_path, job_id=99, video_id="111", url="u")  # đã có
+
+    job_id = _drive_one_job(
+        tmp_path, monkeypatch, "https://www.tiktok.com/music/x-1",
+        [VideoRef(video_id="111", url="u1"), VideoRef(video_id="222", url="u2")],
+        db_path)
+
+    # `tong` được ghi bằng len(refs) SAU khi lọc, nên nó là tín hiệu phân định:
+    # dedupe chạy ⇒ 1, dedupe tắt ⇒ 2. (Hàng `videos` không dùng được ở đây —
+    # test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
+    assert models.get_job(db_path, job_id)["tong"] == 1, "chỉ ref MỚI được đưa vào tải"
+    # Và video bị bỏ qua phải để lại dấu nguồn của lượt này.
+    assert models.sources_for_videos(db_path, ["111"]) == {
+        "111": ["https://www.tiktok.com/music/x-1"]}
+
+
+def test_process_job_names_the_source_so_downloaded_sightings_exist(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ `nguon=` khỏi `_JobProgress(...)` ⇒ ĐỎ.
+
+    `_note_sighting` return sớm khi `nguon` rỗng, nên đột biến đó cho ra 0 hàng
+    `da_tai=1` — thẻ lọc theo nguồn trống trơn — mà không test nào kêu.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+
+    _drive_one_job(tmp_path, monkeypatch, "https://www.tiktok.com/music/x-1",
+                   [VideoRef(video_id="333", url="u")], db_path)
+
+    assert models.sources_for_videos(db_path, ["333"]) == {
+        "333": ["https://www.tiktok.com/music/x-1"]}

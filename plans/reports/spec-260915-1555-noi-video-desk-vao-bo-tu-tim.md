@@ -39,7 +39,7 @@ Video Desk gửi thêm header **`X-Videodesk-User-Jwt`**.
 ⚠ **KHÔNG đặt tên header là `Cf-Access-Jwt-Assertion`.** Nếu route đi qua một Access app
 (chính là lớp trên), Cloudflare **ghi đè** header đó bằng token của chính nó ⇒ danh tính
 người dùng biến mất **im lặng**. Cũng không dùng `Authorization: Bearer` — nó rơi vào
-`get_current_user` (`dependencies.py:116`) và trả 401 khó hiểu.
+`get_current_user` (`dependencies.py:113-124`) và trả 401 khó hiểu.
 
 ## 4. Cần thêm gì trong meta-auto
 
@@ -53,11 +53,17 @@ Một dependency, dùng cho **đúng các route bộ tự tìm**, không đụng
    token chuyển tiếp vô dụng ở nơi khác.
 4. **Từ chối token chỉ có `common_name`** — đó là service token, không phải người.
 5. Tra `User` theo email, **so lowercase**: `func.lower(User.email) == email.lower()`.
-   meta-auto lưu email nguyên chuỗi (`core/auth.py:214,223`) nhưng so allowlist bằng
-   lowercase (`:200`) — so nguyên chuỗi sẽ tự tạo ra ca "có tài khoản mà không thấy".
+   Đường login Google ở **`backend/app/api/auth.py`**: `:200` so allowlist bằng lowercase,
+   `:209` tra `User.email == email` **nguyên chuỗi**, `:218` tạo user với `email=email`.
+   Nên so nguyên chuỗi sẽ tự tạo ra ca "có tài khoản mà không thấy".
 6. Giữ nguyên `is_locked` (`dependencies.py:270-274`).
-7. **Nhận `project_id` tường minh** từ Video Desk rồi kiểm bằng `resolve_project_read`
-   (`api/_project_access.py:129`) và **cấm vai client** (`allow_client=False`).
+7. **Nhận `project_id` tường minh** từ Video Desk, rồi gọi **`resolve_project_read` của
+   `backend/app/api/_project_access.py:129`** (trả `tuple[Project, str]` — `(project, role)`)
+   và **tự từ chối `role == "client"`**.
+   ⚠ Hai bẫy: (a) helper `_require_access` (`creative_orders.py:100-102`) có kwarg
+   `allow_client` nhưng nó **đọc project từ claim JWT** (`:109-112`) nên **không tái dùng
+   được** cho đường relay; (b) có **hàm trùng tên** `resolve_project_read` ở
+   `api/cutoff.py:49` với chữ ký và kiểu trả khác — lấy nhầm là sai im lặng.
    ⚠ Đây là **cố ý đi ngược** quy ước của `creative_orders.py:19,109-114` (*"clients
    cannot set it"* — project lấy từ claim `proj`). JWT Access **không có** `proj`. Phải
    khai rõ trong docstring, không để người sau tưởng là sơ suất.
@@ -79,15 +85,25 @@ nhận cả `common_name` (xem mục 4.4).
 | `User.is_locked` | **403** | "Tài khoản đang chờ admin duyệt" |
 | có `User`, không có grant project | **403** | từ `resolve_project_read` |
 | token chỉ có `common_name` | **401** | không ánh xạ bot thành người |
+| **Access edge từ chối** (service token hết hạn, path app sai) | **503** | "lớp vận chuyển từ chối". Cloudflare trả **302/403 HTML**, không phải JSON của FastAPI — Video Desk phải nhận ra và map, đừng để thành 401 cho người dùng hay 500 vì parse JSON thất bại |
 
 Bọc mọi lookup DB trong `try` → 503.
+
+**Yêu cầu với phía Video Desk:** JWT của người dùng **chỉ tồn tại trong request đang bay** —
+không ghi ra đĩa, không vào log, không vào bảng nào. Đây là thứ biến "tin có giới hạn thời
+gian" ở §6 từ lời hứa thành tính chất kiểm được.
 
 ## 6. Tính chất an toàn — và cái KHÔNG có
 
 **Giữ được:**
 - Route không tới được từ internet (lớp Access).
 - Danh tính do **Cloudflare** chứng minh, không phải Video Desk tự khai.
-- `aud` khoá theo application ⇒ token chuyển tiếp không replay được sang Access app khác.
+- **meta-auto chỉ nhận `aud` của application `video.nobidigital.asia`** ⇒ token của
+  application khác không dùng được ở đây. (Chiều ngược lại — token của app video có dùng
+  được ở nơi khác không — phụ thuộc nơi đó có kiểm `aud` hay không, ngoài tầm spec này.)
+- **Hai lớp là hai yếu tố ĐỘC LẬP.** Kẻ có JWT user rò vẫn không vào được (thiếu service
+  token); kẻ có service token vẫn không đứng tên ai được (thiếu JWT). Chỉ khi **chiếm được
+  mini** mới có cả hai — và đó đúng là ranh giới của key Drive ở §8.
 - Khoá tài khoản, grant project, cấm vai client đều còn nguyên hiệu lực.
 
 **KHÔNG có, phải khai là rủi ro chấp nhận:**
@@ -99,19 +115,67 @@ Bọc mọi lookup DB trong `try` → 503.
   mức rủi ro ở gạch trên; đặt ngắn thì cửa sổ ngắn.
 - **Service token nằm trên mini** — máy có tài khoản thứ hai (`autotest`). Rò nó thì mất
   lớp edge; lớp JWT vẫn còn.
-- **Thu hồi `token_epoch` không áp** cho đường này (`dependencies.py:257-268`). Access có
-  cơ chế thu hồi phiên riêng, nhưng hai cơ chế **không nối với nhau**.
+- **Cả hai bên verify JWT OFFLINE** (chữ ký + `exp`). Nên *Revoke user session* của
+  Cloudflare, hay rút người khỏi Access policy, **không ai nhìn thấy** cho tới khi token
+  hết hạn. Kill-switch **chạy live mỗi request** trên đường này chỉ có một: **`is_locked`**
+  (`dependencies.py:270`).
+  ⇒ **Runbook nghỉ việc:** khoá user trong meta-auto (**tức thì**) *rồi* rút khỏi Access
+  policy (hiệu lực khi hết phiên). Làm ngược thứ tự là để hở đúng một cửa sổ phiên.
+  ⇒ `token_epoch` **không phải** vấn đề ở đây: đo được là **không có writer nào** trong
+  `backend/app` bấm nó (chỉ cột model + chỗ đọc lúc mint, `api/auth.py:73`). Vấn đề là
+  verify offline.
+  ⇒ Video Desk **không có bảng user**, nên nó **không có kill-switch riêng** — mọi việc
+  khoá người phải làm ở meta-auto.
 
 ## 7. Nghiệm thu — đột biến, không phải "chạy thử thấy được"
 
-- Bỏ bước kiểm `aud` ⇒ token của **application Access khác** phải bị nhận ⇒ test **ĐỎ**.
+### 7a. Probe hạ tầng — test code KHÔNG bắt được cái này
+
+Lớp Access nằm ngoài ứng dụng, nên không dòng test nào biết nó có tồn tại hay không. Cấu
+hình sai path là ca hỏng-im-lặng nguy hiểm nhất trong cả spec: code chạy đúng hoàn toàn,
+chỉ lớp chặn là không có. Ba lệnh, chạy sau khi dựng Access app:
+
+```bash
+# 1. không service token  → Access phải chặn ở EDGE
+curl -si https://automation.nobidigital.asia/api/videodesk/<route>
+#    mong đợi: 302/403 từ Cloudflare (KHÔNG phải JSON của FastAPI)
+
+# 2. có service token, thiếu user JWT → tới được app, app từ chối
+curl -si ... -H "CF-Access-Client-Id: …" -H "CF-Access-Client-Secret: …"
+#    mong đợi: 401 từ APP
+
+# 3. ĐỐI CHỨNG — Access app không được phủ nhầm sang hàng xóm
+curl -si https://automation.nobidigital.asia/api/creative-taxonomy/categories
+#    mong đợi: vẫn 401 từ app, KHÔNG phải 302
+#    (302 ở đây = path app quét rộng quá ⇒ bridge/PWA/webhook chết theo)
+```
+
+Lệnh 3 là lệnh quan trọng nhất và dễ bị bỏ: nó bắt ca "chặn được route mới nhưng chặn
+luôn cả những thứ đang chạy".
+
+### 7b. Đột biến trong test code
+
+- Bỏ kiểm `aud` ⇒ token của **application Access khác** phải được nhận ⇒ **ĐỎ**.
 - Đổi header thành `Cf-Access-Jwt-Assertion` ⇒ khi đi qua Access app, danh tính phải biến
-  thành service token ⇒ test **ĐỎ**. (Đây là lỗi hỏng-im-lặng, không có test thì không
-  thấy.)
+  thành service token ⇒ **ĐỎ**. Không có test thì đây là lỗi hỏng-im-lặng.
 - Gỡ `resolve_project_read` ⇒ user không có grant tạo được order ⇒ **ĐỎ**.
 - Bỏ bước từ chối `common_name` ⇒ service token tạo được order đứng tên người ⇒ **ĐỎ**.
-- Ca dương bắt buộc: một JWT **hợp lệ** của user có tài khoản + có grant ⇒ tạo được bộ,
-  `requester_id` đúng người. Thiếu ca này thì mọi 401 ở trên không chứng minh gì.
+- Gộp "không lấy được certs" vào 401 thay vì 503 ⇒ **ĐỎ**.
+- `is_locked` ⇒ 403, và `role == "client"` **có grant** ⇒ 403 — hai ca riêng, không gộp.
+- **JWT hết hạn** (mint `exp` ở quá khứ) ⇒ 401. `google-auth` có kiểm, nhưng phải khoá lại
+  bằng test của chính mình.
+- **`aud` dạng LIST được NHẬN** — shape thật của Cloudflare. Chép `test_aud_as_a_LIST_is_accepted`
+  từ `video-download/tests/test_web_auth.py`. Bỏ ca này là ship một bug im lặng: test với
+  `aud` dạng chuỗi vẫn xanh.
+- **Hai header cùng lúc:** `Authorization: Bearer <token hợp lệ của A>` + `X-Videodesk-User-Jwt`
+  của B ⇒ phải định nghĩa ai thắng. Khuyến nghị: route videodesk **từ chối** nếu có
+  `Authorization`. Bỏ kiểm ⇒ **ĐỎ**.
+- **Cách ly dependency:** duyệt `app.routes`, khẳng định *chỉ* route dưới `/api/videodesk/`
+  dùng dependency mới, và **không** route nào trong đó còn dùng `AuthUser`.
+
+**Ca dương bắt buộc:** một JWT **hợp lệ** của user có tài khoản + có grant ⇒ tạo được bộ,
+`requester_id` đúng người đó. Thiếu ca này thì mọi ca 401/403 ở trên không chứng minh gì —
+chúng có thể xanh chỉ vì route luôn từ chối.
 
 ## 8. Ngoài phạm vi spec này
 
