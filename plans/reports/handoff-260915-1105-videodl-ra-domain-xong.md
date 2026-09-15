@@ -48,16 +48,16 @@ Commit: `27e7fb4 … e9032ac` (6 commit) trên `feat/tiktok-tag-page-support`,
 PR meta-auto: **#192**, nhánh `feat/videodl-nav-link`, worktree
 `/Users/macos/meta-ads-wt-videodlnav`.
 
-## 3. CÒN LẠI — chỉ 3 phép đo, đều cần người cầm máy
+## 3. CÒN LẠI — không còn gì
 
-1. **Đăng nhập rồi mở tool, 3/3 lần.** Không tự động được (OAuth qua trình duyệt).
-2. **Từ 4G ngoài LAN.** Cần người cầm điện thoại.
-3. **Ép guard đĩa → từ chối job mới.** Chưa đo. ⚠ Tiêu chí này viết từ hồi endpoint
-   còn công khai; giờ `POST /jobs` đã đòi JWT nên câu *"không có cửa nào từ internet
-   đẩy đĩa máy người khác xuống 0"* đã được **một lớp khác** trả lời. Vẫn nên đo, nhưng
-   nó không còn là lỗ hở internet nữa.
+Cả 6 tiêu chí phase-04 đã xanh. User đo 15/09 11:19-11:24: đăng nhập vào được **3/3
+lần**, và **đăng nhập trên điện thoại qua 3G** cũng vào được. Guard đĩa tôi đo xong
+(mục 9). Chỉ còn **merge PR #192** là hết.
 
-Không còn việc code nào chặn.
+**Phép đo đắt nhất là của user, không phải của tôi:** giao diện hiện ra **kèm bảng
+job** ⇒ `GET /jobs` chạy được với **JWT thật do Cloudflare phát**. Test tự động chỉ ký
+bằng khoá tự tạo nên chỉ chứng minh được nhánh **TỪ CHỐI**; nhánh **CHẤP NHẬN** với
+token thật thì không có cách nào tự dựng.
 
 ## 4. Quyết định kỹ thuật — đo trước khi chọn, không đoán
 
@@ -157,11 +157,48 @@ tra trước khi bản ghi tồn tại. `curl` trả `000` + *"Could not resolve
 `dig +short` ra IP ⇒ **đó là cache của máy, không phải dịch vụ chết**. Đường vòng:
 `curl --resolve video.nobidigital.asia:443:$(dig +short video.nobidigital.asia|head -1)`.
 
+## 9. BA BẪY MỚI — đo được sau khi user thử thật, không có trong bàn giao cũ
+
+**1. `cloudflared` KHÔNG tự nạp lại config. Bàn giao cũ nói ngược.**
+Nó ghi *"cloudflared tự nạp lại khi file đổi. Thử KHÔNG restart trước. Ăn rồi thì bỏ
+hẳn bước restart."* Sai. Hình dạng hỏng rất dễ đọc nhầm: chưa đăng nhập vẫn **302**
+(Access gác ở EDGE, không phụ thuộc ingress) nhưng đăng nhập xong thì **404** — vì
+tiến trình cũ vẫn dùng ingress cũ nên Host mới rơi vào `http_status:404`.
+Tất cả dụng cụ đều báo xanh cho **file**: `ingress validate` OK, `ingress rule` khớp
+đúng 7870. Chúng đọc file trên đĩa, **không** hỏi tiến trình đang chạy.
+⇒ Sau khi sửa `config.yml`, phải `launchctl kickstart -k
+gui/$(id -u)/com.astronex.cloudflared` (KHÔNG `bootout`). Đo: label 5 trước và sau,
+promax 302 ở lượt kiểm đầu tiên ngay sau restart rồi 3/3 lượt.
+⇒ Và **phép kiểm đúng** không phải `ingress rule`, mà là gọi thật qua hostname.
+
+**2. Bàn giao cũ ghi SAI chỗ để dữ liệu — kéo theo một lỗ quyền thật.**
+Nó ghi *"dữ liệu chạy: `~/.local/share/videodl/{downloads,cookies}` (700)"*. Thư mục
+đó **rỗng, không dùng**. `app.py` hardcode `BASE_DIR/data` ⇒ dữ liệu thật ở
+`~/Projects/video-download/web/data/`, và ở đó quyền là **755 / 755 / 755** cho
+`data` `cookies` `downloads`, **644** cho `jobs.db` — trên máy có tài khoản thứ hai
+(`autotest`). Chưa có file cookie nào nên chưa rò, nhưng MVP đặt cookie đúng vào đó.
+Đã sửa ở cả hai đầu (`prepare_data_dir`: mkdir **rồi `os.chmod` tường minh**, vì
+`mkdir(mode=)` bị umask che VÀ bị bỏ qua khi thư mục đã tồn tại). Sau deploy:
+**700/700/700/600**. Đột biến bỏ `chmod` ⇒ ĐỎ.
+⇒ Bài học: **đừng chép đường dẫn từ bàn giao, `print` nó ra từ chính module đang
+chạy.** Tôi đã viết *"thư mục làm việc rỗng ⇒ 0 tác động"* trong khi soi nhầm thư
+mục. Kết luận tình cờ vẫn đúng (không có thư mục `3`, 0 file sót) nhưng bằng chứng
+thì sai.
+
+**3. Phép đo guard đĩa đầu tiên của tôi VÔ GIÁ TRỊ — thiếu env.**
+Shell `ssh` không nạp `~/.config/videodl/env` (dịch vụ nạp qua `run-service.sh`), nên
+gate 0 *"Drive chưa cấu hình"* chặn trước và **cả 3 ca trả cùng một câu** ⇒ không
+phân định được gì. Phải `set -a; . ~/.config/videodl/env; set +a` rồi mới đo.
+Kết quả thật: gọi như production → CHẤP NHẬN · ép ngưỡng > đĩa trống → TỪ CHỐI
+*"đĩa còn 3134 MB, dưới ngưỡng an toàn 13374 MB"* · **đột biến** bỏ `downloads_dir`
+→ **BỎ QUA IM LẶNG** (đúng cảnh báo của bàn giao cũ; `app.py:78` là chỗ gánh).
+
 ## Câu hỏi chưa giải
 
-1. **Ba phép đo ở mục 3 cần người** — đăng nhập trình duyệt 3/3, thử từ 4G, ép guard
-   đĩa. Không có đường tự động.
-2. **PR #192 chưa merge.** CI đang chạy lúc viết. Merge cần người duyệt.
+1. **PR #192 chưa merge.** CI đã xanh (`gh run watch --exit-status` rc=0,
+   `conclusion=success`, `headSha` khớp `headRefOid` của PR). Chờ user quyết merge.
+2. **Quyền của từng FILE cookie (0600) chưa đo** — chưa có file cookie nào trên máy.
+   Thư mục đã 700. Thuộc P05b khi mở cho từng người tự dán.
 3. **`/search` với cookie mới đo 19/20 ở MỘT lượt** (di sản từ bàn giao trước) — chưa
    đo nhiều lượt nên chưa biết tỉ lệ ổn định.
 4. **Cap job/ngày chưa thi công** (~10 dòng, user đã chốt 14/09). Giảm rủi ro khoá

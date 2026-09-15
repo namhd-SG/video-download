@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -41,10 +42,37 @@ _END_STATES = ("done", "failed", "interrupted")
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR)
 
 
+def _make_private_dir(path: Path) -> None:
+    """Create `path` readable by this user only, and fix the mode if it is
+    already there with looser bits.
+
+    `mkdir(mode=0o700)` alone is not enough for either half: the mode argument
+    is masked by umask (022 here → 0755), and it is ignored outright when the
+    directory already exists. Measured on the mini 15/09: `web/data/cookies`
+    stood at **755** and `jobs.db` at **644** on a box that has a second user
+    account — the cookie jar this phase exists to protect was world-readable
+    before any cookie had been dropped into it.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    os.chmod(path, 0o700)
+
+
+def prepare_data_dir(data_dir: Path, downloads_dir: Path, cookies_dir: Path,
+                      db_path: Path) -> None:
+    """Make the whole runtime-data tree private before the worker touches it."""
+    _make_private_dir(data_dir)
+    _make_private_dir(downloads_dir)
+    _make_private_dir(cookies_dir)
+    # jobs.db carries every job's URL and the email of whoever created it.
+    # sqlite creates it on first connect, so tighten it here rather than at
+    # creation; a path that does not exist yet is not worth crashing boot over.
+    if db_path.exists():
+        os.chmod(db_path, 0o600)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    DOWNLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    COOKIES_DIR.mkdir(parents=True, exist_ok=True)
+    prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH)
     worker.start()
     try:
         yield

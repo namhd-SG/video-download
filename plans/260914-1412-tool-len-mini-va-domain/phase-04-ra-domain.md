@@ -100,21 +100,41 @@ Hostname đề xuất: `video.nobidigital.asia` (cùng zone với promax và met
       Đo trên **hai mạng**: từ mini, và từ máy dev qua `curl --resolve` (resolver
       của máy dev còn cache NXDOMAIN cũ nên phải đi đường đó — `000` lúc đầu là
       lỗi resolver, không phải lỗi dịch vụ).
-- [ ] Đăng nhập rồi → mở được tool, **3/3 lần**
-      — CHƯA ĐO: cần người đăng nhập bằng trình duyệt, không tự động được.
+- [x] Đăng nhập rồi → mở được tool, **3/3 lần**
+      — USER ĐO 15/09 11:19-11:24, 3/3 lần (1 lần đầu + 2 lần F5). Giao diện
+      hiện **kèm bảng job** ⇒ `GET /jobs` đã chạy với **JWT thật do Cloudflare
+      phát** và `web/auth.py` chấp nhận. Đây là lần đầu nhánh CHẤP NHẬN được
+      chứng minh bằng token thật — test tự động chỉ ký bằng khoá tự tạo.
+      ⚠ Lần thử đầu trả **404**: `cloudflared` đang chạy **KHÔNG tự nạp lại**
+      config (xem mục bẫy trong bàn giao). `kickstart -k` mới ăn.
 - [x] `curl -I https://promax.nobidigital.asia` vẫn 302, **3/3 lần** — hàng xóm
       không bị đụng
       — ĐO: 302 ở mọi lượt, tại 4 thời điểm (trước sửa config, sau sửa config,
       sau `kickstart` videodl, sau khi tạo DNS). Tổng >12 lượt, 0 lượt khác 302.
-- [ ] Từ máy ngoài mạng LAN (dùng 4G) vẫn mở được sau đăng nhập — chứng minh đi qua
+- [x] Từ máy ngoài mạng LAN (dùng 4G) vẫn mở được sau đăng nhập — chứng minh đi qua
       tunnel thật, không phải nhờ cùng LAN
-      — CHƯA ĐO: cần người cầm máy 4G.
+      — USER ĐO 15/09: đăng nhập trên điện thoại qua 3G, vào được.
 - [x] `launchctl list | grep astronex` trả **đúng bộ label như trước**, không thiếu
       — ĐO: 5 label (`promax`, `cloudflared`, `glances`, `promax-awake`, `videodl`)
       trước và sau mỗi lần đụng launchctl. Chỉ `kickstart -k` đúng label
       `com.astronex.videodl`; **không** `bootout` label nào.
-- [ ] Ép guard đĩa (Phase 03) xuống dưới ngưỡng → endpoint công khai **từ chối** job
+- [x] Ép guard đĩa (Phase 03) xuống dưới ngưỡng → endpoint công khai **từ chối** job
       mới. Không có cửa nào từ internet đẩy đĩa máy người khác xuống 0
+      — ĐO 15/09 **trên mini, nạp đúng env của dịch vụ**, gọi Y HỆT cách
+      `app.py:78` gọi:
+      (1) `should_reject_new_job(downloads_dir=DOWNLOADS_DIR)` → **CHẤP NHẬN**
+          (đĩa 3,06 GB > ngưỡng 300 MB) — ca dương
+      (2) cùng lời gọi, ép `min_free_bytes` > đĩa trống → **TỪ CHỐI**:
+          *"đĩa còn 3134 MB, dưới ngưỡng an toàn 13374 MB"*
+      (3) **đột biến** bỏ `downloads_dir` → **BỎ QUA IM LẶNG**, xác nhận cảnh
+          báo trong bàn giao là lỗ thật và `app.py:78` là chỗ gánh nó
+      Lớp HTTP trả 503 do `test_create_job_rejects_with_503_when_gate_trips`
+      canh, chạy xanh **trên chính mini**.
+      ⚠ Lần đo ĐẦU của tôi VÔ GIÁ TRỊ: shell ssh không có env nên gate 0
+      ("Drive chưa cấu hình") chặn trước, cả 3 ca trả cùng một câu ⇒ không
+      phân định gì. Phải `. ~/.config/videodl/env` mới đo được.
+      ⚠ Vế *"từ internet"* giờ còn được một lớp khác trả lời: `POST /jobs` đòi
+      JWT Access, nên không tồn tại đường vô danh nào để chạm tới guard.
 
 ## Risk Assessment
 

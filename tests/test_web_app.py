@@ -5,6 +5,9 @@ function under the FastAPI decorator, callable without an HTTP client or the
 """
 from __future__ import annotations
 
+import os
+import stat
+
 import pytest
 from fastapi import HTTPException
 
@@ -148,3 +151,54 @@ def test_healthz_is_the_only_unauthenticated_route():
     healthz = [r for r in app_mod.app.routes if getattr(r, "path", None) == "/healthz"]
     assert healthz
     assert require_user not in _dependency_calls(healthz[0])
+
+
+# ---------------------------------------------------------------------------
+# Runtime data must not be readable by other accounts on the box. Measured on
+# the mini 15/09: web/data/cookies was 755 and jobs.db 644 on a machine with a
+# second user account — mkdir() without an explicit chmod is masked by umask,
+# and does nothing at all when the directory already exists.
+# ---------------------------------------------------------------------------
+
+def _mode(path) -> int:
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def test_prepare_data_dir_creates_private_dirs(tmp_path):
+    data = tmp_path / "data"
+    downloads, cookies = data / "downloads", data / "cookies"
+    db = data / "jobs.db"
+
+    app_mod.prepare_data_dir(data, downloads, cookies, db)
+
+    for d in (data, downloads, cookies):
+        assert _mode(d) == 0o700, f"{d} nên 700, đang {oct(_mode(d))}"
+
+
+def test_prepare_data_dir_tightens_dirs_that_already_exist_too_open(tmp_path):
+    """The real failure on the mini: the directories already existed at 755,
+    so a plain mkdir(exist_ok=True) left them wide open."""
+    data = tmp_path / "data"
+    downloads, cookies = data / "downloads", data / "cookies"
+    for d in (data, downloads, cookies):
+        d.mkdir(parents=True, exist_ok=True)
+        os.chmod(d, 0o755)
+    db = data / "jobs.db"
+    db.write_bytes(b"")
+    os.chmod(db, 0o644)
+    # Ca dương: chứng minh phép đo thấy được trạng thái XẤU trước khi sửa.
+    assert _mode(cookies) == 0o755 and _mode(db) == 0o644
+
+    app_mod.prepare_data_dir(data, downloads, cookies, db)
+
+    assert _mode(cookies) == 0o700
+    assert _mode(downloads) == 0o700
+    assert _mode(db) == 0o600
+
+
+def test_prepare_data_dir_survives_a_missing_db(tmp_path):
+    """First boot on a fresh box: sqlite has not created jobs.db yet."""
+    data = tmp_path / "data"
+    app_mod.prepare_data_dir(data, data / "downloads", data / "cookies",
+                              data / "jobs.db")
+    assert not (data / "jobs.db").exists()

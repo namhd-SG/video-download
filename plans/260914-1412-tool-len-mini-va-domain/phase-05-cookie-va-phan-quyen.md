@@ -136,7 +136,22 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
       truyền một giá trị khác ⇒ test phải ĐỎ
 - [ ] `grep -ri "sessionid\|sid_tt\|cookie" ~/Library/Logs/videodl.log` → **rỗng**,
       và kèm **ca dương** chứng minh grep hoạt động (thử với chuỗi có thật)
-- [ ] File cookie quyền `0700`, người dùng khác trên máy đọc không được
+- [x] File cookie quyền `0700`, người dùng khác trên máy đọc không được
+      — ĐÃ SỬA 15/09, và nó **đang hỏng** trước đó. Đo trên mini:
+      `web/data` `web/data/cookies` `web/data/downloads` = **755**,
+      `jobs.db` = **644**, trên máy có tài khoản thứ hai (`autotest`).
+      Chưa có file cookie nào nên chưa rò gì, nhưng MVP đặt cookie đúng vào
+      thư mục đó.
+      ⚠ **Bàn giao 260915-1019 ghi SAI chỗ để dữ liệu**: nó bảo dữ liệu chạy
+      nằm ở `~/.local/share/videodl/{downloads,cookies}` quyền 700 — thư mục
+      đó **rỗng, không dùng**. `app.py` hardcode `web/data/`.
+      Sửa ở CẢ HAI đầu, vì chmod tay thì lần deploy sau lại 755:
+      `app.py::prepare_data_dir` mkdir **rồi `os.chmod` tường minh**
+      (`mkdir(mode=)` bị umask 022 che, và bị bỏ qua hoàn toàn khi thư mục đã
+      tồn tại — đúng ca gặp trên mini).
+      Sau deploy + restart: **700/700/700/600**. Đột biến bỏ `chmod` ⇒ ĐỎ.
+      Còn nợ: quyền của **từng file cookie** (0600) — chưa đo được vì chưa có
+      file nào; thuộc P05b khi mở cho từng người dán.
 - [ ] Giết tiến trình bằng SIGKILL giữa job ⇒ khởi động lại **không còn** jar cookie
       tạm nào sót trong thư mục tạm
 - [ ] `/search` đo lại **với cookies, 5 lượt** — báo tỉ lệ thật, không hứa trước
