@@ -3,143 +3,958 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>TikTok Music Downloader</title>
+<title>Video Desk — TikTok Music Downloader</title>
 <style>
-  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 720px;
-         margin: 2rem auto; padding: 0 1rem; color: #1c1c1e; background: #fafafa; }
-  h1 { font-size: 1.3rem; }
-  form { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
-  input[type=url] { flex: 1 1 320px; padding: .5rem; }
-  input[type=number] { width: 6rem; padding: .5rem; }
-  button { padding: .5rem 1rem; cursor: pointer; }
-  #error { color: #c0392b; margin: .5rem 0; min-height: 1.2em; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #ddd; font-size: .9rem; }
-  .bar-wrap { background: #e5e5e5; border-radius: 4px; overflow: hidden; height: 10px; width: 140px; }
-  .bar-fill { background: #34c759; height: 100%; transition: width .3s; }
-  .trang-thai { padding: .1rem .5rem; border-radius: 4px; font-size: .8rem; }
-  .pending { background: #eee; }
-  .running { background: #fff3cd; }
-  .done { background: #d4edda; }
-  .failed, .interrupted { background: #f8d7da; }
+  /* ======================================================================
+     THEME TOKENS
+     Light is the default (`:root`); dark is picked either by OS preference
+     (`prefers-color-scheme`) or by the user's own toggle, which writes
+     `data-theme` on <html> and wins over the media query because it comes
+     later in the cascade. localStorage remembers the manual choice across
+     reloads; no choice made yet falls back to the OS setting.
+     ====================================================================== */
+  :root {
+    --bg: #f6f6f8;
+    --surface: #ffffff;
+    --surface-alt: #eef0f4;
+    --border: #e1e3e8;
+    --text: #17181c;
+    --text-muted: #6b6f7b;
+    --accent: #3b6ef6;
+    --success: #158a44;
+    --success-bg: #dcf5e6;
+    --warn: #a15c00;
+    --warn-bg: #fdf0d2;
+    --danger: #c62828;
+    --danger-bg: #fbe1e1;
+    --pending-bg: #e9e9ee;
+    --pending-text: #52525f;
+    --shadow: 0 1px 2px rgba(20, 20, 30, .05), 0 4px 16px rgba(20, 20, 30, .06);
+    --radius: 10px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101114;
+      --surface: #1a1b20;
+      --surface-alt: #212328;
+      --border: #2d2f37;
+      --text: #f2f2f4;
+      --text-muted: #9a9da8;
+      --accent: #6d93ff;
+      --success: #4ade80;
+      --success-bg: #123322;
+      --warn: #f2b84b;
+      --warn-bg: #3a2c0d;
+      --danger: #ff6b6b;
+      --danger-bg: #3a1616;
+      --pending-bg: #2a2c33;
+      --pending-text: #b7bac4;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 16px rgba(0, 0, 0, .35);
+      color-scheme: dark;
+    }
+  }
+  html[data-theme="dark"] {
+    --bg: #101114;
+    --surface: #1a1b20;
+    --surface-alt: #212328;
+    --border: #2d2f37;
+    --text: #f2f2f4;
+    --text-muted: #9a9da8;
+    --accent: #6d93ff;
+    --success: #4ade80;
+    --success-bg: #123322;
+    --warn: #f2b84b;
+    --warn-bg: #3a2c0d;
+    --danger: #ff6b6b;
+    --danger-bg: #3a1616;
+    --pending-bg: #2a2c33;
+    --pending-text: #b7bac4;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 16px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  /* `.selection-bar`/`.empty-state`/`.card-grid` each set their own `display`
+     (flex/grid) so they lay out correctly WHEN SHOWN. That creates a real
+     bug: the UA rule for the `hidden` ATTRIBUTE (`[hidden]{display:none}`)
+     has the exact same specificity as those class rules, and author rules
+     sort after the UA sheet — so `el.hidden = true` stopped hiding anything
+     with its own `display` rule (caught by `agent-browser eval` showing
+     `display: flex` while `.hidden === true`, 15/09). `!important` here is
+     the standard fix for this exact collision, not a general escape hatch. */
+  [hidden] { display: none !important; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { max-width: 1180px; margin: 0 auto; padding: 20px 20px 100px; }
+
+  /* ---- top bar --------------------------------------------------------- */
+  .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .brand { display: flex; align-items: center; gap: .5rem; font-size: 1.05rem; font-weight: 700; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none; }
+  #theme-toggle {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 999px; padding: .4rem .7rem; cursor: pointer; font-size: .85rem;
+  }
+  #theme-toggle:hover { border-color: var(--accent); }
+
+  /* ---- control strip: form (trái) + hàng đợi (phải) --------------------- */
+  .control-strip { display: grid; grid-template-columns: 340px 1fr; gap: 16px; margin-bottom: 28px; }
+  @media (max-width: 860px) { .control-strip { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px; box-shadow: var(--shadow);
+  }
+  .panel h2 { margin: 0 0 12px; font-size: .92rem; font-weight: 700; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .panel-head h2 { margin: 0; }
+  .muted { color: var(--text-muted); font-size: .8rem; }
+
+  #job-form { display: flex; flex-direction: column; gap: 10px; }
+  #job-form input {
+    border: 1px solid var(--border); background: var(--bg); color: var(--text);
+    border-radius: 8px; padding: .55rem .7rem; font-size: .88rem; width: 100%;
+  }
+  #job-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #job-form button {
+    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    padding: .6rem 1rem; font-weight: 600; font-size: .88rem; cursor: pointer;
+  }
+  #job-form button:hover { filter: brightness(1.08); }
+  #job-form button:disabled { opacity: .6; cursor: wait; }
+  .error-text { color: var(--danger); font-size: .8rem; min-height: 1.1em; margin: 2px 0 0; }
+
+  .queue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; }
+  .queue-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-alt); }
+  .queue-item-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .queue-url { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  .status-badge { font-size: .7rem; font-weight: 700; padding: .18rem .55rem; border-radius: 999px; white-space: nowrap; flex: none; }
+  .status-pending { background: var(--pending-bg); color: var(--pending-text); }
+  .status-running { background: var(--warn-bg); color: var(--warn); }
+  .status-done { background: var(--success-bg); color: var(--success); }
+  .status-failed, .status-interrupted { background: var(--danger-bg); color: var(--danger); }
+
+  .progress-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: .76rem; color: var(--text-muted); }
+  .progress-track { flex: 1; height: 6px; border-radius: 999px; background: var(--border); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
+  .progress-fill.has-errors { background: var(--danger); }
+  .stop-reason { margin-top: 6px; font-size: .76rem; color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 5px 8px; line-height: 1.35; }
+  .job-meta { margin-top: 4px; font-size: .72rem; color: var(--text-muted); }
+  .job-meta a { color: var(--accent); }
+  .empty-hint { color: var(--text-muted); font-size: .84rem; margin: 0; }
+
+  /* ---- library ----------------------------------------------------------*/
+  .library-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; gap: 10px; flex-wrap: wrap; }
+  .library-head h2 { margin: 0; font-size: 1.02rem; }
+  .refresh-btn {
+    border: 1px solid var(--border); background: var(--surface); color: var(--text);
+    border-radius: 8px; padding: .4rem .75rem; font-size: .8rem; cursor: pointer;
+  }
+  .refresh-btn:hover { border-color: var(--accent); }
+
+  /* Bộ lọc là HỘP XỔ (dropdown), không phải chip ngang — mỗi hộp là một nút
+     mở popover chứa checkbox nhiều-chọn, đóng lại khi bấm ra ngoài / Esc. */
+  .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .filter-box { position: relative; }
+  .filter-trigger {
+    display: flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); border-radius: 8px;
+    padding: .45rem .7rem; font-size: .82rem; cursor: pointer;
+  }
+  .filter-trigger:hover { border-color: var(--accent); }
+  .filter-trigger .caret { color: var(--text-muted); font-size: .7rem; }
+  .filter-trigger .count {
+    background: var(--accent); color: #fff; border-radius: 999px; font-size: .68rem;
+    padding: 0 .4rem; min-width: 1.1em; text-align: center;
+  }
+  .filter-box.disabled .filter-trigger { cursor: not-allowed; opacity: .55; }
+  .filter-note { font-size: .68rem; color: var(--text-muted); }
+  .filter-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);
+    padding: 8px; min-width: 220px; max-width: min(320px, 88vw); max-height: 280px;
+    overflow-y: auto; z-index: 20;
+  }
+  .filter-panel label {
+    display: flex; align-items: center; gap: 8px; font-size: .82rem;
+    padding: 5px 4px; border-radius: 6px; cursor: pointer;
+  }
+  .filter-panel label:hover { background: var(--surface-alt); }
+  .filter-panel .opt-count { margin-left: auto; color: var(--text-muted); font-size: .74rem; }
+  .filter-panel .no-options { color: var(--text-muted); font-size: .8rem; padding: 6px 4px; }
+
+  /* Dòng "đang lọc": pill bấm ✕ để gỡ từng điều kiện. */
+  .active-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; min-height: 0; }
+  .pill {
+    display: flex; align-items: center; gap: 6px; background: var(--surface-alt);
+    border: 1px solid var(--border); border-radius: 999px; padding: .25rem .5rem .25rem .7rem;
+    font-size: .78rem;
+  }
+  .pill button { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: .9rem; line-height: 1; padding: 0; }
+  .pill button:hover { color: var(--danger); }
+  .pill.clear-all { background: transparent; border-style: dashed; cursor: pointer; }
+
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 14px; }
+  .card {
+    position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+    background: var(--surface); cursor: pointer; transition: box-shadow .15s, border-color .15s;
+  }
+  .card:hover { box-shadow: var(--shadow); }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .card-thumb { position: relative; aspect-ratio: 9 / 16; background: var(--surface-alt); overflow: hidden; }
+  .card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  /* Ảnh 404 là chuyện bình thường (ffmpeg cắt trượt, hoặc video có trước khi
+     tính năng thumbnail ra đời) — thẻ phải có HÌNH DẠNG RIÊNG, không phải một
+     ảnh vỡ. `.no-thumb` được gắn bằng JS khi <img> bắn `error`. */
+  .card-thumb.no-thumb {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    color: var(--text-muted);
+    background: repeating-linear-gradient(135deg, var(--surface-alt), var(--surface-alt) 9px, var(--bg) 9px, var(--bg) 18px);
+  }
+  .card-thumb.no-thumb span { font-size: .68rem; text-align: center; padding: 0 8px; }
+  .card-check {
+    position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 5px;
+    border: 2px solid #fff; background: rgba(0, 0, 0, .35); z-index: 2;
+  }
+  .card.selected .card-check { background: var(--accent); border-color: var(--accent); }
+  .card.selected .card-check::after { content: "✓"; display: block; color: #fff; font-size: .72rem; text-align: center; line-height: 16px; }
+  .card-duration {
+    position: absolute; right: 6px; bottom: 6px; background: rgba(0, 0, 0, .6); color: #fff;
+    font-size: .68rem; padding: 1px 5px; border-radius: 4px;
+  }
+  .card-body { padding: 8px 9px 10px; }
+  .card-title {
+    font-size: .8rem; font-weight: 600; display: -webkit-box; -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical; overflow: hidden; min-height: 2.1em;
+  }
+  .card-meta { margin-top: 5px; font-size: .71rem; color: var(--text-muted); display: flex; flex-wrap: wrap; gap: 4px; }
+  .card-meta .sep { opacity: .5; }
+  .card-link { display: inline-block; margin-top: 6px; font-size: .71rem; color: var(--accent); text-decoration: none; }
+  .card-link:hover { text-decoration: underline; }
+
+  /* Thư viện hiện có 0 video thật — đây là thứ user thấy đầu tiên, nên trạng
+     thái rỗng phải nhìn có chủ đích, không phải một khoảng trắng. */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    padding: 64px 20px; color: var(--text-muted); text-align: center;
+    border: 1px dashed var(--border); border-radius: 12px;
+  }
+  .empty-state svg { color: var(--text-muted); }
+  .empty-state h3 { margin: 0; color: var(--text); font-size: 1rem; }
+  .empty-state p { margin: 0; font-size: .85rem; max-width: 380px; }
+
+  .no-match-state { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: .88rem; }
+  .no-match-state button { margin-top: 8px; }
+
+  /* ---- thanh thao tác khi có thẻ được chọn ------------------------------ */
+  .selection-bar {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface);
+    border-top: 1px solid var(--border); box-shadow: 0 -4px 16px rgba(0, 0, 0, .1);
+    padding: 10px 20px; display: flex; justify-content: space-between; align-items: center;
+    gap: 12px; flex-wrap: wrap; z-index: 30;
+  }
+  .selection-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .selection-actions button {
+    border: 1px solid var(--border); background: var(--surface-alt); color: var(--text);
+    border-radius: 8px; padding: .5rem .9rem; font-size: .82rem; cursor: pointer;
+  }
+  .selection-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .selection-actions button.ghost { background: transparent; }
+  .selection-actions button:hover { filter: brightness(1.05); }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: .6rem 1rem; border-radius: 8px;
+    font-size: .84rem; box-shadow: var(--shadow); z-index: 40; max-width: 90vw; text-align: center;
+  }
+
+  /* ---- chạy được ở 400px ------------------------------------------------ */
+  @media (max-width: 480px) {
+    .app { padding: 14px 12px 110px; }
+    .filter-box { flex: 1 1 100%; }
+    .filter-trigger { width: 100%; justify-content: space-between; }
+    .filter-panel { left: 0; right: 0; max-width: none; width: 100%; }
+    .queue-url { max-width: 140px; }
+    .card-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+    .selection-bar { flex-direction: column; align-items: stretch; }
+    .selection-actions { justify-content: stretch; }
+    .selection-actions button { flex: 1; }
+  }
 </style>
 </head>
 <body>
-  <h1>TikTok Music Downloader</h1>
+<div class="app">
 
-  <form id="job-form">
-    <input type="url" id="url" placeholder="URL trang TikTok (music/tag/search/@profile)" required />
-    <input type="number" id="so-luong" placeholder="số lượng" min="1" max="2000" value="20" required />
-    <button type="submit">Tạo job</button>
-  </form>
-  <div id="error"></div>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk</div>
+    <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+  </header>
 
-  <table>
-    <thead>
-      <tr><th>ID</th><th>URL</th><th>Trạng thái</th><th>Tiến độ</th><th>Lỗi</th><th>Tạo lúc</th></tr>
-    </thead>
-    <tbody id="jobs-body"></tbody>
-  </table>
+  <!-- ================= DẢI ĐIỀU KHIỂN (trên) ================= -->
+  <section class="control-strip" aria-label="Điều khiển tải">
+    <div class="panel">
+      <h2>Tạo lượt tải mới</h2>
+      <form id="job-form">
+        <input type="url" id="url" placeholder="URL TikTok (music / tag / search / @profile)" required />
+        <input type="number" id="so-luong" min="1" max="2000" value="20" required />
+        <button type="submit">Tạo lượt tải</button>
+      </form>
+      <p id="error" class="error-text" role="alert"></p>
+    </div>
 
-  <script>
-    const form = document.getElementById("job-form");
-    const errorBox = document.getElementById("error");
-    const jobsBody = document.getElementById("jobs-body");
-    const openStreams = new Map(); // job_id -> EventSource
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Hàng đợi</h2>
+        <span id="queue-count" class="muted"></span>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+      <p id="queue-empty" class="empty-hint" hidden>Chưa có lượt tải nào — tạo một lượt ở khung bên trái.</p>
+    </div>
+  </section>
 
-    function escapeHtml(s) {
-      return String(s).replace(/[&<>"']/g, (c) => ({
-        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-      }[c]));
+  <!-- ================= THƯ VIỆN CREATIVE (dưới) ================= -->
+  <section aria-label="Thư viện creative">
+    <div class="library-head">
+      <h2>Thư viện creative</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="library-count" class="muted"></span>
+        <button id="library-refresh" class="refresh-btn" type="button">↻ Làm mới</button>
+      </div>
+    </div>
+
+    <div class="filter-bar" id="filter-bar"></div>
+    <div class="active-filters" id="active-filters" hidden></div>
+
+    <div id="empty-state" class="empty-state" hidden>
+      <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="10" y="24" width="44" height="28" rx="3"></rect>
+        <path d="M10 32h44M22 24v-7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4v7"></path>
+      </svg>
+      <h3>Thư viện chưa có video nào</h3>
+      <p>Tạo một lượt tải ở khung bên trên — video tải xong và lên Drive sẽ tự xuất hiện tại đây.</p>
+    </div>
+
+    <div id="no-match-state" class="no-match-state" hidden>
+      Không có video nào khớp bộ lọc hiện tại.
+      <div><button id="clear-filters-btn" class="refresh-btn" type="button">Xoá hết bộ lọc</button></div>
+    </div>
+
+    <div class="card-grid" id="card-grid"></div>
+  </section>
+
+</div>
+
+<div class="selection-bar" id="selection-bar" hidden>
+  <span id="selection-count" class="muted"></span>
+  <div class="selection-actions">
+    <button type="button" data-action="cart">Gồm vào giỏ</button>
+    <button type="button" data-action="analyze">Phân tích nội dung</button>
+    <button type="button" class="ghost" data-action="clear">Bỏ chọn</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ========================================================================
+  // CONSTANTS
+  // ========================================================================
+  const UNKNOWN = "__unknown__"; // khoá bucket dùng chung cho mọi trường thiếu dữ liệu
+
+  const STATUS_LABEL = {
+    pending: "Đang chờ", running: "Đang chạy", done: "Xong",
+    failed: "Lỗi", interrupted: "Bị ngắt",
+  };
+
+  // Ba lý do dừng sớm KHÁC NHAU (hashtag_enumerator.py) trông giống hệt nhau
+  // từ ngoài nhìn vào nếu không dịch riêng — xem `guard-marker` và spec: đừng
+  // gộp thành "không lấy được video".
+  const STOP_REASON_TEXT = {
+    stalled: "Dừng sớm: nhiều trang liên tiếp không thấy video mới — có thể " +
+             "nguồn này đã hết video TikTok đang cho xem, không phải lỗi.",
+    page_cap: "Dừng sớm: đã quét hết số trang cho phép mà chưa đủ số lượng " +
+               "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
+    index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
+                  "lỗi giữa chừng — thử lại sau.",
+  };
+
+  // Sáu hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket
+  // {key,label} — mảng vì "Nguồn" có thể có nhiều giá trị trên một video
+  // (một clip lên từ hai hashtag), còn các trường khác trả mảng 1 phần tử.
+  // `disabled` = có ô trong dải lọc nhưng không lọc được, vì KHÔNG có dữ
+  // liệu tỉ lệ khung ở đâu cả (chưa ai đọc nó từ ffmpeg) — thà disable còn
+  // hơn bịa lựa chọn không dựa trên dữ liệu thật.
+  const FILTER_GROUPS = [
+    { id: "nguon", label: "Nguồn", getBuckets: sourceBuckets },
+    { id: "khung", label: "Khung", disabled: true,
+      note: "Chưa có dữ liệu tỉ lệ khung (chưa đọc từ ffmpeg)" },
+    { id: "dai", label: "Dài", getBuckets: (v) => [durationBucket(v.duration)] },
+    { id: "thi_truong", label: "Thị trường", getBuckets: (v) => [regionBucket(v.region)] },
+    { id: "ngay_tai", label: "Ngày tải", getBuckets: (v) => [dateBucket(v.tao_luc)] },
+    { id: "nguoi_tai", label: "Người tải", getBuckets: (v) => [creatorBucket(v)] },
+  ];
+
+  // ========================================================================
+  // STATE — nguồn sự thật duy nhất phía client; mọi render đọc từ đây.
+  // ========================================================================
+  const state = {
+    jobs: [],
+    videos: [],
+    jobCreatorMap: new Map(), // job_id -> nguoi_tao, dựng từ GET /jobs
+    selected: new Set(),      // video_id đang được chọn trong thư viện
+    filters: {},              // groupId -> Map<bucketKey, bucketLabel>
+    openStreams: new Map(),   // job_id -> EventSource đang theo dõi
+  };
+  for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id] = new Map();
+
+  // ========================================================================
+  // HELPERS — escape, format, bucket
+  // ========================================================================
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function fmtDateTime(iso) {
+    return escapeHtml((iso || "").replace("T", " ").slice(0, 19)) || "—";
+  }
+
+  function fmtDuration(sec) {
+    if (sec === null || sec === undefined) return null;
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function fmtCount(n) {
+    if (n === null || n === undefined) return null;
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, "") + "tr";
+    if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, "") + "k";
+    return String(n);
+  }
+
+  // Rút gọn URL nguồn để hiện trong hộp lọc/pill mà không mất khả năng nhận
+  // ra nguồn nào là nguồn nào (URL đầy đủ vẫn nằm trong `title=`).
+  function shortenSourceUrl(u) {
+    try {
+      const url = new URL(u);
+      const path = url.pathname.replace(/\/+$/, "");
+      if (path.startsWith("/tag/")) return "#" + path.slice(5);
+      if (path.startsWith("/music/")) return "🎵 " + decodeURIComponent(path.slice(7));
+      if (path.startsWith("/@")) return path.slice(1);
+      if (path.startsWith("/search")) return "Tìm kiếm: " + (url.searchParams.get("q") || "");
+      return path || u;
+    } catch {
+      return u;
     }
+  }
 
-    function renderRow(job) {
-      const pct = job.tong > 0 ? Math.round((job.xong / job.tong) * 100) : 0;
-      return `
-        <tr id="job-${job.id}">
-          <td>${job.id}</td>
-          <td title="${escapeHtml(job.url)}">${escapeHtml(job.url.slice(0, 40))}${job.url.length > 40 ? "…" : ""}</td>
-          <td><span class="trang-thai ${escapeHtml(job.trang_thai)}">${escapeHtml(job.trang_thai)}</span></td>
-          <td>
-            <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
-            ${job.xong}/${job.tong}
-          </td>
-          <td>${job.loi}</td>
-          <td>${escapeHtml((job.tao_luc || "").replace("T", " ").slice(0, 19))}</td>
-        </tr>`;
-    }
+  function sourceBuckets(video) {
+    if (!video.nguon || video.nguon.length === 0) return [{ key: UNKNOWN, label: "Không rõ" }];
+    return video.nguon.map((u) => ({ key: u, label: shortenSourceUrl(u) }));
+  }
 
-    function upsertRow(job) {
-      const existing = document.getElementById(`job-${job.id}`);
-      const html = renderRow(job);
-      if (existing) {
-        existing.outerHTML = html;
-      } else {
-        jobsBody.insertAdjacentHTML("afterbegin", html);
+  function durationBucket(sec) {
+    if (sec === null || sec === undefined) return { key: UNKNOWN, label: "Không rõ" };
+    if (sec < 15) return { key: "u15", label: "Dưới 15 giây" };
+    if (sec < 60) return { key: "15-60", label: "15 giây – 1 phút" };
+    if (sec < 180) return { key: "60-180", label: "1 – 3 phút" };
+    return { key: "gt180", label: "Trên 3 phút" };
+  }
+
+  function regionBucket(region) {
+    return region ? { key: region, label: region } : { key: UNKNOWN, label: "Không rõ" };
+  }
+
+  function dateBucket(iso) {
+    const d = iso ? new Date(iso) : null;
+    if (!d || Number.isNaN(d.getTime())) return { key: UNKNOWN, label: "Không rõ" };
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diffDays = Math.floor((startOfDay(new Date()) - startOfDay(d)) / 86_400_000);
+    if (diffDays <= 0) return { key: "today", label: "Hôm nay" };
+    if (diffDays === 1) return { key: "yesterday", label: "Hôm qua" };
+    if (diffDays <= 7) return { key: "7d", label: "7 ngày qua" };
+    if (diffDays <= 30) return { key: "30d", label: "30 ngày qua" };
+    return { key: "older", label: "Cũ hơn" };
+  }
+
+  function creatorBucket(video) {
+    const who = state.jobCreatorMap.get(video.job_id);
+    return who ? { key: who, label: who } : { key: UNKNOWN, label: "Không rõ" };
+  }
+
+  // Đếm số video rơi vào mỗi bucket của MỘT nhóm lọc, trên toàn bộ thư viện
+  // (không trừ theo các nhóm lọc khác đang bật — đơn giản hoá có chủ đích,
+  // KISS: đủ để trả lời "còn bao nhiêu video ở nhánh này", không hứa đúng
+  // "còn bao nhiêu sau khi áp mọi lọc khác" như facet search đầy đủ).
+  function buildBuckets(group) {
+    const map = new Map();
+    for (const v of state.videos) {
+      const seenThisVideo = new Set();
+      for (const b of group.getBuckets(v)) {
+        if (seenThisVideo.has(b.key)) continue;
+        seenThisVideo.add(b.key);
+        if (!map.has(b.key)) map.set(b.key, { key: b.key, label: b.label, count: 0 });
+        map.get(b.key).count += 1;
       }
     }
+    return Array.from(map.values()).sort((a, b) => {
+      if (a.key === UNKNOWN) return 1;
+      if (b.key === UNKNOWN) return -1;
+      return b.count - a.count || a.label.localeCompare(b.label);
+    });
+  }
 
-    async function loadJobs() {
-      const res = await fetch("/jobs");
-      if (!res.ok) return;
-      const jobs = await res.json();
-      jobsBody.innerHTML = jobs.map(renderRow).join("");
-      // Live-follow anything still in flight; SSE drop is not fatal because
-      // this same poll re-runs every few seconds and repaints from GET
-      // /jobs/{id} regardless.
-      jobs.forEach((job) => {
-        if ((job.trang_thai === "pending" || job.trang_thai === "running") && !openStreams.has(job.id)) {
-          followJob(job.id);
-        }
-      });
+  function videoMatchesFilters(video) {
+    return FILTER_GROUPS.every((g) => {
+      if (g.disabled) return true;
+      const selected = state.filters[g.id];
+      if (selected.size === 0) return true;
+      return g.getBuckets(video).some((b) => selected.has(b.key));
+    });
+  }
+
+  // ========================================================================
+  // API
+  // ========================================================================
+  async function apiGet(path) {
+    const res = await fetch(path);
+    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+    return res.json();
+  }
+
+  function errorDetailText(data) {
+    // FastAPI trả `detail` là STRING cho lỗi tay (400/503) nhưng là MẢNG khi
+    // pydantic tự chặn (422) — in thẳng mảng đó ra sẽ hiện "[object Object]".
+    if (typeof data?.detail === "string") return data.detail;
+    if (Array.isArray(data?.detail)) {
+      return data.detail.map((e) => e.msg || JSON.stringify(e)).join("; ");
     }
+    return "Không tạo được lượt tải";
+  }
 
-    function followJob(jobId) {
-      const es = new EventSource(`/jobs/${jobId}/events`);
-      openStreams.set(jobId, es);
-      es.addEventListener("progress", (ev) => {
-        const job = JSON.parse(ev.data);
-        upsertRow(job);
-        if (job.trang_thai !== "pending" && job.trang_thai !== "running") {
-          es.close();
-          openStreams.delete(jobId);
-        }
-      });
-      es.onerror = () => {
-        // Tunnel/SSE dropped — close it, rely on the polling fallback below.
-        es.close();
-        openStreams.delete(jobId);
-      };
+  // ========================================================================
+  // RENDER — hàng đợi
+  // ========================================================================
+  function renderQueue() {
+    const list = document.getElementById("queue-list");
+    const emptyHint = document.getElementById("queue-empty");
+    document.getElementById("queue-count").textContent =
+      state.jobs.length ? `${state.jobs.length} lượt` : "";
+    emptyHint.hidden = state.jobs.length > 0;
+    list.innerHTML = state.jobs.map(renderQueueItem).join("");
+  }
+
+  function renderQueueItem(job) {
+    const pct = job.tong > 0 ? Math.min(100, Math.round((job.xong / job.tong) * 100)) : 0;
+    const hasErrors = job.loi > 0;
+    const stopText = job.ly_do_dung
+      ? (STOP_REASON_TEXT[job.ly_do_dung] ||
+         `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
+      : "";
+    const driveLink = job.drive_folder_link
+      ? `<a href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`
+      : "";
+    return `
+      <li class="queue-item" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
+        <div class="queue-item-top">
+          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
+          <span class="status-badge status-${escapeHtml(job.trang_thai)}">${escapeHtml(STATUS_LABEL[job.trang_thai] || job.trang_thai)}</span>
+        </div>
+        <div class="progress-row">
+          <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
+          <span>${job.xong}/${job.tong}${hasErrors ? ` · ${job.loi} lỗi` : ""}</span>
+        </div>
+        ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
+        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}</div>
+      </li>`;
+  }
+
+  // ========================================================================
+  // RENDER — bộ lọc + pill "đang lọc"
+  // ========================================================================
+  function renderFilterBar() {
+    const bar = document.getElementById("filter-bar");
+    bar.innerHTML = FILTER_GROUPS.map(renderFilterBox).join("");
+    // Popover đóng khi bấm ra ngoài hoặc Esc — gắn MỘT LẦN, không nhân bản
+    // mỗi lần renderFilterBar chạy lại.
+  }
+
+  function renderFilterBox(group) {
+    if (group.disabled) {
+      return `
+        <div class="filter-box disabled">
+          <button type="button" class="filter-trigger" disabled title="${escapeHtml(group.note)}">
+            ${escapeHtml(group.label)} <span class="filter-note">${escapeHtml(group.note)}</span>
+          </button>
+        </div>`;
     }
+    const selected = state.filters[group.id];
+    return `
+      <div class="filter-box" data-group="${group.id}">
+        <button type="button" class="filter-trigger" data-toggle="${group.id}" aria-expanded="false">
+          ${escapeHtml(group.label)}
+          ${selected.size ? `<span class="count">${selected.size}</span>` : ""}
+          <span class="caret">▾</span>
+        </button>
+        <div class="filter-panel" data-panel="${group.id}" hidden></div>
+      </div>`;
+  }
 
-    form.addEventListener("submit", async (ev) => {
-      ev.preventDefault();
-      errorBox.textContent = "";
-      const url = document.getElementById("url").value.trim();
-      const soLuong = parseInt(document.getElementById("so-luong").value, 10);
-      try {
-        const res = await fetch("/jobs", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url, so_luong: soLuong }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          errorBox.textContent = data.detail || "Không tạo được job";
-          return;
-        }
-        upsertRow(data);
-        followJob(data.id);
-        document.getElementById("url").value = "";
-      } catch (err) {
-        errorBox.textContent = "Lỗi mạng: " + err;
+  function renderFilterPanelBody(group) {
+    const panel = document.querySelector(`.filter-panel[data-panel="${group.id}"]`);
+    if (!panel) return;
+    const buckets = buildBuckets(group);
+    if (buckets.length === 0) {
+      panel.innerHTML = `<div class="no-options">Chưa có video để lọc</div>`;
+      return;
+    }
+    const selected = state.filters[group.id];
+    panel.innerHTML = buckets.map((b) => `
+      <label title="${escapeHtml(b.key === UNKNOWN ? "" : b.key)}">
+        <input type="checkbox" data-group="${group.id}" value="${escapeHtml(b.key)}" ${selected.has(b.key) ? "checked" : ""} />
+        ${escapeHtml(b.label)}
+        <span class="opt-count">${b.count}</span>
+      </label>`).join("");
+  }
+
+  function renderActiveFilters() {
+    const wrap = document.getElementById("active-filters");
+    const pills = [];
+    for (const group of FILTER_GROUPS) {
+      if (group.disabled) continue;
+      for (const [key, label] of state.filters[group.id]) {
+        pills.push({ groupId: group.id, groupLabel: group.label, key, label });
+      }
+    }
+    wrap.hidden = pills.length === 0;
+    if (pills.length === 0) { wrap.innerHTML = ""; return; }
+    wrap.innerHTML = pills.map((p) => `
+      <span class="pill">${escapeHtml(p.groupLabel)}: ${escapeHtml(p.label)}
+        <button type="button" data-remove-group="${p.groupId}" data-remove-key="${escapeHtml(p.key)}" aria-label="Gỡ lọc">✕</button>
+      </span>`).join("") +
+      `<span class="pill clear-all" id="clear-all-pill">Xoá hết ✕</span>`;
+  }
+
+  // ========================================================================
+  // RENDER — lưới thẻ + trạng thái rỗng
+  // ========================================================================
+  function renderLibrary() {
+    const grid = document.getElementById("card-grid");
+    const emptyState = document.getElementById("empty-state");
+    const noMatch = document.getElementById("no-match-state");
+
+    if (state.videos.length === 0) {
+      emptyState.hidden = false;
+      noMatch.hidden = true;
+      grid.hidden = true;
+      grid.innerHTML = "";
+      document.getElementById("library-count").textContent = "";
+      renderActiveFilters();
+      return;
+    }
+    emptyState.hidden = true;
+
+    const filtered = state.videos.filter(videoMatchesFilters);
+    document.getElementById("library-count").textContent =
+      filtered.length === state.videos.length
+        ? `${state.videos.length} video`
+        : `${filtered.length}/${state.videos.length} video`;
+
+    noMatch.hidden = filtered.length > 0;
+    grid.hidden = filtered.length === 0;
+    grid.innerHTML = filtered.map(renderCard).join("");
+    wireThumbFallback();
+    renderActiveFilters();
+  }
+
+  function renderCard(video) {
+    const isSelected = state.selected.has(video.video_id);
+    const duration = fmtDuration(video.duration);
+    const plays = fmtCount(video.play_count);
+    const metaParts = [];
+    metaParts.push(escapeHtml(video.author || "(chưa rõ người đăng)"));
+    if (video.region) metaParts.push(escapeHtml(video.region));
+    if (plays !== null) metaParts.push(`${plays} lượt xem`);
+    return `
+      <div class="card${isSelected ? " selected" : ""}" data-video-id="${escapeHtml(video.video_id)}" role="checkbox" aria-checked="${isSelected}" tabindex="0">
+        <div class="card-thumb">
+          <img src="/thumbs/${encodeURIComponent(video.video_id)}" alt="" loading="lazy" />
+          ${duration ? `<span class="card-duration">${duration}</span>` : ""}
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">${escapeHtml(video.title || "(chưa có tiêu đề)")}</div>
+          <div class="card-meta">${metaParts.map((m, i) => i === 0 ? m : `<span class="sep">·</span>${m}`).join(" ")}</div>
+          <a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>
+        </div>
+      </div>`;
+  }
+
+  // <img onerror> gắn bằng JS (không nhúng vào chuỗi HTML) để không phải
+  // escape lồng attribute, và vì 404 là NGOẠI LỆ BÌNH THƯỜNG cần một hình
+  // dạng riêng, không phải icon-ảnh-vỡ mặc định của trình duyệt.
+  function wireThumbFallback() {
+    document.querySelectorAll(".card-thumb img").forEach((img) => {
+      img.addEventListener("error", () => {
+        const wrap = img.closest(".card-thumb");
+        wrap.classList.add("no-thumb");
+        img.remove();
+        const note = document.createElement("span");
+        note.textContent = "Chưa cắt được ảnh";
+        wrap.appendChild(note);
+      }, { once: true });
+    });
+  }
+
+  // ========================================================================
+  // RENDER — thanh chọn + toast
+  // ========================================================================
+  function renderSelectionBar() {
+    const bar = document.getElementById("selection-bar");
+    bar.hidden = state.selected.size === 0;
+    document.getElementById("selection-count").textContent = `${state.selected.size} đã chọn`;
+  }
+
+  let toastTimer = null;
+  function showToast(text) {
+    const el = document.getElementById("toast");
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+  }
+
+  // ========================================================================
+  // EVENTS — bộ lọc (mở/đóng popover, tick checkbox, gỡ pill)
+  // ========================================================================
+  function closeAllFilterPanels(exceptGroupId) {
+    document.querySelectorAll(".filter-panel").forEach((p) => {
+      if (p.dataset.panel !== exceptGroupId) p.hidden = true;
+    });
+    document.querySelectorAll(".filter-trigger[data-toggle]").forEach((t) => {
+      if (t.dataset.toggle !== exceptGroupId) t.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  document.getElementById("filter-bar").addEventListener("click", (ev) => {
+    const trigger = ev.target.closest("[data-toggle]");
+    if (trigger) {
+      const groupId = trigger.dataset.toggle;
+      const panel = document.querySelector(`.filter-panel[data-panel="${groupId}"]`);
+      const willOpen = panel.hidden;
+      closeAllFilterPanels(willOpen ? groupId : null);
+      panel.hidden = !willOpen;
+      trigger.setAttribute("aria-expanded", String(willOpen));
+      if (willOpen) renderFilterPanelBody(FILTER_GROUPS.find((g) => g.id === groupId));
+      return;
+    }
+  });
+
+  document.getElementById("filter-bar").addEventListener("change", (ev) => {
+    const box = ev.target;
+    if (box.tagName !== "INPUT" || box.type !== "checkbox") return;
+    const groupId = box.dataset.group;
+    const group = FILTER_GROUPS.find((g) => g.id === groupId);
+    const selected = state.filters[groupId];
+    if (box.checked) {
+      const bucket = buildBuckets(group).find((b) => b.key === box.value);
+      selected.set(box.value, bucket ? bucket.label : box.value);
+    } else {
+      selected.delete(box.value);
+    }
+    renderFilterBar(); // cập nhật badge số lượng trên nút
+    renderLibrary();
+  });
+
+  document.getElementById("active-filters").addEventListener("click", (ev) => {
+    if (ev.target.id === "clear-all-pill") {
+      for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id].clear();
+      renderFilterBar();
+      renderLibrary();
+      return;
+    }
+    const btn = ev.target.closest("[data-remove-group]");
+    if (btn) {
+      state.filters[btn.dataset.removeGroup].delete(btn.dataset.removeKey);
+      renderFilterBar();
+      renderLibrary();
+    }
+  });
+
+  document.getElementById("clear-filters-btn").addEventListener("click", () => {
+    for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id].clear();
+    renderFilterBar();
+    renderLibrary();
+  });
+
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest(".filter-box")) closeAllFilterPanels(null);
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") closeAllFilterPanels(null);
+  });
+
+  // ========================================================================
+  // EVENTS — chọn thẻ + thanh thao tác
+  // ========================================================================
+  function toggleSelection(videoId) {
+    if (state.selected.has(videoId)) state.selected.delete(videoId);
+    else state.selected.add(videoId);
+    const card = document.querySelector(`.card[data-video-id="${CSS.escape(videoId)}"]`);
+    if (card) {
+      const nowSelected = state.selected.has(videoId);
+      card.classList.toggle("selected", nowSelected);
+      card.setAttribute("aria-checked", String(nowSelected));
+    }
+    renderSelectionBar();
+  }
+
+  document.getElementById("card-grid").addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-video-link]")) return; // "Xem gốc" mở tab riêng, không chọn thẻ
+    const card = ev.target.closest(".card");
+    if (card) toggleSelection(card.dataset.videoId);
+  });
+  document.getElementById("card-grid").addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    const card = ev.target.closest(".card");
+    if (card) { ev.preventDefault(); toggleSelection(card.dataset.videoId); }
+  });
+
+  document.getElementById("selection-bar").addEventListener("click", (ev) => {
+    const action = ev.target.dataset.action;
+    if (!action) return;
+    if (action === "clear") {
+      state.selected.clear();
+      document.querySelectorAll(".card.selected").forEach((c) => {
+        c.classList.remove("selected");
+        c.setAttribute("aria-checked", "false");
+      });
+      renderSelectionBar();
+      return;
+    }
+    // Giỏ và phân tích nội dung CHƯA có backend — báo thật, đừng gọi endpoint
+    // không tồn tại và đừng giả vờ đã làm.
+    if (action === "cart") showToast("Chưa làm — tính năng \"gồm vào giỏ\" chưa có ở backend.");
+    if (action === "analyze") showToast("Chưa làm — tính năng \"phân tích nội dung\" chưa có ở backend.");
+  });
+
+  document.getElementById("library-refresh").addEventListener("click", () => {
+    loadVideos().catch((err) => showToast("Không tải lại được thư viện: " + err.message));
+  });
+
+  // ========================================================================
+  // EVENTS — theme
+  // ========================================================================
+  const THEME_KEY = "videodl-theme";
+  function applyTheme(theme) {
+    if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
+    else document.documentElement.removeAttribute("data-theme");
+  }
+  applyTheme(localStorage.getItem(THEME_KEY));
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") ||
+      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const next = current === "dark" ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme(next);
+  });
+
+  // ========================================================================
+  // DATA LOADING — jobs (+ SSE tiến độ) và videos
+  // ========================================================================
+  async function loadJobs() {
+    state.jobs = await apiGet("/jobs");
+    state.jobCreatorMap = new Map(state.jobs.map((j) => [j.id, j.nguoi_tao]));
+    renderQueue();
+    state.jobs.forEach((job) => {
+      if ((job.trang_thai === "pending" || job.trang_thai === "running") && !state.openStreams.has(job.id)) {
+        followJob(job.id);
       }
     });
+  }
 
-    loadJobs();
-    // Polling fallback (phase-02 risk note: SSE can drop when the tunnel
-    // drops) — keeps every row honest even with zero open EventSources.
-    setInterval(loadJobs, 5000);
-  </script>
+  function followJob(jobId) {
+    const es = new EventSource(`/jobs/${jobId}/events`);
+    state.openStreams.set(jobId, es);
+    es.addEventListener("progress", (ev) => {
+      const job = JSON.parse(ev.data);
+      const idx = state.jobs.findIndex((j) => j.id === job.id);
+      if (idx >= 0) state.jobs[idx] = job; else state.jobs.unshift(job);
+      renderQueue();
+      if (job.trang_thai !== "pending" && job.trang_thai !== "running") {
+        es.close();
+        state.openStreams.delete(jobId);
+        // Job vừa xong (hoặc lỗi/bị ngắt) — nạp lại thư viện để creative mới
+        // (nếu có) xuất hiện mà không cần user tự bấm "Làm mới".
+        loadVideos().catch(() => {});
+      }
+    });
+    es.onerror = () => {
+      // Tunnel/SSE có thể rớt trong khi job vẫn chạy ở server — đóng stream
+      // này, dựa vào polling `loadJobs` bên dưới để giữ hàng đợi đúng.
+      es.close();
+      state.openStreams.delete(jobId);
+    };
+  }
+
+  async function loadVideos() {
+    const data = await apiGet(`/videos`);
+    state.videos = data.videos;
+    renderLibrary();
+  }
+
+  document.getElementById("job-form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const errorBox = document.getElementById("error");
+    const submitBtn = ev.target.querySelector("button[type=submit]");
+    errorBox.textContent = "";
+    const url = document.getElementById("url").value.trim();
+    const soLuong = parseInt(document.getElementById("so-luong").value, 10);
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, so_luong: soLuong }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errorBox.textContent = errorDetailText(data);
+        return;
+      }
+      const idx = state.jobs.findIndex((j) => j.id === data.id);
+      if (idx >= 0) state.jobs[idx] = data; else state.jobs.unshift(data);
+      renderQueue();
+      followJob(data.id);
+      document.getElementById("url").value = "";
+    } catch (err) {
+      errorBox.textContent = "Lỗi mạng: " + err.message;
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  // ========================================================================
+  // INIT
+  // ========================================================================
+  renderFilterBar();
+  Promise.all([loadJobs(), loadVideos()]).catch((err) => {
+    document.getElementById("error").textContent = "Không tải được dữ liệu ban đầu: " + err.message;
+  });
+  // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel
+  // rớt) — chạy lại dù không còn EventSource nào mở.
+  setInterval(() => loadJobs().catch(() => {}), 5000);
+})();
+</script>
 </body>
 </html>

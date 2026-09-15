@@ -149,9 +149,17 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
             detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset không được âm")
+    videos = models.list_videos(DB_PATH, limit=limit, offset=offset)
+    # Một truy vấn `sources_for_videos` cho CẢ TRANG, không phải một truy vấn
+    # mỗi video: bộ lọc "Nguồn" của UI cần biết mọi hashtag/music/profile mà
+    # mỗi video từng xuất hiện, và trang có tới `limit` video thì N+1 ở đây
+    # là N+1 thật, không phải lý thuyết.
+    sources = models.sources_for_videos(DB_PATH, [v["video_id"] for v in videos])
+    for video in videos:
+        video["nguon"] = sources.get(video["video_id"], [])
     return {
         "tong": models.count_videos(DB_PATH),
-        "videos": models.list_videos(DB_PATH, limit=limit, offset=offset),
+        "videos": videos,
     }
 
 

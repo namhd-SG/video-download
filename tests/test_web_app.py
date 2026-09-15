@@ -260,6 +260,67 @@ def test_videos_endpoint_returns_the_whole_team_catalogue(tmp_path, monkeypatch)
     assert {v["video_id"] for v in out["videos"]} == {"1", "2"}
 
 
+def test_videos_endpoint_includes_sources_from_sightings(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ nối `models.sources_for_videos` vào `list_videos` (app.py)
+    ⇒ ĐỎ (KeyError trên `video["nguon"]`, đo tay 15/09 — xem báo cáo)."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    models.record_video(db, job_id=1, video_id="1", url="u1")
+    models.record_sighting(db, video_id="1", job_id=1,
+                            nguon="https://www.tiktok.com/tag/abc", da_tai=True)
+    models.record_sighting(db, video_id="1", job_id=1,
+                            nguon="https://www.tiktok.com/music/x-1", da_tai=False)
+
+    out = app_mod.list_videos(nguoi_tao=TEST_USER)
+
+    video = next(v for v in out["videos"] if v["video_id"] == "1")
+    assert sorted(video["nguon"]) == [
+        "https://www.tiktok.com/music/x-1",
+        "https://www.tiktok.com/tag/abc",
+    ]
+
+
+def test_videos_endpoint_reports_empty_sources_for_a_video_with_no_sightings(
+        tmp_path, monkeypatch):
+    """Ca âm: video có hàng `videos` nhưng chưa từng có `video_sightings` (di
+    sản trước khi bảng đó tồn tại) vẫn phải trả `nguon: []`, không KeyError,
+    không 500 — bộ lọc "Nguồn" phía UI cần bucket "không rõ" ăn đúng ca này."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    models.record_video(db, job_id=1, video_id="2", url="u2")
+
+    out = app_mod.list_videos(nguoi_tao=TEST_USER)
+
+    video = next(v for v in out["videos"] if v["video_id"] == "2")
+    assert video["nguon"] == []
+
+
+def test_videos_endpoint_queries_sources_once_for_the_whole_page(tmp_path, monkeypatch):
+    """Chặn N+1: `sources_for_videos` phải được gọi ĐÚNG MỘT LẦN cho cả trang
+    (một mảng video_id), không phải một lần mỗi video."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    for i in range(5):
+        models.record_video(db, job_id=1, video_id=str(i), url=f"u{i}")
+
+    calls = []
+    real_sources_for_videos = models.sources_for_videos
+
+    def _counting(db_path, video_ids):
+        calls.append(list(video_ids))
+        return real_sources_for_videos(db_path, video_ids)
+
+    monkeypatch.setattr(models, "sources_for_videos", _counting)
+
+    app_mod.list_videos(nguoi_tao=TEST_USER)
+
+    assert len(calls) == 1, f"gọi sources_for_videos {len(calls)} lần, cần đúng 1"
+    assert set(calls[0]) == {"0", "1", "2", "3", "4"}
+
+
 @pytest.mark.parametrize("limit,offset", [(0, 0), (-1, 0), (1001, 0), (10, -1)])
 def test_videos_endpoint_rejects_out_of_range_paging(limit, offset, tmp_path, monkeypatch):
     db = tmp_path / "jobs.db"
