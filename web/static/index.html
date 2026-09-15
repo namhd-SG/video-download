@@ -4,6 +4,10 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Video Desk — TikTok Music Downloader</title>
+<!-- Ba khuôn chữ của mock đã duyệt. Google Fonts là host duy nhất được dùng ở
+     đây; mỗi khuôn đều khai fallback thật để trang không đổi dáng khi mạng
+     công ty chặn hoặc font chưa về. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <style>
   /* ======================================================================
      THEME TOKENS
@@ -14,63 +18,98 @@
      reloads; no choice made yet falls back to the OS setting.
      ====================================================================== */
   :root {
-    --bg: #f6f6f8;
+    /* Bảng màu lấy NGUYÊN từ mock đã duyệt (artifact 15/09). Trung tính lệch
+       nhẹ về xanh của nhấn, không phải xám thuần — đó là thứ làm nó trông
+       được chọn chứ không phải mặc định. */
+    --bg: #f3f6f4;
     --surface: #ffffff;
-    --surface-alt: #eef0f4;
-    --border: #e1e3e8;
-    --text: #17181c;
-    --text-muted: #6b6f7b;
-    --accent: #3b6ef6;
-    --success: #158a44;
-    --success-bg: #dcf5e6;
-    --warn: #a15c00;
-    --warn-bg: #fdf0d2;
-    --danger: #c62828;
-    --danger-bg: #fbe1e1;
-    --pending-bg: #e9e9ee;
-    --pending-text: #52525f;
-    --shadow: 0 1px 2px rgba(20, 20, 30, .05), 0 4px 16px rgba(20, 20, 30, .06);
-    --radius: 10px;
+    --surface-alt: #e7ede9;
+    --border: #d5ded9;
+    --border-strong: #b4c2bb;
+    --text: #14201d;
+    --text-muted: #4c5a56;
+    --text-faint: #7d8b86;
+    --accent: #0d5c55;
+    --accent-soft: #d8eae6;
+    --accent-ink: #ffffff;
+    --success: #1d6b3f;
+    --success-bg: #dcefe2;
+    --warn: #8a5a00;
+    --warn-bg: #f7ecd6;
+    --danger: #a33;
+    --danger-bg: #f7dede;
+    --pending-bg: #e7ede9;
+    --pending-text: #4c5a56;
+    /* Dải điều khiển giữ nền tối ở CẢ HAI theme — trong mock nó là một mặt
+       phẳng riêng, không phải một thẻ sáng màu; đó là nửa nhận diện của trang. */
+    --strip: #101a18;
+    --strip-ink: #d9e6e2;
+    --strip-ink-2: #7d9a94;
+    --strip-line: #1e332e;
+    --strip-accent: #2f9d8c;
+    --shadow: 0 1px 2px rgba(20, 32, 29, .06), 0 10px 28px rgba(20, 32, 29, .06);
+    --radius: 7px;
+    --display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
+    --body: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
     color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #101114;
-      --surface: #1a1b20;
-      --surface-alt: #212328;
-      --border: #2d2f37;
-      --text: #f2f2f4;
-      --text-muted: #9a9da8;
-      --accent: #6d93ff;
-      --success: #4ade80;
-      --success-bg: #123322;
-      --warn: #f2b84b;
-      --warn-bg: #3a2c0d;
-      --danger: #ff6b6b;
-      --danger-bg: #3a1616;
-      --pending-bg: #2a2c33;
-      --pending-text: #b7bac4;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 16px rgba(0, 0, 0, .35);
+      --bg: #0e1413;
+      --surface: #161e1c;
+      --surface-alt: #1e2926;
+      --border: #293430;
+      --border-strong: #3a4844;
+      --text: #e7efec;
+      --text-muted: #a6b4af;
+      --text-faint: #74827d;
+      --accent: #5ecdbf;
+      --accent-soft: #12302c;
+      --accent-ink: #04100e;
+      --success: #63c48c;
+      --success-bg: #14301f;
+      --warn: #e0b872;
+      --warn-bg: #2e2415;
+      --danger: #e08a8a;
+      --danger-bg: #3a1c1c;
+      --pending-bg: #1e2926;
+      --pending-text: #a6b4af;
+      --strip: #0a100f;
+      --strip-ink: #d9e6e2;
+      --strip-ink-2: #7d9a94;
+      --strip-line: #1a2a27;
+      --strip-accent: #5ecdbf;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
       color-scheme: dark;
     }
   }
   html[data-theme="dark"] {
-    --bg: #101114;
-    --surface: #1a1b20;
-    --surface-alt: #212328;
-    --border: #2d2f37;
-    --text: #f2f2f4;
-    --text-muted: #9a9da8;
-    --accent: #6d93ff;
-    --success: #4ade80;
-    --success-bg: #123322;
-    --warn: #f2b84b;
-    --warn-bg: #3a2c0d;
-    --danger: #ff6b6b;
-    --danger-bg: #3a1616;
-    --pending-bg: #2a2c33;
-    --pending-text: #b7bac4;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 4px 16px rgba(0, 0, 0, .35);
+    --bg: #0e1413;
+    --surface: #161e1c;
+    --surface-alt: #1e2926;
+    --border: #293430;
+    --border-strong: #3a4844;
+    --text: #e7efec;
+    --text-muted: #a6b4af;
+    --text-faint: #74827d;
+    --accent: #5ecdbf;
+    --accent-soft: #12302c;
+    --accent-ink: #04100e;
+    --success: #63c48c;
+    --success-bg: #14301f;
+    --warn: #e0b872;
+    --warn-bg: #2e2415;
+    --danger: #e08a8a;
+    --danger-bg: #3a1c1c;
+    --pending-bg: #1e2926;
+    --pending-text: #a6b4af;
+    --strip: #0a100f;
+    --strip-ink: #d9e6e2;
+    --strip-ink-2: #7d9a94;
+    --strip-line: #1a2a27;
+    --strip-accent: #5ecdbf;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
     color-scheme: dark;
   }
 
@@ -84,6 +123,9 @@
      `display: flex` while `.hidden === true`, 15/09). `!important` here is
      the standard fix for this exact collision, not a general escape hatch. */
   [hidden] { display: none !important; }
+  h1, h2, h3, .brand { font-family: var(--display); letter-spacing: -.02em; text-wrap: balance; }
+  .queue-url, .filter-count, .card-meta, .stat-value, .chip, code { font-family: var(--mono); }
+
   body {
     margin: 0;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -104,7 +146,52 @@
   #theme-toggle:hover { border-color: var(--accent); }
 
   /* ---- control strip: form (trái) + hàng đợi (phải) --------------------- */
-  .control-strip { display: grid; grid-template-columns: 340px 1fr; gap: 16px; margin-bottom: 28px; }
+  /* Trong mock, dải điều khiển KHÔNG phải hai thẻ sáng đặt cạnh nhau — nó là
+     một mặt phẳng tối liền, và thư viện bên dưới nằm trên nền giấy sáng. Hai
+     tông đó là nhận diện của trang; bỏ đi thì còn lại một dashboard bất kỳ. */
+  .control-strip {
+    display: grid; grid-template-columns: 340px 1fr; gap: 0;
+    margin-bottom: 28px; background: var(--strip); color: var(--strip-ink);
+    border: 1px solid var(--strip-line); border-radius: var(--radius);
+    overflow: hidden; box-shadow: var(--shadow);
+  }
+  .control-strip .panel {
+    background: transparent; border: 0; border-radius: 0; box-shadow: none;
+    color: var(--strip-ink);
+  }
+  .control-strip .panel + .panel { border-left: 1px solid var(--strip-line); }
+  @media (max-width: 860px) {
+    .control-strip .panel + .panel { border-left: 0; border-top: 1px solid var(--strip-line); }
+  }
+  /* Chữ trong dải lấy màu của dải — nhưng CHỪA những thẻ tự mang nền riêng.
+     Hai lần sai liên tiếp ở đúng chỗ này đáng ghi lại: đặt màu cho từng thẻ
+     thì sót một thẻ (ở theme SÁNG, `--text` là màu tối ⇒ chữ tối trên nền
+     tối, lỗi chỉ hiện ở một theme); còn quét tất cả thì đè lên huy hiệu và
+     băng cảnh báo, biến chữ sáng trên nền sáng của chính chúng. Ranh giới
+     đúng là: thẻ nào TỰ đặt background thì tự lo màu chữ của nó. */
+  .control-strip,
+  .control-strip h1, .control-strip h2, .control-strip h3,
+  .control-strip p:not(.stop-reason),
+  .control-strip span:not([class*="status-"]):not(.pill),
+  .control-strip label,
+  .control-strip li,
+  .control-strip div:not(.stop-reason) { color: var(--strip-ink); }
+  .control-strip input, .control-strip select {
+    background: #08120f; border: 1px solid #274743; color: var(--strip-ink);
+    font-family: var(--mono);
+  }
+  .control-strip input::placeholder { color: var(--strip-ink-2); }
+  .control-strip button[type="submit"] {
+    background: var(--strip-accent); color: #04100e; border: 0; font-weight: 600;
+  }
+  .control-strip .queue-item {
+    background: rgba(255, 255, 255, .03); border-color: var(--strip-line);
+  }
+  .control-strip .queue-url { color: var(--strip-ink); }
+  .control-strip .queue-meta, .control-strip .empty-hint { color: var(--strip-ink-2); }
+  .control-strip a { color: var(--strip-accent); }
+  .control-strip progress::-webkit-progress-bar { background: #16302c; }
+  .control-strip progress::-webkit-progress-value { background: var(--strip-accent); }
   @media (max-width: 860px) { .control-strip { grid-template-columns: 1fr; } }
 
   .panel {
