@@ -363,3 +363,46 @@ def test_thumb_endpoint_will_not_serve_a_file_outside_the_thumbs_dir(tmp_path, m
     with pytest.raises(HTTPException) as exc_info:
         app_mod.get_thumb("../khong-phai-cua-ban", nguoi_tao=TEST_USER)
     assert exc_info.value.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Trần job/ngày theo cookie phải được GỌI từ POST /jobs. Đây là test ở MỐI NỐI:
+# hàm `daily_cap_rejection` có đúng đến mấy cũng vô nghĩa nếu route quên gọi —
+# và unit test của riêng nó vẫn xanh trong đúng ca đó.
+# ---------------------------------------------------------------------------
+
+def _cap_env(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    cookies_dir = tmp_path / "cookies"
+    cookies_dir.mkdir()
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "COOKIES_DIR", cookies_dir)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+    return db_path
+
+
+def test_create_job_refuses_with_429_once_the_cookie_hit_its_daily_cap(tmp_path, monkeypatch):
+    db_path = _cap_env(tmp_path, monkeypatch)
+    for _ in range(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY):
+        app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
+
+    assert exc_info.value.status_code == 429, (
+        "trần ngày là 429 (chờ tới nửa đêm), KHÔNG phải 503 — 503 đang mang "
+        "nghĩa 'máy đang kẹt, thử lại lát nữa' và cách chữa khác hẳn"
+    )
+    assert len(models.list_jobs(db_path)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY, \
+        "lượt bị trần chặn không được để lại hàng job ma"
+
+
+def test_create_job_allows_every_job_up_to_the_cap(tmp_path, monkeypatch):
+    """Ca dương bắt buộc: nếu trần chặn sớm hơn một lượt thì test trên vẫn
+    xanh, vì nó chỉ hỏi 'có chặn không', không hỏi 'chặn đúng chỗ không'."""
+    db_path = _cap_env(tmp_path, monkeypatch)
+    for _ in range(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY):
+        app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
+
+    assert len(models.list_jobs(db_path)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY

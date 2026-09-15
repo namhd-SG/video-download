@@ -176,6 +176,25 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
     return job_id
 
 
+def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
+    """How many jobs each creator has started since `since`, for the daily cap.
+
+    Grouped rather than totalled because the cap counts per *cookie*, and one
+    cookie jar can belong to several creators once Phase 05 wires real
+    identities. The caller maps creator -> jar and sums the matching rows.
+
+    `since` is ISO-8601 UTC in the shape `_now()` writes, so `>=` compares
+    correctly as plain TEXT — the same property that lets `tao_luc` sort.
+    """
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT nguoi_tao, COUNT(*) AS n FROM jobs "
+            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
+            (since,),
+        ).fetchall()
+    return {row["nguoi_tao"]: row["n"] for row in rows}
+
+
 def get_job(db_path: Path, job_id: int) -> dict | None:
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

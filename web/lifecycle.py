@@ -19,13 +19,16 @@ import shutil
 import subprocess
 import threading
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from tiktok_music_downloader.gdrive_upload import DriveUploader, UploadOutcome, UploadResult
 from tiktok_music_downloader.utils import VideoRef
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
+from web.cookies import cookie_identity
 
 log = logging.getLogger("videodl.web.lifecycle")
 
@@ -38,6 +41,48 @@ FAILURE_THRESHOLD = 3
 # 300MB chừa biên rất rộng cho "đỉnh đĩa ≈ một video" trong khi vẫn cảnh báo
 # sớm trước khi máy khác (Promax) hết đĩa.
 DEFAULT_MIN_FREE_BYTES = 300 * 1024 * 1024
+
+# Jobs one cookie may start in a day. User's call 15/09: 20, counted per
+# cookie, on the Vietnamese day. Not a bandwidth budget — putting the tool on
+# the mini sends every member's traffic out of ONE IP, and one account running
+# steadily from one IP is the shape TikTok reads as a bot farm. The thing at
+# risk is the whole group of accounts behind that IP, flagged in one sweep.
+#
+# There is no measured usage rate behind the number: the dev jobs.db held 0
+# jobs when it was chosen, so treat 20 as a starting position to revisit once
+# the mini's own jobs.db has a few weeks in it, not as a tuned threshold.
+MAX_JOBS_PER_COOKIE_PER_DAY = 20
+
+# The cap's day is the working day in Vietnam, not the UTC one. `tao_luc` is
+# stored in UTC, so the cheap implementation — slicing its first 10 chars —
+# would reset the cap at 07:00 local, cutting the working morning in half.
+VN_TIMEZONE = ZoneInfo("Asia/Saigon")
+
+
+def vn_day_start_utc(now: datetime | None = None) -> str:
+    """Midnight in Vietnam, written the way `tao_luc` is stored.
+
+    Returned as a UTC ISO-8601 string so it compares against `tao_luc` as
+    plain TEXT, with no conversion on the SQL side.
+    """
+    now = now or datetime.now(timezone.utc)
+    local_midnight = now.astimezone(VN_TIMEZONE).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    return local_midnight.astimezone(timezone.utc).isoformat(timespec="microseconds")
+
+
+def jobs_today_for_cookie(db_path: Path, cookies_dir: Path, nguoi_tao: str,
+                          now: datetime | None = None) -> int:
+    """Jobs started today (Vietnam) by everyone sharing this job's cookie jar.
+
+    Summed across creators rather than read off one row: one jar can serve
+    several people once Phase 05 wires real identities, and the cap is about
+    what the *account* did, not what a person did.
+    """
+    identity = cookie_identity(cookies_dir, nguoi_tao)
+    per_creator = models.count_jobs_since_by_creator(db_path, vn_day_start_utc(now))
+    return sum(count for creator, count in per_creator.items()
+               if cookie_identity(cookies_dir, creator) == identity)
 
 
 class UploaderLike(Protocol):
@@ -197,6 +242,29 @@ def check_disk_guard(path: Path, min_free_bytes: int = DEFAULT_MIN_FREE_BYTES) -
     return DiskGuardStatus(ok=True, free_bytes=usage.free)
 
 
+def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
+                        max_jobs_per_day: int = MAX_JOBS_PER_COOKIE_PER_DAY,
+                        now: datetime | None = None) -> str | None:
+    """`None` -> accept. Otherwise why this cookie is done for today.
+
+    Deliberately NOT a gate inside `should_reject_new_job`: every gate there
+    means "this machine cannot take the job right now" and answers 503. This
+    one means "you may not ask for more today", which is a 429 and has a
+    different remedy — wait, or use another account. Sharing the status code
+    would tell the user to retry in a minute for something that clears at
+    midnight.
+
+    Counts every job row, failed ones included: a job that died still spent
+    its TikTok calls, which is the thing being rationed.
+    """
+    used = jobs_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
+    if used < max_jobs_per_day:
+        return None
+    return (f"cookie này đã chạy {used}/{max_jobs_per_day} job trong hôm nay "
+            "(tính theo ngày giờ VN, reset lúc nửa đêm). Trần đặt để TikTok không "
+            "đọc lưu lượng của cả team từ một IP thành trang trại bot.")
+
+
 def should_reject_new_job(*, downloads_dir: Path | None = None,
                            min_free_bytes: int = DEFAULT_MIN_FREE_BYTES) -> str | None:
     """`None` -> accept. Otherwise a human-readable reason to surface on the
@@ -209,6 +277,9 @@ def should_reject_new_job(*, downloads_dir: Path | None = None,
          never share one counter).
       1. Drive backpressure — tripped by 3 consecutive REAL upload failures.
       2. Live disk guard — tripped by low free space regardless of cause.
+
+    The per-cookie daily cap is `daily_cap_rejection`, not a gate here — see
+    its docstring for why it must not share this function's status code.
     """
     if not _get_uploader().is_configured():
         return (

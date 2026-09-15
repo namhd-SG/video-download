@@ -23,7 +23,8 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web.auth import require_user
-from web.lifecycle import should_reject_new_job, thumb_path_for, thumbs_dir_for
+from web.lifecycle import (daily_cap_rejection, should_reject_new_job,
+                           thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
 
 log = logging.getLogger("videodl.web")
@@ -121,6 +122,12 @@ def create_job(payload: CreateJobRequest,
     rejection = should_reject_new_job(downloads_dir=DOWNLOADS_DIR)
     if rejection is not None:
         raise HTTPException(status_code=503, detail=rejection)
+    # Trần ngày theo cookie. Cũng chạy TRƯỚC khi ghi hàng job, cùng lý do như
+    # gate trên: một lượt bị chặn không được để lại hàng 'pending' ma.
+    over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
+                                   nguoi_tao=nguoi_tao)
+    if over_cap is not None:
+        raise HTTPException(status_code=429, detail=over_cap)
     if not is_tiktok_collection(payload.url):
         raise HTTPException(
             status_code=400,

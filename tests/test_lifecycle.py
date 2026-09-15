@@ -10,9 +10,11 @@ network call or real service-account key is ever needed.
 """
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 import stat
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -784,3 +786,119 @@ def test_drive_file_id_is_the_file_not_the_shared_drive(tmp_path):
     success = _success()
     assert row["drive_file_id"] == success.file_id
     assert row["drive_file_id"] != success.drive_id
+
+
+# ---------------------------------------------------------------------------
+# Trần job/ngày theo COOKIE — user chốt 15/09: 20 job, mỗi cookie, ngày giờ VN.
+# Ca phân định nằm ở khung 00:00-07:00 giờ VN: đó là khoảng mà ngày VN và ngày
+# UTC KHÁC nhau, tức khoảng duy nhất một bản cắt-theo-UTC sẽ đếm sai.
+# ---------------------------------------------------------------------------
+
+def _insert_job_at(db: Path, tao_luc: str, nguoi_tao: str = "khach") -> None:
+    """Một hàng job với thời điểm ĐẶT SẴN. `models.create_job` luôn đóng dấu
+    `_now()`, mà mốc thời gian chính là thứ đang đo."""
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
+            "VALUES ('https://www.tiktok.com/tag/x', 'xong', 0, 0, 0, ?, ?)",
+            (tao_luc, nguoi_tao),
+        )
+
+
+def _cookies_dir_with_jar(tmp_path: Path, *nguoi_tao: str) -> Path:
+    cookies = tmp_path / "cookies"
+    cookies.mkdir(exist_ok=True)
+    for who in nguoi_tao:
+        digest = hashlib.sha256(who.encode("utf-8")).hexdigest()
+        (cookies / f"{digest}.json").write_text("[]", encoding="utf-8")
+    return cookies
+
+
+def test_vn_day_starts_at_midnight_in_vietnam_not_utc():
+    now = datetime(2026, 9, 15, 16, 30, tzinfo=timezone.utc)  # 23:30 VN cùng ngày
+    assert lifecycle.vn_day_start_utc(now).startswith("2026-09-14T17:00:00")
+
+
+def test_a_job_from_this_morning_counts_though_utc_still_calls_it_yesterday(tmp_path):
+    """06:00 giờ VN là HÔM NAY với người dùng nhưng vẫn là hôm qua theo UTC.
+    Bản cắt ngày bằng tiền tố chuỗi của `tao_luc` (lưu UTC) bỏ sót đúng ca này
+    — trần sẽ tự reset lúc 07:00 sáng, giữa buổi làm việc."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    _insert_job_at(db, "2026-09-14T23:00:00.000000+00:00")  # 06:00 VN ngày 15
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)  # 10:00 VN ngày 15
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 1
+
+
+def test_a_job_from_last_night_does_not_count(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    _insert_job_at(db, "2026-09-14T16:59:00.000000+00:00")  # 23:59 VN ngày 14
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 0
+
+
+def test_two_cookies_are_counted_separately(tmp_path):
+    """Trần là của cái NICK, không phải của cái người: hai jar khác nhau thì
+    hai bộ đếm khác nhau, kể cả khi cùng chạy trên một máy."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path, "namhd")  # "khach" không có jar
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", "namhd")
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", "khach")
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "namhd", now) == 1
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 1
+
+
+def test_jobs_with_no_cookie_share_one_counter(tmp_path):
+    """Không có jar nào thì mọi người đi chung một danh tính ẩn danh — vẫn là
+    một nick nhìn từ một IP, nên vẫn bị trần, không phải được miễn."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", "an")
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", "binh")
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "an", now) == 2
+
+
+def test_daily_cap_lets_the_last_allowed_job_through_then_refuses(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    for _ in range(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY - 1):
+        _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00")
+
+    assert lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", now=now) is None
+
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00")
+    reason = lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", now=now)
+
+    assert reason is not None
+    assert str(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY) in reason
+
+
+def test_failed_jobs_still_count_against_the_cap(tmp_path):
+    """Job hỏng vẫn đã tiêu lượt gọi TikTok — thứ đang được chia khẩu phần."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
+            "VALUES ('https://www.tiktok.com/tag/x', 'loi', 0, 0, 1, ?, 'khach')",
+            ("2026-09-15T02:00:00.000000+00:00",),
+        )
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 1
