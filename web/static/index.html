@@ -162,34 +162,33 @@
     border: 1px solid var(--strip-line); border-radius: var(--radius);
     overflow: hidden; box-shadow: var(--shadow);
   }
+  /* Dải định nghĩa lại TOKEN cho vùng của nó, thay vì đè từng thuộc tính.
+     Đè thuộc tính là đánh nhau bằng specificity, và nó đã thua ba lần trong
+     một ngày: `.job-meta a` cùng hạng nhưng đứng sau `.control-strip a` nên
+     thắng; `#job-form button` có id nên thắng mọi thứ. Mỗi lần thua là một
+     chỗ chữ tối trên nền tối, và chỉ hiện ở MỘT theme.
+     Custom property thì không có trận đánh đó: nó kế thừa xuống và được giải
+     tại chỗ dùng, nên mọi luật con viết `var(--accent)` tự động lấy màu của
+     dải mà không cần biết dải tồn tại. */
+  .control-strip {
+    --accent: var(--strip-accent);
+    --accent-ink: #04100e;
+    --text: var(--strip-ink);
+    --text-muted: var(--strip-ink-2);
+    --text-faint: var(--strip-ink-2);
+    --border: var(--strip-line);
+    --border-strong: var(--strip-line);
+    --surface: transparent;
+    --surface-alt: rgba(255, 255, 255, .04);
+    /* `--bg` là nền trang; trong dải nó là nền ô nhập. Nhờ đặt ở đây mà
+       `#job-form input { background: var(--bg) }` — một selector có id, tức
+       thắng mọi luật lớp — tự lấy đúng màu tối, không cần ai đè nó. */
+    --bg: #08120f;
+  }
+
   .control-strip .panel {
     background: transparent; border: 0; border-radius: 0; box-shadow: none;
     color: var(--strip-ink);
-  }
-  .control-strip .panel + .panel { border-left: 1px solid var(--strip-line); }
-  @media (max-width: 860px) {
-    .control-strip .panel + .panel { border-left: 0; border-top: 1px solid var(--strip-line); }
-  }
-  /* Chữ trong dải lấy màu của dải — nhưng CHỪA những thẻ tự mang nền riêng.
-     Hai lần sai liên tiếp ở đúng chỗ này đáng ghi lại: đặt màu cho từng thẻ
-     thì sót một thẻ (ở theme SÁNG, `--text` là màu tối ⇒ chữ tối trên nền
-     tối, lỗi chỉ hiện ở một theme); còn quét tất cả thì đè lên huy hiệu và
-     băng cảnh báo, biến chữ sáng trên nền sáng của chính chúng. Ranh giới
-     đúng là: thẻ nào TỰ đặt background thì tự lo màu chữ của nó. */
-  .control-strip,
-  .control-strip h1, .control-strip h2, .control-strip h3,
-  .control-strip p:not(.stop-reason),
-  .control-strip span:not([class*="status-"]):not(.pill),
-  .control-strip label,
-  .control-strip li,
-  .control-strip div:not(.stop-reason) { color: var(--strip-ink); }
-  .control-strip input, .control-strip select {
-    background: #08120f; border: 1px solid #274743; color: var(--strip-ink);
-    font-family: var(--mono);
-  }
-  .control-strip input::placeholder { color: var(--strip-ink-2); }
-  .control-strip button[type="submit"] {
-    background: var(--strip-accent); color: #04100e; border: 0; font-weight: 600;
   }
   .control-strip .queue-item {
     background: rgba(255, 255, 255, .03); border-color: var(--strip-line);
@@ -217,7 +216,7 @@
   }
   #job-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   #job-form button {
-    background: var(--accent); color: #fff; border: none; border-radius: 8px;
+    background: var(--accent); color: var(--accent-ink); border: none; border-radius: 8px;
     padding: .6rem 1rem; font-weight: 600; font-size: .88rem; cursor: pointer;
   }
   #job-form button:hover { filter: brightness(1.08); }
