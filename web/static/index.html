@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TikTok Music Downloader</title>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; max-width: 720px;
+         margin: 2rem auto; padding: 0 1rem; color: #1c1c1e; background: #fafafa; }
+  h1 { font-size: 1.3rem; }
+  form { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  input[type=url] { flex: 1 1 320px; padding: .5rem; }
+  input[type=number] { width: 6rem; padding: .5rem; }
+  button { padding: .5rem 1rem; cursor: pointer; }
+  #error { color: #c0392b; margin: .5rem 0; min-height: 1.2em; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #ddd; font-size: .9rem; }
+  .bar-wrap { background: #e5e5e5; border-radius: 4px; overflow: hidden; height: 10px; width: 140px; }
+  .bar-fill { background: #34c759; height: 100%; transition: width .3s; }
+  .trang-thai { padding: .1rem .5rem; border-radius: 4px; font-size: .8rem; }
+  .pending { background: #eee; }
+  .running { background: #fff3cd; }
+  .done { background: #d4edda; }
+  .failed, .interrupted { background: #f8d7da; }
+</style>
+</head>
+<body>
+  <h1>TikTok Music Downloader</h1>
+
+  <form id="job-form">
+    <input type="url" id="url" placeholder="URL trang TikTok (music/tag/search/@profile)" required />
+    <input type="number" id="so-luong" placeholder="số lượng" min="1" max="2000" value="20" required />
+    <button type="submit">Tạo job</button>
+  </form>
+  <div id="error"></div>
+
+  <table>
+    <thead>
+      <tr><th>ID</th><th>URL</th><th>Trạng thái</th><th>Tiến độ</th><th>Lỗi</th><th>Tạo lúc</th></tr>
+    </thead>
+    <tbody id="jobs-body"></tbody>
+  </table>
+
+  <script>
+    const form = document.getElementById("job-form");
+    const errorBox = document.getElementById("error");
+    const jobsBody = document.getElementById("jobs-body");
+    const openStreams = new Map(); // job_id -> EventSource
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+      }[c]));
+    }
+
+    function renderRow(job) {
+      const pct = job.tong > 0 ? Math.round((job.xong / job.tong) * 100) : 0;
+      return `
+        <tr id="job-${job.id}">
+          <td>${job.id}</td>
+          <td title="${escapeHtml(job.url)}">${escapeHtml(job.url.slice(0, 40))}${job.url.length > 40 ? "…" : ""}</td>
+          <td><span class="trang-thai ${escapeHtml(job.trang_thai)}">${escapeHtml(job.trang_thai)}</span></td>
+          <td>
+            <div class="bar-wrap"><div class="bar-fill" style="width:${pct}%"></div></div>
+            ${job.xong}/${job.tong}
+          </td>
+          <td>${job.loi}</td>
+          <td>${escapeHtml((job.tao_luc || "").replace("T", " ").slice(0, 19))}</td>
+        </tr>`;
+    }
+
+    function upsertRow(job) {
+      const existing = document.getElementById(`job-${job.id}`);
+      const html = renderRow(job);
+      if (existing) {
+        existing.outerHTML = html;
+      } else {
+        jobsBody.insertAdjacentHTML("afterbegin", html);
+      }
+    }
+
+    async function loadJobs() {
+      const res = await fetch("/jobs");
+      if (!res.ok) return;
+      const jobs = await res.json();
+      jobsBody.innerHTML = jobs.map(renderRow).join("");
+      // Live-follow anything still in flight; SSE drop is not fatal because
+      // this same poll re-runs every few seconds and repaints from GET
+      // /jobs/{id} regardless.
+      jobs.forEach((job) => {
+        if ((job.trang_thai === "pending" || job.trang_thai === "running") && !openStreams.has(job.id)) {
+          followJob(job.id);
+        }
+      });
+    }
+
+    function followJob(jobId) {
+      const es = new EventSource(`/jobs/${jobId}/events`);
+      openStreams.set(jobId, es);
+      es.addEventListener("progress", (ev) => {
+        const job = JSON.parse(ev.data);
+        upsertRow(job);
+        if (job.trang_thai !== "pending" && job.trang_thai !== "running") {
+          es.close();
+          openStreams.delete(jobId);
+        }
+      });
+      es.onerror = () => {
+        // Tunnel/SSE dropped — close it, rely on the polling fallback below.
+        es.close();
+        openStreams.delete(jobId);
+      };
+    }
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      errorBox.textContent = "";
+      const url = document.getElementById("url").value.trim();
+      const soLuong = parseInt(document.getElementById("so-luong").value, 10);
+      try {
+        const res = await fetch("/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url, so_luong: soLuong }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          errorBox.textContent = data.detail || "Không tạo được job";
+          return;
+        }
+        upsertRow(data);
+        followJob(data.id);
+        document.getElementById("url").value = "";
+      } catch (err) {
+        errorBox.textContent = "Lỗi mạng: " + err;
+      }
+    });
+
+    loadJobs();
+    // Polling fallback (phase-02 risk note: SSE can drop when the tunnel
+    // drops) — keeps every row honest even with zero open EventSources.
+    setInterval(loadJobs, 5000);
+  </script>
+</body>
+</html>
