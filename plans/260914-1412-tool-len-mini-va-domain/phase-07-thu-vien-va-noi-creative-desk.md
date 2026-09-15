@@ -57,9 +57,18 @@ ca dương: đọc được thư mục của chính tool (video-tool)
 ⇒ **Copy thẳng trong Drive được**: không tải xuống, không upload lại, không đụng trần
 *"tối đa 100MB mỗi file"* của hộp thoại, và **không sửa dòng nào của Creative Desk**.
 
-⚠ **Mặt trái của cùng phát hiện đó:** credential này ghi được vào TOÀN BỘ Shared Drive
-của Creative Desk. Mọi lệnh ghi phải **chỉ nhận folder id do API trả về**, không bao giờ
-tự chọn thư mục đích. Đây là ràng buộc an toàn, không phải gợi ý.
+⚠ **Mặt trái:** credential này ghi được vào toàn bộ Shared Drive của Creative Desk (hệ
+quả tất yếu của việc là *thành viên* Shared Drive — Google không cho thu hẹp quyền thành
+viên theo thư mục). Mọi lệnh ghi phải **chỉ nhận folder id do API trả về**. ⚠ Đây là
+**kỷ luật code, KHÔNG phải ranh giới quyền** — bug hay rò key đều đi xuyên qua nó.
+
+**ĐÍNH CHÍNH 15/09 16:13 — vai của SA.** Bản đầu file này (và một cảnh báo miệng) nói SA
+ở vai **Manager**, dựa trên `drives().get(fields="capabilities(...)")`. **SAI.**
+`permissions().list` ghi SA là **`fileOrganizer` = Content manager**, 1 bản ghi duy nhất,
+và giao diện Drive hiển thị đúng vậy — hai nguồn độc lập khớp nhau, cùng ngược với phép
+đo kia. ⇒ SA **không** xoá được drive, **không** đổi được thành viên; **không có việc
+hạ vai**. Bài học dụng cụ: muốn biết vai của một principal thì đọc `permissions().list`;
+`capabilities` trả lời câu khác.
 
 Hình dạng một bộ tự tìm (`SelfBundleCreate`): `category` · `title` · `usecase` ·
 `insight` · `template` · `quantity` → trả về `drive_folder_url` + `order` (mã `N.2307`).

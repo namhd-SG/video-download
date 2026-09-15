@@ -179,13 +179,21 @@ chúng có thể xanh chỉ vì route luôn từ chối.
 
 ## 8. Ngoài phạm vi spec này
 
-- **SA Drive đang ở vai Manager.** Đo 15/09: `canDeleteDrive`, `canManageMembers`,
-  `canDeleteChildren`, `canRenameDrive` đều `True` trên Shared Drive `Creative Astronex`,
-  và đó là SA **của Creative Desk** dùng lại, key nằm trên mini. Đếm toàn bộ lời gọi Drive
-  API trong `backend/app/`: `files().list|create|get|update|copy|get_media` +
-  `permissions().create` — **không** `files().delete`, **không** `drives().delete`,
-  **không** `permissions().delete` ⇒ **code Creative Desk chưa bao giờ cần Manager**.
-  Ranh giới phép đo: chỉ đếm code trong repo, không thấy ai dùng SA bằng tay / script ngoài.
+- **SA Drive ở vai Content manager — ĐÃ KIỂM, và một cảnh báo trước đó của tôi là SAI.**
+  Nguồn quyền uy: `permissions().list` trên Shared Drive `Creative Astronex` ghi SA
+  `creative-astronex-drive@…` là **`fileOrganizer`** (= Content manager), **1 bản ghi duy
+  nhất**; giao diện Drive hiển thị đúng như vậy. Hai nguồn độc lập khớp nhau.
+  ⚠ Bản đầu của spec này viết SA ở vai **Manager**, dựa trên
+  `drives().get(fields="capabilities(canDeleteDrive,canManageMembers,…)")` trả `True`.
+  **Trường đó không phản ánh quyền thật của service account này** — nó ngược với cả ACL
+  lẫn giao diện. Dụng cụ trả lời một câu khác câu đã hỏi; ai cần biết vai của một
+  principal thì đọc `permissions().list`, đừng đọc `capabilities`.
+  ⇒ SA **không** xoá được Shared Drive, **không** đổi được thành viên. Không có việc phải
+  hạ vai. Phân bố vai trên drive lúc đo: 3 `organizer` · 7 `fileOrganizer` · 3 `writer` ·
+  2 `reader` (15 thành viên).
+  Vẫn đúng và vẫn đáng ghi: SA này là **của Creative Desk dùng lại**, và key nằm trên mini
+  — máy có tài khoản thứ hai. Đó là lý do độc lập để cân nhắc một SA riêng, không liên
+  quan tới vai.
 - Gắn video vào thư mục bộ: làm bằng **shortcut**, không `files().copy` — sync của
   Creative Desk đã hiểu shortcut (`creative_set_sync_service.py:30-32,186`), và copy thì
   tốn gấp đôi dung lượng, đồng thời làm thư viện hết là nguồn sự thật.
