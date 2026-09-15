@@ -179,24 +179,35 @@ chúng có thể xanh chỉ vì route luôn từ chối.
 
 ## 8. Ngoài phạm vi spec này
 
-- **SA Drive ở vai Content manager — ĐÃ KIỂM, và một cảnh báo trước đó của tôi là SAI.**
-  Nguồn quyền uy: `permissions().list` trên Shared Drive `Creative Astronex` ghi SA
-  `creative-astronex-drive@…` là **`fileOrganizer`** (= Content manager), **1 bản ghi duy
-  nhất**; giao diện Drive hiển thị đúng như vậy. Hai nguồn độc lập khớp nhau.
-  ⚠ Bản đầu của spec này viết SA ở vai **Manager**, dựa trên
-  `drives().get(fields="capabilities(canDeleteDrive,canManageMembers,…)")` trả `True`.
-  **Trường đó không phản ánh quyền thật của service account này** — nó ngược với cả ACL
-  lẫn giao diện. Dụng cụ trả lời một câu khác câu đã hỏi; ai cần biết vai của một
-  principal thì đọc `permissions().list`, đừng đọc `capabilities`.
-  ⇒ SA **không** xoá được Shared Drive, **không** đổi được thành viên. Không có việc phải
-  hạ vai. Phân bố vai trên drive lúc đo: 3 `organizer` · 7 `fileOrganizer` · 3 `writer` ·
-  2 `reader` (15 thành viên).
-  Vẫn đúng và vẫn đáng ghi: SA này là **của Creative Desk dùng lại**, và key nằm trên mini
-  — máy có tài khoản thứ hai. Đó là lý do độc lập để cân nhắc một SA riêng, không liên
-  quan tới vai.
-- Gắn video vào thư mục bộ: làm bằng **shortcut**, không `files().copy` — sync của
-  Creative Desk đã hiểu shortcut (`creative_set_sync_service.py:30-32,186`), và copy thì
-  tốn gấp đôi dung lượng, đồng thời làm thư viện hết là nguồn sự thật.
+**Vai của SA — dòng thời gian, vì nó đổi GIỮA các phép đo.**
+
+```
+15:30  capabilities: canDeleteDrive=True,  canManageMembers=True   → organizer (Manager)
+16:13  capabilities: canDeleteDrive=True                            → user đang mở dropdown, chưa lưu
+16:14  permissions().list: fileOrganizer                            → user lưu ở đây
+16:15  capabilities: canDeleteDrive=False, canManageMembers=False   → đã lan
+```
+
+⇒ **Cảnh báo ban đầu ĐÚNG**: SA ở vai **Manager**, xoá được Shared Drive và đổi được
+thành viên. User đọc phát hiện đó rồi **tự hạ xuống Content manager (`fileOrganizer`)**
+lúc ~16:14. Trạng thái hiện tại là **đúng mức cần có** — không còn việc phải làm.
+
+⚠ **Hai lỗi của người viết file này, ghi lại vì lỗi thứ hai nguy hiểm hơn lỗi thứ nhất:**
+1. Lúc 16:13 thấy màn hình user (Content manager) ngược với phép đo (Manager), tôi kết
+   luận **dụng cụ sai** và đã commit một bản "đính chính" nói SA chưa bao giờ là Manager.
+2. Sự thật là **trạng thái đổi giữa hai phép đo** — điều lẽ ra phải là giả thuyết ĐẦU
+   TIÊN, vì tôi vừa đưa phát hiện cho một người và người đó nói sẽ vào xem.
+
+Bài học dùng được: hai phép đo lệch nhau trên một hệ **đang có người tác động** thì hỏi
+*"trạng thái có đổi không"* trước khi hỏi *"dụng cụ có hỏng không"*. Và mọi phép đo về
+quyền phải **ghi kèm giờ**, vì quyền là thứ người ta sửa.
+
+Ghi chú kỹ thuật vẫn đúng: `permissions().list` cho **vai** (`fileOrganizer` = Content
+manager); `drives().get(capabilities)` cho **những gì làm được lúc này**. Hai câu hỏi
+khác nhau, và capabilities lan chậm hơn ACL vài phút.
+
+Vẫn đáng ghi, độc lập với vai: SA này là **của Creative Desk dùng lại**, key nằm trên
+mini — máy có tài khoản thứ hai. Đó là lý do riêng để cân nhắc một SA riêng.
 
 ## Câu hỏi chưa giải
 
