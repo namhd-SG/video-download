@@ -114,12 +114,19 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
 
 ## Success Criteria
 
-- [ ] A và B cùng chạy job → bắt **tham số `cookies_path` thật sự truyền vào
+- [x] A và B cùng chạy job → bắt **tham số `cookies_path` thật sự truyền vào
       `download_all`** của job B, khẳng định nó là file của B.
+      — XONG 16/09 `0fa50a0`. `test_job_of_b_downloads_with_bs_cookie_not_as`
+      bắt giá trị tới `download_all` trong lúc job của B chạy. Ca âm:
+      `test_a_user_with_no_jar_downloads_anonymous_never_someone_elses` —
+      người chưa có jar phải chạy ẩn danh, KHÔNG rơi sang jar đang có.
       ⚠ Tiêu chí cũ *"grep log/DB không thấy cookie của A trong job B"* là **xanh trá
       hình**: theo thiết kế cookie **không bao giờ** vào DB, nên grep luôn rỗng dù
       code có lẫn cookie hay không
-- [ ] **Đột biến:** bỏ tham số `nguoi_tao` khỏi job ⇒ test phải ĐỎ
+- [x] **Đột biến:** bỏ tham số `nguoi_tao` khỏi job ⇒ test phải ĐỎ
+      — XONG 16/09. Ghim cứng `cookies_path_for_user(cookies_dir, "khach")`
+      thay `job["nguoi_tao"]` ⇒ ĐỎ đúng `test_job_of_b_downloads_with_bs_cookie_not_as`,
+      56 test còn lại xanh; hoàn nguyên, cây trùng khít HEAD.
 - [x] **Đột biến:** gửi header `Cf-Access-Authenticated-User-Email` **giả**, không
       kèm JWT hợp lệ ⇒ phải **401**. Bỏ bước kiểm JWT ⇒ test phải ĐỎ
       — XONG 15/09, `web/auth.py`. Đo hai tầng:
@@ -130,12 +137,33 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
       trả **200** — đó là ca âm chứng minh phép đo có sức phân định.
       Đột biến đã chạy, 4/4 ĐỎ: gỡ `Depends(require_user)` · `verify=False` ·
       bỏ xử lý `aud` dạng list · bỏ tiền-kiểm "chưa cấu hình".
-- [ ] **Đột biến:** đưa file cookie hỏng/hết hạn ⇒ job phải **FAIL**, không được
+- [x] **Đột biến:** đưa file cookie hỏng/hết hạn ⇒ job phải **FAIL**, không được
       chạy anonymous. Bỏ tiền-kiểm ⇒ test phải ĐỎ
-- [ ] **Đột biến:** mọi lời gọi scraper từ lớp web phải có `profile_dir=None`;
+      — XONG 16/09 `602a4de`. Gốc: `download_all` nuốt lỗi cookie thành một
+      dòng log rồi chạy tiếp KHÔNG cookie. Tiền-kiểm ở `process_job` phân biệt
+      **bốn** ca vì bốn cách chữa khác nhau: đọc không được · không có cookie
+      nào · **không có cookie đăng nhập** (phiên khách — ca âm thầm nhất) ·
+      hết hạn. Cookie phiên (`expires=0`) vẫn hợp lệ. Không có jar thì KHÔNG
+      phải lỗi (ẩn danh có chủ đích) — có ca âm khoá.
+      ⚠ Lý do hỏng **không được trích nội dung tệp**: `_load_cookies` nhúng
+      `raw[:80]` (`scraper.py:82,91`), mà với bản xuất Header String thì 80 ký
+      tự đầu CHÍNH LÀ token, và chuỗi đó đi vào `ly_do_dung` rồi lên UI.
+      `test_the_failure_reason_never_quotes_the_cookie_file` khoá ca này.
+      Đột biến gỡ khối tiền-kiểm ⇒ **4 test ĐỎ**, 58 xanh.
+- [x] **Đột biến:** mọi lời gọi scraper từ lớp web phải có `profile_dir=None`;
       truyền một giá trị khác ⇒ test phải ĐỎ
-- [ ] `grep -ri "sessionid\|sid_tt\|cookie" ~/Library/Logs/videodl.log` → **rỗng**,
+      — XONG 16/09. Test đã có sẵn nhưng tên test không phải bằng chứng: đã
+      đổi `profile_dir=None` → `"/tmp/hoso-dung-chung"` ⇒ ĐỎ đúng
+      `test_scraper_call_always_passes_profile_dir_none`; hoàn nguyên.
+- [x] `grep -ri "sessionid\|sid_tt\|cookie" ~/Library/Logs/videodl.log` → **rỗng**,
       và kèm **ca dương** chứng minh grep hoạt động (thử với chuỗi có thật)
+      — XONG 16/09, đo trên MINI, log thật 1 787 dòng
+      (`/Users/nobi_auto/Library/Logs/videodl.log`):
+      `sessionid` 0 · `sid_tt` 0 · `sessionid=` 0 · `Set-Cookie` 0 ·
+      `tt_csrf_token` 0 · `msToken` 0. Chữ "cookie" có **1** dòng — đã đọc
+      tận nơi: đó là tên cờ `--cookies` trong một câu hướng dẫn, không phải
+      tên/giá trị cookie. **Ca dương cùng lệnh cùng mẫu** trên tệp chắc chắn
+      có ⇒ 1/1, nên các số 0 kia là rỗng thật.
 - [x] File cookie quyền `0700`, người dùng khác trên máy đọc không được
       — ĐÃ SỬA 15/09, và nó **đang hỏng** trước đó. Đo trên mini:
       `web/data` `web/data/cookies` `web/data/downloads` = **755**,
@@ -152,8 +180,16 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
       Sau deploy + restart: **700/700/700/600**. Đột biến bỏ `chmod` ⇒ ĐỎ.
       Còn nợ: quyền của **từng file cookie** (0600) — chưa đo được vì chưa có
       file nào; thuộc P05b khi mở cho từng người dán.
-- [ ] Giết tiến trình bằng SIGKILL giữa job ⇒ khởi động lại **không còn** jar cookie
+- [x] Giết tiến trình bằng SIGKILL giữa job ⇒ khởi động lại **không còn** jar cookie
       tạm nào sót trong thư mục tạm
+      — XONG 16/09 `e5df58e`. Gốc: jar Netscape tạm mang cookie dạng văn bản
+      thuần, xoá trong `finally` — mà SIGKILL không chạy `finally`, và launchd
+      `KeepAlive=true` dựng lại ngay, nên mỗi lần bị giết để lại thêm một bản
+      đọc được, vĩnh viễn. Lớp web giờ sinh jar trong thư mục 0700 của CHÍNH
+      nó (`web/data/tmp`) rồi quét sạch lúc khởi động, trước khi worker chạy.
+      Để jar ngoài thư mục tạm hệ thống mới khiến việc quét an toàn: công cụ
+      dòng lệnh dùng cùng tiền tố trên cùng máy. Ca âm: bộ quét chỉ lấy jar
+      cookie, tệp khác còn nguyên. Đột biến gỡ lời gọi quét ⇒ ĐỎ.
 - [ ] `/search` đo lại **với cookies, 5 lượt** — báo tỉ lệ thật, không hứa trước
 
 ## Cap số job mỗi ngày — USER CHỐT 14/09

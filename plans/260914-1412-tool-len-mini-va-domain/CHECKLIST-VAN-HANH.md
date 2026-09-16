@@ -54,11 +54,11 @@ Mỗi dòng trả lời một câu: **team làm được gì rồi, và còn thi
 
 Hiện chưa tách cookie theo người. Chưa xong nghĩa là **chưa mở cho cả team dùng được**.
 
-- [ ] Mỗi người tự dán cookie TikTok của mình, không dùng chung tài khoản
-- [ ] Cookie của người A không lọt sang lượt tải của người B
-- [ ] Cookie hỏng / hết hạn → báo lỗi rõ ràng, không âm thầm tải ra kết quả rỗng
-- [ ] Cookie không bị ghi vào nhật ký hệ thống
-- [ ] Tắt đột ngột giữa chừng → không để sót cookie trên đĩa
+- [ ] Mỗi người tự dán cookie TikTok của mình, không dùng chung tài khoản — **CHƯA**, và đây là phần duy nhất còn lại của mục B1. Nó là trang 'Cookie của tôi', nằm ngoài phạm vi MVP theo chính kế hoạch (P05b). Hiện MVP dùng cookie của anh
+- [x] Cookie của người A không lọt sang lượt tải của người B — XONG 16/09. Đo bằng cách bắt đúng tệp cookie đi vào lúc tải, không phải bằng cách tìm cookie trong nhật ký (tìm ở đó luôn rỗng, kể cả khi code sai)
+- [x] Cookie hỏng / hết hạn → báo lỗi rõ ràng, không âm thầm tải ra kết quả rỗng — XONG 16/09. Phân biệt 4 ca: tệp đọc không được · không có cookie nào · **chưa đăng nhập** · hết hạn. Lượt tải DỪNG và ghi lý do, thay vì chạy tiếp như khách rồi báo 'xong' với ít video hơn hẳn
+- [x] Cookie không bị ghi vào nhật ký hệ thống — XONG 16/09, đo trên nhật ký thật của mini (1 787 dòng): không có tên hay giá trị cookie nào. Kèm phép thử đối chứng để chắc là cách tìm có hiệu lực
+- [x] Tắt đột ngột giữa chừng → không để sót cookie trên đĩa — XONG 16/09. Trước đây mỗi lần bị tắt cứng là để lại một bản cookie đọc được nằm vĩnh viễn; giờ dịch vụ dọn sạch mỗi lần khởi động
 
 ### B2. Nghiệm thu toàn hệ *(làm sau B1)*
 
