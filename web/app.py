@@ -51,6 +51,9 @@ MAX_VIDEOS_PAGE_SIZE = 1000
 
 # Matches the CLI's own --max ceiling (cli.py: max=2000) — same core, same cap.
 MAX_SO_LUONG = 2000
+# Id TikTok đo được là 19 chữ số. Trần này để một id dài bất thường bị chặn ở
+# cổng thay vì làm hệ tệp ném ra ngoài.
+MAX_VIDEO_ID_LEN = 32
 SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
@@ -233,7 +236,11 @@ def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResp
     ".." or a NUL. That is a structural guarantee rather than a blocklist —
     the same reasoning as the sha256 filename in `cookies_path_for_user`.
     """
-    if not video_id.isdigit():
+    # Hình dạng chặn traversal; ĐỘ DÀI chặn hệ tệp. `.isdigit()` cho một id
+    # 300 chữ số đi qua, rồi `is_file()` ném OSError "File name too long" —
+    # lỗi KHÔNG CÓ BIÊN trên một endpoint đã qua xác thực, client nhận 500.
+    # Id TikTok là 19 chữ số; 32 đã rất rộng.
+    if not video_id.isdigit() or len(video_id) > MAX_VIDEO_ID_LEN:
         raise HTTPException(status_code=404, detail="video_id không hợp lệ")
     path = thumb_path_for(DB_PATH, video_id)
     if not path.is_file():

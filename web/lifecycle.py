@@ -406,8 +406,32 @@ def _cut_thumbnail_quietly(path: Path, db_path: Path, video_id: str) -> bool:
         # build dislikes, so this reports the symptom and does not name a cause.
         log.warning("thumbnail %s: ffmpeg rc=%s — chưa kết luận nguyên nhân",
                     video_id, result.returncode)
+        _bo_tep_do_dang(out, video_id)
         return False
-    return out.exists()
+    if not out.exists():
+        # ffmpeg bảo thành công mà không có tệp ra. Nhánh này trước đây CÂM
+        # hoàn toàn — `return out.exists()` trả False và không ai biết vì sao.
+        log.warning("thumbnail %s: ffmpeg báo rc=0 nhưng không có tệp ra", video_id)
+        return False
+    if out.stat().st_size == 0:
+        # Tệp 0 byte vẫn là `is_file()` với `/thumbs`, nên nó sẽ trả 200 kèm
+        # thân rỗng MÃI MÃI cho video đó — và mọi lượt cắt lại dựa trên
+        # `path.exists()` sẽ bỏ qua nó vĩnh viễn. Bất biến của lớp này là
+        # "tệp có trên đĩa CHÍNH LÀ sự thật rằng có ảnh" (models.py:98-101);
+        # một tệp rỗng phá đúng bất biến đó.
+        log.warning("thumbnail %s: tệp ra rỗng 0 byte — bỏ", video_id)
+        _bo_tep_do_dang(out, video_id)
+        return False
+    return True
+
+
+def _bo_tep_do_dang(out: Path, video_id: str) -> None:
+    """Dọn tệp ảnh dở. `ffmpeg -y` TẠO tệp ra trước rồi mới hỏng, nên một lượt
+    cắt trượt vẫn để lại một tệp 0 byte nếu không ai dọn."""
+    try:
+        out.unlink(missing_ok=True)
+    except OSError as exc:  # noqa: BLE001 — dọn được thì tốt, không được thì thôi
+        log.warning("thumbnail %s: không xoá được tệp dở (%s)", video_id, type(exc).__name__)
 
 
 def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef,

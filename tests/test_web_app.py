@@ -508,3 +508,36 @@ def test_the_web_layer_keeps_its_temp_jars_out_of_the_shared_temp_dir(tmp_path):
     assert downloader.COOKIE_TMP_DIR is not None, "để None là rơi về thư mục tạm hệ thống"
     assert Path(downloader.COOKIE_TMP_DIR) == tmp_dir
     assert stat.S_IMODE(os.stat(tmp_dir).st_mode) == 0o700, "phải SIẾT lại thư mục đã tồn tại"
+
+
+def test_an_absurdly_long_video_id_is_refused_not_crashed(tmp_path, monkeypatch):
+    """`.isdigit()` chặn traversal nhưng KHÔNG chặn hệ tệp: một id 300 chữ số
+    đi qua cổng rồi làm `is_file()` ném OSError 'File name too long' — lỗi
+    không có biên trên endpoint đã qua xác thực, client nhận 500."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    # Thư mục ảnh PHẢI tồn tại — như trên mini, nơi đã có ảnh. Thiếu nó thì hệ
+    # tệp trả ENOENT trước khi kịp than tên quá dài, `is_file()` nuốt thành
+    # False, và test đi qua một đường KHÁC đường của máy thật: đo sai điều kiện
+    # thì kết quả xanh không nói được gì.
+    lifecycle.thumbs_dir_for(db_path).mkdir(parents=True, exist_ok=True)
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.get_thumb("9" * 300, nguoi_tao=TEST_USER)
+
+    assert exc_info.value.status_code == 404, "phải là 404 có kiểm soát, không phải OSError"
+
+
+def test_a_normal_video_id_still_reaches_the_lookup(tmp_path, monkeypatch):
+    """Ca dương: trần độ dài không được chặn nhầm id thật (19 chữ số)."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.get_thumb("7685840805507910932", nguoi_tao=TEST_USER)
+
+    # 404 vì chưa có ảnh, nhưng phải là 404 của "chưa có ảnh" chứ không phải
+    # của "id không hợp lệ" — hai ca khác nhau đi qua cùng mã trạng thái.
+    assert "chưa có ảnh" in exc_info.value.detail

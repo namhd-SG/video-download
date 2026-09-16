@@ -989,3 +989,81 @@ def test_record_sighting_accepts_a_real_time(tmp_path):
     with sqlite3.connect(db) as conn:
         thay_luc = conn.execute("SELECT thay_luc FROM video_sightings").fetchone()[0]
     assert thay_luc == "2026-09-14T10:43:08.000000+00:00"
+
+
+# ---------------------------------------------------------------------------
+# Ảnh: ffmpeg -y TẠO tệp ra TRƯỚC rồi mới hỏng. Không dọn thì còn lại một tệp
+# .webp 0 byte, mà `/thumbs` chỉ hỏi `is_file()` ⇒ trả 200 kèm thân RỖNG mãi
+# mãi cho video đó, và mọi lượt cắt lại dựa trên `exists()` bỏ qua vĩnh viễn.
+# Bất biến của lớp này là "tệp có trên đĩa CHÍNH LÀ sự thật rằng có ảnh".
+# ---------------------------------------------------------------------------
+
+def _video_ngan(tmp_path: Path, giay: float) -> Path:
+    """Dựng một video thật ngắn hơn `THUMB_SEEK_SECONDS` bằng ffmpeg của repo."""
+    from tiktok_music_downloader.watermark import find_ffmpeg
+    ff = find_ffmpeg()
+    assert ff, "repo có bundle ffmpeg; thiếu nó thì test này vô nghĩa"
+    out = tmp_path / "ngan.mp4"
+    subprocess.run([str(ff), "-y", "-f", "lavfi", "-i", f"testsrc=duration={giay}:size=64x64:rate=10",
+                    "-pix_fmt", "yuv420p", str(out)],
+                   capture_output=True, check=True)
+    return out
+
+
+def test_a_video_shorter_than_the_seek_point_leaves_no_empty_thumbnail(tmp_path):
+    """ĐỘT BIẾN: bỏ lời gọi dọn tệp ở nhánh `rc != 0` ⇒ ĐỎ.
+
+    `-ss 1` vượt quá độ dài video 0,5s nên ffmpeg không lấy được khung nào và
+    trả mã khác 0 — nhưng tệp ra đã được tạo trước đó."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = _video_ngan(tmp_path, 0.5)
+
+    ok = lifecycle._cut_thumbnail_quietly(video, db, "7001")
+
+    assert ok is False, "cắt trượt thì phải trả False"
+    duong_anh = lifecycle.thumb_path_for(db, "7001")
+    assert not duong_anh.exists(), (
+        f"còn tệp dở {duong_anh.stat().st_size if duong_anh.exists() else '?'} byte — "
+        "/thumbs sẽ trả 200 rỗng cho video này mãi mãi")
+
+
+def test_a_normal_video_still_gets_its_thumbnail(tmp_path):
+    """CA DƯƠNG bắt buộc: thiếu nó thì một bản vá 'luôn xoá tệp ra' vẫn xanh
+    test trên trong khi đã làm hỏng toàn bộ tính năng ảnh."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = _video_ngan(tmp_path, 3)
+
+    ok = lifecycle._cut_thumbnail_quietly(video, db, "7002")
+
+    assert ok is True
+    duong_anh = lifecycle.thumb_path_for(db, "7002")
+    assert duong_anh.is_file() and duong_anh.stat().st_size > 0
+
+
+def test_ffmpeg_reporting_success_with_an_empty_file_is_still_a_failure(tmp_path, monkeypatch):
+    """Nhánh KHÁC với test trên: ffmpeg trả rc=0 nhưng tệp ra rỗng.
+
+    Video 0,5s cho rc≠0 nên không chạm nhánh này — phải giả lập đúng kết quả
+    đó. Đây là nhánh mà review chỉ ra là CÂM: bản cũ `return out.exists()` trả
+    True cho một tệp 0 byte, và `/thumbs` sẽ phục vụ 200 kèm thân rỗng mãi mãi.
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"khong can la video that")
+    duong_anh = lifecycle.thumb_path_for(db, "7003")
+
+    def _ffmpeg_gia(cmd, **kw):
+        # Y HỆT ffmpeg: tạo tệp ra rồi báo thành công, nhưng không ghi gì.
+        duong_anh.parent.mkdir(parents=True, exist_ok=True)
+        duong_anh.touch()
+        return subprocess.CompletedProcess(cmd, 0, b"", b"")
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", _ffmpeg_gia)
+
+    ok = lifecycle._cut_thumbnail_quietly(video, db, "7003")
+
+    assert ok is False, "tệp 0 byte không phải là ảnh"
+    assert not duong_anh.exists(), "tệp rỗng phải bị dọn, không được để /thumbs phục vụ nó"
