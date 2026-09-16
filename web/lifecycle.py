@@ -278,8 +278,29 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
     would tell the user to retry in a minute for something that clears at
     midnight.
 
-    Counts every job row, failed ones included: a job that died still spent
-    its TikTok calls, which is the thing being rationed.
+    HAI cổng, đếm HAI thứ khác nhau — nói riêng vì một câu phủ cả hai đã sai
+    một lần rồi (câu cũ ở đây: *"đếm mọi hàng job, kể cả job hỏng"*):
+
+      * trần JOB dùng `COUNT(*)` ⇒ job liệt kê ra RỖNG **vẫn tính**. Đo
+        16/09: 2 job ra rỗng = đã tiêu 2 lượt.
+      * trần VIDEO dùng `SUM(tong)` ⇒ đúng 2 job đó **tính 0 video**, vì
+        `process_job` ghi đè `tong` bằng số ref THẬT sau khi lọc trùng.
+
+    Giữ như vậy có chủ đích: xin 2000 mà nhận 3 rồi bị trừ 2000 là phạt người
+    dùng vì thứ họ không điều khiển được. Thứ đang được chia khẩu phần là lưu
+    lượng TẢI thật.
+
+    ⚠ HỆ QUẢ PHẢI BIẾT: **trần video KHÔNG bảo vệ lưu lượng liệt kê (index).**
+    Một lượt quét hashtag đã cạn tiêu tới ~40 trang index mà `tong=0` nên
+    không tốn gì của trần video. Thứ duy nhất đang bó nó là **trần JOB**:
+    20 lượt × ~40 trang = ~800 lượt gọi index/ngày/cookie. Ai định cho ca
+    "nguồn đã cạn" khỏi tính vào trần job thì phải thay bằng một trần khác,
+    nếu không sẽ không còn gì bó — và `plan.md` R6 ghi rõ rate-limit đánh
+    theo IP egress, tức đánh CẢ VĂN PHÒNG chứ không riêng tool này.
+
+    Câu cũ đúng lúc nó được viết (khi hàm chỉ có trần job) rồi trở thành
+    over-claim khi trần video được thêm vào cùng hàm mà không ai soát lại nó.
+    Thêm nhánh vào một hàm thì phải soát mọi khẳng định đang đứng trên hàm đó.
     """
     used = jobs_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
     if used >= max_jobs_per_day:
