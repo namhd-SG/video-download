@@ -406,3 +406,38 @@ def test_create_job_allows_every_job_up_to_the_cap(tmp_path, monkeypatch):
         app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
 
     assert len(models.list_jobs(db_path)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY
+
+
+# ---------------------------------------------------------------------------
+# Cache: vỏ trang + hai tệp nó trỏ tới phải được kiểm lại mỗi lần tải.
+# Gọi thẳng hàm middleware — venv này không có `httpx` nên không dùng
+# TestClient được (xem docstring đầu file).
+# ---------------------------------------------------------------------------
+
+def _header_for(path: str) -> str | None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from starlette.responses import Response
+
+    request = SimpleNamespace(url=SimpleNamespace(path=path))
+
+    async def call_next(_req):
+        return Response(content=b"x")
+
+    response = asyncio.run(app_mod.add_revalidate_header(request, call_next))
+    return response.headers.get("cache-control")
+
+
+def test_shell_and_its_assets_must_be_revalidated():
+    assert _header_for("/") == "no-cache"
+    assert _header_for("/index.html") == "no-cache"
+    assert _header_for("/app.js") == "no-cache"
+    assert _header_for("/app.css") == "no-cache"
+
+
+def test_other_routes_are_left_alone():
+    """Ca âm: middleware đóng dấu MỌI response thì bốn assert trên vẫn xanh
+    trong khi header đã bị dán sai khắp nơi — kể cả lên JSON của /jobs."""
+    assert _header_for("/healthz") is None
+    assert _header_for("/jobs") is None

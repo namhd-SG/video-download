@@ -93,6 +93,26 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="TikTok Music Downloader", lifespan=_lifespan)
 
+# The page shell and the two files it points at must be re-checked on every
+# load. `no-cache` is not "do not store" — it is "revalidate before reuse", so
+# the ETag Starlette already sends turns the usual hit into a cheap 304.
+#
+# Without this, splitting the styles and script out of index.html left a
+# regression that only shows on the SECOND change to either file: Cloudflare
+# caches .js and .css by default (120-minute edge TTL) when the origin sends
+# no Cache-Control, while .html is not cached by default. A fresh index.html
+# would then pair with a two-hour-old app.js — and that mismatch is silent,
+# since a stale script simply stops finding the ids it expects.
+REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css"})
+
+
+@app.middleware("http")
+async def add_revalidate_header(request, call_next):
+    response = await call_next(request)
+    if request.url.path in REVALIDATE_PATHS:
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 
 class CreateJobRequest(BaseModel):
     """`nguoi_tao` (job creator) is deliberately NOT a client-supplied field:
