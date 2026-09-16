@@ -441,3 +441,62 @@ def test_other_routes_are_left_alone():
     trong khi header đã bị dán sai khắp nơi — kể cả lên JSON của /jobs."""
     assert _header_for("/healthz") is None
     assert _header_for("/jobs") is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 05 — jar cookie tạm không được sống sót qua một lần bị giết.
+#
+# `download_all` xoá jar trong `finally`; SIGKILL không chạy `finally`, và
+# launchd `KeepAlive=true` dựng lại ngay. Không quét thì mỗi lần bị giết để
+# lại một tệp cookie dạng văn bản thuần nằm mãi trên đĩa.
+#
+# ĐỘT BIẾN: bỏ lời gọi `quet_jar_tam` trong `prepare_data_dir` ⇒ test đầu ĐỎ.
+# ---------------------------------------------------------------------------
+
+def test_leftover_cookie_jars_are_swept_at_startup(tmp_path, monkeypatch):
+    from tiktok_music_downloader import downloader
+
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    for i in range(3):
+        (tmp_dir / f"{downloader.COOKIE_TMP_PREFIX}{i}.txt").write_text("# Netscape\n")
+
+    monkeypatch.setattr(app_mod, "COOKIE_TMP_DIR", tmp_dir)
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck", db_path)
+
+    con_lai = list(tmp_dir.glob(f"{downloader.COOKIE_TMP_PREFIX}*"))
+    assert con_lai == [], f"còn sót jar tạm: {[p.name for p in con_lai]}"
+
+
+def test_the_sweep_only_takes_cookie_jars(tmp_path):
+    """CA ÂM: một bộ quét xoá sạch thư mục cũng làm test trên xanh, trong khi
+    nó đang xoá cả thứ không phải của nó."""
+    from tiktok_music_downloader import downloader
+
+    tmp_dir = tmp_path / "tmp"
+    tmp_dir.mkdir()
+    (tmp_dir / f"{downloader.COOKIE_TMP_PREFIX}a.txt").write_text("x")
+    khong_phai = tmp_dir / "dung-dung-vao-toi.txt"
+    khong_phai.write_text("y")
+
+    da_xoa = app_mod.quet_jar_tam(tmp_dir)
+
+    assert da_xoa == 1
+    assert khong_phai.exists(), "bộ quét chỉ được lấy jar cookie, không lấy thứ khác"
+
+
+def test_the_web_layer_keeps_its_temp_jars_out_of_the_shared_temp_dir(tmp_path):
+    """Jar tạm phải nằm trong thư mục 0700 của dịch vụ, không phải thư mục tạm
+    hệ thống — nếu không thì quét dọn sẽ đụng tệp của công cụ dòng lệnh đang
+    chạy trên cùng máy, và cookie nằm ở chỗ ai cũng liệt kê được."""
+    from tiktok_music_downloader import downloader
+
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck", db_path)
+
+    assert downloader.COOKIE_TMP_DIR is not None, "để None là rơi về thư mục tạm hệ thống"
+    assert Path(downloader.COOKIE_TMP_DIR).is_dir()
+    assert stat.S_IMODE(os.stat(downloader.COOKIE_TMP_DIR).st_mode) == 0o700

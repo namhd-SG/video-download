@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web.auth import require_user
@@ -34,6 +35,10 @@ DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "jobs.db"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 COOKIES_DIR = DATA_DIR / "cookies"
+# Chỗ jar Netscape tạm được sinh ra, thay vì thư mục tạm hệ thống: để
+# quét dọn được mà không đụng tệp của tiến trình khác dùng cùng tiền tố
+# (công cụ dòng lệnh chạy trên cùng máy).
+COOKIE_TMP_DIR = DATA_DIR / "tmp"
 STATIC_DIR = BASE_DIR / "static"
 # Derived the same way `web/lifecycle.py` derives it from the DB path, so the
 # writer and the reader can never disagree about where thumbnails live.
@@ -79,6 +84,30 @@ def prepare_data_dir(data_dir: Path, downloads_dir: Path, cookies_dir: Path,
     # creation; a path that does not exist yet is not worth crashing boot over.
     if db_path.exists():
         os.chmod(db_path, 0o600)
+    _make_private_dir(COOKIE_TMP_DIR)
+    downloader.COOKIE_TMP_DIR = str(COOKIE_TMP_DIR)
+    quet_jar_tam(COOKIE_TMP_DIR)
+
+
+def quet_jar_tam(tmp_dir: Path) -> int:
+    """Xoá mọi jar cookie tạm còn sót, trả về số tệp đã xoá.
+
+    Chạy lúc khởi động, TRƯỚC khi worker chạy, nên mọi thứ ở đây đều là rác của
+    lượt trước. Cần thiết vì `download_all` chỉ xoá jar trong `finally`, mà
+    SIGKILL không chạy `finally` — và launchd `KeepAlive=true` dựng lại ngay
+    sau khi bị giết, nên nếu không quét thì mỗi lần bị giết lại để lại một tệp
+    chứa cookie dạng văn bản thuần nằm mãi trên đĩa.
+    """
+    da_xoa = 0
+    for f in tmp_dir.glob(f"{downloader.COOKIE_TMP_PREFIX}*"):
+        try:
+            f.unlink()
+            da_xoa += 1
+        except OSError:
+            log.warning("không xoá được jar tạm còn sót: %s", f.name)
+    if da_xoa:
+        log.info("đã quét %d jar cookie tạm còn sót từ lượt chạy trước", da_xoa)
+    return da_xoa
 
 
 @asynccontextmanager

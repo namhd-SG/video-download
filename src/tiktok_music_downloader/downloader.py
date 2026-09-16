@@ -27,6 +27,15 @@ from tiktok_music_downloader.watermark import WatermarkConfig, apply_watermark
 
 log = logging.getLogger("ttmd")
 
+# Jar Netscape tạm mang cookie ở dạng văn bản thuần. `download_all` xoá nó
+# trong `finally`, nhưng SIGKILL không chạy `finally` — và dịch vụ web chạy
+# dưới launchd `KeepAlive=true`, tức bị giết là dựng lại ngay. Lớp web trỏ
+# `COOKIE_TMP_DIR` vào thư mục dữ liệu 0700 của chính nó rồi quét sạch lúc
+# khởi động; để `None` thì hành vi y như cũ (thư mục tạm hệ thống), nên công
+# cụ dòng lệnh không đổi gì.
+COOKIE_TMP_PREFIX = "ttmd-cookies-"
+COOKIE_TMP_DIR: str | None = None
+
 BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
@@ -80,7 +89,8 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     from tiktok_music_downloader.scraper import _load_cookies
 
     cookies = _load_cookies(json_path)
-    fd, tmp = tempfile.mkstemp(prefix="ttmd-cookies-", suffix=".txt")
+    fd, tmp = tempfile.mkstemp(prefix=COOKIE_TMP_PREFIX, suffix=".txt",
+                                dir=COOKIE_TMP_DIR)
     with open(fd, "w", encoding="utf-8") as f:
         f.write("# Netscape HTTP Cookie File\n")
         for c in cookies:
