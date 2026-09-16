@@ -21,6 +21,18 @@
                "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
     index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
                   "lỗi giữa chừng — thử lại sau.",
+    // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói
+    // cách chữa, không được rơi vào nhánh "báo cho người phát triển" ở dưới.
+    cookie_khong_doc_duoc: "Dừng: tệp cookie của bạn không đọc được. Hãy xuất " +
+                           "lại từ Cookie-Editor và chọn đúng định dạng JSON " +
+                           "(không phải Header String hay Netscape), rồi dán lại.",
+    cookie_rong: "Dừng: tệp cookie của bạn không có cookie nào. Hãy xuất lại " +
+                 "khi đang mở tiktok.com và đã đăng nhập.",
+    cookie_chua_dang_nhap: "Dừng: cookie của bạn không có phiên đăng nhập — " +
+                           "có vẻ được xuất lúc chưa đăng nhập TikTok. Đăng " +
+                           "nhập tiktok.com rồi xuất lại cookie.",
+    cookie_het_han: "Dừng: cookie đăng nhập của bạn đã hết hạn. Vào lại " +
+                    "tiktok.com, xuất cookie mới rồi dán lại.",
   };
 
   // Sáu hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket

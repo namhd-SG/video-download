@@ -76,6 +76,15 @@ def cookie_identity(cookies_dir: Path, nguoi_tao: str) -> str:
 # sẽ chạy y như ẩn danh (trần khách ~28 video) mà không ai biết.
 COOKIE_DANG_NHAP = ("sessionid", "sessionid_ss", "sid_tt")
 
+# Tập mã ĐÓNG cho cột `ly_do_dung`. Câu chữ cho người dùng nằm ở
+# `web/static/app.js::STOP_REASON_TEXT` — thêm mã ở đây thì phải thêm câu ở đó.
+COOKIE_KHONG_DOC_DUOC = "cookie_khong_doc_duoc"
+COOKIE_RONG = "cookie_rong"
+COOKIE_CHUA_DANG_NHAP = "cookie_chua_dang_nhap"
+COOKIE_HET_HAN = "cookie_het_han"
+MA_LOI_COOKIE = (COOKIE_KHONG_DOC_DUOC, COOKIE_RONG,
+                 COOKIE_CHUA_DANG_NHAP, COOKIE_HET_HAN)
+
 
 def _hinh_dang_hong(path: Path) -> str:
     """Vì sao tệp không đọc được, nói bằng LOẠI chứ không bằng nội dung.
@@ -93,44 +102,58 @@ def _hinh_dang_hong(path: Path) -> str:
     return "JSON hỏng"
 
 def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | None:
-    """`None` -> jar dùng được. Ngược lại là lý do đọc được cho người dùng.
+    """`None` -> jar dùng được. Ngược lại là một MÃ trong `MA_LOI_COOKIE`.
 
-    Tồn tại vì `download_all` nuốt lỗi cookie thành một dòng log rồi CHẠY TIẾP
-    KHÔNG COOKIE (`downloader.py`: "could not load cookies — continuing
-    without"). Với công cụ dòng lệnh đó là tiện; với lớp web dùng chung thì đó
-    là ca hỏng âm thầm mà phase-05 sinh ra để chặn: người dùng dán cookie hỏng,
-    job vẫn "xong", chỉ là ra ít video hơn hẳn và không ai biết vì sao.
+    Trả MÃ chứ không trả câu chữ, vì hai lý do độc lập:
+    1. Câu chữ thuộc về giao diện. `web/static/app.js` tra `ly_do_dung` qua
+       bảng `STOP_REASON_TEXT`; giá trị lạ hiện thành "mã chưa dịch — báo cho
+       người phát triển", tức bảo người dùng đi báo dev cho một việc họ tự
+       chữa được bằng cách dán lại cookie.
+    2. **An toàn theo cấu tạo.** Cột `ly_do_dung` chỉ nhận một tập mã đóng thì
+       nó KHÔNG THỂ cõng byte nào của tệp cookie — không phụ thuộc vào việc có
+       ai nhớ viết test canh hay không. Bản trước trả câu chữ và phải nhờ một
+       test canh đường rò; test đó hoá ra là lưới giả (nó tìm một cụm bị cắt
+       mất ở nhánh 20 ký tự), nên lưới người-nhớ đã thua đúng một lần rồi.
 
-    Bốn ca hỏng được phân biệt, vì bốn ca cần bốn cách chữa khác nhau.
+    Chi tiết hình dạng hỏng đi vào LOG, không vào DB: log an toàn vì
+    `_hinh_dang_hong` không trích một ký tự nào của tệp.
     """
     from tiktok_music_downloader.scraper import _load_cookies
 
     try:
         cookies = _load_cookies(Path(path))
     except Exception:  # noqa: BLE001 — mọi lỗi đọc đều là "jar không dùng được"
-        # ⚠ KHÔNG chuyển tiếp thông điệp của `_load_cookies`. Nó nhúng
-        # `raw[:20]` và `raw[:80]` — 80 ký tự đầu của tệp (`scraper.py:82,91`).
-        # Với bản xuất "Header String" thì 80 ký tự đầu CHÍNH LÀ
-        # `sessionid=…; sid_tt=…`, và chuỗi này đi vào cột `ly_do_dung` rồi lên
-        # UI. Thông điệp đó hữu ích cho người chạy dòng lệnh với tệp của chính
-        # mình; ở đây nó là đường rò. Phân loại bằng HÌNH DẠNG, không trích nội
-        # dung — có lặp một phần logic của loader, và lặp ở đây là cố ý.
-        return f"tệp cookie không đọc được ({_hinh_dang_hong(Path(path))})"
+        log.warning("jar cookie không đọc được (%s)", _hinh_dang_hong(Path(path)))
+        return COOKIE_KHONG_DOC_DUOC
 
     if not cookies:
-        return "tệp cookie không có cookie nào"
+        return COOKIE_RONG
 
     ten = {str(c.get("name") or "") for c in cookies}
     if not (ten & set(COOKIE_DANG_NHAP)):
-        return ("tệp cookie không có cookie đăng nhập nào "
-                f"({'/'.join(COOKIE_DANG_NHAP)}) — phiên này chưa đăng nhập")
+        return COOKIE_CHUA_DANG_NHAP
 
     # `expires == 0` là cookie phiên: không có hạn, vẫn dùng được. Chỉ coi là
     # hết hạn khi MỌI cookie đăng nhập đều có hạn và hạn đã qua.
+    #
+    # ⚠ `int()` phải nằm TRONG try. `_normalize_cookie` chỉ ép kiểu cho khoá
+    # `expirationDate`; khoá `expires` đi qua NGUYÊN XI, nên một bản xuất ghi
+    # `expires` dạng ISO ("2026-12-01T00:00:00Z") hay chuỗi float làm `int()`
+    # ném ra ngoài, bay lên catch-all của `process_job` và kết thúc job
+    # `failed` với `ly_do_dung = None` — job chết KHÔNG MỘT CHỮ giải thích,
+    # đúng bằng cái hỏng-âm-thầm phase này sinh ra để diệt.
     moc = bay_gio if bay_gio is not None else time.time()
-    han = [int(c.get("expires") or 0) for c in cookies
-           if str(c.get("name") or "") in COOKIE_DANG_NHAP]
+    han = []
+    for c in cookies:
+        if str(c.get("name") or "") not in COOKIE_DANG_NHAP:
+            continue
+        try:
+            han.append(int(c.get("expires") or 0))
+        except (TypeError, ValueError):
+            # Không đọc được hạn thì coi như KHÔNG CÓ hạn. Nghiêng về phía cho
+            # chạy: từ chối một jar tốt vì một trường lạ thì tệ hơn.
+            han.append(0)
     if han and all(0 < h < moc for h in han):
-        return "cookie đăng nhập đã hết hạn — cần dán lại"
+        return COOKIE_HET_HAN
 
     return None

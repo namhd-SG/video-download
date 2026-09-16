@@ -171,7 +171,7 @@ def test_prepare_data_dir_creates_private_dirs(tmp_path):
     downloads, cookies = data / "downloads", data / "cookies"
     db = data / "jobs.db"
 
-    app_mod.prepare_data_dir(data, downloads, cookies, db)
+    app_mod.prepare_data_dir(data, downloads, cookies, db, data / "tmp")
 
     for d in (data, downloads, cookies):
         assert _mode(d) == 0o700, f"{d} nên 700, đang {oct(_mode(d))}"
@@ -191,7 +191,7 @@ def test_prepare_data_dir_tightens_dirs_that_already_exist_too_open(tmp_path):
     # Ca dương: chứng minh phép đo thấy được trạng thái XẤU trước khi sửa.
     assert _mode(cookies) == 0o755 and _mode(db) == 0o644
 
-    app_mod.prepare_data_dir(data, downloads, cookies, db)
+    app_mod.prepare_data_dir(data, downloads, cookies, db, data / "tmp")
 
     assert _mode(cookies) == 0o700
     assert _mode(downloads) == 0o700
@@ -202,7 +202,7 @@ def test_prepare_data_dir_survives_a_missing_db(tmp_path):
     """First boot on a fresh box: sqlite has not created jobs.db yet."""
     data = tmp_path / "data"
     app_mod.prepare_data_dir(data, data / "downloads", data / "cookies",
-                              data / "jobs.db")
+                              data / "jobs.db", data / "tmp")
     assert not (data / "jobs.db").exists()
 
 
@@ -461,10 +461,10 @@ def test_leftover_cookie_jars_are_swept_at_startup(tmp_path, monkeypatch):
     for i in range(3):
         (tmp_dir / f"{downloader.COOKIE_TMP_PREFIX}{i}.txt").write_text("# Netscape\n")
 
-    monkeypatch.setattr(app_mod, "COOKIE_TMP_DIR", tmp_dir)
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
-    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck", db_path)
+    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck",
+                             db_path, tmp_dir)
 
     con_lai = list(tmp_dir.glob(f"{downloader.COOKIE_TMP_PREFIX}*"))
     assert con_lai == [], f"còn sót jar tạm: {[p.name for p in con_lai]}"
@@ -495,8 +495,16 @@ def test_the_web_layer_keeps_its_temp_jars_out_of_the_shared_temp_dir(tmp_path):
 
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
-    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck", db_path)
+    tmp_dir = tmp_path / "tmp"
+    # Dựng sẵn với quyền RỘNG rồi mới gọi: nếu không, khẳng định 0700 bên dưới
+    # có thể xanh chỉ vì thư mục thường trú của máy đã 0700 từ lần chạy trước —
+    # đo CÁI MÁY chứ không đo MÃ. Và sửa-quyền-khi-đã-tồn-tại chính là lý do
+    # `_make_private_dir` tồn tại (ca 755 đo trên mini 15/09).
+    tmp_dir.mkdir()
+    os.chmod(tmp_dir, 0o755)
+    app_mod.prepare_data_dir(tmp_path / "data", tmp_path / "dl", tmp_path / "ck",
+                             db_path, tmp_dir)
 
     assert downloader.COOKIE_TMP_DIR is not None, "để None là rơi về thư mục tạm hệ thống"
-    assert Path(downloader.COOKIE_TMP_DIR).is_dir()
-    assert stat.S_IMODE(os.stat(downloader.COOKIE_TMP_DIR).st_mode) == 0o700
+    assert Path(downloader.COOKIE_TMP_DIR) == tmp_dir
+    assert stat.S_IMODE(os.stat(tmp_dir).st_mode) == 0o700, "phải SIẾT lại thư mục đã tồn tại"

@@ -78,17 +78,23 @@ def _load_cookies(path: Path) -> list[dict]:
             "saving."
         )
     if not raw.startswith(("[", "{")):
+        # KHÔNG trích nội dung. Một bản xuất "Header String" bắt đầu bằng
+        # `sessionid=…`, nên `raw[:20]` ở đây từng đưa nguyên token vào thông
+        # điệp lỗi — mà thông điệp đó chảy vào log của dịch vụ web
+        # (`downloader.py` log.warning, `queue.py` log.exception) trên một máy
+        # dùng chung. Nói LOẠI hỏng là đủ để người dùng sửa.
         raise ValueError(
-            f"{path.name} doesn't look like JSON (starts with {raw[:20]!r}). "
-            "Re-export from Cookie-Editor and pick the JSON format, not 'Header "
-            "String' or 'Netscape'."
+            f"{path.name} doesn't look like JSON — it may be a 'Header String' "
+            "or 'Netscape' export. Re-export from Cookie-Editor and pick JSON."
         )
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+        # Vị trí và lý do thì an toàn; 80 ký tự đầu thì không — với một tệp
+        # cookie bị cắt cụt, 80 ký tự đầu chứa nguyên giá trị `sessionid`.
         raise ValueError(
             f"{path.name} is not valid JSON at line {exc.lineno} col {exc.colno}: "
-            f"{exc.msg}. First 80 chars: {raw[:80]!r}"
+            f"{exc.msg}"
         ) from exc
 
     # storage_state format: {"cookies": [...], "origins": [...]} — unwrap it.

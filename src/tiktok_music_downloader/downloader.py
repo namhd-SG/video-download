@@ -91,20 +91,45 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     cookies = _load_cookies(json_path)
     fd, tmp = tempfile.mkstemp(prefix=COOKIE_TMP_PREFIX, suffix=".txt",
                                 dir=COOKIE_TMP_DIR)
+    da_ghi = 0
+    bo_qua_ky_tu_la = 0
     with open(fd, "w", encoding="utf-8") as f:
         f.write("# Netscape HTTP Cookie File\n")
         for c in cookies:
             domain = c.get("domain") or ""
             if not domain:
                 continue
-            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
             path = c.get("path") or "/"
-            secure = "TRUE" if c.get("secure") else "FALSE"
-            expires = int(c.get("expires", 0) or 0)
             name = c.get("name", "")
             value = c.get("value", "")
+            # Netscape phân cột bằng TAB. Một cookie mang TAB/xuống dòng trong
+            # giá trị sẽ sinh ra dòng sai số cột, và yt-dlp KHÔNG ném lỗi — nó
+            # in NGUYÊN dòng đó (kèm `sessionid` đầy đủ) ra stderr rồi chạy
+            # tiếp. stderr của dịch vụ đổ thẳng vào ~/Library/Logs/videodl.log
+            # trên máy dùng chung, và file đó không nằm trong lớp 0700 nào.
+            # Đây là chỗ DUY NHẤT ta kiểm soát được — thông điệp của yt-dlp thì
+            # không. Bỏ qua cookie đó và chỉ đếm, không log giá trị.
+            if any("\t" in str(x) or "\n" in str(x) or "\r" in str(x)
+                   for x in (domain, path, name, value)):
+                bo_qua_ky_tu_la += 1
+                continue
+            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
+            secure = "TRUE" if c.get("secure") else "FALSE"
+            # `expires` đi qua `_normalize_cookie` NGUYÊN XI (chỉ `expirationDate`
+            # mới được ép kiểu), nên bản xuất ghi ISO hay chuỗi float sẽ làm
+            # `int()` ném — và lời gọi này nằm trong một `except` nuốt lỗi rồi
+            # chạy tiếp KHÔNG cookie, tức hỏng âm thầm. Không đọc được hạn thì
+            # coi như cookie phiên.
+            try:
+                expires = int(c.get("expires", 0) or 0)
+            except (TypeError, ValueError):
+                expires = 0
             f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
-    log.info("wrote %d cookies to yt-dlp jar %s", len(cookies), tmp)
+            da_ghi += 1
+    if bo_qua_ky_tu_la:
+        log.warning("bỏ qua %d cookie có ký tự phân cột (TAB/xuống dòng) trong giá trị",
+                     bo_qua_ky_tu_la)
+    log.info("wrote %d cookies to yt-dlp jar %s", da_ghi, tmp)
     return Path(tmp)
 
 

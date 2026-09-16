@@ -73,7 +73,7 @@ def _make_private_dir(path: Path) -> None:
 
 
 def prepare_data_dir(data_dir: Path, downloads_dir: Path, cookies_dir: Path,
-                      db_path: Path) -> None:
+                      db_path: Path, cookie_tmp_dir: Path) -> None:
     """Make the whole runtime-data tree private before the worker touches it."""
     _make_private_dir(data_dir)
     _make_private_dir(downloads_dir)
@@ -84,9 +84,14 @@ def prepare_data_dir(data_dir: Path, downloads_dir: Path, cookies_dir: Path,
     # creation; a path that does not exist yet is not worth crashing boot over.
     if db_path.exists():
         os.chmod(db_path, 0o600)
-    _make_private_dir(COOKIE_TMP_DIR)
-    downloader.COOKIE_TMP_DIR = str(COOKIE_TMP_DIR)
-    quet_jar_tam(COOKIE_TMP_DIR)
+    # BẮT BUỘC truyền, KHÔNG có mặc định. Hàm này XOÁ tệp trong thư mục được
+    # đưa vào, nên một mặc định trỏ về thư mục production là cái bẫy: người gọi
+    # quên tham số thì quét nhầm prod mà không hề biết. Bản vá đầu của tôi cho
+    # nó mặc định `COOKIE_TMP_DIR` và ba test cũ gọi thiếu — `pytest` vẫn xoá
+    # jar thật, đúng cái lỗi đang đi sửa. Thiếu tham số bây giờ là TypeError.
+    _make_private_dir(cookie_tmp_dir)
+    downloader.COOKIE_TMP_DIR = str(cookie_tmp_dir)
+    quet_jar_tam(cookie_tmp_dir)
 
 
 def quet_jar_tam(tmp_dir: Path) -> int:
@@ -112,7 +117,7 @@ def quet_jar_tam(tmp_dir: Path) -> int:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH)
+    prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
     worker.start()
     try:
         yield

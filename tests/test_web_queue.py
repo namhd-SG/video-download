@@ -21,6 +21,7 @@ from tiktok_music_downloader import hashtag_enumerator as he
 from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
 from tiktok_music_downloader.utils import VideoRef
 from web import models
+from web import cookies as cookies_mod
 from web import queue as queue_mod
 from web.queue import JobWorker, _JobProgress, process_job
 
@@ -1069,7 +1070,7 @@ def test_a_corrupt_cookie_file_fails_the_job_instead_of_going_anonymous(tmp_path
     job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, "khong-phai-json-gi-ca")
 
     assert job["trang_thai"] == "failed"
-    assert job["ly_do_dung"] and "cookie" in job["ly_do_dung"]
+    assert job["ly_do_dung"] == cookies_mod.COOKIE_KHONG_DOC_DUOC
     assert da_tai is False, "không được tải một video nào bằng phiên ẩn danh"
 
 
@@ -1079,7 +1080,7 @@ def test_an_expired_login_cookie_fails_the_job(tmp_path, monkeypatch):
     job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, _het_han())
 
     assert job["trang_thai"] == "failed"
-    assert "hết hạn" in job["ly_do_dung"]
+    assert job["ly_do_dung"] == cookies_mod.COOKIE_HET_HAN
     assert da_tai is False
 
 
@@ -1093,7 +1094,7 @@ def test_a_jar_without_any_login_cookie_fails_the_job(tmp_path, monkeypatch):
     job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, jar)
 
     assert job["trang_thai"] == "failed"
-    assert "chưa đăng nhập" in job["ly_do_dung"]
+    assert job["ly_do_dung"] == cookies_mod.COOKIE_CHUA_DANG_NHAP
     assert da_tai is False
 
 
@@ -1108,15 +1109,57 @@ def test_no_jar_at_all_is_not_an_error(tmp_path, monkeypatch):
     assert da_tai is True
 
 
-def test_the_failure_reason_never_quotes_the_cookie_file(tmp_path, monkeypatch):
-    """`_load_cookies` nhúng `raw[:80]` vào thông điệp lỗi (scraper.py:82,91).
-    Với bản xuất "Header String", 80 ký tự đầu CHÍNH LÀ token. Lý do hỏng đi
-    vào `ly_do_dung` rồi lên UI, nên nó không được mang một ký tự nào của tệp."""
+def test_the_failure_reason_can_only_ever_be_one_of_the_known_codes(tmp_path, monkeypatch):
+    """Khẳng định theo CẤU TẠO, không theo chuỗi cụ thể.
+
+    Bản trước của test này tìm một cụm bí mật trong `ly_do_dung` và tưởng thế
+    là canh được đường rò. Nó là LƯỚI GIẢ: fixture rơi vào nhánh `raw[:20]` của
+    `scraper.py`, chuỗi rò ra bị cắt đúng giữa cụm đang tìm ⇒ khôi phục lại lỗ
+    rò mà suite vẫn XANH. Nhánh `raw[:80]` (JSON cắt cụt — dạng hỏng phổ biến
+    nhất khi copy/paste) thì không test nào chạm, và ở đó nguyên token ra hết.
+
+    Khẳng định "giá trị PHẢI nằm trong tập mã đóng" không có lỗ đó: bất kỳ byte
+    nào của tệp lọt ra đều làm nó ĐỎ, không cần đoán trước chuỗi bí mật là gì.
+    """
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
     bi_mat = "sessionid=TOKEN_RAT_BI_MAT_9x8y7z; sid_tt=CUNG_BI_MAT_abc"
-    job, _ = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, bi_mat)
+    # Cả hai nhánh của `_load_cookies`: Header String (raw[:20]) và JSON cắt
+    # cụt (raw[:80]) — nhánh thứ hai là nhánh bản test cũ không bao giờ chạm.
+    for noi_dung in (bi_mat, '[{"name":"sessionid","value":"TOKEN_RAT_BI_MAT_9x8y7z","dom'):
+        job, _ = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, noi_dung)
+        assert job["trang_thai"] == "failed"
+        assert job["ly_do_dung"] in cookies_mod.MA_LOI_COOKIE, (
+            f"ly_do_dung phải là một mã đóng, nhận được: {job['ly_do_dung']!r}")
 
-    assert job["trang_thai"] == "failed"
-    assert "TOKEN_RAT_BI_MAT" not in job["ly_do_dung"]
-    assert "CUNG_BI_MAT" not in job["ly_do_dung"]
+
+def test_a_jar_whose_login_cookies_expire_at_different_times_is_still_usable(tmp_path, monkeypatch):
+    """Jar TikTok thật có `sessionid`/`sessionid_ss`/`sid_tt` hết hạn KHÁC nhau.
+    Đổi `all(...)` thành `any(...)` trong kiểm hết hạn sẽ bắt đầu từ chối nhầm
+    jar tốt — không test nào cũ bắt được vì không ca nào là ca hỗn hợp."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    jar = json.dumps([
+        {"name": "sessionid", "value": "gia", "domain": ".tiktok.com",
+         "path": "/", "expires": 1893456000},   # 2030 — còn hạn
+        {"name": "sid_tt", "value": "gia", "domain": ".tiktok.com",
+         "path": "/", "expires": 1000000000},   # 2001 — đã hết hạn
+    ])
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, jar)
+
+    assert job["trang_thai"] == "done", f"bị từ chối nhầm: {job['ly_do_dung']!r}"
+    assert da_tai is True
+
+
+def test_every_cookie_code_has_a_sentence_in_the_ui(tmp_path):
+    """Mã không có câu trong `STOP_REASON_TEXT` sẽ hiện ra màn hình là
+    "mã chưa dịch — báo cho người phát triển", tức bảo người dùng đi báo dev
+    cho một việc họ tự chữa được. Thêm mã mà quên câu thì test này ĐỎ."""
+    import re
+    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    dau = js.index("const STOP_REASON_TEXT")
+    khoi = js[dau:js.index("};", dau)]
+    khoa = set(re.findall(r"^\s{4}(\w+):", khoi, re.M))
+
+    thieu = [m for m in cookies_mod.MA_LOI_COOKIE if m not in khoa]
+    assert thieu == [], f"mã không có câu trong UI: {thieu}"
