@@ -195,7 +195,36 @@ vì tự viết đăng nhập. Nếu meta-auto đã có nhóm người dùng th�
       Để jar ngoài thư mục tạm hệ thống mới khiến việc quét an toàn: công cụ
       dòng lệnh dùng cùng tiền tố trên cùng máy. Ca âm: bộ quét chỉ lấy jar
       cookie, tệp khác còn nguyên. Đột biến gỡ lời gọi quét ⇒ ĐỎ.
-- [ ] `/search` đo lại **với cookies, 5 lượt** — báo tỉ lệ thật, không hứa trước
+- [x] `/search` đo lại **với cookies, 5 lượt** — báo tỉ lệ thật, không hứa trước
+      — ĐO 16/09 14:27 trên mini, cookie thật user đưa (26 cookie, có đủ
+      `sessionid`/`sessionid_ss`/`sid_tt`, hạn 14/11/2026, tiền-kiểm nói dùng được):
+
+      **0/5 lượt có video.** Cả 5 lần cùng một chữ ký:
+      `/api/search/general` trả **HTTP 200 với body 0 byte**.
+
+      Ba đối chứng chạy CÙNG LÚC, cùng máy, cùng cookie — để tách "cookie hỏng"
+      khỏi "tool hỏng" khỏi "riêng /search hỏng":
+
+      | đường | cookie | kết quả |
+      |---|---|---|
+      | `/search` | có | **0/5** |
+      | hashtag `80ssaudi` | (đường này không nhận cookie) | 3 video |
+      | music page | có | **10 video** |
+      | music page | không | **10 video** |
+
+      ⇒ Cookie KHÔNG hỏng (music page có cookie ra 10 video). Tool KHÔNG hỏng.
+      Chỉ riêng `/search` chết: TikTok nhận request rồi trả rỗng.
+
+      ⇒ Thêm một dữ kiện ngoài dự kiến: **music page ra 10 video dù có hay
+      không cookie** — hôm nay cookie không tạo khác biệt ở nguồn đó. Con số
+      `19/20 vs 1/12` ngày 14/09 không mô tả tình trạng hiện tại.
+
+      ⇒ Đây đúng là tín hiệu mục Risk Assessment đã định sẵn (*"Tín hiệu: 5 lượt
+      đều 0"*), nên đã thi công đúng phản ứng đã định: ghi thẳng lên UI rằng
+      nguồn `/search` không dùng được, và bỏ chữ "search" khỏi gợi ý ô nhập.
+      **CHƯA deploy** — lúc định deploy thì log cho thấy HAI IP ngoài đang dùng
+      thật (107 và 80 lượt gọi trong 200 dòng cuối), nên dừng theo luật
+      "không restart dưới chân người đang dùng".
 
 ## Cap số job mỗi ngày — USER CHỐT 14/09
 

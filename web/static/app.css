@@ -309,6 +309,12 @@
      placeholder), chỉ đo tay mới thấy. */
   .control-strip input::placeholder { color: var(--text-muted); }
 
+  /* Ghi chú nguồn hỏng: đủ rõ để đọc trước khi dán URL, không to đến mức
+     trông như lỗi. Dùng token của dải điều khiển vì nó nằm trong dải đó. */
+  .note-nguon { margin-top: 8px; font-size: .74rem; line-height: 1.45; color: var(--text-muted); }
+  .note-nguon code { font-size: .72rem; }
+  .note-ngay { opacity: .75; }
+
   .card-check {
     position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 5px;
     border: 2px solid #fff; background: rgba(0, 0, 0, .35); z-index: 2;
