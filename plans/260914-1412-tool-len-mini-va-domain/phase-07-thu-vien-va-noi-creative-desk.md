@@ -67,7 +67,8 @@ vô hình với bộ đếm. Mỗi mục đã tick phải kèm bằng chứng; t
 - [ ] Nút "Xoá" — **chặn**: user chưa trả lời 4 lần hỏi
 - [ ] Trần theo SỐ VIDEO (`SUM(so_luong)`) — trần job không bó được lưu lượng: 1 job xin
       tới `MAX_SO_LUONG=2000` video. Chưa chốt
-- [ ] Backfill video cũ (thư viện khởi đầu rỗng + chống-trùng mù lịch sử)
+- [x] Backfill video cũ — **USER HỦY 16/09**, không làm. Số thật là **4**, không phải
+      1 074 (đo ở mục dưới); script `4eb28c6` chưa từng chạy vào DB sống
 - [ ] Form "Thêm bộ tự tìm" đọc taxonomy sống — **chặn**: chưa chọn đường (a/b/c ở mục CHẶN)
 - [ ] Copy sang Shared Drive của Creative Desk
 - [ ] Phân tích nội dung tầng 3 theo lô đã chọn (chốt #9)
@@ -185,11 +186,36 @@ Ghi riêng vì chúng khác mọi việc khác trong file này: hoãn không là
 - quan hệ video↔nguồn (nhiều-nhiều) — **ĐÃ XONG** `47e3ee1`+`5a7782e` (`video_sightings`,
   append-only, `models.py:73`)
 
-⇒ Cả ba đã chụp. Nhưng **video tải TRƯỚC 15/09 thì không có hàng nào**: `[CHƯA ĐO —
-số 1 074 lấy từ bàn giao 17:50, chưa ai đếm lại]` video cũ nằm trên Drive mà không có
-`videos`/`video_sightings`. Backfill dựng lại được (tên file là `<video_id>.mp4`, khớp
-1-1). `[SUY RA, chưa đo]` `music_id` của chúng thì không — nó chỉ có ở response index
-(tầng 2), mà index không trả lại danh sách đã tải.
+⇒ Cả ba đã chụp. Video tải TRƯỚC mốc chỉ mục thì không có hàng — nhưng số lượng KHÔNG
+phải 1 074.
+
+## Con số 1 074 là SAI — đo được 16/09 là **4**. Đừng để nó sống lại.
+
+`[ĐO 16/09 11:20]` Nó đi qua **ba lần bàn giao** mà chưa ai đếm, rồi được đem trình user
+như một việc lớn. Đếm tại nguồn:
+
+```
+jobs.db sống trên mini : jobs=4 · videos=10 · video_sightings=10 · SUM(tong)=14
+Drive, thư mục của tool: job-1 → 3 mp4 · job-2 → 1 · job-4 → 10  = 14 mp4
+                         (không có tệp <id>.mp4 rời nào ở gốc)
+chênh lệch             : 14 − 10 = 4
+```
+
+Lời giải khớp **từng** con số — đây mới là phần làm nó thành kết luận chứ không phải nghi
+ngờ: lớp chỉ mục `a326b1b` lên **15/09 14:25**; `job-1`(3) + `job-2`(1) chạy 14/09, trước
+mốc ⇒ 4 video không có hàng; `job-4` chạy 16/09, sau mốc ⇒ đủ 10. `job-3` có `tong=0` nên
+không sinh thư mục Drive ⇒ khớp đúng việc chỉ thấy **3** thư mục.
+
+**USER HỦY backfill 16/09** (*"không, bỏ đi, lấy cái mới thôi"*). 4 video đó để nguyên
+không có bản ghi: file vẫn trên Drive, chỉ không hiện trong thư viện. Từ 15/09 14:25 trở
+đi lớp chỉ mục ghi đủ nên **ca này không sinh thêm**.
+
+Script `scripts/backfill-videos-from-drive.py` (commit `4eb28c6`) **chưa từng chạy vào DB
+sống** — chỉ chạy trên bản sao, bản sao đã xoá, DB sống vẫn 10 videos/10 sightings. Ai đọc
+file này về sau: **đừng chạy nó** vì thấy có việc treo; không còn việc nào.
+
+Ghi thêm, độc lập với việc trên: `music_id` của video cũ `[SUY RA, chưa đo]` không dựng
+lại được — nó chỉ có ở response index (tầng 2), mà index không trả lại danh sách đã tải.
 
 Index chỉ trả video *hiện tại* của một hashtag, không trả lại danh sách ta đã tải. Video
 tải xong mà chưa chụp ba thứ trên thì không có đường lấy lại.
