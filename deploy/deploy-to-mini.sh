@@ -28,6 +28,23 @@ STAMP="$(date +%y%m%d-%H%M%S)"
 # bên kia — bản lui sẽ nằm sai chỗ, hoặc không ghi được.
 BACKUP_DIR="../video-download-truoc-$STAMP"
 
+# Một danh sách DUY NHẤT cho cả thử khô lẫn lần chạy thật. Hai danh sách rời
+# nhau thì thử khô thành lời nói dối ngay lần đầu ai đó sửa một bên.
+#
+# `deploy/run-service.sh` là thứ launchd THỰC SỰ gọi
+# (ProgramArguments trong com.astronex.videodl.plist), nhưng nó do
+# mini-setup.sh SINH RA TRÊN MINI và không có trong git. Không loại nó ra thì
+# --delete xoá đúng file đang chạy dịch vụ; KeepAlive=true nên nó chết và
+# không dựng lại được. Thử khô ngày 16/09 bắt được đúng ca này.
+EXCLUDES=(
+  --exclude='.venv'
+  --exclude='.git'
+  --exclude='web/data'
+  --exclude='assets/ffmpeg-static'
+  --exclude='deploy/run-service.sh'
+  --exclude='__pycache__'
+)
+
 THAT=0
 [ "${1:-}" = "--yes" ] && THAT=1
 
@@ -72,10 +89,8 @@ if [ "$THAT" -eq 0 ]; then
   say "THỬ KHÔ — dừng ở đây. Chạy lại với --yes để làm thật."
   echo "   sẽ rsync vào : $HOST:~/$REMOTE_REPO/"
   echo "   bản lui giữ ở: $HOST:~/Projects/${BACKUP_DIR#../}/"
-  rsync -a --dry-run --itemize-changes --delete \
-        --exclude='.venv' --exclude='.git' --exclude='web/data' \
-        --exclude='assets/ffmpeg-static' \
-        ./ "$HOST:~/$REMOTE_REPO/" | head -40
+  rsync -a --dry-run --itemize-changes --delete "${EXCLUDES[@]}" \
+        ./ "$HOST:~/$REMOTE_REPO/"
   exit 0
 fi
 
@@ -86,9 +101,7 @@ fi
 # và "đang chạy gì" thành câu không ai trả lời được.
 # assets/ffmpeg-static loại ra: file lớn, mini-setup.sh cấp riêng bằng scp.
 say "3. rsync (giữ bản lui ở ~/Projects/${BACKUP_DIR#../})"
-rsync -a --delete --backup --backup-dir="$BACKUP_DIR" \
-      --exclude='.venv' --exclude='.git' --exclude='web/data' \
-      --exclude='assets/ffmpeg-static' \
+rsync -a --delete --backup --backup-dir="$BACKUP_DIR" "${EXCLUDES[@]}" \
       ./ "$HOST:~/$REMOTE_REPO/"
 echo "   xong"
 
