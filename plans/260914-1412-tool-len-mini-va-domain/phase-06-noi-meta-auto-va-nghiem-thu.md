@@ -86,6 +86,33 @@ Một link, không nhúng iframe: iframe kéo theo bài toán cookie bên thứ 
 5. Ghi một dòng vào `~/agy-ws/BOARD.md` — **chỉ được mang chữ XONG khi kèm được
    lệnh + output**, nếu không thì ghi *"ĐÃ DỰNG, chưa nghiệm thu"*.
 
+## Link nav trong meta-auto — THI CÔNG XONG 16/09, PR #192
+
+Tiêu chí user chốt 14/09: *"an toàn là được"* — tool hỏng KHÔNG được kéo
+meta-auto theo. Đạt **theo cấu tạo**, không phải theo phép thử may rủi:
+
+- Mục `VIDEO_DOWNLOAD_ITEM` vẽ bằng thẻ `<a>` thuần (`sidebar.tsx:239-251`),
+  `target="_blank" rel="noopener noreferrer"`, **không** dùng `<Link>` của
+  router, **không** fetch/prefetch/iframe/health-check. Trình duyệt không chạm
+  hostname đó cho tới khi người dùng bấm ⇒ tool chết thì trang vẫn dựng y hệt.
+- `fetch` định kỳ 60s duy nhất trong sidebar là `adminUsersApi.pendingCount()`
+  của chính meta-auto, chỉ chạy khi `isAdmin` — không liên quan tool.
+- `hideForClient` áp ở `sidebar.tsx:204`; client không thấy link chỉ để đâm
+  vào tường Access.
+
+**Luật "3 chỗ sửa" (sidebar + `isGuestAllowed` + guard) áp vào đây chỉ còn 2.**
+`isGuestAllowed` (`(dashboard)/layout.tsx:21,121`) là cổng theo **pathname
+trong app**; link này là URL tuyệt đối ra ngoài, không bao giờ thành route ở
+đây — đã kiểm: không có thư mục route nào tên video/download. Cổng thứ ba
+**cấu tạo không áp được**, không phải bỏ sót.
+
+Test: 6/6 xanh (`sidebar-nav-config.test.ts`), trong đó có một **ca âm** sẵn
+có ("là mục external DUY NHẤT"). Đột biến: `external:true→false` ⇒ ĐỎ;
+`hideForClient:true→false` ⇒ ĐỎ ⇒ hai cờ đó thật sự gánh việc.
+
+⚠ **PR #192 chưa merge được** — hết hạn mức GitHub Actions, chờ reset ~01/10.
+Nhánh `MERGEABLE`, CI xanh cho đúng sha hiện tại.
+
 ## Success Criteria — nghiệm thu toàn hệ
 
 - [ ] Từ máy ngoài LAN (4G): mở hostname, dán link hashtag, nhận video thật
@@ -97,11 +124,24 @@ Một link, không nhúng iframe: iframe kéo theo bài toán cookie bên thứ 
       Điều kiện tiên quyết đã kiểm ở Phase 01 bước 8: không có auto-login thì
       LaunchAgent **không** tự lên, và mọi thứ vẫn xanh cho tới lần mất điện đầu tiên
 - [ ] Hai người dùng khác nhau chạy job song song → job tuần tự, cookie không lẫn
-- [ ] Job xong → thư mục làm việc trên mini **rỗng**, link Drive mở được, đếm khớp
+      — **CẦN HAI NGƯỜI THẬT**, tôi không tự dựng được. Hai nửa đã có bằng chứng
+      riêng: (1) chạy tuần tự — `test_two_jobs_submitted_together_run_sequentially`
+      + worker một luồng, uvicorn một tiến trình, không `--workers`;
+      (2) cookie không lẫn — `test_job_of_b_downloads_with_bs_cookie_not_as`
+      bắt đúng jar tới `download_all`, đột biến ghim cứng danh tính ⇒ ĐỎ.
+      Còn thiếu đúng phép đo có hai người cùng bấm.
+- [x] Job xong → thư mục làm việc trên mini **rỗng**, link Drive mở được, đếm khớp
+      — ĐO 16/09 15:15 trên mini: `web/data/downloads` **0 tệp**, `web/data/tmp`
+      **0 tệp**; job 4: `tong=10 xong=10 loi=0`, hàng `videos` của job đó = **10**
+      ⇒ ba con số khớp nhau, và hàng job có `drive_folder_link`.
+      ⚠ "Link Drive **mở được**" chưa đo bằng mắt — mới đo là link TỒN TẠI.
       (thiết kế đổi 14/09: không còn bản local, không còn TTL file)
-- [ ] `promax.nobidigital.asia` 200/302 **trong suốt** quá trình nghiệm thu, lấy mẫu
+- [x] `promax.nobidigital.asia` 200/302 **trong suốt** quá trình nghiệm thu, lấy mẫu
+      — lấy mẫu ở MỌI lần deploy hôm nay (16/09: 11:23 · 12:14 · 14:24 · 14:58)
+      cộng lần đo riêng 15:15: **302 cả 5 lần**. Mỗi lần deploy đều đo lại chứ
+      không suy từ lần trước.
       đầu và cuối
-- [ ] `launchctl list | grep astronex` đúng bộ label như trước khi bắt đầu, cộng
+- [x] `launchctl list | grep astronex` đúng bộ label như trước khi bắt đầu, cộng
       thêm đúng label của mình
 
 ## Risk Assessment
