@@ -85,7 +85,7 @@ def main() -> int:
     truoc = len(da_co)
     conn.close()
 
-    them: list[tuple] = []
+    gap: list[tuple] = []
     bo_qua_khong_co_job: list[str] = []
 
     for muc in liet_ke(svc, root):
@@ -107,12 +107,29 @@ def main() -> int:
             video_id = tep["name"][:-4]
             if video_id in da_co:
                 continue
-            them.append((video_id, job_id, tep["id"], job["tao_luc"], job["url"]))
+            gap.append((video_id, job_id, tep["id"], job["tao_luc"], job["url"]))
 
-    print(f"videos đang có: {truoc}")
-    print(f"sẽ thêm       : {len(them)}")
+    # Cùng một video có thể nằm trong NHIỀU thư mục job: chạy lại cùng hashtag
+    # là chuyện thường. `videos.video_id` là PRIMARY KEY nên chỉ một hàng, và
+    # quy ước sẵn có là "first sighting wins" -> giữ lượt SỚM NHẤT. Nhưng mọi
+    # lượt nhìn thấy đều phải vào `video_sightings`; đó là lý do bảng đó tồn
+    # tại. Không tách hai cái này thì script đếm 4 trong khi chỉ ghi được 3,
+    # rồi tự báo LỆCH ở bước tự kiểm.
+    hang_video: dict[str, tuple] = {}
+    for video_id, job_id, file_id, tao_luc, nguon in gap:
+        cu = hang_video.get(video_id)
+        if cu is None or tao_luc < cu[3]:
+            hang_video[video_id] = (video_id, job_id, file_id, tao_luc, nguon)
+    them = list(hang_video.values())
+
+    print(f"videos đang có   : {truoc}")
+    print(f"hàng videos thêm : {len(them)}")
+    print(f"lượt sighting    : {len(gap)}  (một video ở nhiều job thì nhiều lượt)")
     for video_id, job_id, file_id, tao_luc, nguon in them:
         print(f"   + {video_id}  job={job_id}  tao_luc={tao_luc}  nguon={nguon}")
+    trung = len(gap) - len(them)
+    if trung:
+        print(f"   ({trung} lượt là video đã có ở job khác — vào sightings, không tạo hàng mới)")
     if bo_qua_khong_co_job:
         print(f"bỏ qua (không có hàng job tương ứng): {bo_qua_khong_co_job}")
 
@@ -123,6 +140,8 @@ def main() -> int:
     for video_id, job_id, file_id, tao_luc, nguon in them:
         models.record_video(db, job_id=job_id, video_id=video_id, url="",
                             drive_file_id=file_id, tao_luc=tao_luc)
+    # Mọi lượt nhìn thấy, kể cả lượt không tạo hàng videos mới.
+    for video_id, job_id, file_id, tao_luc, nguon in gap:
         models.record_sighting(db, video_id=video_id, job_id=job_id,
                                nguon=nguon, da_tai=True, thay_luc=tao_luc)
 

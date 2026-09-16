@@ -300,9 +300,23 @@
     background: repeating-linear-gradient(135deg, var(--surface-alt), var(--surface-alt) 9px, var(--bg) 9px, var(--bg) 18px);
   }
   .card-thumb.no-thumb span { font-size: .68rem; text-align: center; padding: 0 8px; }
+  /* Dải nhập giữ nền tối ở CẢ hai theme (bố cục hai tông của mock), nhưng
+     ::placeholder chưa bao giờ được đặt màu, nên nó rơi về xám mặc định
+     của trình duyệt (#757575) — màu đó tính cho nền SÁNG, đặt lên nền
+     #08120f chỉ còn 4,13:1. Không ai chọn màu đó; nó là giá trị mặc định
+     lọt vào. Dải này đã tự định nghĩa lại --text-muted (dòng ~166) nên
+     dùng đúng token đó, không cắm hex. axe KHÔNG bắt ca này (nó bỏ qua
+     placeholder), chỉ đo tay mới thấy. */
+  .control-strip input::placeholder { color: var(--text-muted); }
+
   .card-check {
     position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 5px;
     border: 2px solid #fff; background: rgba(0, 0, 0, .35); z-index: 2;
+    /* Viền trắng + nền đen-35% được vẽ để nằm TRÊN ẢNH. Thẻ không có ảnh dùng
+       nền sọc sáng, nên ở theme sáng viền trắng tan vào nền và ô chọn trông
+       như bị vô hiệu hoá — nó vẫn chọn được (đã bấm thử), chỉ là nhìn không
+       ra. Vòng tối mỏng bên ngoài giữ hình dạng trên mọi nền. */
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, .3);
   }
   .card.selected .card-check { background: var(--accent); border-color: var(--accent); }
   .card.selected .card-check::after { content: "✓"; display: block; color: #fff; font-size: .72rem; text-align: center; line-height: 16px; }
@@ -323,7 +337,9 @@
      có handle tác giả nên không dựng lại được link gốc. Hiện đúng cái
      mình biết thay vì một nút bấm vào không đi đâu — và dạng chỉ-có-id
      (tiktok.com/video/<id>) đã đo là 302 về /404, nên không bịa được. */
-  .card-link-trong { color: var(--text-faint); cursor: default; }
+  /* --text-faint đo được 3,55:1 trên nền thẻ sáng — dưới ngưỡng AA 4,5.
+     --text-muted cho 7,23:1 và vẫn đọc ra là chữ phụ. */
+  .card-link-trong { color: var(--text-muted); cursor: default; }
 
   /* Thư viện hiện có 0 video thật — đây là thứ user thấy đầu tiên, nên trạng
      thái rỗng phải nhìn có chủ đích, không phải một khoảng trắng. */
