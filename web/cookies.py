@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import time
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -68,3 +69,68 @@ def cookie_identity(cookies_dir: Path, nguoi_tao: str) -> str:
     """
     path = cookies_path_for_user(cookies_dir, nguoi_tao)
     return Path(path).stem if path is not None else ANONYMOUS_COOKIE
+
+
+# Tên cookie đăng nhập của TikTok. Cùng hai tên mà phase-05 bắt grep trong log
+# — nếu jar không có cái nào trong số này thì phiên đó KHÔNG đăng nhập, và job
+# sẽ chạy y như ẩn danh (trần khách ~28 video) mà không ai biết.
+COOKIE_DANG_NHAP = ("sessionid", "sessionid_ss", "sid_tt")
+
+
+def _hinh_dang_hong(path: Path) -> str:
+    """Vì sao tệp không đọc được, nói bằng LOẠI chứ không bằng nội dung.
+
+    Không chuỗi nào trả về từ đây chứa một ký tự nào của tệp.
+    """
+    try:
+        dau = path.read_text(encoding="utf-8", errors="replace").lstrip("\ufeff").lstrip()[:8]
+    except OSError:
+        return "không mở được tệp"
+    if dau.startswith("{\\rtf"):
+        return "đang là Rich Text (RTF), cần lưu lại dạng văn bản thuần"
+    if not dau.startswith(("[", "{")):
+        return "không phải JSON — có thể là bản xuất Header String hoặc Netscape"
+    return "JSON hỏng"
+
+def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | None:
+    """`None` -> jar dùng được. Ngược lại là lý do đọc được cho người dùng.
+
+    Tồn tại vì `download_all` nuốt lỗi cookie thành một dòng log rồi CHẠY TIẾP
+    KHÔNG COOKIE (`downloader.py`: "could not load cookies — continuing
+    without"). Với công cụ dòng lệnh đó là tiện; với lớp web dùng chung thì đó
+    là ca hỏng âm thầm mà phase-05 sinh ra để chặn: người dùng dán cookie hỏng,
+    job vẫn "xong", chỉ là ra ít video hơn hẳn và không ai biết vì sao.
+
+    Bốn ca hỏng được phân biệt, vì bốn ca cần bốn cách chữa khác nhau.
+    """
+    from tiktok_music_downloader.scraper import _load_cookies
+
+    try:
+        cookies = _load_cookies(Path(path))
+    except Exception:  # noqa: BLE001 — mọi lỗi đọc đều là "jar không dùng được"
+        # ⚠ KHÔNG chuyển tiếp thông điệp của `_load_cookies`. Nó nhúng
+        # `raw[:20]` và `raw[:80]` — 80 ký tự đầu của tệp (`scraper.py:82,91`).
+        # Với bản xuất "Header String" thì 80 ký tự đầu CHÍNH LÀ
+        # `sessionid=…; sid_tt=…`, và chuỗi này đi vào cột `ly_do_dung` rồi lên
+        # UI. Thông điệp đó hữu ích cho người chạy dòng lệnh với tệp của chính
+        # mình; ở đây nó là đường rò. Phân loại bằng HÌNH DẠNG, không trích nội
+        # dung — có lặp một phần logic của loader, và lặp ở đây là cố ý.
+        return f"tệp cookie không đọc được ({_hinh_dang_hong(Path(path))})"
+
+    if not cookies:
+        return "tệp cookie không có cookie nào"
+
+    ten = {str(c.get("name") or "") for c in cookies}
+    if not (ten & set(COOKIE_DANG_NHAP)):
+        return ("tệp cookie không có cookie đăng nhập nào "
+                f"({'/'.join(COOKIE_DANG_NHAP)}) — phiên này chưa đăng nhập")
+
+    # `expires == 0` là cookie phiên: không có hạn, vẫn dùng được. Chỉ coi là
+    # hết hạn khi MỌI cookie đăng nhập đều có hạn và hạn đã qua.
+    moc = bay_gio if bay_gio is not None else time.time()
+    han = [int(c.get("expires") or 0) for c in cookies
+           if str(c.get("name") or "") in COOKIE_DANG_NHAP]
+    if han and all(0 < h < moc for h in han):
+        return "cookie đăng nhập đã hết hạn — cần dán lại"
+
+    return None

@@ -26,6 +26,7 @@ from web import models
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
 from web.cookies import cookies_path_for_user  # noqa: F401
+from web.cookies import ly_do_jar_khong_dung_duoc
 from web.lifecycle import on_video_verified
 
 log = logging.getLogger("videodl.web")
@@ -272,6 +273,17 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     job_id = job["id"]
     try:
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"])
+        # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
+        # cookie. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy
+        # ẩn danh — với dòng lệnh đó là tiện, với lớp web dùng chung thì job
+        # vẫn báo "xong" mà ra ít video hơn hẳn và không ai biết vì sao.
+        # Không có jar thì KHÔNG phải lỗi: đó là chạy ẩn danh có chủ đích.
+        if cookies_path is not None:
+            ly_do = ly_do_jar_khong_dung_duoc(cookies_path)
+            if ly_do is not None:
+                models.set_job_stop_reason(db_path, job_id, ly_do)
+                models.finish_job(db_path, job_id, "failed")
+                return
         refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
                             db_path=db_path, job_id=job_id)
         models.set_job_total(db_path, job_id, len(refs))

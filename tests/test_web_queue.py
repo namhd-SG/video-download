@@ -952,10 +952,18 @@ def test_repeated_sightings_of_the_same_pair_collapse(tmp_path):
 # ---------------------------------------------------------------------------
 
 def _jar_for(cookies_dir: Path, nguoi_tao: str) -> Path:
+    """Một jar TRÔNG NHƯ THẬT: có cookie đăng nhập và chưa hết hạn.
+
+    Jar rỗng `[]` không dùng được ở đây nữa — tiền-kiểm trong `process_job`
+    loại nó trước khi job chạy, đúng như phase-05 yêu cầu. Giá trị dưới đây là
+    giả, chỉ cần đúng HÌNH DẠNG."""
     cookies_dir.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(nguoi_tao.encode("utf-8")).hexdigest()
     jar = cookies_dir / f"{digest}.json"
-    jar.write_text("[]", encoding="utf-8")
+    jar.write_text(json.dumps([
+        {"name": "sessionid", "value": "gia-lap-khong-phai-cookie-that",
+         "domain": ".tiktok.com", "path": "/", "expires": 0},
+    ]), encoding="utf-8")
     return jar
 
 
@@ -1009,3 +1017,106 @@ def test_a_user_with_no_jar_downloads_anonymous_never_someone_elses(tmp_path, mo
     duoc_nhan = _drive_job_as(tmp_path, monkeypatch, db_path, "chua-co@astronex.ai", cookies_dir)
 
     assert duoc_nhan is None
+
+
+# ---------------------------------------------------------------------------
+# Phase 05 — cookie hỏng/hết hạn phải làm job FAIL, KHÔNG được âm thầm chạy
+# ẩn danh. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy tiếp
+# không cookie; với thư viện dùng chung, job sẽ báo "xong" mà ra ít video hơn
+# hẳn và không ai biết vì sao.
+#
+# ĐỘT BIẾN: xoá khối tiền-kiểm trong `process_job` ⇒ ba test đầu ĐỎ.
+# ---------------------------------------------------------------------------
+
+def _chay_job_voi_jar(tmp_path, monkeypatch, db_path, noi_dung_jar: str | None):
+    """Dựng jar (hoặc không), chạy job, trả về (job sau khi chạy, có gọi download_all không)."""
+    cookies_dir = tmp_path / "ck"
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    nguoi_tao = "ai-do@astronex.ai"
+    if noi_dung_jar is not None:
+        digest = hashlib.sha256(nguoi_tao.encode("utf-8")).hexdigest()
+        (cookies_dir / f"{digest}.json").write_text(noi_dung_jar, encoding="utf-8")
+
+    da_goi = {"download_all": False}
+    job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 10, nguoi_tao)
+    job = models.get_job(db_path, job_id)
+    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: [VideoRef(video_id="900", url="u")])
+    monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
+
+    def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
+        da_goi["download_all"] = True
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for r in refs_:
+            (output_dir / r.filename).write_bytes(b"x")
+            if progress is not None:
+                progress.note("downloaded")
+        return len(refs_), 0, []
+
+    monkeypatch.setattr(queue_mod, "download_all", _fake_download)
+    process_job(db_path, tmp_path / "dl", cookies_dir, job,
+                lifecycle_hook=lambda **kw: _UPLOAD_OK)
+    return models.get_job(db_path, job_id), da_goi["download_all"]
+
+
+def _het_han():
+    return json.dumps([{"name": "sessionid", "value": "gia", "domain": ".tiktok.com",
+                        "path": "/", "expires": 1000000000}])  # 2001
+
+
+def test_a_corrupt_cookie_file_fails_the_job_instead_of_going_anonymous(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, "khong-phai-json-gi-ca")
+
+    assert job["trang_thai"] == "failed"
+    assert job["ly_do_dung"] and "cookie" in job["ly_do_dung"]
+    assert da_tai is False, "không được tải một video nào bằng phiên ẩn danh"
+
+
+def test_an_expired_login_cookie_fails_the_job(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, _het_han())
+
+    assert job["trang_thai"] == "failed"
+    assert "hết hạn" in job["ly_do_dung"]
+    assert da_tai is False
+
+
+def test_a_jar_without_any_login_cookie_fails_the_job(tmp_path, monkeypatch):
+    """Jar có cookie nhưng KHÔNG có cookie đăng nhập = phiên khách. Job sẽ
+    chạy tới trần khách (~28 video) rồi báo "xong" — ca hỏng âm thầm nhất."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    jar = json.dumps([{"name": "tt_csrf_token", "value": "gia", "domain": ".tiktok.com",
+                       "path": "/", "expires": 0}])
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, jar)
+
+    assert job["trang_thai"] == "failed"
+    assert "chưa đăng nhập" in job["ly_do_dung"]
+    assert da_tai is False
+
+
+def test_no_jar_at_all_is_not_an_error(tmp_path, monkeypatch):
+    """CA ÂM bắt buộc: không có jar là chạy ẩn danh CÓ CHỦ ĐÍCH, không phải
+    lỗi. Thiếu ca này thì một tiền-kiểm "chặn tất" vẫn xanh cả ba test trên."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, None)
+
+    assert job["trang_thai"] == "done"
+    assert da_tai is True
+
+
+def test_the_failure_reason_never_quotes_the_cookie_file(tmp_path, monkeypatch):
+    """`_load_cookies` nhúng `raw[:80]` vào thông điệp lỗi (scraper.py:82,91).
+    Với bản xuất "Header String", 80 ký tự đầu CHÍNH LÀ token. Lý do hỏng đi
+    vào `ly_do_dung` rồi lên UI, nên nó không được mang một ký tự nào của tệp."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    bi_mat = "sessionid=TOKEN_RAT_BI_MAT_9x8y7z; sid_tt=CUNG_BI_MAT_abc"
+    job, _ = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, bi_mat)
+
+    assert job["trang_thai"] == "failed"
+    assert "TOKEN_RAT_BI_MAT" not in job["ly_do_dung"]
+    assert "CUNG_BI_MAT" not in job["ly_do_dung"]
