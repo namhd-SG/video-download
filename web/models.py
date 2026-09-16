@@ -195,6 +195,23 @@ def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     return {row["nguoi_tao"]: row["n"] for row in rows}
 
 
+def sum_videos_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
+    """How many videos each creator's jobs account for since `since`.
+
+    Sums `tong`, which is the requested count until `process_job` replaces it
+    with the real ref count — i.e. the best number known for each job at the
+    moment it is asked for. That is what the video cap rations: calls actually
+    made to TikTok, not jobs started.
+    """
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT nguoi_tao, COALESCE(SUM(tong), 0) AS n FROM jobs "
+            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
+            (since,),
+        ).fetchall()
+    return {row["nguoi_tao"]: row["n"] for row in rows}
+
+
 def get_job(db_path: Path, job_id: int) -> dict | None:
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

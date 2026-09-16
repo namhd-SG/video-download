@@ -794,14 +794,15 @@ def test_drive_file_id_is_the_file_not_the_shared_drive(tmp_path):
 # UTC KHÁC nhau, tức khoảng duy nhất một bản cắt-theo-UTC sẽ đếm sai.
 # ---------------------------------------------------------------------------
 
-def _insert_job_at(db: Path, tao_luc: str, nguoi_tao: str = "khach") -> None:
+def _insert_job_at(db: Path, tao_luc: str, nguoi_tao: str = "khach",
+                   tong: int = 0) -> None:
     """Một hàng job với thời điểm ĐẶT SẴN. `models.create_job` luôn đóng dấu
     `_now()`, mà mốc thời gian chính là thứ đang đo."""
     with sqlite3.connect(db) as conn:
         conn.execute(
             "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
-            "VALUES ('https://www.tiktok.com/tag/x', 'xong', 0, 0, 0, ?, ?)",
-            (tao_luc, nguoi_tao),
+            "VALUES ('https://www.tiktok.com/tag/x', 'xong', ?, 0, 0, ?, ?)",
+            (tong, tao_luc, nguoi_tao),
         )
 
 
@@ -878,11 +879,11 @@ def test_daily_cap_lets_the_last_allowed_job_through_then_refuses(tmp_path):
         _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00")
 
     assert lifecycle.daily_cap_rejection(
-        db_path=db, cookies_dir=cookies, nguoi_tao="khach", now=now) is None
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=1, now=now) is None
 
     _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00")
     reason = lifecycle.daily_cap_rejection(
-        db_path=db, cookies_dir=cookies, nguoi_tao="khach", now=now)
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=1, now=now)
 
     assert reason is not None
     assert str(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY) in reason
@@ -902,3 +903,59 @@ def test_failed_jobs_still_count_against_the_cap(tmp_path):
     now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
 
     assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 1
+
+
+# ---------------------------------------------------------------------------
+# Trần theo SỐ VIDEO. Trần job một mình không bó được lưu lượng: một job xin
+# tới MAX_SO_LUONG=2000 video, nên 20 job vẫn là 40 000 video/ngày.
+# ---------------------------------------------------------------------------
+
+def test_a_big_job_is_refused_even_when_the_job_count_is_fine(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    # MỘT job hôm nay -> trần job (20) còn rất rộng; trần video mới là cái cắn.
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", tong=900)
+
+    reason = lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=200, now=now)
+
+    assert reason is not None
+    assert "video" in reason
+    assert "1 job" not in reason, "phải là lý do TRẦN VIDEO, không phải trần job"
+
+
+def test_a_job_that_exactly_fits_the_remaining_budget_is_allowed(tmp_path):
+    """Ca dương: nếu phép so là `>=` thay vì `>`, test trên vẫn xanh trong khi
+    trần đã cắn sớm một video."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", tong=900)
+
+    assert lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach",
+        so_luong=lifecycle.MAX_VIDEOS_PER_COOKIE_PER_DAY - 900, now=now) is None
+
+
+def test_video_budget_is_shared_by_the_cookie_not_the_person(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)  # không ai có jar -> chung ẩn danh
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", nguoi_tao="an", tong=600)
+    _insert_job_at(db, "2026-09-15T02:00:00.000000+00:00", nguoi_tao="binh", tong=300)
+
+    assert lifecycle.videos_today_for_cookie(db, cookies, "an", now) == 900
+
+
+def test_yesterdays_videos_do_not_eat_todays_budget(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    _insert_job_at(db, "2026-09-14T16:59:00.000000+00:00", tong=2000)  # 23:59 VN hôm qua
+
+    assert lifecycle.videos_today_for_cookie(db, cookies, "khach", now) == 0

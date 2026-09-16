@@ -145,7 +145,7 @@ def create_job(payload: CreateJobRequest,
     # Trần ngày theo cookie. Cũng chạy TRƯỚC khi ghi hàng job, cùng lý do như
     # gate trên: một lượt bị chặn không được để lại hàng 'pending' ma.
     over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
-                                   nguoi_tao=nguoi_tao)
+                                   nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
     if over_cap is not None:
         raise HTTPException(status_code=429, detail=over_cap)
     if not is_tiktok_collection(payload.url):

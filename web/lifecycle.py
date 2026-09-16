@@ -53,6 +53,19 @@ DEFAULT_MIN_FREE_BYTES = 300 * 1024 * 1024
 # the mini's own jobs.db has a few weeks in it, not as a tuned threshold.
 MAX_JOBS_PER_COOKIE_PER_DAY = 20
 
+# Videos one cookie may pull in a day. The job cap alone does not bound the
+# traffic it exists to bound: one job may ask for up to MAX_SO_LUONG (2000),
+# so 20 jobs is 40 000 videos — the exact shape the cap was meant to prevent.
+#
+# 1000 is 20 jobs at 50 videos each, so it does not bite a normal day's work;
+# it bites the unusually large job. For scale: the downloader jitters ~2s per
+# video and rests 60s every 50, so 1000 videos is roughly 70 minutes of
+# continuous fetching from one account.
+#
+# Same caveat as the number above — chosen from the pacing constants, not from
+# measured usage. Revisit once the mini's jobs.db has real weeks in it.
+MAX_VIDEOS_PER_COOKIE_PER_DAY = 1000
+
 # The cap's day is the working day in Vietnam, not the UTC one. `tao_luc` is
 # stored in UTC, so the cheap implementation — slicing its first 10 chars —
 # would reset the cap at 07:00 local, cutting the working morning in half.
@@ -81,6 +94,15 @@ def jobs_today_for_cookie(db_path: Path, cookies_dir: Path, nguoi_tao: str,
     """
     identity = cookie_identity(cookies_dir, nguoi_tao)
     per_creator = models.count_jobs_since_by_creator(db_path, vn_day_start_utc(now))
+    return sum(count for creator, count in per_creator.items()
+               if cookie_identity(cookies_dir, creator) == identity)
+
+
+def videos_today_for_cookie(db_path: Path, cookies_dir: Path, nguoi_tao: str,
+                            now: datetime | None = None) -> int:
+    """Videos today (Vietnam) across every job sharing this job's cookie jar."""
+    identity = cookie_identity(cookies_dir, nguoi_tao)
+    per_creator = models.sum_videos_since_by_creator(db_path, vn_day_start_utc(now))
     return sum(count for creator, count in per_creator.items()
                if cookie_identity(cookies_dir, creator) == identity)
 
@@ -243,7 +265,9 @@ def check_disk_guard(path: Path, min_free_bytes: int = DEFAULT_MIN_FREE_BYTES) -
 
 
 def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
+                        so_luong: int,
                         max_jobs_per_day: int = MAX_JOBS_PER_COOKIE_PER_DAY,
+                        max_videos_per_day: int = MAX_VIDEOS_PER_COOKIE_PER_DAY,
                         now: datetime | None = None) -> str | None:
     """`None` -> accept. Otherwise why this cookie is done for today.
 
@@ -258,11 +282,21 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
     its TikTok calls, which is the thing being rationed.
     """
     used = jobs_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
-    if used < max_jobs_per_day:
-        return None
-    return (f"cookie này đã chạy {used}/{max_jobs_per_day} job trong hôm nay "
-            "(tính theo ngày giờ VN, reset lúc nửa đêm). Trần đặt để TikTok không "
-            "đọc lưu lượng của cả team từ một IP thành trang trại bot.")
+    if used >= max_jobs_per_day:
+        return (f"cookie này đã chạy {used}/{max_jobs_per_day} job trong hôm nay "
+                "(tính theo ngày giờ VN, reset lúc nửa đêm). Trần đặt để TikTok không "
+                "đọc lưu lượng của cả team từ một IP thành trang trại bot.")
+
+    # Job count alone does not bound traffic: one job may ask for 2000 videos.
+    # Checked against what this job WOULD add, not against what is already
+    # spent — otherwise the last allowed job could still add 2000 on its own.
+    spent = videos_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
+    if spent + so_luong > max_videos_per_day:
+        con_lai = max(max_videos_per_day - spent, 0)
+        return (f"cookie này đã lấy {spent}/{max_videos_per_day} video trong hôm nay "
+                f"(ngày giờ VN), nên job xin {so_luong} video sẽ vượt trần. "
+                f"Còn lại hôm nay: {con_lai} video.")
+    return None
 
 
 def should_reject_new_job(*, downloads_dir: Path | None = None,
