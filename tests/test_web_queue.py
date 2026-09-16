@@ -940,3 +940,72 @@ def test_repeated_sightings_of_the_same_pair_collapse(tmp_path):
                                 nguon="#t", da_tai=False)
 
     assert models.sources_for_videos(db_path, ["1"]) == {"1": ["#t"]}
+
+
+# ---------------------------------------------------------------------------
+# Phase 05 — cookie của người nào đi theo job người đó.
+#
+# Tiêu chí CŨ ("grep log/DB không thấy cookie của A trong job B") là XANH TRÁ
+# HÌNH: theo thiết kế cookie KHÔNG BAO GIỜ vào DB hay log, nên grep luôn rỗng
+# dù dây nối có lẫn hay không. Phép đo có sức phân định là bắt giá trị
+# `cookies_path` THỰC SỰ tới `download_all`.
+# ---------------------------------------------------------------------------
+
+def _jar_for(cookies_dir: Path, nguoi_tao: str) -> Path:
+    cookies_dir.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(nguoi_tao.encode("utf-8")).hexdigest()
+    jar = cookies_dir / f"{digest}.json"
+    jar.write_text("[]", encoding="utf-8")
+    return jar
+
+
+def _drive_job_as(tmp_path, monkeypatch, db_path, nguoi_tao, cookies_dir):
+    """Chạy trọn một job của `nguoi_tao`, trả về cookies_path mà downloader nhận."""
+    bat_duoc = {}
+    job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 10, nguoi_tao)
+    job = models.get_job(db_path, job_id)
+    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: [VideoRef(video_id="900", url="u")])
+    monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
+
+    def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
+        bat_duoc["cookies_path"] = cookies_path
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for r in refs_:
+            (output_dir / r.filename).write_bytes(b"x")
+            if progress is not None:
+                progress.note("downloaded")
+        return len(refs_), 0, []
+
+    monkeypatch.setattr(queue_mod, "download_all", _fake_download)
+    process_job(db_path, tmp_path / "dl", cookies_dir, job,
+                lifecycle_hook=lambda **kw: _UPLOAD_OK)
+    return bat_duoc.get("cookies_path", "__KHONG_TRUYEN__")
+
+
+def test_job_of_b_downloads_with_bs_cookie_not_as(tmp_path, monkeypatch):
+    """ĐỘT BIẾN: bỏ `job["nguoi_tao"]` khỏi lời gọi `cookies_path_for_user`
+    trong `process_job` (ví dụ ghim cứng "khach") ⇒ ĐỎ."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    cookies_dir = tmp_path / "ck"
+    jar_a = _jar_for(cookies_dir, "a@astronex.ai")
+    jar_b = _jar_for(cookies_dir, "b@astronex.ai")
+
+    duoc_nhan = _drive_job_as(tmp_path, monkeypatch, db_path, "b@astronex.ai", cookies_dir)
+
+    assert duoc_nhan == str(jar_b), "job của B phải chạy bằng jar của B"
+    assert duoc_nhan != str(jar_a), "không được dùng jar của người khác"
+
+
+def test_a_user_with_no_jar_downloads_anonymous_never_someone_elses(tmp_path, monkeypatch):
+    """Ca âm: không có jar thì phải là None (ẩn danh), KHÔNG được rơi sang jar
+    của người đang có. Không có ca này thì test trên vẫn xanh trong khi code
+    'lấy đại jar đầu tiên tìm thấy'."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    cookies_dir = tmp_path / "ck"
+    _jar_for(cookies_dir, "a@astronex.ai")
+
+    duoc_nhan = _drive_job_as(tmp_path, monkeypatch, db_path, "chua-co@astronex.ai", cookies_dir)
+
+    assert duoc_nhan is None
