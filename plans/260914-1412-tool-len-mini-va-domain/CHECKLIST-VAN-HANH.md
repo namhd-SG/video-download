@@ -38,7 +38,13 @@ Mỗi dòng trả lời một câu: **team làm được gì rồi, và còn thi
 
 ## ⚠ ĐANG LỖI TRÊN BẢN THẬT — người dùng đang nhìn thấy
 
-- [ ] **Chữ gợi ý trong ô nhập quá mờ, khó đọc** ở giao diện sáng. Bản sửa đã viết xong nhưng **chưa đẩy lên mini**, nên người dùng thật vẫn đang nhìn bản chưa sửa. Chỉ cần anh gật là đẩy lên, vài phút.
+- [x] **Chữ gợi ý trong ô nhập quá mờ** — ĐÃ SỬA VÀ ĐÃ LÊN MINI lúc 12:14 ngày 16/09.
+      Gốc: màu chữ gợi ý chưa bao giờ được đặt, nên nó rơi về xám mặc định của
+      trình duyệt — màu đó tính cho nền sáng, còn ô nhập ở đây nền gần đen.
+      Đo: trước 4,13:1 (dưới ngưỡng dễ đọc 4,5), sau **6,27:1**.
+      Kiểm trên bản THẬT đang chạy, không phải bản trên máy dev: mã nguồn ba tệp
+      giao diện lấy từ mini khớp y máy dev, Promax của người khác vẫn sống (302),
+      dịch vụ vẫn trả 200. Ảnh: `/tmp/claude-502/anh/mini-sau-deploy-sang.png`
 
 ---
 
