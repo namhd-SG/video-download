@@ -142,6 +142,14 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         job_id, ref.video_id, type(exc).__name__)
 
+    def _note_pages(so_trang: int) -> None:
+        """Ghi số trang index đã đọc. Trong `try` riêng: mất con số này thì
+        trần liệt kê hụt, nhưng không được làm hỏng một lượt tải đã chạy xong."""
+        try:
+            models.set_job_pages(db_path, job_id, so_trang)
+        except Exception:  # noqa: BLE001
+            log.warning("job %s: không ghi được số trang index", job_id)
+
     def _note_stop(ly_do: str) -> None:
         if db_path is None or job_id is None:
             return
@@ -157,7 +165,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         # filtered once at the end.
         return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
                                   already_have=_already_have, on_skip=_note_skip,
-                                  on_stop=_note_stop)
+                                  on_stop=_note_stop,
+                                  on_pages=_note_pages)
 
     refs = scrape_music_page(
         url,

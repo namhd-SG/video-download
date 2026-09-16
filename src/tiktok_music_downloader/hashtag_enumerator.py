@@ -51,6 +51,12 @@ STOP_COMPLETE = ""            # lấy đủ số đã xin
 STOP_INDEX_FAILED = "index_failed"
 STOP_STALLED = "stalled"
 STOP_PAGE_CAP = "page_cap"
+# Nguồn còn trả dữ liệu tốt, nhưng MỌI thứ nó đưa ra thư viện đã có. Sau khi
+# lọc trùng ra đời (5a7782e) đây là kết cục THƯỜNG GẶP NHẤT cho một hashtag
+# team dùng lại — mà trước đó nó đội lốt hai mã khác: hoặc `page_cap` (UI
+# khuyên "thử chạy lại" ⇒ người dùng lặp vô hạn), hoặc KHÔNG mã nào cả (nhánh
+# `not has_more` thoát mà không gọi `on_stop` ⇒ "Xong · 0/0" không một chữ).
+STOP_ALREADY_OWNED = "already_owned"
 
 
 def _fetch(url: str, user_agent: str, timeout: float = 25.0,
@@ -193,7 +199,8 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
                       proxy: str | None = None,
                        already_have: Callable[[list[str]], set[str]] | None = None,
                        on_skip: Callable[[VideoRef], None] | None = None,
-                       on_stop: Callable[[str], None] | None = None) -> list[VideoRef]:
+                       on_stop: Callable[[str], None] | None = None,
+                       on_pages: Callable[[int], None] | None = None) -> list[VideoRef]:
     """Return up to max_videos unique VideoRefs for a hashtag.
 
     An empty list means the hashtag could not be enumerated, and a SHORT list
@@ -212,8 +219,11 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
     cursor = 0
     stalled = 0
     truncated_because = None
+    skipped_total = 0   # đã sở hữu, dùng để phân định 'nguồn đã cạn'
+    pages_read = 0      # tiêu vào trần liệt kê, kể cả khi không ra video nào
 
     for page in range(1, max_pages + 1):
+        pages_read = page
         page_refs, cursor, has_more, ok = _provider_page(challenge_id, cursor, proxy=proxy)
         if not ok:
             truncated_because = STOP_INDEX_FAILED
@@ -246,12 +256,18 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
             if len(refs) >= max_videos:
                 break
         skipped_here = len(fresh) - added
+        skipped_total += skipped_here
         log.info("page %d: %d listed, %d new to this run, %d already owned, %d total",
                   page, len(page_refs), len(fresh), skipped_here, len(refs))
         if len(refs) >= max_videos:
             break
         if not has_more:
             log.info("index reports no more pages for #%s", tag)
+            # Trước đây thoát ở đây để `truncated_because = None` ⇒ `on_stop`
+            # không được gọi ⇒ job hiện "Xong · 0/0" không một chữ giải thích.
+            if len(refs) < max_videos:
+                truncated_because = (STOP_ALREADY_OWNED if skipped_total
+                                      else STOP_COMPLETE or "source_empty")
             break
         # `has_more` has been observed true on a page that added nothing, so a
         # run of such pages is a stall, not progress towards the target.
@@ -264,10 +280,22 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
         if len(refs) < max_videos:
             truncated_because = STOP_PAGE_CAP
 
-    if not refs:
+    # `page_cap`/`stalled` mà lượt này chỉ toàn video ĐÃ CÓ thì lý do thật
+    # không phải "hết trang" — nó là "thư viện đã có hết những gì nguồn đưa".
+    # Hai ca cần hai câu khác nhau: một cái bảo thử lại, một cái bảo đừng.
+    if truncated_because in (STOP_PAGE_CAP, STOP_STALLED) and not refs and skipped_total:
+        truncated_because = STOP_ALREADY_OWNED
+
+    if on_pages is not None:
+        on_pages(pages_read)
+
+    if not refs and not skipped_total:
         log.warning("no videos listed for #%s. TikTok's own hashtag feed returns "
                     "an empty body, so this tool relies on an external index; "
                     "that index answered with nothing usable.", tag)
+    elif truncated_because == STOP_ALREADY_OWNED:
+        log.info("#%s: index trả dữ liệu tốt, nhưng %d video nó đưa ra thư viện "
+                  "đã có hết — không phải lỗi nguồn", tag, skipped_total)
     elif truncated_because and len(refs) < max_videos:
         log.warning("listing for #%s is INCOMPLETE: asked for %d, got %d, reason=%s",
                     tag, max_videos, len(refs), truncated_because)

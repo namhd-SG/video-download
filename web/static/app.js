@@ -23,6 +23,12 @@
                   "lỗi giữa chừng — thử lại sau.",
     // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói
     // cách chữa, không được rơi vào nhánh "báo cho người phát triển" ở dưới.
+    // Nguồn còn sống, chỉ là thư viện đã có hết những gì nó đưa ra. Câu này
+    // KHÔNG được bảo "thử chạy lại" — chạy lại cũng ra đúng như vậy, chỉ tốn
+    // thêm lượt gọi TikTok.
+    already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
+                   "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
+    source_empty: "Xong: nguồn này hiện không có video nào.",
     cookie_khong_doc_duoc: "Dừng: tệp cookie của bạn không đọc được. Hãy xuất " +
                            "lại từ Cookie-Editor và chọn đúng định dạng JSON " +
                            "(không phải Header String hay Netscape), rồi dán lại.",

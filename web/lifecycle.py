@@ -66,6 +66,19 @@ MAX_JOBS_PER_COOKIE_PER_DAY = 20
 # measured usage. Revisit once the mini's jobs.db has real weeks in it.
 MAX_VIDEOS_PER_COOKIE_PER_DAY = 1000
 
+# Trang index một cookie được đọc trong ngày. NEO vào mức hôm nay, không phải
+# một con số chọn cho đẹp: trần job là 20 lượt, mỗi lượt đọc tối đa
+# `max_pages=40` (hashtag_enumerator) ⇒ 20 × 40 = 800. Nên trần này KHÔNG siết
+# chặt hơn hiện trạng; nó chỉ giữ nguyên hiện trạng khi ca "nguồn đã cạn" thôi
+# không trừ vào trần job nữa (user chốt 16/09).
+#
+# Vì sao cần: một lượt quét hashtag team đã tải hết vẫn tiêu ~40 lượt gọi index
+# mà `tong = 0`, tức KHÔNG tốn gì của trần video. Bỏ trần job cho ca đó mà
+# không thay bằng gì thì không còn thứ nào bó lưu lượng index — và `plan.md` R6
+# ghi rate-limit đánh theo IP egress, tức đánh CẢ VĂN PHÒNG chứ không riêng
+# tool này.
+MAX_INDEX_PAGES_PER_COOKIE_PER_DAY = 800
+
 # The cap's day is the working day in Vietnam, not the UTC one. `tao_luc` is
 # stored in UTC, so the cheap implementation — slicing its first 10 chars —
 # would reset the cap at 07:00 local, cutting the working morning in half.
@@ -94,6 +107,15 @@ def jobs_today_for_cookie(db_path: Path, cookies_dir: Path, nguoi_tao: str,
     """
     identity = cookie_identity(cookies_dir, nguoi_tao)
     per_creator = models.count_jobs_since_by_creator(db_path, vn_day_start_utc(now))
+    return sum(count for creator, count in per_creator.items()
+               if cookie_identity(cookies_dir, creator) == identity)
+
+
+def pages_today_for_cookie(db_path: Path, cookies_dir: Path, nguoi_tao: str,
+                           now: datetime | None = None) -> int:
+    """Trang index đã đọc hôm nay (giờ VN) bởi mọi job chung jar này."""
+    identity = cookie_identity(cookies_dir, nguoi_tao)
+    per_creator = models.sum_pages_since_by_creator(db_path, vn_day_start_utc(now))
     return sum(count for creator, count in per_creator.items()
                if cookie_identity(cookies_dir, creator) == identity)
 
@@ -268,6 +290,7 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
                         so_luong: int,
                         max_jobs_per_day: int = MAX_JOBS_PER_COOKIE_PER_DAY,
                         max_videos_per_day: int = MAX_VIDEOS_PER_COOKIE_PER_DAY,
+                        max_index_pages_per_day: int = MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
                         now: datetime | None = None) -> str | None:
     """`None` -> accept. Otherwise why this cookie is done for today.
 
@@ -311,6 +334,15 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
     # Job count alone does not bound traffic: one job may ask for 2000 videos.
     # Checked against what this job WOULD add, not against what is already
     # spent — otherwise the last allowed job could still add 2000 on its own.
+    # Trần thứ ba: lưu lượng LIỆT KÊ. Hai trần trên không bó nó (xem docstring),
+    # và từ 16/09 ca "nguồn đã cạn" không còn trừ vào trần job — nên đây là thứ
+    # duy nhất còn giữ số lượt gọi index.
+    trang = pages_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
+    if trang >= max_index_pages_per_day:
+        return (f"cookie này đã đọc {trang}/{max_index_pages_per_day} trang index "
+                "trong hôm nay (ngày giờ VN). Quét lại một nguồn đã cạn vẫn tốn "
+                "lượt gọi TikTok dù không ra video nào.")
+
     spent = videos_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
     if spent + so_luong > max_videos_per_day:
         con_lai = max(max_videos_per_day - spent, 0)

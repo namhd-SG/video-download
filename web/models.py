@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     xong_luc TEXT,
     nguoi_tao TEXT NOT NULL DEFAULT 'khach',
     drive_folder_link TEXT,
-    ly_do_dung TEXT
+    ly_do_dung TEXT,
+    so_trang INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -158,6 +159,7 @@ def init_db(db_path: Path) -> None:
         # means it is already there; that is the expected steady state.
         _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
         _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
+        _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
@@ -176,6 +178,25 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
     return job_id
 
 
+def set_job_pages(db_path: Path, job_id: int, so_trang: int) -> None:
+    """Số trang index lượt này đã đọc. Tiêu vào trần liệt kê KỂ CẢ khi không ra
+    video nào — đó chính là ca cần bó: quét một hashtag đã cạn vẫn tốn ~40 lượt
+    gọi index mà `tong` bằng 0."""
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET so_trang = ? WHERE id = ?", (so_trang, job_id))
+
+
+def sum_pages_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
+    """Số trang index mỗi người đã đọc kể từ `since`."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT nguoi_tao, COALESCE(SUM(so_trang), 0) AS n FROM jobs "
+            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
+            (since,),
+        ).fetchall()
+    return {row["nguoi_tao"]: row["n"] for row in rows}
+
+
 def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     """How many jobs each creator has started since `since`, for the daily cap.
 
@@ -188,8 +209,14 @@ def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     """
     with _connect(db_path) as conn:
         rows = conn.execute(
+            # `already_owned` KHÔNG tính: người dùng không làm gì sai khi quét
+            # một hashtag team đã tải hết (user chốt 16/09). Lưu lượng của lượt
+            # đó vẫn bị bó — bởi trần LIỆT KÊ, không phải trần này.
+            # Chỉ ca NÀY được miễn; `index_failed` vẫn tính, nếu không thì ép
+            # lỗi là một đường lách trần.
             "SELECT nguoi_tao, COUNT(*) AS n FROM jobs "
-            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
+            "WHERE tao_luc >= ? AND COALESCE(ly_do_dung, '') != 'already_owned' "
+            "GROUP BY nguoi_tao",
             (since,),
         ).fetchall()
     return {row["nguoi_tao"]: row["n"] for row in rows}

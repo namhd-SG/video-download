@@ -1067,3 +1067,80 @@ def test_ffmpeg_reporting_success_with_an_empty_file_is_still_a_failure(tmp_path
 
     assert ok is False, "tệp 0 byte không phải là ảnh"
     assert not duong_anh.exists(), "tệp rỗng phải bị dọn, không được để /thumbs phục vụ nó"
+
+
+# ---------------------------------------------------------------------------
+# Trần LIỆT KÊ + miễn trừ "nguồn đã cạn" (user chốt 16/09, đường A).
+#
+# Quét một hashtag team đã tải hết KHÔNG trừ vào trần 20 lượt/ngày — người dùng
+# không làm gì sai. Nhưng lượt đó vẫn đọc ~40 trang index, nên nó phải tốn của
+# một trần KHÁC, nếu không thì lặp vô hạn miễn phí và rate-limit đánh cả văn
+# phòng (plan R6).
+# ---------------------------------------------------------------------------
+
+def _job_xong(db, tao_luc, *, ly_do=None, so_trang=0, nguoi_tao="khach"):
+    _insert_job_at(db, tao_luc, nguoi_tao=nguoi_tao)
+    with sqlite3.connect(db) as conn:
+        jid = conn.execute("SELECT MAX(id) FROM jobs").fetchone()[0]
+        conn.execute("UPDATE jobs SET ly_do_dung = ?, so_trang = ? WHERE id = ?",
+                     (ly_do, so_trang, jid))
+    return jid
+
+
+def test_an_exhausted_source_does_not_burn_a_daily_job(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    for _ in range(5):
+        _job_xong(db, "2026-09-15T02:00:00.000000+00:00", ly_do="already_owned", so_trang=40)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 0
+
+
+def test_a_failed_listing_still_burns_a_daily_job(tmp_path):
+    """CA ÂM chống lách trần: nếu miễn cả `index_failed` thì ép lỗi là cách
+    chạy vô hạn. Chỉ ca "đã sở hữu hết" mới được miễn."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    for _ in range(3):
+        _job_xong(db, "2026-09-15T02:00:00.000000+00:00", ly_do="index_failed", so_trang=5)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 3
+
+
+def test_repeating_an_exhausted_source_eventually_hits_the_listing_cap(tmp_path):
+    """ĐỘT BIẾN: bỏ cổng trần liệt kê trong `daily_cap_rejection` ⇒ ĐỎ.
+
+    Đây là ca chỉ thị của user mở ra: lượt "đã cạn" không tốn trần job, nên nếu
+    không có trần này thì lặp bao nhiêu cũng được, mỗi lần ~40 trang index."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    # 20 lượt "đã cạn" × 40 trang = 800 — đúng mức trần.
+    for _ in range(20):
+        _job_xong(db, "2026-09-15T02:00:00.000000+00:00", ly_do="already_owned", so_trang=40)
+
+    assert lifecycle.jobs_today_for_cookie(db, cookies, "khach", now) == 0, \
+        "không lượt nào bị trừ vào trần job — đó là ý của quyết định"
+    ly_do = lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=1, now=now)
+    assert ly_do is not None and "trang index" in ly_do, \
+        "lặp nguồn đã cạn phải chạm trần LIỆT KÊ, dù trần job còn nguyên"
+
+
+def test_the_listing_cap_leaves_ordinary_use_alone(tmp_path):
+    """CA DƯƠNG: trần 800 neo vào mức hôm nay (20 lượt × 40 trang) nên KHÔNG
+    được siết chặt hơn hiện trạng. Một ngày làm bình thường phải đi lọt."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    cookies = _cookies_dir_with_jar(tmp_path)
+    now = datetime(2026, 9, 15, 3, 0, tzinfo=timezone.utc)
+    for _ in range(10):
+        _job_xong(db, "2026-09-15T02:00:00.000000+00:00", so_trang=12)
+
+    assert lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=20, now=now) is None
