@@ -16,9 +16,14 @@ dependencies: [2, 4]
 | **P05a — danh tính** | **CÓ** | `nguoi_tao` lấy từ JWT Cloudflare Access, không từ body HTTP. Tên file cookie = `sha256(user_id)` — chặn traversal bằng **cấu tạo**, không bằng regex lọc |
 | **P05b — mỗi người tự dán cookie** | sau MVP | trang "Cookie của tôi", TTL, dọn jar tạm, tiền-kiểm |
 
-**MVP dùng cookie của user (đã đưa 14/09).** Đo được: cookie phiên còn hạn tới
-**14/11/2026**; `/search` với cookie **ăn ngay lượt đầu, 19/20 video thật** — so với
-**1/12 lượt** khi không cookie. Đây là biến số cuối cùng chưa đo, giờ đã có đáp án.
+**MVP dùng cookie của user (đã đưa 14/09).** `[ĐO 14/09 — KHÔNG phải số hiện tại]`
+cookie phiên còn hạn tới **14/11/2026**; `/search` với cookie **ăn ngay lượt đầu,
+19/20 video thật** — so với **1/12 lượt** khi không cookie.
+
+⚠ Ba con số đó là ảnh chụp ngày 14/09 và **chưa đo lại lần nào**. Tính tới 16/09 thư
+mục cookie trên mini **rỗng** — không có cookie thật nào để đo, nên tiêu chí *"/search
+5 lượt có cookie"* ở dưới vẫn mở. Ai đọc mục này về sau: **đừng dẫn 19/20 như tình
+trạng hôm nay**; nó nói về một cookie đã đưa vào máy ngày 14/09.
 
 ⚠ Cookie đó sẽ **nằm trên máy công ty** trong suốt MVP. Quyền `0600`, không vào log,
 không vào git (`web/data/` đã ignore — đo: `git check-ignore` 3/3 ✓). Đổi sang account
