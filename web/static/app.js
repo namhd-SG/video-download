@@ -136,7 +136,11 @@
   }
 
   function creatorBucket(video) {
-    const who = state.jobCreatorMap.get(video.job_id);
+    // Lấy thẳng từ hàng video. Trước đây tra qua `jobCreatorMap` dựng từ
+    // `/jobs`, nhưng từ 16/09 `/jobs` chỉ trả lượt của CHÍNH MÌNH (quyết định
+    // của user), nên cách cũ sẽ cho "không rõ" với mọi video của người khác —
+    // gãy bộ lọc "Người tải" (chốt #7) mà nhìn vào không biết vì sao.
+    const who = video.nguoi_tao;
     return who ? { key: who, label: who } : { key: UNKNOWN, label: "Không rõ" };
   }
 

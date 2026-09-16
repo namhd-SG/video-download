@@ -218,11 +218,24 @@ def get_job(db_path: Path, job_id: int) -> dict | None:
     return dict(row) if row is not None else None
 
 
-def list_jobs(db_path: Path) -> list[dict]:
+def list_jobs(db_path: Path, chi_cua: str | None) -> list[dict]:
+    """Hàng đợi. `chi_cua=None` là THẤY HẾT — chỉ dành cho admin.
+
+    Tham số BẮT BUỘC, không có mặc định: hàm này quyết định ai thấy gì, và một
+    mặc định im lặng ở đây nghĩa là "thấy hết" — tức phơi URL, email và trạng
+    thái cookie của đồng nghiệp cho bất kỳ ai gọi thiếu tham số. Quên truyền
+    bây giờ là TypeError, không phải một lỗ.
+    """
     with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT * FROM jobs ORDER BY tao_luc DESC, id DESC"
-        ).fetchall()
+        if chi_cua is None:
+            rows = conn.execute(
+                "SELECT * FROM jobs ORDER BY tao_luc DESC, id DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM jobs WHERE nguoi_tao = ? ORDER BY tao_luc DESC, id DESC",
+                (chi_cua,),
+            ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -373,8 +386,17 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
 def list_videos(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict]:
     """Newest first. Paged because the grid renders every row it is handed."""
     with _connect(db_path) as conn:
+        # Kèm `nguoi_tao` của job đã tải video này. Thư viện là của CẢ TEAM
+        # (chốt #2) và có bộ lọc "Người tải" (chốt #7), nên quy kết ai-tải-gì
+        # thuộc về thư viện. Trước đây UI dựng nó từ `/jobs`; từ 16/09 `/jobs`
+        # chỉ trả lượt của chính mình, nên nếu không mang theo đây thì bộ lọc
+        # #7 sẽ hiện "không rõ" cho mọi video của người khác — gãy một tính
+        # năng đã chốt mà không ai thấy.
+        # LEFT JOIN: hàng job có thể vắng, video vẫn phải hiện.
         rows = conn.execute(
-            "SELECT * FROM videos ORDER BY tao_luc DESC, video_id DESC "
+            "SELECT v.*, j.nguoi_tao FROM videos v "
+            "LEFT JOIN jobs j ON j.id = v.job_id "
+            "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()

@@ -5,6 +5,7 @@ function under the FastAPI decorator, callable without an HTTP client or the
 """
 from __future__ import annotations
 
+import json
 import os
 import stat
 from pathlib import Path
@@ -58,7 +59,7 @@ def test_create_job_rejects_before_creating_a_job_row(tmp_path, monkeypatch):
     with pytest.raises(HTTPException):
         app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
 
-    assert models.list_jobs(db_path) == []
+    assert models.list_jobs(db_path, None) == []
 
 
 def test_create_job_succeeds_when_gate_is_clear(tmp_path, monkeypatch):
@@ -71,7 +72,7 @@ def test_create_job_succeeds_when_gate_is_clear(tmp_path, monkeypatch):
 
     assert job["trang_thai"] == "pending"
     assert job["nguoi_tao"] == TEST_USER
-    assert len(models.list_jobs(db_path)) == 1
+    assert len(models.list_jobs(db_path, None)) == 1
 
 
 def test_create_job_passes_downloads_dir_to_the_gate(tmp_path, monkeypatch):
@@ -394,7 +395,7 @@ def test_create_job_refuses_with_429_once_the_cookie_hit_its_daily_cap(tmp_path,
         "trần ngày là 429 (chờ tới nửa đêm), KHÔNG phải 503 — 503 đang mang "
         "nghĩa 'máy đang kẹt, thử lại lát nữa' và cách chữa khác hẳn"
     )
-    assert len(models.list_jobs(db_path)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY, \
+    assert len(models.list_jobs(db_path, None)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY, \
         "lượt bị trần chặn không được để lại hàng job ma"
 
 
@@ -405,7 +406,7 @@ def test_create_job_allows_every_job_up_to_the_cap(tmp_path, monkeypatch):
     for _ in range(lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY):
         app_mod.create_job(_payload(), nguoi_tao=TEST_USER)
 
-    assert len(models.list_jobs(db_path)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY
+    assert len(models.list_jobs(db_path, None)) == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY
 
 
 # ---------------------------------------------------------------------------
@@ -541,3 +542,77 @@ def test_a_normal_video_id_still_reaches_the_lookup(tmp_path, monkeypatch):
     # 404 vì chưa có ảnh, nhưng phải là 404 của "chưa có ảnh" chứ không phải
     # của "id không hợp lệ" — hai ca khác nhau đi qua cùng mã trạng thái.
     assert "chưa có ảnh" in exc_info.value.detail
+
+
+# ---------------------------------------------------------------------------
+# /jobs — mỗi người CHỈ thấy lượt của mình; admin thấy hết.
+#
+# User chốt 16/09 khi chuẩn bị mở cho cả team, THU HẸP chốt #7 (vốn mở hàng đợi
+# cho cả team). Hàng job mang URL người khác tìm gì, email của họ, và mã trạng
+# thái cookie cá nhân (hết hạn / chưa đăng nhập).
+#
+# Lọc phải ở API, không ở giao diện: ẩn trên màn hình mà API vẫn trả thì bất kỳ
+# ai mở tab mạng của trình duyệt cũng đọc được.
+#
+# ĐỘT BIẾN: bỏ lọc trong route (`models.list_jobs(DB_PATH, None)`) ⇒ ca âm ĐỎ.
+# ---------------------------------------------------------------------------
+
+def _hai_nguoi(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    a = models.create_job(db_path, "https://www.tiktok.com/tag/cua-A", 5, "a@astronex.ai")
+    b = models.create_job(db_path, "https://www.tiktok.com/tag/BI-MAT-CUA-B", 5, "b@astronex.ai")
+    models.set_job_stop_reason(db_path, b, "cookie_het_han")
+    return db_path, a, b
+
+
+def test_a_user_sees_only_their_own_jobs(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, job_a, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    thay = app_mod.list_jobs(nguoi_tao="a@astronex.ai")
+
+    assert [j["id"] for j in thay] == [job_a]
+
+
+def test_nothing_of_the_other_person_survives_in_the_response(tmp_path, monkeypatch):
+    """Không chỉ đếm hàng: ba thứ cụ thể phải BIẾN MẤT khỏi phản hồi — email,
+    URL họ tìm gì, và mã trạng thái cookie cá nhân của họ."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, _, _ = _hai_nguoi(tmp_path, monkeypatch)
+
+    thay = json.dumps(app_mod.list_jobs(nguoi_tao="a@astronex.ai"), ensure_ascii=False)
+
+    assert "b@astronex.ai" not in thay, "email người khác lọt ra"
+    assert "BI-MAT-CUA-B" not in thay, "URL người khác lọt ra"
+    assert "cookie_het_han" not in thay, "trạng thái cookie người khác lọt ra"
+
+
+def test_an_admin_sees_everyone(tmp_path, monkeypatch):
+    """CA DƯƠNG: thiếu nó thì một bản vá 'chặn tất' vẫn xanh hai test trên
+    trong khi đã làm admin mù hoàn toàn."""
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    db_path, job_a, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    thay = app_mod.list_jobs(nguoi_tao="sep@astronex.ai")
+
+    assert sorted(j["id"] for j in thay) == sorted([job_a, job_b])
+
+
+def test_the_admin_list_tolerates_spacing_and_case(tmp_path, monkeypatch):
+    """Danh sách admin do người gõ tay vào tệp env. Một khoảng trắng thừa
+    không được âm thầm biến admin thành người thường."""
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", " SEP@Astronex.ai , ai-do@x.com ")
+    db_path, job_a, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    assert len(app_mod.list_jobs(nguoi_tao="sep@astronex.ai")) == 2
+
+
+def test_an_empty_admin_list_makes_nobody_admin(tmp_path, monkeypatch):
+    """Mặc định an toàn: env rỗng/thiếu ⇒ KHÔNG AI thấy hết. Mặc định sai ở đây
+    nghĩa là phơi hàng đợi của mọi người."""
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "")
+    db_path, job_a, _ = _hai_nguoi(tmp_path, monkeypatch)
+
+    assert [j["id"] for j in app_mod.list_jobs(nguoi_tao="a@astronex.ai")] == [job_a]

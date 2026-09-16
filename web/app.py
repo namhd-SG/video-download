@@ -23,7 +23,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
-from web.auth import require_user
+from web.auth import is_admin, require_user
 from web.lifecycle import (daily_cap_rejection, should_reject_new_job,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
@@ -198,7 +198,14 @@ def create_job(payload: CreateJobRequest,
 
 @app.get("/jobs")
 def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
-    return models.list_jobs(DB_PATH)
+    """Chỉ lượt của chính mình; admin thấy hết.
+
+    User chốt 16/09 khi chuẩn bị mở cho cả team. Hàng job mang URL người khác
+    tìm gì, email của họ, và `ly_do_dung` — trong đó có mã trạng thái cookie
+    cá nhân (hết hạn / chưa đăng nhập). Lọc ở ĐÂY chứ không ở giao diện: ẩn
+    trên màn hình mà API vẫn trả thì chưa sửa gì cả.
+    """
+    return models.list_jobs(DB_PATH, None if is_admin(nguoi_tao) else nguoi_tao)
 
 
 @app.get("/videos")

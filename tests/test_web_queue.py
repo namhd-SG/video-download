@@ -92,7 +92,7 @@ def test_list_jobs_orders_newest_first(tmp_path):
     models.init_db(db_path)
     j1 = models.create_job(db_path, "u1", 1, "a")
     j2 = models.create_job(db_path, "u2", 1, "a")
-    jobs = models.list_jobs(db_path)
+    jobs = models.list_jobs(db_path, None)
     assert [j["id"] for j in jobs] == [j2, j1]
 
 

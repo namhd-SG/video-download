@@ -224,3 +224,21 @@ def require_user(request: Request) -> str:
     except AccessConfigError as exc:
         log.error("Access không kiểm được: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+# Ai được xem hàng đợi của cả team. Đọc từ env (`~/.config/videodl/env` trên
+# mini) chứ không cắm cứng: danh sách người thì đổi, mà đổi nó không đáng phải
+# deploy lại. Rỗng = KHÔNG AI là admin — mặc định an toàn, vì mặc định sai ở
+# đây nghĩa là phơi hàng đợi của mọi người.
+ENV_ADMIN_EMAILS = "VIDEODL_ADMIN_EMAILS"
+
+
+def is_admin(email: str) -> bool:
+    """`True` nếu email này nằm trong danh sách admin.
+
+    So khớp không phân biệt hoa thường và bỏ khoảng trắng: danh sách do người
+    gõ tay vào tệp env, và một khoảng trắng thừa không nên biến một admin
+    thành người thường mà không ai biết vì sao.
+    """
+    raw = os.environ.get(ENV_ADMIN_EMAILS, "")
+    ds = {e.strip().lower() for e in raw.split(",") if e.strip()}
+    return email.strip().lower() in ds
