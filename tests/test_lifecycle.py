@@ -959,3 +959,33 @@ def test_yesterdays_videos_do_not_eat_todays_budget(tmp_path):
     _insert_job_at(db, "2026-09-14T16:59:00.000000+00:00", tong=2000)  # 23:59 VN hôm qua
 
     assert lifecycle.videos_today_for_cookie(db, cookies, "khach", now) == 0
+
+
+# ---------------------------------------------------------------------------
+# Backfill cần ghi ĐÚNG thời điểm cũ. Không có tham số này thì hàng nhập lại
+# mang dấu thời gian HÔM NAY, và bộ lọc "Ngày tải" — vốn đọc `videos.tao_luc`
+# — sẽ nói video tải từ 14/09 là tải hôm nay.
+# ---------------------------------------------------------------------------
+
+def test_record_video_defaults_to_now_but_accepts_a_real_time(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, job_id=1, video_id="111", url="u")
+    models.record_video(db, job_id=1, video_id="222", url="u",
+                        tao_luc="2026-09-14T10:43:08.000000+00:00")
+
+    rows = {r["video_id"]: r["tao_luc"] for r in models.list_videos(db)}
+    assert rows["222"] == "2026-09-14T10:43:08.000000+00:00"
+    assert rows["111"] != rows["222"], "bỏ tham số thì phải là thời điểm hiện tại"
+
+
+def test_record_sighting_accepts_a_real_time(tmp_path):
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_sighting(db, video_id="111", job_id=1,
+                           nguon="https://www.tiktok.com/tag/80ssaudi", da_tai=True,
+                           thay_luc="2026-09-14T10:43:08.000000+00:00")
+
+    with sqlite3.connect(db) as conn:
+        thay_luc = conn.execute("SELECT thay_luc FROM video_sightings").fetchone()[0]
+    assert thay_luc == "2026-09-14T10:43:08.000000+00:00"

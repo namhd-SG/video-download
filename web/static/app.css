@@ -319,6 +319,11 @@
   .card-meta .sep { opacity: .5; }
   .card-link { display: inline-block; margin-top: 6px; font-size: .71rem; color: var(--accent); text-decoration: none; }
   .card-link:hover { text-decoration: underline; }
+  /* Video nhập từ trước khi có lớp chỉ mục: chỉ khôi phục được id, không
+     có handle tác giả nên không dựng lại được link gốc. Hiện đúng cái
+     mình biết thay vì một nút bấm vào không đi đâu — và dạng chỉ-có-id
+     (tiktok.com/video/<id>) đã đo là 302 về /404, nên không bịa được. */
+  .card-link-trong { color: var(--text-faint); cursor: default; }
 
   /* Thư viện hiện có 0 video thật — đây là thứ user thấy đầu tiên, nên trạng
      thái rỗng phải nhìn có chủ đích, không phải một khoảng trắng. */

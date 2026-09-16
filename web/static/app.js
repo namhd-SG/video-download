@@ -352,7 +352,9 @@
         <div class="card-body">
           <div class="card-title">${escapeHtml(video.title || "(chưa có tiêu đề)")}</div>
           <div class="card-meta">${metaParts.map((m, i) => i === 0 ? m : `<span class="sep">·</span>${m}`).join(" ")}</div>
-          <a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>
+          ${video.url
+            ? `<a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>`
+            : `<span class="card-link card-link-trong">chưa rõ link gốc</span>`}
         </div>
       </div>`;
   }

@@ -293,7 +293,8 @@ def record_video(db_path: Path, job_id: int, video_id: str, url: str,
                   title: str | None = None, author: str | None = None,
                   region: str | None = None, duration: int | None = None,
                   play_count: int | None = None, music_id: str | None = None,
-                  drive_file_id: str | None = None) -> None:
+                  drive_file_id: str | None = None,
+                  tao_luc: str | None = None) -> None:
     """Index one video that is now on Drive. First sighting wins.
 
     Called only after the upload reported success, so a row here means "this
@@ -315,12 +316,12 @@ def record_video(db_path: Path, job_id: int, video_id: str, url: str,
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(video_id) DO NOTHING",
             (video_id, job_id, url, title, author, region, duration, play_count,
-             music_id, drive_file_id, _now()),
+             music_id, drive_file_id, tao_luc or _now()),
         )
 
 
 def record_sighting(db_path: Path, video_id: str, job_id: int, nguon: str,
-                     da_tai: bool) -> None:
+                     da_tai: bool, thay_luc: str | None = None) -> None:
     """Note that this job saw this video under `nguon`, downloaded or not.
 
     `da_tai=False` is the duplicate case, and it is the whole point: a video
@@ -331,7 +332,7 @@ def record_sighting(db_path: Path, video_id: str, job_id: int, nguon: str,
         conn.execute(
             "INSERT OR IGNORE INTO video_sightings "
             "(video_id, job_id, nguon, da_tai, thay_luc) VALUES (?, ?, ?, ?, ?)",
-            (video_id, job_id, nguon, 1 if da_tai else 0, _now()),
+            (video_id, job_id, nguon, 1 if da_tai else 0, thay_luc or _now()),
         )
 
 
