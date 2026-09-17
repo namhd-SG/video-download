@@ -539,11 +539,37 @@
       renderSelectionBar();
       return;
     }
-    // Giỏ và phân tích nội dung CHƯA có backend — báo thật, đừng gọi endpoint
-    // không tồn tại và đừng giả vờ đã làm.
-    if (action === "cart") showToast("Chưa làm — tính năng \"gồm vào giỏ\" chưa có ở backend.");
-    if (action === "analyze") showToast("Chưa làm — tính năng \"phân tích nội dung\" chưa có ở backend.");
+    if (action === "loai") loaiDaChon();
   });
+
+  async function loaiDaChon() {
+    const ids = [...state.selected];
+    if (!ids.length) return;
+    // Hỏi trước: xoá là việc khó lùi ở phía người dùng (tệp vào Thùng rác
+    // Drive). Nói rõ nó KHÔNG đụng người khác — đó là thứ người bấm cần biết
+    // để bấm mà không phải đoán.
+    const ok = window.confirm(
+      `Bỏ ${ids.length} video khỏi thư viện của bạn?\n\n` +
+      `Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày). ` +
+      `Người khác không bị ảnh hưởng, và lượt quét sau của bạn sẽ không tải lại chúng.`);
+    if (!ok) return;
+
+    try {
+      const res = await apiSend("POST", "/videos/loai", { video_ids: ids });
+      state.selected.clear();
+      await loadVideos();
+      renderSelectionBar();
+      // Báo đủ ba con số, không gộp thành một chữ "xong": Drive trượt mà im
+      // lặng thì người dùng tưởng đã dọn trong khi tệp còn nguyên.
+      const phan = [`đã bỏ ${res.da_loai.length}`];
+      if (res.drive_truot.length) phan.push(`${res.drive_truot.length} chưa bỏ được khỏi Drive — thử lại`);
+      if (res.khong_phai_cua_ban.length) phan.push(`${res.khong_phai_cua_ban.length} không phải của bạn`);
+      showToast(phan.join(" · "));
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast("Không bỏ được: " + err.message);
+    }
+  }
 
   document.getElementById("library-refresh").addEventListener("click", () => {
     loadVideos().catch((err) => showToast("Không tải lại được thư viện: " + err.message));

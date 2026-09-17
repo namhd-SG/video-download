@@ -150,7 +150,13 @@ def init_db(db_path: Path) -> None:
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an
         # already-created table needs them added. Same ad hoc migration the
         # jobs table uses above; duplicate-column means it is already done.
-        for column, decl in (("music_id", "TEXT"), ("drive_file_id", "TEXT")):
+        # `da_loai_luc`/`loai_boi`: ai đã bỏ video này khỏi thư viện CỦA HỌ, lúc
+        # nào. Theo NGƯỜI chứ không phải một cờ chung — user chốt 17/09 rằng
+        # loại là việc riêng: "không ảnh hưởng gì đến chung cả, vì đó là bộ của
+        # tôi". Một cờ chung sẽ biến phán xét của một người thành lệnh chặn cho
+        # cả team.
+        for column, decl in (("music_id", "TEXT"), ("drive_file_id", "TEXT"),
+                             ("da_loai_luc", "TEXT"), ("loai_boi", "TEXT")):
             _add_column_if_missing(conn, "videos", column, decl)
         # `CREATE TABLE IF NOT EXISTS` above does nothing for a `jobs.db`
         # that already existed before `drive_folder_link` was added — this
@@ -409,6 +415,45 @@ def sources_for_videos(db_path: Path, video_ids: list[str],
     return out
 
 
+def video_de_loai(db_path: Path, video_ids: list[str],
+                  chi_cua: str | None) -> list[dict]:
+    """Những video trong danh sách này mà `chi_cua` thật sự sở hữu và chưa loại.
+
+    Trả cả `drive_file_id` vì người gọi cần nó để bỏ file vào thùng rác. Lọc
+    quyền sở hữu Ở ĐÂY, không ở tầng route: một danh sách id do client gửi lên
+    là đầu vào không tin được, và cách duy nhất khiến "id của người khác" không
+    bao giờ đi tiếp là để câu SQL tự loại nó.
+    """
+    if not video_ids:
+        return []
+    marks = ",".join("?" * len(video_ids))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT v.video_id, v.drive_file_id FROM videos v "
+            f"LEFT JOIN jobs j ON j.id = v.job_id "
+            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"AND (? IS NULL OR j.nguoi_tao = ?)",
+            [*video_ids, chi_cua, chi_cua],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def danh_dau_da_loai(db_path: Path, video_id: str, nguoi_loai: str) -> None:
+    """Ghi mốc "đã loại". Gọi SAU khi file đã vào thùng rác, không bao giờ trước.
+
+    Thứ tự đó là toàn bộ điểm của hàm này. Ghi mốc trước rồi trash trượt thì
+    video biến khỏi thư viện trong khi file còn nguyên trên Drive, và không có
+    gì báo — chủ tưởng đã dọn, kho thì vẫn giữ. Hỏng theo chiều ngược lại (trash
+    xong mà chưa kịp ghi mốc) thì lượt sau chỉ đơn giản loại lại: ồn, nhưng
+    thấy được.
+    """
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE videos SET da_loai_luc = ?, loai_boi = ? WHERE video_id = ?",
+            (datetime.now(timezone.utc).isoformat(), nguoi_loai, video_id),
+        )
+
+
 def video_nay_cua_toi(db_path: Path, video_id: str, chi_cua: str | None) -> bool:
     """Is this one video in `chi_cua`'s library? `None` = admin, always True
     for a video that exists at all.
@@ -436,6 +481,12 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     Takes the candidate list rather than loading the whole table: the library
     is meant to grow without bound, and a per-job SELECT of every row would
     quietly become the slowest part of enumerating.
+
+    ⚠ KHÔNG thêm `WHERE da_loai_luc IS NULL` vào đây. Câu hỏi của hàm này là
+    "kho đã có file này chưa", không phải "ai còn muốn thấy nó". Lọc theo cột
+    loại sẽ làm lượt quét sau tải LẠI đúng video mà chủ vừa bỏ — tốn một lượt
+    TikTok và dựng lại thứ họ vừa dọn. Thư viện lọc ở `list_videos`; chỗ này
+    thì không.
     """
     if not video_ids:
         return set()
@@ -471,7 +522,7 @@ def list_videos(db_path: Path, chi_cua: str | None,
         rows = conn.execute(
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE (? IS NULL OR j.nguoi_tao = ?) "
+            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
             (chi_cua, chi_cua, limit, offset),
@@ -489,7 +540,7 @@ def count_videos(db_path: Path, chi_cua: str | None) -> int:
         return int(conn.execute(
             "SELECT COUNT(*) FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE (? IS NULL OR j.nguoi_tao = ?)",
+            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?)",
             (chi_cua, chi_cua),
         ).fetchone()[0])
 

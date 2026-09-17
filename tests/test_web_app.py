@@ -17,6 +17,7 @@ from fastapi import HTTPException
 
 from web import app as app_mod
 from web import lifecycle
+from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
 from web import cookies
 from web import models
 from web.auth import require_user
@@ -383,6 +384,7 @@ KHONG_CAN_KIEM_CHU = {
     "/videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
     "/me": "chính người đang gọi",
     "/me/cookie": "chính người đang gọi",
+    "/videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
 }
 
 
@@ -524,6 +526,105 @@ def test_the_library_is_newest_first(tmp_path, monkeypatch):
     out = app_mod.list_videos(nguoi_tao=TEST_USER)
 
     assert [v["video_id"] for v in out["videos"]] == ["moi", "giua", "cu"]
+
+
+class _UploaderGia:
+    """Uploader giả: đếm lời gọi trash và cho phép ép trượt.
+
+    `trash_file` trả đúng `UploadResult` như bản thật, nên test đi qua CÙNG
+    nhánh phân loại kết quả mà production đi — một stub trả `True/False` sẽ
+    bỏ qua đúng chỗ dễ sai nhất.
+    """
+
+    def __init__(self, truot=()):
+        self.da_trash = []
+        self._truot = set(truot)
+
+    def is_configured(self):
+        return True
+
+    def upload_file(self, path, parent_folder_id=None):
+        raise AssertionError("test này không đụng đường tải lên")
+
+    def create_job_folder(self, job_id):
+        raise AssertionError("test này không đụng đường tải lên")
+
+    def trash_file(self, file_id):
+        self.da_trash.append(file_id)
+        if file_id in self._truot:
+            return UploadResult(outcome=UploadOutcome.FAILED, reason="ép trượt")
+        return UploadResult(outcome=UploadOutcome.SUCCESS, file_id=file_id)
+
+
+def _kho_hai_nguoi(tmp_path, monkeypatch, truot=()):
+    db, job_toi, job_ho = _thu_vien_hai_nguoi(tmp_path, monkeypatch)
+    with models._connect(db) as conn:
+        conn.execute("UPDATE videos SET drive_file_id = 'drive-' || video_id")
+    gia = _UploaderGia(truot=truot)
+    lifecycle.set_uploader(gia)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    return db, gia
+
+
+def test_removing_a_video_takes_it_out_of_my_library_only(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db, gia = _kho_hai_nguoi(tmp_path, monkeypatch)
+
+    out = app_mod.loai_video(app_mod.LoaiVideoRequest(video_ids=["1"]),
+                              nguoi_tao=TEST_USER)
+
+    assert out["da_loai"] == ["1"] and out["drive_truot"] == []
+    assert gia.da_trash == ["drive-1"], "tệp phải được đưa vào thùng rác"
+    assert app_mod.list_videos(nguoi_tao=TEST_USER)["videos"] == []
+    # Người kia KHÔNG bị ảnh hưởng — đây là toàn bộ điểm của "loại là việc riêng".
+    assert {v["video_id"] for v in
+            app_mod.list_videos(nguoi_tao="ho@astronex.ai")["videos"]} == {"2"}
+
+
+def test_a_removed_video_is_still_counted_as_already_in_the_warehouse(
+        tmp_path, monkeypatch):
+    """Lọc trùng KHÔNG được quên video đã loại. Quên là lượt quét sau tải lại
+    đúng thứ chủ vừa dọn — tốn một lượt TikTok và dựng lại rác."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db, _ = _kho_hai_nguoi(tmp_path, monkeypatch)
+
+    app_mod.loai_video(app_mod.LoaiVideoRequest(video_ids=["1"]), nguoi_tao=TEST_USER)
+
+    assert models.known_video_ids(db, ["1"]) == {"1"}
+
+
+def test_i_cannot_remove_someone_elses_video(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db, gia = _kho_hai_nguoi(tmp_path, monkeypatch)
+
+    out = app_mod.loai_video(app_mod.LoaiVideoRequest(video_ids=["2"]),
+                              nguoi_tao=TEST_USER)
+
+    assert out["da_loai"] == [] and out["khong_phai_cua_ban"] == ["2"]
+    assert gia.da_trash == [], "không được chạm Drive cho video của người khác"
+    assert {v["video_id"] for v in
+            app_mod.list_videos(nguoi_tao="ho@astronex.ai")["videos"]} == {"2"}
+
+
+def test_a_failed_trash_leaves_the_video_where_it_was(tmp_path, monkeypatch):
+    """Ca đắt nhất: Drive trượt. Ghi mốc trước rồi trượt ⇒ video biến khỏi thư
+    viện trong khi tệp còn nguyên, và KHÔNG CÓ GÌ BÁO. Phải thà ồn còn hơn."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db, gia = _kho_hai_nguoi(tmp_path, monkeypatch, truot=["drive-1"])
+
+    out = app_mod.loai_video(app_mod.LoaiVideoRequest(video_ids=["1"]),
+                              nguoi_tao=TEST_USER)
+
+    assert out["drive_truot"] == ["1"] and out["da_loai"] == []
+    assert {v["video_id"] for v in
+            app_mod.list_videos(nguoi_tao=TEST_USER)["videos"]} == {"1"}, \
+        "video phải còn trong thư viện để chủ thấy và bấm lại"
+
+
+def test_removing_more_than_the_cap_is_refused(tmp_path, monkeypatch):
+    _kho_hai_nguoi(tmp_path, monkeypatch)
+    with pytest.raises(Exception):
+        app_mod.LoaiVideoRequest(video_ids=[str(i) for i in range(51)])
 
 
 def test_a_thumbnail_of_someone_elses_video_is_a_404(tmp_path, monkeypatch):

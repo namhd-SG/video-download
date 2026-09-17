@@ -381,6 +381,11 @@
   }
   .selection-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   .selection-actions button.ghost { background: transparent; }
+  /* Xoá là việc khó lùi ở phía người dùng — nút phải TRÔNG khác nút thường,
+     không chỉ khác ở chữ. */
+  .selection-actions button.danger {
+    background: transparent; color: var(--danger); border-color: var(--danger);
+  }
   .selection-actions button:hover { filter: brightness(1.05); }
 
   /* Cookie của tôi — dùng lại token màu sẵn có để hai chế độ sáng/tối tự

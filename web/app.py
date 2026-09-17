@@ -27,7 +27,9 @@ from web import models
 from web.auth import is_admin, require_user
 from web.cookies import (cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
+from tiktok_music_downloader.gdrive_upload import UploadOutcome
 from web.lifecycle import (daily_cap_rejection, should_reject_new_job,
+                           trash_drive_file,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
 
@@ -346,6 +348,54 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     return {
         "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,
+    }
+
+
+# Một lượt bỏ tối đa 50 video. Trần tồn tại vì mỗi id là một lượt gọi Drive
+# đồng bộ: 500 id trong một request là một phút treo và một cửa sổ dài để chết
+# giữa chừng, đúng lúc dữ liệu đang ở trạng thái nửa vời.
+MAX_VIDEO_LOAI = 50
+
+
+class LoaiVideoRequest(BaseModel):
+    video_ids: list[str] = Field(min_length=1, max_length=MAX_VIDEO_LOAI)
+
+
+@app.post("/videos/loai")
+def loai_video(body: LoaiVideoRequest,
+               nguoi_tao: str = Depends(require_user)) -> dict:
+    """Bỏ video khỏi thư viện CỦA NGƯỜI BẤM, và đưa tệp vào Thùng rác Drive.
+
+    Loại là việc riêng (user chốt 17/09): người khác quét trúng cùng video vẫn
+    tải lại được, vì `known_video_ids` cố ý không xét cột loại. Thứ biến mất là
+    hàng trong thư viện của người bấm, không phải chỗ đứng của video trong kho.
+
+    Trả về ba con số thay vì một chữ "xong": bỏ được bao nhiêu, bao nhiêu id
+    không phải của mình, bao nhiêu id trash trượt. Gộp ba thứ đó thành một
+    trạng thái là cách một lỗi Drive đi qua mà không ai thấy.
+    """
+    chi_cua = None if is_admin(nguoi_tao) else nguoi_tao
+    cua_toi = models.video_de_loai(DB_PATH, body.video_ids, chi_cua)
+    da_loai, drive_truot = [], []
+
+    for hang in cua_toi:
+        file_id = hang.get("drive_file_id")
+        if file_id:
+            ket_qua = trash_drive_file(file_id)
+            if not ket_qua.ok and ket_qua.outcome is not UploadOutcome.NOT_CONFIGURED:
+                # Trash trượt ⇒ KHÔNG ghi mốc. Video ở lại thư viện, người dùng
+                # thấy nó còn đó và bấm lại được — thà ồn còn hơn mất lặng lẽ.
+                drive_truot.append(hang["video_id"])
+                continue
+        # Không có `drive_file_id` (video tiền-chỉ-mục) thì không có gì để bỏ
+        # vào thùng rác; vẫn ghi mốc, vì thư viện là thứ người dùng muốn dọn.
+        models.danh_dau_da_loai(DB_PATH, hang["video_id"], nguoi_tao)
+        da_loai.append(hang["video_id"])
+
+    return {
+        "da_loai": da_loai,
+        "khong_phai_cua_ban": sorted(set(body.video_ids) - {h["video_id"] for h in cua_toi}),
+        "drive_truot": drive_truot,
     }
 
 

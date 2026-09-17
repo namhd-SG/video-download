@@ -133,6 +133,7 @@ class UploaderLike(Protocol):
     def upload_file(self, path: Path, parent_folder_id: str | None = None) -> UploadResult: ...
     def is_configured(self) -> bool: ...
     def create_job_folder(self, job_id: int) -> UploadResult: ...
+    def trash_file(self, file_id: str) -> UploadResult: ...
 
 
 @dataclass(frozen=True)
@@ -176,6 +177,16 @@ def _get_uploader() -> UploaderLike:
     if _uploader is None:
         _uploader = DriveUploader()
     return _uploader
+
+
+def trash_drive_file(file_id: str) -> UploadResult:
+    """Đưa một tệp Drive vào thùng rác, qua đúng uploader mà đường tải đang dùng.
+
+    Đi vòng qua `_get_uploader()` chứ không dựng `DriveUploader()` mới, để giữ
+    nguyên chỗ tiêm của test (`set_uploader`): một instance thứ hai sẽ lặng lẽ
+    bỏ qua uploader giả, và test hoặc đi gọi Drive thật, hoặc xanh vì lý do sai.
+    """
+    return _get_uploader().trash_file(file_id)
 
 
 def get_backpressure_status() -> BackpressureStatus:

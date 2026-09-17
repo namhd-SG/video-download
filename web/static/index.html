@@ -118,8 +118,10 @@
 <div class="selection-bar" id="selection-bar" hidden>
   <span id="selection-count" class="muted"></span>
   <div class="selection-actions">
-    <button type="button" data-action="cart">Gồm vào giỏ</button>
-    <button type="button" data-action="analyze">Phân tích nội dung</button>
+    <!-- Chỉ ship nút CÓ backend. "Tạo bộ tự tìm" và "Phân tích" chưa nối nên
+         chưa có mặt: một nút bấm vào báo "chưa làm" là một nút hỏng, và người
+         dùng đã phàn nàn đúng chuyện đó. -->
+    <button type="button" class="danger" data-action="loai">Xoá</button>
     <button type="button" class="ghost" data-action="clear">Bỏ chọn</button>
   </div>
 </div>
