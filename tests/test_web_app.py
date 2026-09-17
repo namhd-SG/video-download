@@ -369,6 +369,38 @@ def test_deleting_a_cookie_that_was_never_there_is_not_an_error(tmp_path, monkey
     app_mod.delete_my_cookie(nguoi_tao=TEST_USER)
 
 
+def test_quota_counts_the_same_jobs_the_gate_counts(tmp_path, monkeypatch):
+    """Trang hạn mức phải đếm ĐÚNG thứ cổng chặn đếm.
+
+    Đo bằng SQL độc lập chứ không so với chính hàm đang test — so một hàm với
+    chính nó thì bản vá nào cũng xanh. Nếu hai bên lệch, người dùng thấy
+    "còn 18 lượt" đúng lúc cổng trả 429 và không có cách nào biết bên nào đúng.
+    """
+    cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
+    db = tmp_path / "jobs.db"
+    for _ in range(3):
+        models.create_job(db, "https://www.tiktok.com/tag/x", 7, TEST_USER)
+
+    out = app_mod.my_quota(nguoi_tao=TEST_USER)
+
+    with models._connect(db) as conn:
+        that = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE nguoi_tao = ?", (TEST_USER,)
+        ).fetchone()[0]
+    assert out["luot_tai"]["da_dung"] == that == 3
+    assert out["luot_tai"]["tran"] == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY
+    assert out["an_danh"] is True, "chưa dán cookie thì phải nói là đang ẩn danh"
+
+
+def test_quota_says_you_are_no_longer_anonymous_once_you_paste(tmp_path, monkeypatch):
+    """CA DƯƠNG cho cờ `an_danh` — thiếu nó thì một bản vá trả `True` cứng
+    vẫn xanh test trên, và người đã dán cookie vẫn bị bảo là đang ẩn danh."""
+    _san_cookie(tmp_path, monkeypatch)
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+
+    assert app_mod.my_quota(nguoi_tao=TEST_USER)["an_danh"] is False
+
+
 def test_me_tells_the_page_who_it_is_talking_to(tmp_path, monkeypatch):
     monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
     assert app_mod.me(nguoi_tao=TEST_USER) == {"email": TEST_USER, "la_admin": False}
@@ -384,6 +416,7 @@ KHONG_CAN_KIEM_CHU = {
     "/videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
     "/me": "chính người đang gọi",
     "/me/cookie": "chính người đang gọi",
+    "/me/quota": "chính người đang gọi",
     "/videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
 }
 

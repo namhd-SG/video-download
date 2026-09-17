@@ -28,8 +28,12 @@ from web.auth import is_admin, require_user
 from web.cookies import (cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
 from tiktok_music_downloader.gdrive_upload import UploadOutcome
-from web.lifecycle import (daily_cap_rejection, should_reject_new_job,
-                           trash_drive_file,
+from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
+                           MAX_JOBS_PER_COOKIE_PER_DAY,
+                           MAX_VIDEOS_PER_COOKIE_PER_DAY,
+                           daily_cap_rejection, jobs_today_for_cookie,
+                           pages_today_for_cookie, should_reject_new_job,
+                           trash_drive_file, videos_today_for_cookie,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
 
@@ -145,7 +149,8 @@ app = FastAPI(title="TikTok Music Downloader", lifespan=_lifespan)
 # no Cache-Control, while .html is not cached by default. A fresh index.html
 # would then pair with a two-hour-old app.js — and that mismatch is silent,
 # since a stale script simply stops finding the ids it expects.
-REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css"})
+REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
+                              "/settings.html", "/settings.js"})
 
 
 @app.middleware("http")
@@ -259,6 +264,37 @@ def me(nguoi_tao: str = Depends(require_user)) -> dict:
 @app.get("/me/cookie")
 def get_my_cookie(nguoi_tao: str = Depends(require_user)) -> dict:
     return _trang_thai_cookie(nguoi_tao)
+
+
+@app.get("/me/quota")
+def my_quota(nguoi_tao: str = Depends(require_user)) -> dict:
+    """Hôm nay tôi đã dùng bao nhiêu, trên trần bao nhiêu.
+
+    Đọc lại ĐÚNG ba bộ đếm mà `daily_cap_rejection` dùng để từ chối, không
+    dựng công thức riêng: một trang hạn mức tính theo cách khác với cổng chặn
+    sẽ nói "còn 5 lượt" đúng lúc cổng trả 429, và người dùng không có cách nào
+    biết bên nào đúng.
+
+    `theo` = "cookie": trần tính theo TÀI KHOẢN TIKTOK, không theo người. Ai
+    chưa dán cookie thì dùng chung một túi với mọi người chưa dán — nói ra ở
+    đây vì nhìn con số mà không biết điều đó sẽ tưởng mình bị trừ oan.
+    """
+    return {
+        "theo": "cookie",
+        "an_danh": cookies_path_for_user(COOKIES_DIR, nguoi_tao) is None,
+        "luot_tai": {
+            "da_dung": jobs_today_for_cookie(DB_PATH, COOKIES_DIR, nguoi_tao),
+            "tran": MAX_JOBS_PER_COOKIE_PER_DAY,
+        },
+        "video": {
+            "da_dung": videos_today_for_cookie(DB_PATH, COOKIES_DIR, nguoi_tao),
+            "tran": MAX_VIDEOS_PER_COOKIE_PER_DAY,
+        },
+        "trang_index": {
+            "da_dung": pages_today_for_cookie(DB_PATH, COOKIES_DIR, nguoi_tao),
+            "tran": MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
+        },
+    }
 
 
 @app.put("/me/cookie")

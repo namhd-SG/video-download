@@ -688,83 +688,30 @@
   });
 
   // ========================================================================
-  // COOKIE CỦA TÔI
+  // BANNER ẨN DANH
   // ========================================================================
-  function veCookie(tt) {
-    const chip = document.getElementById("cookie-chip");
+  // Trang này KHÔNG còn quản cookie — việc đó ở /settings.html. Thứ còn lại ở
+  // đây là một dòng nhắc, vì chỗ người dùng nhận ra mình đang ẩn danh là lúc
+  // sắp tạo lượt tải, không phải lúc đi vào trang Cài đặt.
+  async function loadBannerCookie() {
     const banner = document.getElementById("cookie-banner");
-    const han = document.getElementById("cookie-han");
-
-    banner.hidden = tt.co_jar;
-    if (!tt.co_jar) {
-      chip.textContent = "Chưa có";
-      chip.className = "chip chip-warn";
-      han.textContent = "";
-      return;
-    }
-    const tot = tt.trang_thai === "dung_duoc";
-    chip.textContent = tot ? "Đang dùng được" : "Cần dán lại";
-    chip.className = "chip " + (tot ? "chip-ok" : "chip-warn");
-    // Hỏng thì nói CÁCH CHỮA, dùng đúng bảng câu chữ mà hàng đợi đang dùng —
-    // bốn mã cookie đều là thứ người dùng tự chữa được.
-    han.textContent = tot
-      ? (tt.het_han ? "Hạn đến " + new Date(tt.het_han).toLocaleDateString("vi-VN") : "Không có hạn")
-      : (STOP_REASON_TEXT[tt.trang_thai] || "Cookie không dùng được — dán lại.");
-  }
-
-  async function loadCookie() {
+    if (!banner) return;
     try {
-      veCookie(await apiGet("/me/cookie"));
+      const tt = await apiGet("/me/cookie");
+      banner.hidden = tt.co_jar;
     } catch (err) {
-      // Trạng thái không đọc được phải NÓI RA. Để nguyên "Đang kiểm…" là bảo
-      // người dùng chờ một thứ sẽ không bao giờ tới; để rỗng còn tệ hơn —
-      // trông như đã kiểm xong và không có gì.
-      const chip = document.getElementById("cookie-chip");
-      chip.textContent = "Không đọc được";
-      chip.className = "chip chip-warn";
+      // Không đọc được thì ẩn banner: thà không nhắc còn hơn nhắc sai rằng
+      // người đã dán cookie là đang ẩn danh.
+      banner.hidden = true;
       throw err;
     }
-  }
-
-  function noiCookie() {
-    const o = document.getElementById("cookie-json");
-    const loi = document.getElementById("cookie-error");
-    const luu = document.getElementById("cookie-luu");
-
-    luu.addEventListener("click", async () => {
-      loi.textContent = "";
-      luu.disabled = true;
-      try {
-        veCookie(await apiSend("PUT", "/me/cookie", { json: o.value }));
-        o.value = "";   // không giữ cookie trong DOM lâu hơn mức cần
-        document.getElementById("cookie-form").open = false;
-      } catch (err) {
-        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-        loi.textContent = STOP_REASON_TEXT[err.ma]
-          || "Không lưu được cookie: " + err.message;
-      } finally {
-        luu.disabled = false;
-      }
-    });
-
-    document.getElementById("cookie-xoa").addEventListener("click", async () => {
-      loi.textContent = "";
-      try {
-        await apiSend("DELETE", "/me/cookie");
-        await loadCookie();
-      } catch (err) {
-        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-        loi.textContent = "Không xoá được: " + err.message;
-      }
-    });
   }
 
   // ========================================================================
   // INIT
   // ========================================================================
   renderFilterBar();
-  noiCookie();
-  Promise.all([loadJobs(), loadVideos(), loadCookie()]).catch((err) => {
+  Promise.all([loadJobs(), loadVideos(), loadBannerCookie()]).catch((err) => {
     document.getElementById("error").textContent = "Không tải được dữ liệu ban đầu: " + err.message;
   });
   // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel

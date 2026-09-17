@@ -15,7 +15,10 @@
 
   <header class="topbar">
     <div class="brand"><span class="dot"></span>Video Desk</div>
-    <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    <nav class="topbar-nav">
+      <a href="/settings.html">⚙ Cài đặt</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
   </header>
 
   <!-- Phiên Access hết hạn. Hiện ở đầu trang và KHÔNG tự tắt: mọi lời gọi từ
@@ -27,6 +30,10 @@
   </p>
 
   <!-- ================= DẢI ĐIỀU KHIỂN (trên) ================= -->
+  <p id="cookie-banner" class="banner-an-danh" hidden>Chưa có cookie — lượt tải của bạn
+    chạy <strong>ẩn danh</strong> và chia chung hạn mức với mọi người chưa dán.
+    <a href="/settings.html">Dán cookie của bạn →</a></p>
+
   <section class="control-strip" aria-label="Điều khiển tải">
     <div class="panel">
       <h2>Tạo lượt tải mới</h2>
@@ -45,32 +52,6 @@
       <p class="note-nguon">Nguồn <strong>tìm kiếm</strong> (<code>/search</code>) hiện
         không lấy được video — TikTok trả về rỗng. Dùng <strong>hashtag</strong>,
         <strong>music</strong> hoặc <strong>@profile</strong>. <span class="note-ngay">đo 16/09</span></p>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Cookie TikTok của tôi</h2>
-        <span id="cookie-chip" class="chip">Đang kiểm…</span>
-      </div>
-      <!-- Ẩn danh KHÔNG bị chặn: hashtag không cần cookie theo cấu tạo, và đo
-           16/09 cho thấy music page ra 10 video dù có hay không cookie. Nên đây
-           là lời nhắc kèm cái giá thật, không phải một cánh cửa. -->
-      <p id="cookie-banner" class="note-nguon" hidden>Chưa có cookie — lượt tải của
-        bạn chạy <strong>ẩn danh</strong> và chia chung hạn mức
-        <strong>20 lượt/ngày</strong> với mọi người chưa dán. Dán cookie để có
-        hạn mức riêng.</p>
-      <p id="cookie-han" class="muted"></p>
-      <details id="cookie-form">
-        <summary>Dán cookie</summary>
-        <textarea id="cookie-json" rows="4" placeholder="Dán chuỗi JSON xuất từ Cookie-Editor"></textarea>
-        <div class="cookie-actions">
-          <button type="button" id="cookie-luu">Lưu</button>
-          <button type="button" id="cookie-xoa" class="ghost">Xoá cookie</button>
-        </div>
-        <p class="muted">Cài tiện ích <strong>Cookie-Editor</strong>, mở tiktok.com,
-          bấm <em>Export → Export as JSON</em>, rồi dán vào đây.</p>
-      </details>
-      <p id="cookie-error" class="error-text" role="alert"></p>
     </div>
 
     <div class="panel">

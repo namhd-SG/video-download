@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cài đặt — Video Desk</title>
+<link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk <span class="topbar-here">/ Cài đặt</span></div>
+    <nav class="topbar-nav">
+      <a href="/">← Về trang tải video</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
+  </header>
+
+  <p id="session-expired" class="session-expired" role="alert" hidden>
+    Phiên đăng nhập đã hết hạn — tải lại trang để đăng nhập lại.
+  </p>
+
+  <section class="cai-dat" aria-label="Cài đặt của tôi">
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Cookie TikTok của tôi</h2>
+        <span id="cookie-chip" class="chip">Đang kiểm…</span>
+      </div>
+      <p class="muted">Cookie quyết định lượt tải của bạn chạy dưới tài khoản TikTok nào.
+        Không dán thì vẫn tải được hashtag, nhưng chạy ẩn danh và
+        <strong>chia chung hạn mức</strong> với mọi người chưa dán.</p>
+
+      <dl class="kv">
+        <dt>Trạng thái</dt><dd id="ck-trang-thai">—</dd>
+        <dt>Hạn đến</dt><dd id="ck-han">—</dd>
+        <dt>Cập nhật lần cuối</dt><dd id="ck-luc">—</dd>
+      </dl>
+
+      <div class="cookie-grid">
+        <div>
+          <p class="lbl">Cách 1 — dán</p>
+          <textarea id="cookie-json" rows="7"
+                    placeholder="Dán chuỗi JSON xuất từ Cookie-Editor…"></textarea>
+        </div>
+        <div>
+          <p class="lbl">Cách 2 — chọn tệp</p>
+          <!-- Cùng một đường `PUT /me/cookie`: tệp được đọc Ở TRÌNH DUYỆT rồi
+               gửi như chuỗi. Không thêm endpoint upload, nên không có đường thứ
+               hai để quên kiểm tra. -->
+          <div class="drop" id="cookie-drop">
+            <strong>Kéo tệp .json vào đây</strong>
+            <span>hoặc</span>
+            <button type="button" id="cookie-chon-tep" class="ghost">Chọn tệp…</button>
+            <input type="file" id="cookie-file" accept=".json,application/json" hidden />
+            <span class="muted" id="cookie-ten-tep">tệp xuất từ Cookie-Editor</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="cookie-actions">
+        <button type="button" id="cookie-luu">Lưu cookie</button>
+        <button type="button" id="cookie-xoa" class="ghost danger">Xoá cookie của tôi</button>
+      </div>
+      <p class="muted">Cài tiện ích <strong>Cookie-Editor</strong> → mở tiktok.com →
+        <em>Export → Export as JSON</em> → dán hoặc lưu tệp rồi chọn ở đây.</p>
+      <p id="cookie-error" class="error-text" role="alert"></p>
+
+      <p class="note-nguon">Cookie hỏng <strong>không ghi đè</strong> cookie đang chạy được —
+        hệ thống kiểm trước, hỏng thì báo lý do và giữ nguyên cái cũ.</p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Hạn mức của tôi — hôm nay</h2>
+        <span class="chip">reset 00:00 giờ VN</span>
+      </div>
+      <p class="muted" id="quota-theo">—</p>
+      <div id="quota-list"></div>
+    </div>
+
+  </section>
+</div>
+<script src="/settings.js"></script>
+</body>
+</html>
