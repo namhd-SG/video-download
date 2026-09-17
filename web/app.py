@@ -258,12 +258,25 @@ def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResp
     return FileResponse(path, media_type="image/webp")
 
 
-@app.get("/jobs/{job_id}")
-def get_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
+def _job_cua_toi_hoac_404(job_id: int, nguoi_tao: str) -> dict:
+    """The job, if this caller is allowed to see it. Otherwise 404.
+
+    404 and not 403, deliberately: job ids are sequential, so a 403 would
+    answer "this id exists and belongs to someone else" for anyone willing
+    to count upwards. Both answers must be indistinguishable from outside.
+
+    This mirrors the filter on the list route: a queue that hides other
+    people's rows but serves them one id at a time has not hidden anything.
+    """
     job = models.get_job(DB_PATH, job_id)
-    if job is None:
+    if job is None or (not is_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao):
         raise HTTPException(status_code=404, detail="job không tồn tại")
     return job
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
+    return _job_cua_toi_hoac_404(job_id, nguoi_tao)
 
 
 @app.get("/jobs/{job_id}/events")
@@ -271,9 +284,13 @@ async def job_events(job_id: int,
                      nguoi_tao: str = Depends(require_user)) -> EventSourceResponse:
     """SSE progress stream. The UI must ALSO poll GET /jobs/{id} as a
     fallback (phase-02 risk note): a tunnel drop can kill this stream while
-    the job keeps running server-side, and polling is the way back."""
-    if models.get_job(DB_PATH, job_id) is None:
-        raise HTTPException(status_code=404, detail="job không tồn tại")
+    the job keeps running server-side, and polling is the way back.
+
+    Ownership is checked once, here at the gate. The generator below re-reads
+    the row every tick for progress, but a job's creator never changes, so
+    re-checking inside the loop would only buy a slower stream.
+    """
+    _job_cua_toi_hoac_404(job_id, nguoi_tao)
 
     async def _generator():
         last_payload: str | None = None

@@ -5,6 +5,7 @@ function under the FastAPI decorator, callable without an HTTP client or the
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import stat
@@ -598,6 +599,45 @@ def test_an_admin_sees_everyone(tmp_path, monkeypatch):
     thay = app_mod.list_jobs(nguoi_tao="sep@astronex.ai")
 
     assert sorted(j["id"] for j in thay) == sorted([job_a, job_b])
+
+
+def test_someone_elses_job_is_not_readable_one_id_at_a_time(tmp_path, monkeypatch):
+    """Lọc danh sách mà để ngỏ đường đọc từng id thì chưa lọc gì cả. Id tự
+    tăng, nên đếm lên là ra job người khác."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, job_a, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.get_job(job_id=job_b, nguoi_tao="a@astronex.ai")
+
+    assert bat.value.status_code == 404, "403 tự nó khai job kia có tồn tại"
+
+
+def test_my_own_job_is_still_readable(tmp_path, monkeypatch):
+    """CA DƯƠNG. Thiếu nó thì một bản vá 'từ chối tất' vẫn xanh test trên,
+    trong khi đã làm hỏng chính đường người dùng đang dùng."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, job_a, _ = _hai_nguoi(tmp_path, monkeypatch)
+
+    assert app_mod.get_job(job_id=job_a, nguoi_tao="a@astronex.ai")["id"] == job_a
+
+
+def test_an_admin_can_read_any_job(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    db_path, _, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    assert app_mod.get_job(job_id=job_b, nguoi_tao="sep@astronex.ai")["id"] == job_b
+
+
+def test_the_progress_stream_checks_the_owner_before_it_streams(tmp_path, monkeypatch):
+    """Cửa phải đóng TRƯỚC khi mở luồng. Đóng sau thì byte đầu đã ra rồi."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, _, job_b = _hai_nguoi(tmp_path, monkeypatch)
+
+    with pytest.raises(HTTPException) as bat:
+        asyncio.run(app_mod.job_events(job_id=job_b, nguoi_tao="a@astronex.ai"))
+
+    assert bat.value.status_code == 404
 
 
 def test_the_admin_list_tolerates_spacing_and_case(tmp_path, monkeypatch):
