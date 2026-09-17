@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video Desk — Cài đặt (mockup v1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f3f6f4; --surface:#fff; --surface-alt:#e7ede9; --border:#d5ded9;
+    --border-strong:#b4c2bb; --text:#14201d; --text-muted:#4c5a56; --text-faint:#7d8b86;
+    --accent:#0d5c55; --accent-soft:#d8eae6; --accent-ink:#fff;
+    --success:#1d6b3f; --success-bg:#dcefe2; --warn:#8a5a00; --warn-bg:#f7ecd6;
+    --danger:#a33; --danger-bg:#f7dede;
+    --strip:#101a18; --strip-ink:#d9e6e2; --strip-ink-2:#7d9a94; --strip-line:#1e332e;
+    --strip-accent:#2f9d8c;
+    --shadow:0 1px 2px rgba(20,32,29,.06), 0 10px 28px rgba(20,32,29,.06);
+    --radius:7px;
+    --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+    --body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    color-scheme:light;
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1513; --surface:#141f1c; --surface-alt:#1e2926; --border:#27332f;
+    --border-strong:#3a4a45; --text:#e6efec; --text-muted:#9fb3ad; --text-faint:#6f837e;
+    --accent:#5ecdbf; --accent-soft:#12302c; --accent-ink:#04100e;
+    --success:#6fc38d; --success-bg:#12301f; --warn:#e0b35e; --warn-bg:#31260f;
+    --danger:#e08a8a; --danger-bg:#3a1c1c;
+    --strip:#0a1211; --strip-ink:#d9e6e2; --strip-ink-2:#7d9a94; --strip-line:#182622;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);
+       font-size:15px;line-height:1.5}
+  code,.mono{font-family:var(--mono)}
+  h1,h2,h3{font-family:var(--display);font-weight:700;margin:0}
+  a{color:var(--accent)}
+
+  /* ===== thanh trên: đây là TRANG RIÊNG, có đường về ===== */
+  .topbar{background:var(--strip);color:var(--strip-ink);border-bottom:1px solid var(--strip-line);
+          padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:5}
+  .topbar .dot{width:8px;height:8px;border-radius:50%;background:var(--strip-accent)}
+  .topbar .brand{font-family:var(--display);font-weight:700;font-size:15px}
+  .topbar .sep{color:var(--strip-ink-2)}
+  .topbar .here{color:var(--strip-ink)}
+  .topbar .back{margin-left:auto;color:var(--strip-accent);text-decoration:none;font-size:.86rem}
+
+  .wrap{max-width:1000px;margin:0 auto;padding:26px 24px 80px}
+
+  /* ===== tab: Của tôi / Quản trị ===== */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border);margin-bottom:24px}
+  .tab{padding:10px 16px;border:1px solid transparent;border-bottom:none;border-radius:8px 8px 0 0;
+       cursor:pointer;color:var(--text-muted);font-size:.9rem;background:none;font-family:inherit}
+  .tab[aria-selected="true"]{background:var(--surface);border-color:var(--border);
+       color:var(--text);font-weight:600;margin-bottom:-1px}
+  .tab .badge{font-size:.68rem;background:var(--accent-soft);color:var(--accent);
+       border-radius:999px;padding:.05rem .4rem;margin-left:6px}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+        padding:20px;margin-bottom:18px;box-shadow:var(--shadow)}
+  .card-head{display:flex;align-items:baseline;gap:10px;margin-bottom:6px}
+  .card h2{font-size:1.02rem}
+  .hint{color:var(--text-muted);font-size:.84rem;margin:.3rem 0 0}
+  .hint-tight{margin-top:.15rem}
+
+  .chip{font-size:.72rem;padding:.16rem .55rem;border-radius:999px;border:1px solid var(--border);
+        background:var(--surface-alt);white-space:nowrap}
+  .chip-ok{background:var(--success-bg);border-color:var(--success);color:var(--success)}
+  .chip-warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+  .chip-off{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
+
+  /* ===== cookie: DÁN hoặc CHỌN FILE ===== */
+  .cookie-grid{display:grid;grid-template-columns:1fr 260px;gap:20px;margin-top:14px}
+  @media(max-width:760px){.cookie-grid{grid-template-columns:1fr}}
+  textarea{width:100%;min-height:150px;font-family:var(--mono);font-size:.78rem;
+           border:1px solid var(--border);border-radius:8px;padding:10px;resize:vertical;
+           background:var(--surface-alt);color:var(--text)}
+  .drop{border:1.5px dashed var(--border-strong);border-radius:8px;padding:18px;text-align:center;
+        color:var(--text-muted);font-size:.84rem;background:var(--surface-alt);
+        display:flex;flex-direction:column;justify-content:center;gap:8px;min-height:150px}
+  .drop strong{color:var(--text);font-size:.9rem}
+  .or{display:flex;align-items:center;gap:10px;color:var(--text-faint);font-size:.75rem;
+      text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px}
+  .or::before,.or::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  .btn{border:1px solid var(--border);background:var(--accent);color:var(--accent-ink);
+       border-radius:8px;padding:.5rem 1rem;font-size:.85rem;cursor:pointer;font-family:inherit}
+  .btn.ghost{background:transparent;color:var(--text)}
+  .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+  .row{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
+
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:.87rem;margin-top:12px}
+  .kv dt{color:var(--text-muted)}
+  .kv dd{margin:0}
+
+  /* ===== bảng người dùng ===== */
+  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:.87rem}
+  th{text-align:left;font-weight:600;color:var(--text-muted);font-size:.78rem;
+     text-transform:uppercase;letter-spacing:.04em;padding:8px 10px;border-bottom:1px solid var(--border)}
+  td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .email{font-family:var(--mono);font-size:.82rem}
+  .num{width:88px;font-family:var(--mono);font-size:.82rem;padding:.35rem .5rem;
+       border:1px solid var(--border);border-radius:6px;background:var(--surface-alt);color:var(--text)}
+  .bar{height:5px;border-radius:999px;background:var(--surface-alt);overflow:hidden;margin-top:5px}
+  .bar span{display:block;height:100%;background:var(--accent)}
+  .bar.hot span{background:var(--warn)}
+  .me-tag{font-size:.68rem;color:var(--accent);border:1px solid var(--accent);
+          border-radius:999px;padding:0 .35rem;margin-left:6px}
+
+  .note{border-left:3px solid var(--warn);background:var(--warn-bg);color:var(--text);
+        padding:10px 14px;border-radius:0 8px 8px 0;font-size:.84rem;margin-top:14px}
+  .note b{color:var(--warn)}
+
+  .saved{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);background:var(--text);
+         color:var(--bg);padding:.55rem 1.1rem;border-radius:8px;font-size:.84rem}
+
+  .mock-flag{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);
+             border-radius:6px;padding:.4rem .7rem;font-size:.78rem;margin-bottom:18px;
+             display:inline-block}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <span class="dot"></span>
+  <span class="brand">Video Desk</span>
+  <span class="sep">/</span>
+  <span class="here">Cài đặt</span>
+  <a class="back" href="#">← Về trang tải video</a>
+</div>
+
+<div class="wrap">
+
+  <span class="mock-flag">MOCKUP v1 — chưa nối backend, số liệu là ví dụ. Ở bản thật hai tab hiện RIÊNG; đây xếp chồng để anh duyệt một lần.</span>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true">Của tôi</button>
+    <button class="tab" role="tab" aria-selected="false">Quản trị <span class="badge">admin</span></button>
+  </div>
+
+  <!-- ======================= TAB: CỦA TÔI ======================= -->
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Cookie TikTok của tôi</h2>
+      <span class="chip chip-ok">Đang dùng được</span>
+    </div>
+    <p class="hint">Cookie quyết định lượt tải của bạn chạy dưới tài khoản TikTok nào.
+      Không dán thì vẫn tải được hashtag, nhưng chạy ẩn danh và <b>chia chung hạn mức</b>
+      với mọi người chưa dán.</p>
+
+    <dl class="kv">
+      <dt>Trạng thái</dt><dd>Dùng được — kiểm lúc dán</dd>
+      <dt>Hạn đến</dt><dd>14/11/2026</dd>
+      <dt>Cập nhật lần cuối</dt><dd>17/09/2026 10:41</dd>
+    </dl>
+
+    <div class="cookie-grid">
+      <div>
+        <p class="or">Cách 1 — dán</p>
+        <textarea placeholder="Dán chuỗi JSON xuất từ Cookie-Editor…"></textarea>
+      </div>
+      <div>
+        <p class="or">Cách 2 — chọn tệp</p>
+        <div class="drop">
+          <strong>Kéo tệp .json vào đây</strong>
+          <span>hoặc</span>
+          <button class="btn ghost" type="button">Chọn tệp…</button>
+          <span style="font-size:.76rem">tệp xuất từ Cookie-Editor</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn">Lưu cookie</button>
+      <button class="btn danger">Xoá cookie của tôi</button>
+      <span class="hint hint-tight" style="margin-left:auto">
+        Cài <b>Cookie-Editor</b> → mở tiktok.com → <i>Export → Export as JSON</i>
+      </span>
+    </div>
+
+    <div class="note">
+      <b>Cookie hỏng thì không ghi đè cookie đang chạy được.</b> Hệ thống kiểm trước,
+      hỏng thì báo lý do và giữ nguyên cái cũ.
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Hạn mức của tôi — hôm nay</h2>
+      <span class="chip">reset 00:00 giờ VN</span></div>
+    <p class="hint">Trần do quản trị đặt. Bạn xem được, không sửa được — trần tồn tại để
+      TikTok không chặn IP của cả văn phòng.</p>
+
+    <table>
+      <tr>
+        <td style="width:220px">Lượt tải</td>
+        <td><b>7</b> / 20<div class="bar"><span style="width:35%"></span></div></td>
+      </tr>
+      <tr>
+        <td>Số video</td>
+        <td><b>184</b> / 1000<div class="bar"><span style="width:18%"></span></div></td>
+      </tr>
+      <tr>
+        <td>Trang đã quét</td>
+        <td><b>612</b> / 800<div class="bar hot"><span style="width:76%"></span></div></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ======================= TAB: QUẢN TRỊ ======================= -->
+
+  <div class="card">
+    <div class="card-head">
+      <h2>Người dùng &amp; hạn mức</h2>
+      <span class="chip chip-warn">chỉ quản trị</span>
+    </div>
+    <p class="hint">Người có mặt ở đây là người đã từng đăng nhập. Không có nút "thêm
+      người" — ai vào được là do cửa đăng nhập của công ty quyết định, không phải trang này.</p>
+
+    <table>
+      <thead>
+        <tr><th>Người dùng</th><th>Cookie</th><th>Lượt/ngày</th><th>Video/ngày</th><th>Dùng hôm nay</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span class="email">namduchoang10@gmail.com</span><span class="me-tag">bạn</span><br>
+              <span class="hint">quản trị</span></td>
+          <td><span class="chip chip-ok">có</span></td>
+          <td><input class="num" value="20"></td>
+          <td><input class="num" value="1000"></td>
+          <td>7 lượt · 184 video</td>
+          <td><button class="btn ghost" style="font-size:.76rem">Bỏ quyền admin</button></td>
+        </tr>
+        <tr>
+          <td><span class="email">linh@astronex.ai</span><br><span class="hint">thành viên</span></td>
+          <td><span class="chip chip-ok">có</span></td>
+          <td><input class="num" value="20"></td>
+          <td><input class="num" value="1000"></td>
+          <td>2 lượt · 41 video</td>
+          <td><button class="btn ghost" style="font-size:.76rem">Cho làm admin</button></td>
+        </tr>
+        <tr>
+          <td><span class="email">kien@astronex.ai</span><br><span class="hint">thành viên</span></td>
+          <td><span class="chip chip-off">chưa có</span></td>
+          <td><input class="num" value="20"></td>
+          <td><input class="num" value="1000"></td>
+          <td>0 lượt · 0 video</td>
+          <td><button class="btn ghost" style="font-size:.76rem">Cho làm admin</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note">
+      <b>Người chưa dán cookie dùng chung một túi hạn mức.</b> Ở trên là
+      <span class="email">kien@astronex.ai</span> — mọi người chưa dán chia nhau
+      <b>20 lượt/ngày</b>, không phải mỗi người 20.
+    </div>
+
+    <div class="row"><button class="btn">Lưu thay đổi</button>
+      <button class="btn ghost">Huỷ</button></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Trần chung toàn công ty</h2>
+      <span class="chip chip-warn">chạm là ảnh hưởng cả team</span></div>
+    <p class="hint">Trần từng người cộng lại vẫn đi ra <b>một địa chỉ IP văn phòng</b>.
+      Đây là cái chặn tổng — nó tồn tại vì TikTok chặn theo IP, không theo người.</p>
+
+    <table>
+      <tr><td style="width:260px">Tổng video / ngày, cả công ty</td>
+          <td><input class="num" value="3000"></td></tr>
+      <tr><td>Số video tối đa mỗi lượt</td>
+          <td><input class="num" value="2000"> <span class="hint">thành viên: <input class="num" value="200" style="width:70px"></span></td></tr>
+      <tr><td>Chạy song song</td>
+          <td><span class="chip">1 lượt một lúc</span>
+              <span class="hint">— đổi số này là đổi rủi ro bị chặn IP, chưa mở</span></td></tr>
+    </table>
+    <div class="row"><button class="btn">Lưu</button></div>
+  </div>
+
+</div>
+
+</body>
+</html>
