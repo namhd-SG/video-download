@@ -78,8 +78,62 @@ và dây HTTP→model trên mini: `web/app.py:208`
 - Ngắt nhịp: 0 job đang chạy lúc bấm ⇒ không ai mất việc đang tải. Hai IP ngoài đang
   *xem trang* bị ngắt một nhịp lúc `kickstart`.
 
-## Chưa deploy — chuyến 2
+---
 
-6 commit của hôm nay (`780c409` → `5c4c0a1`: vá `/jobs/{id}`, thư viện riêng, trang
-Cookie của tôi, kiểm chủ mỗi nhịp SSE, `/thumbs` kiểm chủ) **đã đẩy origin, chưa lên
-mini**. Chờ user gật.
+# Chuyến 2 — 17/09 12:39
+
+User gật thẳng trong phiên thi công lúc 12:01 (*"okie deploy nào"*), không qua trung gian.
+
+## Lui bằng gì
+
+```
+bash deploy/rollback-on-mini.sh ../video-download-truoc-260917-123920
+```
+
+Vẫn **không đổi schema** ⇒ lui chỉ đổi file. HEAD đã lên:
+`1415293d189d53d09a40c177e24af0a435ca3ebd`.
+
+## Deploy cái gì
+
+`780c409` lượt tải không đọc được bằng cách đếm id · `8a0975b` thư viện chỉ hiện của
+mình · `28adb24`+`cd019a1` trang "Cookie của tôi" · `9119f4c` kiểm chủ mỗi nhịp trên
+luồng tiến độ + sửa bố cục 3 cột · `5c4c0a1` ảnh xem trước cũng kiểm chủ.
+
+## Bốn phép phải LẬT — và đã lật
+
+| phép (trên mini) | trước 12:01 | sau 12:39 |
+|---|---|---|
+| `grep -c "_job_cua_toi_hoac_404" web/app.py` | 0 | **3** |
+| `grep -c "video_nay_cua_toi" web/app.py` | 0 | **1** |
+| `grep -c "me/cookie" web/app.py` | 0 | **5** |
+| `grep -c "def list_videos(db_path: Path, chi_cua" web/models.py` | 0 | **1** |
+
+Giữ nguyên đúng như phải: astronex **5**, healthz **200**, promax **302**, job/video
+**4 / 10**, jar cookie **1**. `rc=0` đo trực tiếp.
+
+## Chứng minh CHỨC NĂNG trên dữ liệu thật
+
+```
+THƯ VIỆN     admin 10/10 · người thật 10/10 · người lạ 0/0
+ẢNH XEM TRƯỚC chủ True · người lạ False · admin True
+HÀNG ĐỢI     admin 4 · người thật 1
+trang Cookie của tôi: có trong HTML đang phục vụ
+```
+(Người thật thấy đủ 10 vì cả 10 video đều từ lượt tải của họ; 3 lượt `khach` cũ có
+trước khi nối chỉ mục nên không sinh hàng `videos`.)
+
+## Ngắt ai
+
+**0 lượt tải đang chạy** lúc bấm ⇒ không ai mất việc dở. **1 địa chỉ ngoài** đang mở
+trang (97/100 dòng log cuối) bị ngắt một nhịp lúc `kickstart`, F5 là xong. Cửa riêng của
+lane ("có người đang dùng thì dừng, hỏi") đã báo cho user trước khi bấm; user gật đi tiếp.
+
+## Còn hở — vẫn chưa đóng
+
+- **Chưa ai mở bằng trình duyệt thật.** Không đăng nhập hộ được qua Cloudflare Access.
+  Cần một người bấm thử — và cần **người thứ hai** dán cookie + chạy một lượt, đó là
+  phép đo duy nhất chứng minh tool dùng được cho nhiều người.
+- **`VIDEODL_ADMIN_EMAILS` vẫn rỗng.** Mã đọc biến đã trên máy từ chuyến 1; còn lại là
+  đặt giá trị rồi `launchctl kickstart -k gui/$(id -u)/com.astronex.videodl`.
+- **Nút "Loại khỏi kho" chưa làm** — user chốt loại là việc riêng (người khác vẫn tải
+  được), bản đó cần đổi cấu trúc dữ liệu nên sang mai, không ép vào hôm nay.
