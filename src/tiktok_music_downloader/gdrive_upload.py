@@ -158,6 +158,37 @@ class DriveUploader:
         metadata = {"name": path.name, "parents": [parent_folder_id or self._folder_id]}
         return self._create_drive_object(metadata, media_path=path, label=path.name)
 
+    def trash_file(self, file_id: str) -> UploadResult:
+        """Move one file to the Shared Drive's trash. Recoverable for 30 days.
+
+        `trashed=True`, not `files().delete()`, and that is a capability fact
+        rather than a preference: this service account is a Content manager on
+        the shared drive, and permanent delete needs `organizer`. Raising the
+        account's role to get `delete` would hand the whole creative library
+        to a key that today can only ever move things to a bin someone can
+        empty deliberately — a much larger blast radius than the feature asks
+        for.
+
+        Returns the same 3-state `UploadResult` as the upload path so callers
+        can tell "not configured" from "tried and failed"; a caller that
+        cannot tell those apart writes the same marker for both.
+        """
+        if not self.is_configured():
+            return UploadResult(outcome=UploadOutcome.NOT_CONFIGURED,
+                                reason="Drive chưa cấu hình")
+        try:
+            service = self._build_service()
+            service.files().update(
+                fileId=file_id, body={"trashed": True},
+                supportsAllDrives=True,
+            ).execute()
+        except Exception as exc:  # noqa: BLE001 — mọi lỗi Drive đều là "chưa bỏ được"
+            # Loại hỏng, không nội dung: `reason` đi vào API/log.
+            log.warning("trash %s trượt (%s)", file_id, type(exc).__name__)
+            return UploadResult(outcome=UploadOutcome.FAILED,
+                                reason=type(exc).__name__)
+        return UploadResult(outcome=UploadOutcome.SUCCESS, file_id=file_id)
+
     def create_job_folder(self, job_id: int) -> UploadResult:
         """Create one Drive folder for this job, inside the configured
         Shared Drive folder. Reuses `UploadResult`'s 3-state shape: on

@@ -1163,3 +1163,65 @@ def test_every_cookie_code_has_a_sentence_in_the_ui(tmp_path):
 
     thieu = [m for m in cookies_mod.MA_LOI_COOKIE if m not in khoa]
     assert thieu == [], f"mã không có câu trong UI: {thieu}"
+
+
+# ===========================================================================
+# Metadata từ yt-dlp — T1.2
+# ===========================================================================
+
+def test_ytdlp_metadata_fills_the_blanks_a_music_page_leaves(tmp_path):
+    """Music page và profile chỉ dựng được `VideoRef(video_id, url)` trần, nên
+    thư viện hiện "(chưa có tiêu đề)" cho mọi video từ hai nguồn đó — đo trên
+    mini 17/09: title 0/10, author 0/10. yt-dlp đã phải đọc những trường này
+    để tải được video, nên chúng có sẵn, chỉ là đang bị vứt đi."""
+    from web.queue import _bo_sung_metadata
+
+    tran = VideoRef(video_id="1", url="u")
+    info = {"title": "Bà bán bánh", "uploader": "abc", "duration": 31,
+            "view_count": 4200}
+
+    ra = _bo_sung_metadata(tran, info)
+
+    assert ra.title == "Bà bán bánh"
+    assert ra.author == "abc"
+    assert ra.duration == 31
+    assert ra.play_count == 4200
+
+
+def test_the_index_wins_over_ytdlp_when_both_have_a_value():
+    """Index của trang hashtag nói về video TRONG NGỮ CẢNH TIKTOK; yt-dlp nói
+    về tệp nó vừa tải. Ô nào index đã điền thì giữ, không đè."""
+    from web.queue import _bo_sung_metadata
+
+    tu_index = VideoRef(video_id="1", url="u", title="tiêu đề từ index",
+                        author="tác giả từ index", duration=12)
+    info = {"title": "tiêu đề từ ytdlp", "uploader": "khác", "duration": 99}
+
+    ra = _bo_sung_metadata(tu_index, info)
+
+    assert ra.title == "tiêu đề từ index"
+    assert ra.author == "tác giả từ index"
+    assert ra.duration == 12
+
+
+def test_a_download_with_no_metadata_changes_nothing():
+    """Ca âm: `_download_url_direct` (Facebook Ads) không trả info. Không được
+    ném, không được xoá thứ index đã có."""
+    from web.queue import _bo_sung_metadata
+
+    ref = VideoRef(video_id="1", url="u", title="giữ nguyên")
+    assert _bo_sung_metadata(ref, None) is ref
+    assert _bo_sung_metadata(ref, {}) is ref
+
+
+def test_a_rubbish_duration_does_not_kill_the_job():
+    """`duration` của yt-dlp có lúc là float hoặc chuỗi. `int()` ném ra ngoài
+    sẽ giết cả lượt tải vì một trường trang trí — cùng lớp lỗi `expires` dạng
+    ISO đã làm job chết không một chữ hồi phase-05."""
+    from web.queue import _bo_sung_metadata
+
+    ra = _bo_sung_metadata(VideoRef(video_id="1", url="u"),
+                            {"duration": "không phải số", "view_count": 12.7})
+
+    assert ra.duration is None
+    assert ra.play_count == 12

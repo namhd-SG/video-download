@@ -88,3 +88,57 @@ def test_an_unparsable_expiry_does_not_blow_up_the_jar_writer(tmp_path):
     jar.unlink(missing_ok=True)
 
     assert "tok" in noi_dung
+
+
+def test_the_download_step_hands_metadata_back_to_the_caller(tmp_path, monkeypatch):
+    """Dây nối, không phải hàm gộp.
+
+    Test cho `_bo_sung_metadata` chạy thẳng vào hàm đó, nên một bản lùi
+    `extract_info(download=True)` về `download([url])` vẫn để chúng XANH trong
+    khi metadata lại biến mất trên máy thật. Đã đo: đột biến đó xanh trọn suite.
+    Test này đi qua `download_all` thật để chỗ đó đỏ.
+    """
+    from tiktok_music_downloader import downloader
+    from tiktok_music_downloader.utils import VideoRef
+
+    class _YdlGia:
+        def __init__(self, opts):
+            self._opts = opts
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def extract_info(self, url, download=False):
+            # Tạo tệp ra như yt-dlp thật, để `download_all` coi là thành công.
+            (tmp_path / "1.mp4").write_bytes(b"x" * 1024)
+            return {"title": "tu ytdlp", "uploader": "ai do", "duration": 7}
+
+        def download(self, urls):  # đường cũ — nếu ai lùi về đây
+            (tmp_path / "1.mp4").write_bytes(b"x" * 1024)
+
+    class _ProgressGhi:
+        def __init__(self):
+            self.nhan = []
+
+        def note(self, kind, info=None):
+            self.nhan.append((kind, info))
+
+        def update(self, *a, **k):
+            pass
+
+    monkeypatch.setattr(downloader, "YoutubeDL", _YdlGia)
+    monkeypatch.setattr(downloader, "verify_video_stream", lambda p: True,
+                        raising=False)
+    ghi = _ProgressGhi()
+
+    downloader.download_all([VideoRef(video_id="1", url="https://x/1")],
+                             tmp_path, delay_seconds=0, progress=ghi)
+
+    assert ghi.nhan, "progress.note chưa từng được gọi"
+    kind, info = ghi.nhan[0]
+    assert kind == "downloaded"
+    assert info is not None, "metadata bị vứt giữa đường — thư viện sẽ trống tiêu đề"
+    assert info.get("title") == "tu ytdlp"

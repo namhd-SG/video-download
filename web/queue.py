@@ -19,6 +19,8 @@ from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.scraper import scrape_music_page
+from dataclasses import replace
+
 from tiktok_music_downloader.utils import VideoRef, parse_tag_slug
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
@@ -189,6 +191,37 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     return kept
 
 
+def _bo_sung_metadata(ref: VideoRef, info: dict | None) -> VideoRef:
+    """Điền metadata yt-dlp đọc được vào những ô mà nguồn liệt kê bỏ trống.
+
+    Chỉ điền ô đang `None`, không đè: index của trang hashtag là nguồn chính
+    xác hơn cho `region` và `title` (nó nói về video trong ngữ cảnh TikTok),
+    còn yt-dlp nói về tệp nó vừa tải. Ô nào index đã có thì giữ.
+
+    Đây là thứ chữa "(chưa có tiêu đề)" cho music page và profile — hai nguồn
+    mà scraper chỉ dựng được `VideoRef(video_id, url)` trần.
+    """
+    if not info:
+        return ref
+    def _so(x):
+        try:
+            return int(x) if x is not None else None
+        except (TypeError, ValueError):
+            return None
+    thay = {}
+    if ref.title is None:
+        # yt-dlp đặt mô tả TikTok vào `title`; `description` là bản dài hơn của
+        # cùng một thứ, dùng làm đường lui.
+        thay["title"] = info.get("title") or info.get("description") or None
+    if ref.author is None:
+        thay["author"] = info.get("uploader") or info.get("uploader_id") or None
+    if ref.duration is None:
+        thay["duration"] = _so(info.get("duration"))
+    if ref.play_count is None:
+        thay["play_count"] = _so(info.get("view_count"))
+    return replace(ref, **{k: v for k, v in thay.items() if v is not None})
+
+
 class _JobProgress:
     """Bridges `download_all`'s per-video callback into DB writes.
 
@@ -232,9 +265,10 @@ class _JobProgress:
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         self._job_id, ref.video_id, type(exc).__name__)
 
-    def note(self, kind: str) -> None:
+    def note(self, kind: str, info: dict | None = None) -> None:
         ref = self._refs[self._idx]
         self._idx += 1
+        ref = _bo_sung_metadata(ref, info)
         if kind == "downloaded":
             path = self._output_dir / ref.filename
             # Constraint (a): the "xong" (done) mark is written ONLY after

@@ -138,9 +138,17 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     wait=wait_exponential(multiplier=2, min=2, max=20),
     reraise=True,
 )
-def _download_one(url: str, opts: dict) -> None:
+def _download_one(url: str, opts: dict) -> dict | None:
+    """Tải một video, và trả về metadata yt-dlp đã phải đọc để tải được nó.
+
+    `extract_info(download=True)` làm đúng việc `download()` làm, chỉ khác là
+    nó KHÔNG vứt cái dict nó vừa dựng. Đây là nguồn metadata duy nhất phủ được
+    mọi nguồn: chỉ trang hashtag có index trả `title`/`author`/`region`; music
+    page và profile thì scraper chỉ dựng được `VideoRef(video_id, url)` trần,
+    nên thư viện hiện "chưa có tiêu đề" cho mọi video tải từ hai nguồn đó.
+    """
     with YoutubeDL(opts) as ydl:
-        ydl.download([url])
+        return ydl.extract_info(url, download=True)
 
 
 def _looks_like_rate_limit(exc: BaseException) -> bool:
@@ -226,9 +234,21 @@ def download_all(
     failure_streak = 0
     since_rest = 0
 
-    def _note(kind: str) -> None:
-        """Inform the UI of a per-video outcome, if it supports `note()`."""
-        if progress is not None and hasattr(progress, "note"):
+    def _note(kind: str, info: dict | None = None) -> None:
+        """Inform the UI of a per-video outcome, if it supports `note()`.
+
+        `info` đi kèm chứ không sửa `refs` tại chỗ: `download_all` nhận
+        `Iterable`, nên không có gì bảo đảm người gọi đang giữ CÙNG một list —
+        một bản vá dựa vào việc sửa được phần tử sẽ im lặng không có tác dụng
+        với người gọi truyền generator.
+        """
+        if progress is None or not hasattr(progress, "note"):
+            return
+        try:
+            progress.note(kind, info)
+        except TypeError:
+            # `note()` cũ chỉ nhận một tham số. Giữ đường lui để thư viện này
+            # dùng được ngoài web app (CLI truyền progress riêng).
             progress.note(kind)
 
     try:
@@ -253,10 +273,11 @@ def download_all(
                 # FB Ads Library refs carry a signed FBCDN MP4 URL — yt-dlp
                 # can't authenticate them, so use a direct HTTP stream.
                 # TikTok refs go through yt-dlp as before.
+                info: dict | None = None
                 if ref.video_id.startswith("fb-"):
                     _download_url_direct(ref.url, target, proxy)
                 else:
-                    _download_one(ref.url, opts)
+                    info = _download_one(ref.url, opts)
                 # Post-process: apply watermark in-place if configured. Failures
                 # are non-fatal — the un-watermarked file remains on disk.
                 if watermark is not None and not watermark.is_empty:
@@ -281,7 +302,7 @@ def download_all(
                     time.sleep(cool)
             finally:
                 if outcome:
-                    _note(outcome)
+                    _note(outcome, info if outcome == "downloaded" else None)
                 if progress is not None:
                     progress.update(1)
     finally:
