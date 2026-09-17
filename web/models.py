@@ -409,6 +409,27 @@ def sources_for_videos(db_path: Path, video_ids: list[str],
     return out
 
 
+def video_nay_cua_toi(db_path: Path, video_id: str, chi_cua: str | None) -> bool:
+    """Is this one video in `chi_cua`'s library? `None` = admin, always True
+    for a video that exists at all.
+
+    Exists so `/thumbs` can ask the same question `/videos` answers, instead
+    of trusting that an id is hard to come by. It is not: this repo's own
+    `hashtag_enumerator` harvests a real `video_id` for every item in a feed,
+    so anyone can hand the endpoint a list of genuine ids. Without this, the
+    200-vs-404 pair tells a member which videos the team already has — the
+    aggregate that `sources_for_videos` was just filtered to hide.
+    """
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM videos v "
+            "LEFT JOIN jobs j ON j.id = v.job_id "
+            "WHERE v.video_id = ? AND (? IS NULL OR j.nguoi_tao = ?)",
+            (video_id, chi_cua, chi_cua),
+        ).fetchone()
+    return row is not None
+
+
 def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     """Which of these do we already have? Drives the duplicate skip.
 

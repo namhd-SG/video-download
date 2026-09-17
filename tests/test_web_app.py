@@ -231,7 +231,10 @@ def test_thumb_endpoint_serves_a_digits_id_that_exists(tmp_path, monkeypatch):
     """Ca dương cho test trên: chứng minh 404 ở đó đến từ HÌNH DẠNG id, không
     phải vì endpoint này chẳng bao giờ trả được file nào."""
     db = tmp_path / "jobs.db"
+    models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
+    job = models.create_job(db, "https://www.tiktok.com/tag/x", 5, TEST_USER)
+    models.record_video(db, job_id=job, video_id="7001", url="u")
     thumb = lifecycle.thumb_path_for(db, "7001")
     thumb.parent.mkdir(parents=True, exist_ok=True)
     thumb.write_bytes(b"RIFF....WEBP")
@@ -380,11 +383,6 @@ KHONG_CAN_KIEM_CHU = {
     "/videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
     "/me": "chính người đang gọi",
     "/me/cookie": "chính người đang gọi",
-    "/thumbs/{video_id}": (
-        "CHƯA LỌC — id TikTok 19 chữ số không đếm lên được nên không quét được, "
-        "nhưng ai cầm sẵn một id vẫn đoán được team đã tải video đó chưa. "
-        "Đang chờ user chốt; ghi ở đây để nó là một quyết định, không phải một "
-        "chỗ bị bỏ quên."),
 }
 
 
@@ -403,7 +401,8 @@ def test_every_route_that_takes_an_id_checks_who_is_asking():
 
     duong_dan = {r.path for r in app_mod.app.routes if isinstance(r, APIRoute)}
     chua_khai = duong_dan - set(KHONG_CAN_KIEM_CHU) - {"/jobs/{job_id}",
-                                                       "/jobs/{job_id}/events"}
+                                                       "/jobs/{job_id}/events",
+                                                       "/thumbs/{video_id}"}
     assert not chua_khai, (
         f"route chưa khai: {sorted(chua_khai)} — hoặc cho nó qua "
         f"`_job_cua_toi_hoac_404`, hoặc thêm vào KHONG_CAN_KIEM_CHU kèm lý do")
@@ -525,6 +524,38 @@ def test_the_library_is_newest_first(tmp_path, monkeypatch):
     out = app_mod.list_videos(nguoi_tao=TEST_USER)
 
     assert [v["video_id"] for v in out["videos"]] == ["moi", "giua", "cu"]
+
+
+def test_a_thumbnail_of_someone_elses_video_is_a_404(tmp_path, monkeypatch):
+    """Cặp 200/404 của `/thumbs` là một câu trả lời: "team đã tải video này
+    chưa". Id thật thì CHÍNH tool này phát ra hàng loạt
+    (`hashtag_enumerator.py:165` trích `video_id` cho mọi item của một feed),
+    nên "id 19 chữ số khó đoán" không phải lớp bảo vệ — kẻ hỏi không đoán."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db, _, job_ho = _thu_vien_hai_nguoi(tmp_path, monkeypatch)
+    thumb = lifecycle.thumb_path_for(db, "2")
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    thumb.write_bytes(b"RIFF....WEBP")
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.get_thumb("2", nguoi_tao=TEST_USER)
+
+    assert bat.value.status_code == 404
+    # CA DƯƠNG cùng điều kiện: ảnh CÓ trên đĩa và chủ của nó lấy được. Thiếu
+    # nó thì một bản vá "404 tất" cũng xanh, và thư viện mất sạch ảnh.
+    thumb1 = lifecycle.thumb_path_for(db, "1")
+    thumb1.write_bytes(b"RIFF....WEBP")
+    assert app_mod.get_thumb("1", nguoi_tao=TEST_USER).media_type == "image/webp"
+
+
+def test_an_admin_can_see_any_thumbnail(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    db, _, _ = _thu_vien_hai_nguoi(tmp_path, monkeypatch)
+    thumb = lifecycle.thumb_path_for(db, "2")
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    thumb.write_bytes(b"RIFF....WEBP")
+
+    assert app_mod.get_thumb("2", nguoi_tao="sep@astronex.ai").media_type == "image/webp"
 
 
 def test_videos_endpoint_includes_sources_from_sightings(tmp_path, monkeypatch):

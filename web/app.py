@@ -351,7 +351,7 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
 
 @app.get("/thumbs/{video_id}")
 def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResponse:
-    """One grid thumbnail.
+    """One grid thumbnail, from your own library only.
 
     `video_id` reaches the filesystem, so it is checked by SHAPE before it is
     used: TikTok ids are digits, and a digits-only string cannot contain "/",
@@ -369,6 +369,18 @@ def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResp
         # Absent is ordinary, not broken: ffmpeg may have failed on this one,
         # or the video predates thumbnail capture. The grid shows its own
         # placeholder rather than a broken image.
+        #
+        # Checked BEFORE the ownership query on purpose: no picture means 404
+        # for everybody, so there is nothing to hide yet, and this way a
+        # missing database still answers 404 instead of raising.
+        raise HTTPException(status_code=404, detail="chưa có ảnh cho video này")
+    # Cùng câu hỏi `/videos` trả lời, hỏi lại ở đây — cùng câu chữ 404, nên
+    # "của người khác" và "không có" không phân biệt được từ ngoài. Bỏ bước
+    # này thì cặp 200/404 thành máy trả lời "team đã tải video này chưa" cho
+    # bất kỳ ai đăng nhập, và id thật thì CHÍNH tool này phát ra hàng loạt
+    # (`hashtag_enumerator.py:165`) — "id khó đoán" không phải lớp bảo vệ.
+    if not models.video_nay_cua_toi(DB_PATH, video_id,
+                                    None if is_admin(nguoi_tao) else nguoi_tao):
         raise HTTPException(status_code=404, detail="chưa có ảnh cho video này")
     return FileResponse(path, media_type="image/webp")
 
