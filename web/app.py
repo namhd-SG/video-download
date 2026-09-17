@@ -12,6 +12,7 @@ import json
 import logging
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException
@@ -24,6 +25,8 @@ from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web.auth import is_admin, require_user
+from web.cookies import (cookie_jar_path, cookies_path_for_user,
+                         han_dung_nhat, ly_do_jar_khong_dung_duoc)
 from web.lifecycle import (daily_cap_rejection, should_reject_new_job,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
@@ -206,6 +209,107 @@ def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
     trên màn hình mà API vẫn trả thì chưa sửa gì cả.
     """
     return models.list_jobs(DB_PATH, None if is_admin(nguoi_tao) else nguoi_tao)
+
+
+# Jar thật trên mini đo 10 196 B. Trần rộng gấp ~25 lần là đủ cho mọi bản
+# xuất Cookie-Editor mà vẫn chặn được việc ai đó đẩy một tệp lớn qua đường này.
+MAX_COOKIE_BODY = 256 * 1024
+
+
+class CookieBody(BaseModel):
+    json_cookie: str = Field(alias="json", max_length=MAX_COOKIE_BODY,
+                             description="Chuỗi JSON xuất từ Cookie-Editor")
+
+
+def _trang_thai_cookie(nguoi_tao: str) -> dict:
+    """What this person's jar looks like, said in codes and timestamps only.
+
+    Not one byte of the jar leaves through here. `ly_do_jar_khong_dung_duoc`
+    returns a code from a closed set, and the only other fields are an
+    expiry and an mtime. That is a structural guarantee, not a promise to
+    remember to redact: there is no code path that can put file contents in
+    this dict.
+    """
+    duong_dan = cookies_path_for_user(COOKIES_DIR, nguoi_tao)
+    if duong_dan is None:
+        return {"co_jar": False, "trang_thai": None,
+                "het_han": None, "cap_nhat_luc": None}
+    ma = ly_do_jar_khong_dung_duoc(duong_dan)
+    return {
+        "co_jar": True,
+        "trang_thai": ma or "dung_duoc",
+        "het_han": han_dung_nhat(duong_dan),
+        "cap_nhat_luc": datetime.fromtimestamp(
+            Path(duong_dan).stat().st_mtime, tz=timezone.utc).isoformat(),
+    }
+
+
+@app.get("/me")
+def me(nguoi_tao: str = Depends(require_user)) -> dict:
+    """Who the browser is, as the server sees it.
+
+    The page has no other way to know: identity arrives in a header that
+    Cloudflare Access sets and JavaScript cannot read.
+    """
+    return {"email": nguoi_tao, "la_admin": is_admin(nguoi_tao)}
+
+
+@app.get("/me/cookie")
+def get_my_cookie(nguoi_tao: str = Depends(require_user)) -> dict:
+    return _trang_thai_cookie(nguoi_tao)
+
+
+@app.put("/me/cookie")
+def put_my_cookie(body: CookieBody,
+                  nguoi_tao: str = Depends(require_user)) -> dict:
+    """Accept a jar only after proving it works, then swap it in atomically.
+
+    Order matters and is the point of this function. The jar is written to a
+    temp file first and checked there; a jar that fails the check never
+    reaches the place jobs read from, so a bad paste cannot replace a working
+    cookie with a broken one. The swap is `os.replace`, which is atomic, so a
+    job resolving its jar at that instant sees the old file or the new one
+    and never a half-written one.
+
+    The temp file is named with `downloader.COOKIE_TMP_PREFIX` on purpose:
+    `quet_jar_tam` sweeps that prefix at startup, so a crash between write and
+    replace cannot leave readable cookies lying on a shared machine.
+
+    Safe to use while your own job runs: `download_all` resolves the path and
+    converts to a temp Netscape jar when it starts, so it is not reading this
+    file mid-flight.
+    """
+    cookies_dir = COOKIES_DIR
+    _make_private_dir(cookies_dir)
+    dich = cookie_jar_path(cookies_dir, nguoi_tao)
+    tmp_dir = Path(downloader.COOKIE_TMP_DIR)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tam = tmp_dir / f"{downloader.COOKIE_TMP_PREFIX}me-{dich.stem}.json"
+
+    # 0600 from the first byte, not chmod-after-write: between the two there
+    # is a window where another account on this shared machine could read it.
+    fd = os.open(tam, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(body.json_cookie)
+        ma = ly_do_jar_khong_dung_duoc(str(tam))
+        if ma is not None:
+            # Chỉ MÃ ra ngoài. `detail` đi thẳng vào JSON trả về và vào log,
+            # nên bất cứ thứ gì lấy từ nội dung tệp đặt vào đây là rò.
+            log.info("me/cookie: từ chối, mã=%s", ma)
+            raise HTTPException(status_code=400, detail=ma)
+        os.replace(tam, dich)
+    finally:
+        # Trượt ở đâu cũng không để lại cookie đọc được trên đĩa. `os.replace`
+        # thành công thì `tam` đã biến mất, nên `missing_ok`.
+        tam.unlink(missing_ok=True)
+    log.info("me/cookie: đã nhận jar mới")
+    return _trang_thai_cookie(nguoi_tao)
+
+
+@app.delete("/me/cookie", status_code=204, response_model=None)
+def delete_my_cookie(nguoi_tao: str = Depends(require_user)) -> None:
+    cookie_jar_path(COOKIES_DIR, nguoi_tao).unlink(missing_ok=True)
 
 
 @app.get("/videos")

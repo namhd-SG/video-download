@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import stat
 from pathlib import Path
@@ -16,6 +17,7 @@ from fastapi import HTTPException
 
 from web import app as app_mod
 from web import lifecycle
+from web import cookies
 from web import models
 from web.auth import require_user
 
@@ -247,6 +249,126 @@ def test_thumb_endpoint_404s_when_the_picture_was_never_cut(tmp_path, monkeypatc
     with pytest.raises(HTTPException) as exc_info:
         app_mod.get_thumb("7001", nguoi_tao=TEST_USER)
     assert exc_info.value.status_code == 404
+
+
+# ===========================================================================
+# Trang "Cookie của tôi" — P3
+# ===========================================================================
+
+BI_MAT = "SECRET-TOKEN-XYZ"
+
+
+def _jar_hop_le(gia_tri: str = BI_MAT) -> str:
+    """Một jar Cookie-Editor tối thiểu mà `ly_do_jar_khong_dung_duoc` chấp
+    nhận: có `sessionid`, hạn ở tương lai xa."""
+    return json.dumps([{"name": "sessionid", "value": gia_tri,
+                        "domain": ".tiktok.com", "path": "/",
+                        "expires": 4102444800}])
+
+
+def _san_cookie(tmp_path, monkeypatch):
+    """Sân thật: thư mục cookies + thư mục tạm riêng cho mỗi test."""
+    from tiktok_music_downloader import downloader as dl
+
+    cookies_dir = tmp_path / "cookies"
+    tmp_dir = tmp_path / "tmp"
+    cookies_dir.mkdir()
+    tmp_dir.mkdir()
+    monkeypatch.setattr(app_mod, "COOKIES_DIR", cookies_dir)
+    monkeypatch.setattr(dl, "COOKIE_TMP_DIR", str(tmp_dir))
+    monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+    models.init_db(tmp_path / "jobs.db")
+    return cookies_dir, tmp_dir
+
+
+def test_a_pasted_jar_lands_where_the_job_path_will_look_for_it(tmp_path, monkeypatch):
+    """Phép nối, không phải "tệp có trên đĩa": thứ duy nhất đáng khẳng định là
+    `cookies_path_for_user` — hàm đường job dùng — tìm thấy đúng tệp vừa ghi."""
+    cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
+
+    out = app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()),
+                                nguoi_tao=TEST_USER)
+
+    assert out["co_jar"] is True and out["trang_thai"] == "dung_duoc"
+    tim_thay = cookies.cookies_path_for_user(cookies_dir, TEST_USER)
+    assert tim_thay is not None, "đường job không thấy jar vừa dán"
+    assert Path(tim_thay) == cookies.cookie_jar_path(cookies_dir, TEST_USER)
+
+
+def test_the_jar_is_not_readable_by_the_other_accounts_on_this_machine(
+        tmp_path, monkeypatch):
+    """Mini là máy dùng chung (có user `autotest` của đội khác). Mode phải
+    0600 ngay từ byte đầu, không phải chmod sau khi ghi."""
+    cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
+    monkeypatch.setattr(os, "umask", lambda m: 0o022)
+
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+
+    mode = cookies.cookie_jar_path(cookies_dir, TEST_USER).stat().st_mode
+    assert mode & 0o077 == 0, f"jar mở cho người khác đọc: {stat.filemode(mode)}"
+
+
+def test_a_broken_paste_does_not_replace_a_working_jar(tmp_path, monkeypatch):
+    """Ca đắt nhất: đang có jar chạy được, dán nhầm bản RTF. Nếu ghi thẳng vào
+    đích thì mất cookie đang dùng được vì một cú dán hỏng."""
+    cookies_dir, tmp_dir = _san_cookie(tmp_path, monkeypatch)
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.put_my_cookie(app_mod.CookieBody(json=r"{\rtf1\ansi cookie"),
+                              nguoi_tao=TEST_USER)
+
+    assert bat.value.detail in cookies.MA_LOI_COOKIE
+    con = cookies.cookies_path_for_user(cookies_dir, TEST_USER)
+    assert con is not None, "jar đang dùng được đã bị cú dán hỏng xoá mất"
+    assert cookies.ly_do_jar_khong_dung_duoc(con) is None
+    assert list(tmp_dir.iterdir()) == [], "còn sót jar tạm đọc được trên đĩa"
+
+
+def test_no_byte_of_the_jar_comes_back_out(tmp_path, monkeypatch, caplog):
+    """Không một ký tự nào của tệp được ra ngoài — kể cả khi jar hỏng."""
+    cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
+    caplog.set_level(logging.DEBUG)
+
+    tra_ve = app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()),
+                                   nguoi_tao=TEST_USER)
+    tra_ve_str = json.dumps(tra_ve, ensure_ascii=False) + caplog.text
+
+    assert BI_MAT not in tra_ve_str
+    # CA DƯƠNG, cùng phép grep, cùng điều kiện: chuỗi ấy CÓ trong tệp trên đĩa.
+    # Thiếu nó thì phép trên xanh cả khi tôi grep nhầm một chuỗi không tồn tại.
+    tren_dia = Path(cookies.cookies_path_for_user(cookies_dir, TEST_USER)).read_text()
+    assert BI_MAT in tren_dia
+
+
+def test_my_jar_is_not_someone_elses(tmp_path, monkeypatch):
+    """Khoá cấu tạo: A dán thì B vẫn là chưa có jar."""
+    _san_cookie(tmp_path, monkeypatch)
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+
+    assert app_mod.get_my_cookie(nguoi_tao="nguoikhac@astronex.ai")["co_jar"] is False
+    assert app_mod.get_my_cookie(nguoi_tao=TEST_USER)["co_jar"] is True
+
+
+def test_deleting_my_cookie_puts_me_back_to_anonymous(tmp_path, monkeypatch):
+    cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+
+    app_mod.delete_my_cookie(nguoi_tao=TEST_USER)
+
+    assert cookies.cookies_path_for_user(cookies_dir, TEST_USER) is None
+    assert app_mod.get_my_cookie(nguoi_tao=TEST_USER)["co_jar"] is False
+
+
+def test_deleting_a_cookie_that_was_never_there_is_not_an_error(tmp_path, monkeypatch):
+    _san_cookie(tmp_path, monkeypatch)
+    app_mod.delete_my_cookie(nguoi_tao=TEST_USER)
+
+
+def test_me_tells_the_page_who_it_is_talking_to(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    assert app_mod.me(nguoi_tao=TEST_USER) == {"email": TEST_USER, "la_admin": False}
+    assert app_mod.me(nguoi_tao="sep@astronex.ai")["la_admin"] is True
 
 
 def _thu_vien_hai_nguoi(tmp_path, monkeypatch):
