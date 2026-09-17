@@ -371,6 +371,60 @@ def test_me_tells_the_page_who_it_is_talking_to(tmp_path, monkeypatch):
     assert app_mod.me(nguoi_tao="sep@astronex.ai")["la_admin"] is True
 
 
+# Route nào được phép KHÔNG kiểm quyền sở hữu, và vì sao. Danh sách này là
+# cái phải sửa khi thêm route — không phải một danh sách route-có-kiểm gõ tay,
+# vì danh sách kiểu đó im lặng khi ai đó quên thêm vào.
+KHONG_CAN_KIEM_CHU = {
+    "/healthz": "thăm dò, không đọc dữ liệu của ai",
+    "/jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
+    "/videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
+    "/me": "chính người đang gọi",
+    "/me/cookie": "chính người đang gọi",
+    "/thumbs/{video_id}": (
+        "CHƯA LỌC — id TikTok 19 chữ số không đếm lên được nên không quét được, "
+        "nhưng ai cầm sẵn một id vẫn đoán được team đã tải video đó chưa. "
+        "Đang chờ user chốt; ghi ở đây để nó là một quyết định, không phải một "
+        "chỗ bị bỏ quên."),
+}
+
+
+def test_every_route_that_takes_an_id_checks_who_is_asking():
+    """Lưới cho route TƯƠNG LAI, không phải cho route hôm nay.
+
+    Hai test canh cũ liệt kê tay tên route có `require_user`; đột biến đo được:
+    thêm một route mới có `require_user` nhưng quên kiểm chủ ⇒ suite vẫn XANH
+    TRỌN. Danh sách gõ tay không thể đỏ cho thứ chưa ai gõ vào nó.
+
+    Test này lật chiều: duyệt `app.routes` thật, và bắt mọi route phải nằm
+    trong danh sách khai báo ở trên. Route mới ⇒ ĐỎ cho tới khi người viết
+    khai nó thuộc loại nào.
+    """
+    from fastapi.routing import APIRoute
+
+    duong_dan = {r.path for r in app_mod.app.routes if isinstance(r, APIRoute)}
+    chua_khai = duong_dan - set(KHONG_CAN_KIEM_CHU) - {"/jobs/{job_id}",
+                                                       "/jobs/{job_id}/events"}
+    assert not chua_khai, (
+        f"route chưa khai: {sorted(chua_khai)} — hoặc cho nó qua "
+        f"`_job_cua_toi_hoac_404`, hoặc thêm vào KHONG_CAN_KIEM_CHU kèm lý do")
+
+
+def test_every_route_demands_a_verified_user():
+    """`require_user` là cửa ngoài. Route quên nó thì mở cho cả internet."""
+    from fastapi.routing import APIRoute
+
+    thieu = []
+    for r in app_mod.app.routes:
+        if not isinstance(r, APIRoute) or r.path == "/healthz":
+            continue
+        ten_tham_so = set(r.dependant.query_params + r.dependant.path_params)
+        co_require = any(
+            d.call is require_user for d in r.dependant.dependencies)
+        if not co_require:
+            thieu.append(r.path)
+    assert not thieu, f"route không đòi người dùng đã xác thực: {sorted(thieu)}"
+
+
 def _thu_vien_hai_nguoi(tmp_path, monkeypatch):
     """Kho chung, hai chủ: V1 do TEST_USER tải, V2 do người khác.
 

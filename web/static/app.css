@@ -146,7 +146,10 @@
      một mặt phẳng tối liền, và thư viện bên dưới nằm trên nền giấy sáng. Hai
      tông đó là nhận diện của trang; bỏ đi thì còn lại một dashboard bất kỳ. */
   .control-strip {
-    display: grid; grid-template-columns: 340px 1fr; gap: 0;
+    /* Ba panel từ 17/09 (thêm 'Cookie của tôi'). Giữ lưới 2 cột thì panel
+       thứ ba rơi xuống dưới và 'Hàng đợi' mất chỗ đứng riêng — đo bằng
+       ảnh chụp, không thấy được khi đọc mã. */
+    display: grid; grid-template-columns: 340px 320px 1fr; gap: 0;
     margin-bottom: 28px; background: var(--strip); color: var(--strip-ink);
     border: 1px solid var(--strip-line); border-radius: var(--radius);
     overflow: hidden; box-shadow: var(--shadow);
@@ -187,6 +190,9 @@
   .control-strip a { color: var(--strip-accent); }
   .control-strip progress::-webkit-progress-bar { background: #16302c; }
   .control-strip progress::-webkit-progress-value { background: var(--strip-accent); }
+  /* Hai mốc: dưới 1100px xếp cookie xuống dưới form (vẫn còn hàng đợi
+     rộng), dưới 860px thì một cột như cũ. */
+  @media (max-width: 1100px) { .control-strip { grid-template-columns: 340px 1fr; } }
   @media (max-width: 860px) { .control-strip { grid-template-columns: 1fr; } }
 
   .panel {

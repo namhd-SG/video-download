@@ -687,7 +687,17 @@
   }
 
   async function loadCookie() {
-    veCookie(await apiGet("/me/cookie"));
+    try {
+      veCookie(await apiGet("/me/cookie"));
+    } catch (err) {
+      // Trạng thái không đọc được phải NÓI RA. Để nguyên "Đang kiểm…" là bảo
+      // người dùng chờ một thứ sẽ không bao giờ tới; để rỗng còn tệ hơn —
+      // trông như đã kiểm xong và không có gì.
+      const chip = document.getElementById("cookie-chip");
+      chip.textContent = "Không đọc được";
+      chip.className = "chip chip-warn";
+      throw err;
+    }
   }
 
   function noiCookie() {

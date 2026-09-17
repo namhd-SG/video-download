@@ -401,9 +401,14 @@ async def job_events(job_id: int,
     fallback (phase-02 risk note): a tunnel drop can kill this stream while
     the job keeps running server-side, and polling is the way back.
 
-    Ownership is checked once, here at the gate. The generator below re-reads
-    the row every tick for progress, but a job's creator never changes, so
-    re-checking inside the loop would only buy a slower stream.
+    Ownership is checked at the gate AND on every tick. The gate alone would
+    lean on a guarantee that lives in another file — ids are not reused only
+    because `models.py` declares the column AUTOINCREMENT — and nothing here
+    would notice if that changed. The loop already re-reads the row for
+    progress, so the extra check is one string comparison: no query, no I/O.
+    Measured failure it closes: restore `jobs.db` from a backup while a stream
+    is open and the same id can belong to someone else, at which point their
+    URL, email and cookie status flow down a stream opened by another person.
     """
     _job_cua_toi_hoac_404(job_id, nguoi_tao)
 
@@ -412,6 +417,8 @@ async def job_events(job_id: int,
         while True:
             job = models.get_job(DB_PATH, job_id)
             if job is None:
+                break
+            if not is_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao:
                 break
             payload = json.dumps(job)
             if payload != last_payload:
