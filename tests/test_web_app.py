@@ -249,17 +249,106 @@ def test_thumb_endpoint_404s_when_the_picture_was_never_cut(tmp_path, monkeypatc
     assert exc_info.value.status_code == 404
 
 
-def test_videos_endpoint_returns_the_whole_team_catalogue(tmp_path, monkeypatch):
+def _thu_vien_hai_nguoi(tmp_path, monkeypatch):
+    """Kho chung, hai chủ: V1 do TEST_USER tải, V2 do người khác.
+
+    `nguon` của V2 cố ý là một URL tìm kiếm mang từ khoá — đó là thứ cùng hạng
+    với `jobs.url`, và là lý do `sources_for_videos` phải lọc chứ không chỉ
+    `list_videos`.
+    """
     db = tmp_path / "jobs.db"
     models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
-    models.record_video(db, job_id=1, video_id="1", url="u1", region="MY")
-    models.record_video(db, job_id=2, video_id="2", url="u2", region="BR")
+    job_toi = models.create_job(db, "https://www.tiktok.com/tag/cua-toi", 5, TEST_USER)
+    job_ho = models.create_job(db, "https://www.tiktok.com/tag/cua-ho", 5, "ho@astronex.ai")
+    models.record_video(db, job_id=job_toi, video_id="1", url="u1", region="MY")
+    models.record_sighting(db, video_id="1", job_id=job_toi,
+                            nguon="https://www.tiktok.com/tag/cua-toi", da_tai=True)
+    models.record_video(db, job_id=job_ho, video_id="2", url="u2", region="BR")
+    models.record_sighting(db, video_id="2", job_id=job_ho,
+                            nguon="https://www.tiktok.com/search?q=BI-MAT-CUA-HO",
+                            da_tai=True)
+    # Lượt của họ cũng TRÔNG THẤY V1 — video của tôi — rồi bỏ qua vì đã có.
+    # Đây là ca thật, không phải ca dựng: lọc trùng toàn kho bảo đảm nó xảy ra
+    # mỗi lần hai người tìm chồng nguồn. Và nó là ca DUY NHẤT phân định được
+    # `sources_for_videos`: nếu chỉ có video của họ mang từ khoá của họ thì
+    # `list_videos` đã chặn từ trước, `sources_for_videos` không bao giờ được
+    # hỏi về nó, và một bản vá quên lọc `nguon` vẫn xanh.
+    models.record_sighting(db, video_id="1", job_id=job_ho,
+                            nguon="https://www.tiktok.com/search?q=TU-KHOA-RIENG-CUA-HO",
+                            da_tai=False)
+    return db, job_toi, job_ho
+
+
+def test_a_member_sees_only_videos_from_jobs_they_created(tmp_path, monkeypatch):
+    """17/09 user đổi thư viện từ CHUNG sang RIÊNG: ai nhấn tải thì của người
+    đó. Test này trước đây tên `..._returns_the_whole_team_catalogue` và khẳng
+    định điều ngược lại — sửa tại chỗ chứ không xoá, để còn thấy dấu vết."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    _thu_vien_hai_nguoi(tmp_path, monkeypatch)
 
     out = app_mod.list_videos(nguoi_tao=TEST_USER)
 
-    assert out["tong"] == 2
+    assert {v["video_id"] for v in out["videos"]} == {"1"}
+    assert out["tong"] == 1, "`tong` phải đếm cùng bộ lọc, nếu không UI in số của cả kho"
+
+
+def test_the_words_someone_else_typed_do_not_ride_along_in_sources(tmp_path, monkeypatch):
+    """Không chỉ đếm hàng: `nguon` mang nguyên URL tìm kiếm của người khác.
+    Lọc `list_videos` mà quên `sources_for_videos` thì vẫn rò."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    _thu_vien_hai_nguoi(tmp_path, monkeypatch)
+
+    thay = json.dumps(app_mod.list_videos(nguoi_tao=TEST_USER), ensure_ascii=False)
+
+    assert "BI-MAT-CUA-HO" not in thay, "video của họ lọt sang thư viện tôi"
+    assert "TU-KHOA-RIENG-CUA-HO" not in thay, (
+        "từ khoá họ gõ lọt ra qua `nguon` của MỘT video tôi cũng có — "
+        "lọc list_videos mà quên sources_for_videos thì rò đúng ở đây")
+    assert "cua-toi" in thay, "CA DƯƠNG: nguồn của chính tôi phải còn"
+
+
+def test_an_admin_still_sees_the_whole_warehouse(tmp_path, monkeypatch):
+    """CA DƯƠNG: thiếu nó thì một bản vá 'trả rỗng' vẫn xanh hai test trên."""
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    _thu_vien_hai_nguoi(tmp_path, monkeypatch)
+
+    out = app_mod.list_videos(nguoi_tao="sep@astronex.ai")
+
     assert {v["video_id"] for v in out["videos"]} == {"1", "2"}
+    assert out["tong"] == 2
+
+
+def test_the_three_library_queries_refuse_to_guess_who_is_asking():
+    """Hàm quyết định "ai thấy gì" không được có mặc định im lặng (luật repo,
+    sinh ra sau khi `prepare_data_dir` có mặc định trỏ vào production). Quên
+    truyền `chi_cua` phải là TypeError, không phải là thư viện của cả kho."""
+    import inspect
+
+    for ham in (models.list_videos, models.count_videos, models.sources_for_videos):
+        tham_so = inspect.signature(ham).parameters["chi_cua"]
+        assert tham_so.default is inspect.Parameter.empty, (
+            f"{ham.__name__} có mặc định cho chi_cua — người gọi quên sẽ không ai biết")
+
+
+def test_the_library_is_newest_first(tmp_path, monkeypatch):
+    """Bàn giao 16/09 ghi `list_videos` không có test nào canh `ORDER BY` —
+    bỏ nó đi thì lưới lộn ngược mà không ai kêu."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    job = models.create_job(db, "https://www.tiktok.com/tag/x", 5, TEST_USER)
+    for vid, luc in [("cu", "2026-09-01T00:00:00+00:00"),
+                     ("giua", "2026-09-10T00:00:00+00:00"),
+                     ("moi", "2026-09-17T00:00:00+00:00")]:
+        models.record_video(db, job_id=job, video_id=vid, url="u")
+        with models._connect(db) as conn:
+            conn.execute("UPDATE videos SET tao_luc = ? WHERE video_id = ?", (luc, vid))
+
+    out = app_mod.list_videos(nguoi_tao=TEST_USER)
+
+    assert [v["video_id"] for v in out["videos"]] == ["moi", "giua", "cu"]
 
 
 def test_videos_endpoint_includes_sources_from_sightings(tmp_path, monkeypatch):
@@ -268,10 +357,11 @@ def test_videos_endpoint_includes_sources_from_sightings(tmp_path, monkeypatch):
     db = tmp_path / "jobs.db"
     models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
-    models.record_video(db, job_id=1, video_id="1", url="u1")
-    models.record_sighting(db, video_id="1", job_id=1,
+    job = models.create_job(db, "https://www.tiktok.com/tag/abc", 5, TEST_USER)
+    models.record_video(db, job_id=job, video_id="1", url="u1")
+    models.record_sighting(db, video_id="1", job_id=job,
                             nguon="https://www.tiktok.com/tag/abc", da_tai=True)
-    models.record_sighting(db, video_id="1", job_id=1,
+    models.record_sighting(db, video_id="1", job_id=job,
                             nguon="https://www.tiktok.com/music/x-1", da_tai=False)
 
     out = app_mod.list_videos(nguoi_tao=TEST_USER)
@@ -291,7 +381,8 @@ def test_videos_endpoint_reports_empty_sources_for_a_video_with_no_sightings(
     db = tmp_path / "jobs.db"
     models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
-    models.record_video(db, job_id=1, video_id="2", url="u2")
+    job = models.create_job(db, "https://www.tiktok.com/tag/x", 5, TEST_USER)
+    models.record_video(db, job_id=job, video_id="2", url="u2")
 
     out = app_mod.list_videos(nguoi_tao=TEST_USER)
 
@@ -305,15 +396,16 @@ def test_videos_endpoint_queries_sources_once_for_the_whole_page(tmp_path, monke
     db = tmp_path / "jobs.db"
     models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
+    job = models.create_job(db, "https://www.tiktok.com/tag/x", 5, TEST_USER)
     for i in range(5):
-        models.record_video(db, job_id=1, video_id=str(i), url=f"u{i}")
+        models.record_video(db, job_id=job, video_id=str(i), url=f"u{i}")
 
     calls = []
     real_sources_for_videos = models.sources_for_videos
 
-    def _counting(db_path, video_ids):
+    def _counting(db_path, video_ids, chi_cua):
         calls.append(list(video_ids))
-        return real_sources_for_videos(db_path, video_ids)
+        return real_sources_for_videos(db_path, video_ids, chi_cua)
 
     monkeypatch.setattr(models, "sources_for_videos", _counting)
 

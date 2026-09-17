@@ -376,16 +376,32 @@ def record_sighting(db_path: Path, video_id: str, job_id: int, nguon: str,
         )
 
 
-def sources_for_videos(db_path: Path, video_ids: list[str]) -> dict[str, list[str]]:
-    """`{video_id: [nguồn, …]}` — every source each video has been seen under."""
+def sources_for_videos(db_path: Path, video_ids: list[str],
+                       chi_cua: str | None) -> dict[str, list[str]]:
+    """`{video_id: [nguồn, …]}` — the sources each video was seen under, as
+    seen by ONE person. `chi_cua=None` means every source, admins only.
+
+    `chi_cua` has no default on purpose: `nguon` is the whole URL for search
+    and profile jobs, i.e. the words somebody typed. That is the same class of
+    data as `jobs.url`, which `/jobs` already filters. A caller that forgets
+    the argument must break loudly here rather than quietly serve one person
+    the search terms of another.
+
+    LEFT JOIN for the same reason `list_videos` uses one: a sighting whose job
+    row is missing keeps `nguoi_tao = NULL`, so it drops out for every member
+    and only an admin still sees it. An inner join would drop it for admins
+    too, and drop it silently.
+    """
     if not video_ids:
         return {}
     marks = ",".join("?" * len(video_ids))
     with _connect(db_path) as conn:
         rows = conn.execute(
-            f"SELECT DISTINCT video_id, nguon FROM video_sightings "
-            f"WHERE video_id IN ({marks}) ORDER BY nguon",
-            video_ids,
+            f"SELECT DISTINCT s.video_id, s.nguon FROM video_sightings s "
+            f"LEFT JOIN jobs j ON j.id = s.job_id "
+            f"WHERE s.video_id IN ({marks}) AND (? IS NULL OR j.nguoi_tao = ?) "
+            f"ORDER BY s.nguon",
+            [*video_ids, chi_cua, chi_cua],
         ).fetchall()
     out: dict[str, list[str]] = {}
     for r in rows:
@@ -410,29 +426,51 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     return {r["video_id"] for r in rows}
 
 
-def list_videos(db_path: Path, limit: int = 500, offset: int = 0) -> list[dict]:
-    """Newest first. Paged because the grid renders every row it is handed."""
+def list_videos(db_path: Path, chi_cua: str | None,
+                limit: int = 500, offset: int = 0) -> list[dict]:
+    """Newest first, showing only what `chi_cua` downloaded. `None` = all,
+    which is for admins.
+
+    `chi_cua` has no default, deliberately. This is a function that decides
+    who sees what, and the repo already paid for one of those having a quiet
+    default (`prepare_data_dir` reached into production). A caller that
+    forgets the argument gets a TypeError, not everyone else's library.
+
+    Ownership is `jobs.nguoi_tao` of the job that downloaded the video —
+    "whoever pressed download owns it", user's decision on 17/09. A video
+    skipped as a duplicate never gets a `videos` row, so it belongs to
+    nobody but the first downloader, and there is no second claimant.
+
+    LEFT JOIN, not JOIN: a video whose job row is gone would otherwise vanish
+    from the count as well as the grid. It keeps `nguoi_tao = NULL`, so it
+    falls out for every member and only an admin (`chi_cua=None`) still sees
+    it. That is the safe direction to fail.
+    """
     with _connect(db_path) as conn:
-        # Kèm `nguoi_tao` của job đã tải video này. Thư viện là của CẢ TEAM
-        # (chốt #2) và có bộ lọc "Người tải" (chốt #7), nên quy kết ai-tải-gì
-        # thuộc về thư viện. Trước đây UI dựng nó từ `/jobs`; từ 16/09 `/jobs`
-        # chỉ trả lượt của chính mình, nên nếu không mang theo đây thì bộ lọc
-        # #7 sẽ hiện "không rõ" cho mọi video của người khác — gãy một tính
-        # năng đã chốt mà không ai thấy.
-        # LEFT JOIN: hàng job có thể vắng, video vẫn phải hiện.
         rows = conn.execute(
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
+            "WHERE (? IS NULL OR j.nguoi_tao = ?) "
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
-            (limit, offset),
+            (chi_cua, chi_cua, limit, offset),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def count_videos(db_path: Path) -> int:
+def count_videos(db_path: Path, chi_cua: str | None) -> int:
+    """Must filter exactly like `list_videos`: the UI uses this number to
+    decide whether to ask for another page, and prints it as "N video". A
+    total taken over the whole warehouse would both over-page and tell each
+    member a number that is not theirs.
+    """
     with _connect(db_path) as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM videos").fetchone()[0])
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM videos v "
+            "LEFT JOIN jobs j ON j.id = v.job_id "
+            "WHERE (? IS NULL OR j.nguoi_tao = ?)",
+            (chi_cua, chi_cua),
+        ).fetchone()[0])
 
 
 def set_job_stop_reason(db_path: Path, job_id: int, ly_do: str) -> None:

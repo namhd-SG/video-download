@@ -739,7 +739,7 @@ def test_a_skipped_duplicate_still_records_its_source(tmp_path, monkeypatch):
     queue_mod._fetch_refs("https://www.tiktok.com/tag/80ssaudi", max_videos=10,
                            cookies_path=None, db_path=db, job_id=2)
 
-    assert models.sources_for_videos(db, ["111"]) == {"111": ["#80ssaudi"]}
+    assert models.sources_for_videos(db, ["111"], None) == {"111": ["#80ssaudi"]}
 
 
 def test_music_page_results_are_deduped_too(tmp_path, monkeypatch):
@@ -757,7 +757,7 @@ def test_music_page_results_are_deduped_too(tmp_path, monkeypatch):
                                   cookies_path=None, db_path=db, job_id=2)
 
     assert [r.video_id for r in refs] == ["444"]
-    assert models.sources_for_videos(db, ["333"]) == {
+    assert models.sources_for_videos(db, ["333"], None) == {
         "333": ["https://www.tiktok.com/music/x-1"]}
 
 
@@ -870,7 +870,7 @@ def test_process_job_passes_the_db_through_so_dedupe_actually_runs(tmp_path, mon
     # test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
     assert models.get_job(db_path, job_id)["tong"] == 1, "chỉ ref MỚI được đưa vào tải"
     # Và video bị bỏ qua phải để lại dấu nguồn của lượt này.
-    assert models.sources_for_videos(db_path, ["111"]) == {
+    assert models.sources_for_videos(db_path, ["111"], None) == {
         "111": ["https://www.tiktok.com/music/x-1"]}
 
 
@@ -886,7 +886,7 @@ def test_process_job_names_the_source_so_downloaded_sightings_exist(tmp_path, mo
     _drive_one_job(tmp_path, monkeypatch, "https://www.tiktok.com/music/x-1",
                    [VideoRef(video_id="333", url="u")], db_path)
 
-    assert models.sources_for_videos(db_path, ["333"]) == {
+    assert models.sources_for_videos(db_path, ["333"], None) == {
         "333": ["https://www.tiktok.com/music/x-1"]}
 
 
@@ -940,7 +940,7 @@ def test_repeated_sightings_of_the_same_pair_collapse(tmp_path):
         models.record_sighting(db_path, video_id="1", job_id=7,
                                 nguon="#t", da_tai=False)
 
-    assert models.sources_for_videos(db_path, ["1"]) == {"1": ["#t"]}
+    assert models.sources_for_videos(db_path, ["1"], None) == {"1": ["#t"]}
 
 
 # ---------------------------------------------------------------------------

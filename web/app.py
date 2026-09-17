@@ -211,25 +211,36 @@ def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
 @app.get("/videos")
 def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
                 nguoi_tao: str = Depends(require_user)) -> dict:
-    """The library grid's rows. Every member sees the whole team's catalogue
-    (user's call 15/09) — one shared library is the point, so that two people
-    do not download the same hashtag twice without knowing."""
+    """The library grid's rows — only what this person downloaded.
+
+    User's call 17/09, replacing the shared catalogue of 15/09: "whoever
+    presses download owns it", and a member's grid should not be crowded with
+    other people's work. The warehouse itself is still ONE shared Drive and
+    the duplicate skip is still global, so nothing is downloaded twice; what
+    changed is who the grid is addressed to.
+
+    Filtered here rather than in the grid: hiding rows on screen while the
+    API still hands them over is not filtering. `nguon` carries the words
+    somebody typed into search, so it is filtered too.
+    """
     if limit < 1 or limit > MAX_VIDEOS_PAGE_SIZE:
         raise HTTPException(
             status_code=400,
             detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset không được âm")
-    videos = models.list_videos(DB_PATH, limit=limit, offset=offset)
+    chi_cua = None if is_admin(nguoi_tao) else nguoi_tao
+    videos = models.list_videos(DB_PATH, chi_cua, limit=limit, offset=offset)
     # Một truy vấn `sources_for_videos` cho CẢ TRANG, không phải một truy vấn
     # mỗi video: bộ lọc "Nguồn" của UI cần biết mọi hashtag/music/profile mà
     # mỗi video từng xuất hiện, và trang có tới `limit` video thì N+1 ở đây
     # là N+1 thật, không phải lý thuyết.
-    sources = models.sources_for_videos(DB_PATH, [v["video_id"] for v in videos])
+    sources = models.sources_for_videos(DB_PATH, [v["video_id"] for v in videos],
+                                        chi_cua)
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
     return {
-        "tong": models.count_videos(DB_PATH),
+        "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,
     }
 

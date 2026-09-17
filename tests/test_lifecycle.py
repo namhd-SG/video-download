@@ -638,7 +638,7 @@ def test_video_row_survives_a_thumbnail_that_could_not_be_cut(tmp_path, monkeypa
 
     lifecycle.on_video_verified(job_id=1, ref=_ref("7003", region="VN"), path=video, db_path=db)
 
-    rows = models.list_videos(db)
+    rows = models.list_videos(db, None)
     assert [r["video_id"] for r in rows] == ["7003"]
     assert rows[0]["region"] == "VN"
     assert not lifecycle.thumb_path_for(db, "7003").exists()
@@ -656,7 +656,7 @@ def test_a_failed_upload_records_nothing(tmp_path):
 
     lifecycle.on_video_verified(job_id=1, ref=_ref("7004"), path=video, db_path=db)
 
-    assert models.list_videos(db) == []
+    assert models.list_videos(db, None) == []
     assert video.exists()
 
 
@@ -701,11 +701,11 @@ def test_same_video_seen_under_two_hashtags_stays_one_row(tmp_path):
     models.record_video(db, job_id=1, video_id="7006", url="u", region="MY")
     models.record_video(db, job_id=2, video_id="7006", url="u", region="SG")
 
-    rows = models.list_videos(db)
+    rows = models.list_videos(db, None)
     assert len(rows) == 1
     assert rows[0]["region"] == "MY", "lần đầu thắng, không phải lần sau"
     assert rows[0]["job_id"] == 1
-    assert models.count_videos(db) == 1
+    assert models.count_videos(db, None) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -721,14 +721,14 @@ def test_second_sighting_does_not_rewrite_who_or_when(tmp_path):
     db = tmp_path / "jobs.db"
     models.init_db(db)
     models.record_video(db, job_id=1, video_id="9001", url="u", region="MY")
-    first = models.list_videos(db)[0]
+    first = models.list_videos(db, None)[0]
 
     models.record_video(db, job_id=2, video_id="9001", url="u", region="SG")
-    after = models.list_videos(db)[0]
+    after = models.list_videos(db, None)[0]
 
     assert after["job_id"] == 1, "job_id phải giữ lần ĐẦU — nó nuôi bộ lọc 'người tải'"
     assert after["tao_luc"] == first["tao_luc"], "tao_luc phải giữ lần ĐẦU — bộ lọc 'ngày tải'"
-    assert models.count_videos(db) == 1
+    assert models.count_videos(db, None) == 1
 
 
 def test_sightings_keep_every_source_including_skipped_ones(tmp_path):
@@ -743,7 +743,7 @@ def test_sightings_keep_every_source_including_skipped_ones(tmp_path):
     models.record_sighting(db, video_id="9002", job_id=1, nguon="#80ssaudi", da_tai=True)
     models.record_sighting(db, video_id="9002", job_id=2, nguon="#retro", da_tai=False)
 
-    sources = models.sources_for_videos(db, ["9002"])
+    sources = models.sources_for_videos(db, ["9002"], None)
 
     assert sources["9002"] == ["#80ssaudi", "#retro"]
 
@@ -766,7 +766,7 @@ def test_music_id_and_drive_file_id_survive_the_round_trip(tmp_path):
     models.record_video(db, job_id=1, video_id="9005", url="u",
                         music_id="7218", drive_file_id="1AbC")
 
-    row = models.list_videos(db)[0]
+    row = models.list_videos(db, None)[0]
     assert row["music_id"] == "7218"
     assert row["drive_file_id"] == "1AbC"
 
@@ -782,7 +782,7 @@ def test_drive_file_id_is_the_file_not_the_shared_drive(tmp_path):
 
     lifecycle.on_video_verified(job_id=1, ref=_ref("9006"), path=video, db_path=db)
 
-    row = models.list_videos(db)[0]
+    row = models.list_videos(db, None)[0]
     success = _success()
     assert row["drive_file_id"] == success.file_id
     assert row["drive_file_id"] != success.drive_id
@@ -974,7 +974,7 @@ def test_record_video_defaults_to_now_but_accepts_a_real_time(tmp_path):
     models.record_video(db, job_id=1, video_id="222", url="u",
                         tao_luc="2026-09-14T10:43:08.000000+00:00")
 
-    rows = {r["video_id"]: r["tao_luc"] for r in models.list_videos(db)}
+    rows = {r["video_id"]: r["tao_luc"] for r in models.list_videos(db, None)}
     assert rows["222"] == "2026-09-14T10:43:08.000000+00:00"
     assert rows["111"] != rows["222"], "bỏ tham số thì phải là thời điểm hiện tại"
 

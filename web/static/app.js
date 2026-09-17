@@ -54,7 +54,11 @@
     { id: "dai", label: "Dài", getBuckets: (v) => [durationBucket(v.duration)] },
     { id: "thi_truong", label: "Thị trường", getBuckets: (v) => [regionBucket(v.region)] },
     { id: "ngay_tai", label: "Ngày tải", getBuckets: (v) => [dateBucket(v.tao_luc)] },
-    { id: "nguoi_tai", label: "Người tải", getBuckets: (v) => [creatorBucket(v)] },
+    // Bỏ nhóm "Người tải" 17/09: thư viện chỉ còn video của chính người đang
+    // xem (user chốt "ai nhấn tải thì của người đó"), nên nhóm này chỉ còn
+    // đúng một giá trị — một bộ lọc không lọc được gì là một ô gây nhiễu.
+    // Quản trị vẫn thấy cả kho qua API; nếu sau này cần lọc cho vai đó thì
+    // dựng lại nhóm này CÓ ĐIỀU KIỆN, đừng bật lại vô điều kiện.
   ];
 
   // ========================================================================
@@ -63,7 +67,6 @@
   const state = {
     jobs: [],
     videos: [],
-    jobCreatorMap: new Map(), // job_id -> nguoi_tao, dựng từ GET /jobs
     selected: new Set(),      // video_id đang được chọn trong thư viện
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
@@ -139,15 +142,6 @@
     if (diffDays <= 7) return { key: "7d", label: "7 ngày qua" };
     if (diffDays <= 30) return { key: "30d", label: "30 ngày qua" };
     return { key: "older", label: "Cũ hơn" };
-  }
-
-  function creatorBucket(video) {
-    // Lấy thẳng từ hàng video. Trước đây tra qua `jobCreatorMap` dựng từ
-    // `/jobs`, nhưng từ 16/09 `/jobs` chỉ trả lượt của CHÍNH MÌNH (quyết định
-    // của user), nên cách cũ sẽ cho "không rõ" với mọi video của người khác —
-    // gãy bộ lọc "Người tải" (chốt #7) mà nhìn vào không biết vì sao.
-    const who = video.nguoi_tao;
-    return who ? { key: who, label: who } : { key: UNKNOWN, label: "Không rõ" };
   }
 
   // Đếm số video rơi vào mỗi bucket của MỘT nhóm lọc, trên toàn bộ thư viện
@@ -555,7 +549,6 @@
   // ========================================================================
   async function loadJobs() {
     state.jobs = await apiGet("/jobs");
-    state.jobCreatorMap = new Map(state.jobs.map((j) => [j.id, j.nguoi_tao]));
     renderQueue();
     state.jobs.forEach((job) => {
       if ((job.trang_thai === "pending" || job.trang_thai === "running") && !state.openStreams.has(job.id)) {
