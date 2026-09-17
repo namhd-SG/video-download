@@ -49,6 +49,32 @@
 
     <div class="panel">
       <div class="panel-head">
+        <h2>Cookie TikTok của tôi</h2>
+        <span id="cookie-chip" class="chip"></span>
+      </div>
+      <!-- Ẩn danh KHÔNG bị chặn: hashtag không cần cookie theo cấu tạo, và đo
+           16/09 cho thấy music page ra 10 video dù có hay không cookie. Nên đây
+           là lời nhắc kèm cái giá thật, không phải một cánh cửa. -->
+      <p id="cookie-banner" class="note-nguon" hidden>Chưa có cookie — lượt tải của
+        bạn chạy <strong>ẩn danh</strong> và chia chung hạn mức
+        <strong>20 lượt/ngày</strong> với mọi người chưa dán. Dán cookie để có
+        hạn mức riêng.</p>
+      <p id="cookie-han" class="muted"></p>
+      <details id="cookie-form">
+        <summary>Dán cookie</summary>
+        <textarea id="cookie-json" rows="4" placeholder="Dán chuỗi JSON xuất từ Cookie-Editor"></textarea>
+        <div class="cookie-actions">
+          <button type="button" id="cookie-luu">Lưu</button>
+          <button type="button" id="cookie-xoa" class="ghost">Xoá cookie</button>
+        </div>
+        <p class="muted">Cài tiện ích <strong>Cookie-Editor</strong>, mở tiktok.com,
+          bấm <em>Export → Export as JSON</em>, rồi dán vào đây.</p>
+      </details>
+      <p id="cookie-error" class="error-text" role="alert"></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
         <h2>Hàng đợi</h2>
         <span id="queue-count" class="muted"></span>
       </div>

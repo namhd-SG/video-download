@@ -194,6 +194,28 @@
     return res.json();
   }
 
+  async function apiSend(method, path, body) {
+    // Cùng bẫy `redirect: "manual"` như `apiGet` — một phiên Access hết hạn
+    // giữa lúc đang dán cookie mà im lặng thì người dùng dán lại mãi.
+    const res = await fetch(path, {
+      method,
+      redirect: "manual",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
+    if (!res.ok) {
+      // `detail` của backend là một MÃ đóng, không phải câu chữ, và không
+      // mang byte nào của tệp cookie — nên đưa thẳng vào bảng dịch được.
+      let ma = null;
+      try { ma = (await res.json()).detail; } catch (e) { ma = null; }
+      const err = new Error(`${method} ${path} -> ${res.status}`);
+      err.ma = ma;
+      throw err;
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
   function baoPhienHetHan() {
     const el = document.getElementById("session-expired");
     if (el) el.hidden = false;
@@ -640,10 +662,73 @@
   });
 
   // ========================================================================
+  // COOKIE CỦA TÔI
+  // ========================================================================
+  function veCookie(tt) {
+    const chip = document.getElementById("cookie-chip");
+    const banner = document.getElementById("cookie-banner");
+    const han = document.getElementById("cookie-han");
+
+    banner.hidden = tt.co_jar;
+    if (!tt.co_jar) {
+      chip.textContent = "Chưa có";
+      chip.className = "chip chip-warn";
+      han.textContent = "";
+      return;
+    }
+    const tot = tt.trang_thai === "dung_duoc";
+    chip.textContent = tot ? "Đang dùng được" : "Cần dán lại";
+    chip.className = "chip " + (tot ? "chip-ok" : "chip-warn");
+    // Hỏng thì nói CÁCH CHỮA, dùng đúng bảng câu chữ mà hàng đợi đang dùng —
+    // bốn mã cookie đều là thứ người dùng tự chữa được.
+    han.textContent = tot
+      ? (tt.het_han ? "Hạn đến " + new Date(tt.het_han).toLocaleDateString("vi-VN") : "Không có hạn")
+      : (STOP_REASON_TEXT[tt.trang_thai] || "Cookie không dùng được — dán lại.");
+  }
+
+  async function loadCookie() {
+    veCookie(await apiGet("/me/cookie"));
+  }
+
+  function noiCookie() {
+    const o = document.getElementById("cookie-json");
+    const loi = document.getElementById("cookie-error");
+    const luu = document.getElementById("cookie-luu");
+
+    luu.addEventListener("click", async () => {
+      loi.textContent = "";
+      luu.disabled = true;
+      try {
+        veCookie(await apiSend("PUT", "/me/cookie", { json: o.value }));
+        o.value = "";   // không giữ cookie trong DOM lâu hơn mức cần
+        document.getElementById("cookie-form").open = false;
+      } catch (err) {
+        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+        loi.textContent = STOP_REASON_TEXT[err.ma]
+          || "Không lưu được cookie: " + err.message;
+      } finally {
+        luu.disabled = false;
+      }
+    });
+
+    document.getElementById("cookie-xoa").addEventListener("click", async () => {
+      loi.textContent = "";
+      try {
+        await apiSend("DELETE", "/me/cookie");
+        await loadCookie();
+      } catch (err) {
+        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+        loi.textContent = "Không xoá được: " + err.message;
+      }
+    });
+  }
+
+  // ========================================================================
   // INIT
   // ========================================================================
   renderFilterBar();
-  Promise.all([loadJobs(), loadVideos()]).catch((err) => {
+  noiCookie();
+  Promise.all([loadJobs(), loadVideos(), loadCookie()]).catch((err) => {
     document.getElementById("error").textContent = "Không tải được dữ liệu ban đầu: " + err.message;
   });
   // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel

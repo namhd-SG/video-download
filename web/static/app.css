@@ -377,6 +377,29 @@
   .selection-actions button.ghost { background: transparent; }
   .selection-actions button:hover { filter: brightness(1.05); }
 
+  /* Cookie của tôi — dùng lại token màu sẵn có để hai chế độ sáng/tối tự
+     đúng, không đặt màu cứng. */
+  .chip {
+    font-size: .72rem; padding: .15rem .5rem; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface-alt);
+  }
+  .chip-ok { background: var(--accent-soft); border-color: var(--accent); }
+  .chip-warn { background: var(--danger-bg); border-color: var(--danger); }
+  #cookie-form summary { cursor: pointer; font-size: .85rem; margin: .4rem 0; }
+  #cookie-form textarea {
+    width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: .75rem;
+    border: 1px solid var(--border); border-radius: 8px; padding: .5rem;
+    background: var(--surface-alt); color: var(--text); resize: vertical;
+  }
+  .cookie-actions { display: flex; gap: 8px; margin: .5rem 0; }
+  .cookie-actions button {
+    border: 1px solid var(--border); background: var(--accent); color: var(--accent-ink);
+    border-radius: 8px; padding: .45rem .9rem; font-size: .82rem; cursor: pointer;
+  }
+  .cookie-actions button.ghost {
+    background: transparent; color: var(--text);
+  }
+
   .toast {
     position: fixed; left: 50%; bottom: 76px; transform: translateX(-50%);
     background: var(--text); color: var(--bg); padding: .6rem 1rem; border-radius: 8px;
