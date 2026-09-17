@@ -74,68 +74,85 @@ Hiện chưa tách cookie theo người. Chưa xong nghĩa là **chưa mở cho 
 
 ---
 
-## C. CHỜ ANH QUYẾT — 4 việc đang đứng im vì thiếu câu trả lời
+## C. ANH ĐÃ QUYẾT — 17/09 sáng
 
-### C1. Nút "Xoá" xoá cái gì? *(đã hỏi 4 lần, chưa có đáp)*
+Bốn việc dưới đây trước đó đứng im vì thiếu câu trả lời. Anh đã trả lời cả bốn.
+Ghi lại **nguyên ý anh chốt** + **cái giá kèm theo**, để không ai diễn giải lại.
 
-Thư viện dùng chung cả team. Hai nghĩa khác hẳn nhau:
+### C1. Nút "Xoá" — ✅ ĐÃ CHỐT
 
-- **Xoá khỏi giỏ** — chỉ bỏ khỏi danh sách đang chọn, video còn nguyên trên Drive
-- **Xoá video trên Drive** — mất thật, và **mất của cả team** chứ không riêng người bấm
+**Anh chốt:** tải một mẻ về xong thì lọc lại, xoá những video không đúng insight mình cần.
+Video nào mình nhấn tải là của mình, xoá không ảnh hưởng ai.
 
-Chưa chọn thì chưa làm nút này được.
+**Đã kiểm — cách hiểu này ĐÚNG với hệ thống:** thư viện chỉ hiện video **tải về thật**;
+video bị bỏ qua vì trùng thì không vào thư viện của ai. Cộng với việc thư viện lọc theo
+người ⇒ **mỗi video đúng một chủ**. Không có chuyện xoá của mình làm mất của người khác.
 
-### C2. Chặn theo số lượt tải hay theo số video?
+**Hai điều kèm theo, anh đã gật:**
+- **Xoá = đưa vào Thùng rác Drive** (30 ngày, khôi phục được). Tài khoản máy chỉ có quyền
+  tới đó, **không xoá vĩnh viễn được** — và không nâng quyền cho nó, vì khoá đó quản cả
+  kho creative công ty.
+- **Xoá rồi thì lần quét sau KHÔNG tải về lại.** Hệ thống phải nhớ "người này đã loại
+  video này", nếu không thì tuần sau quét cùng hashtag là nó quay lại.
 
-Hiện chặn **20 lượt/người/ngày**. Nhưng một lượt có thể xin tới 2000 video ⇒ **20 lượt vẫn là 40.000 video/ngày**.
+*(Bản cũ của mục này hỏi "xoá khỏi giỏ hay xoá trên Drive" — câu hỏi đó đặt sai, vì nó
+giả định thư viện dùng chung. Giữ lại đây để không ai hỏi lại vòng nữa.)*
 
-Muốn bó lưu lượng thật thì phải chặn theo **tổng số video**, không phải số lượt. Cần anh cho một con số trần/người/ngày.
+### C2. Trần tải — ✅ ĐÃ CHỐT
 
-Lý do không tự chọn hộ: tải nhiều quá thì TikTok chặn **IP cả văn phòng**, không riêng tool.
+**Anh chốt:** tạm giữ **chặn theo lượt**, và **thêm trang Setting để anh tự đổi trần**.
 
-### C3. Form "Thêm bộ tự tìm" lấy danh mục từ đâu?
+**Ghi chú đo được:** hiện thực ra có **ba** trần cùng chạy — 20 lượt/ngày, 1000 video/ngày,
+800 trang liệt kê/ngày — nên không phải chọn "lượt hay video", giữ cả ba.
 
-Tool chạy ở địa chỉ riêng, không có phiên đăng nhập của meta-auto, nên chưa đọc được danh mục creative bên đó.
+⚠ **Một chỗ cần anh biết khi làm trang Setting:** trần mà người bị chặn tự nâng được thì
+không còn là trần. Rủi ro thật là **TikTok chặn IP cả văn phòng**, mà cái đó không ai trong
+team tự nới được. Nên chia hai tầng: trần chung toàn công ty (chỉ quản trị đổi) và trần
+từng người (quản trị đặt, người dùng **xem** chứ không sửa).
 
-- **(a)** cấp một token máy dài hạn cho tool — phải giữ và bảo vệ token
-- **(b)** để trình duyệt gọi thẳng meta-auto — *khuyến nghị*: ít mã hơn, không giữ token, và mỗi người chỉ thấy đúng phần mình có quyền
-- **(c)** đồng bộ định kỳ — **đã loại**, vì dữ liệu sẽ lệch âm thầm
+### C3. Form "Thêm bộ tự tìm" — ✅ ĐÃ CHỐT
 
-### C4. Ai được xem toàn bộ hàng đợi? *(cần anh cho danh sách email)*
+**Anh chốt:** **đồng bộ với Creative Desk** — form bên tool phải cho ra đúng bộ tự tìm như
+bên meta-auto, chỉ khác là bên này có sẵn video.
 
-Hiện danh sách admin trên mini (`VIDEODL_ADMIN_EMAILS`) đang **rỗng** ⇒ **chưa ai xem được
-hàng đợi của cả team**, kể cả anh. Mỗi người chỉ thấy lượt của chính mình. Đây là mặc định
-an toàn có chủ đích, không phải lỗi.
+**Không mâu thuẫn với quyết định cũ.** Bản cũ loại phương án *"chép danh mục theo lịch"*
+vì nó lệch âm thầm. Anh nói "đồng bộ" theo nghĩa **luôn khớp**, không phải theo nghĩa
+chép định kỳ. Hai điều này hợp nhau nếu tool **đọc sống** danh mục từ Creative Desk.
 
-Cần anh: **danh sách email được xem hết**, để đặt vào `~/.config/videodl/env` trên mini rồi
-khởi động lại dịch vụ.
+⚠ **Sửa một khuyến nghị sai trong chính tài liệu này:** bản cũ khuyên *"để trình duyệt gọi
+thẳng meta-auto"*. Đường đó **cấu tạo không chạy** — meta-auto chỉ nhận danh tính qua
+token nằm trong bộ nhớ của trang `automation.*`, trang `video.*` không đọc được. Đã có
+bản thiết kế đường đúng (dùng service token qua Cloudflare Access) từ 15/09.
 
-⚠ **THỨ TỰ BẮT BUỘC — ĐƯA MÃ LÊN MINI TRƯỚC, ĐẶT BIẾN SAU.**
-Đặt biến trước thì **không có tác dụng gì**, mà lại **trông y như đang hỏng** — sẽ mất công
-đi tìm một lỗi không tồn tại.
+⏳ **Việc này về thời gian là dài nhất**: nó phải sửa cả repo meta-auto, mà cửa duyệt bên đó
+hết lượt chạy tới khoảng 01/10.
 
-Lý do, đo lúc **17/09 10:09**: đoạn mã đọc biến này nằm trong đúng bản **chưa** đưa lên mini.
+### C4. Ai được xem toàn bộ hàng đợi? — ⏳ CÒN CHỜ ANH MỘT THỨ
 
-```
-grep -c ENV_ADMIN_EMAILS web/auth.py    →  máy dev: 2   ·   mini: 0
-grep -c "def is_admin"   web/auth.py    →  máy dev: 1   ·   mini: 0
-```
+**Anh chốt:** ai xem lượt của người đó. ✅ **Đã có hiệu lực trên máy thật lúc 10:33 ngày 17/09.**
+Đo sau khi đưa lên: quản trị thấy 4 lượt, người dùng thật thấy đúng 1 lượt của chính họ.
 
-Bốn commit chưa lên mini: `2e5f31e` · `13000cc` · `eafb2bf` · `1c9c630`. Trong đó `13000cc`
-mang **cả** quyền admin **lẫn** việc "hàng đợi chỉ thấy lượt của mình".
+⏳ **Còn thiếu đúng một thứ — cần anh:** danh sách email được xem **toàn bộ** hàng đợi
+(vai quản trị). Hiện để trống nghĩa là **chưa ai xem được hàng đợi cả team, kể cả anh**.
+Đặt vào tệp cấu hình trên mini rồi khởi động lại dịch vụ. Phần mã đọc danh sách này giờ
+**đã nằm trên máy thật rồi**, chỉ thiếu giá trị.
 
-⇒ **Hệ quả thứ hai, đáng biết:** quyết định anh chốt 16/09 — *"/jobs chỉ thấy lượt của
-mình"* — **chưa có hiệu lực trên máy thật**. Bản đang chạy vẫn liệt kê mọi lượt của mọi
-người: hàm liệt kê trên mini **không có tham số lọc** (`SELECT * FROM jobs` trơn), trong khi
-bản ở máy dev lọc theo người tạo. Đo 10:10 có **2 địa chỉ ngoài** đang mở trang.
+⚠ **Còn một cửa hở chưa vá, không cần anh quyết:** danh sách hàng đợi đã lọc, nhưng trang
+**chi tiết một lượt** thì chưa — ai đăng nhập cũng mở được lượt của người khác bằng cách
+đổi số trên đường dẫn. Đã xác minh tại nguồn, đang xếp vào việc làm ngay.
 
-Bán kính thật **nhỏ**: cả kho có **4 lượt tải**, mang **2 tên người tạo** — nhưng chỉ **một**
-là người đã đăng nhập (1 lượt, 16/09); 3 lượt còn lại mang tên `khach`, tức từ trước khi nối
-đăng nhập vào tool. Hai địa chỉ ngoài kia **chưa phân định** là hai người hay một người ở
-hai mạng, và **không cần phân định để quyết**: trang này phơi dữ liệu cho **bất kỳ ai đăng
-nhập được**, nên cái chặn là số người có tài khoản, không phải số người đang mở trang.
+### C5. Thư viện riêng từng người — ✅ ĐÃ CHỐT 17/09
 
-Đưa mã lên mini cần anh gật (luật 16/09: commit/push tự do, **deploy phải xin anh**).
+**Anh chốt:** ai nhấn tải thì video đó của người đó; trên tool mỗi người **chỉ thấy video
+mình đã tải**, cho đỡ rối. Nhưng **kho vẫn là một** (vẫn cùng Shared Drive), và khi đẩy
+sang bộ tự tìm thì mọi người vẫn thấy bình thường.
+
+**Lọc trùng giữ nguyên toàn kho:** video nào người trước đã tải thì lượt sau tự động bỏ qua,
+không tải lại.
+
+⚠ **Cái giá, anh đã biết:** người tìm sau sẽ nhận **ít video hơn** vì phần lớn đã có người
+tải trước — và những video đó **không hiện ở đâu** trong thư viện của họ. Phải báo thẳng
+trên lượt tải (*"bỏ qua N video đã có trong kho"*), nếu không họ sẽ tưởng nguồn cạn.
 
 ---
 
