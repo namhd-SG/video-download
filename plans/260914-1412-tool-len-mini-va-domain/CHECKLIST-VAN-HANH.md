@@ -74,7 +74,7 @@ Hiện chưa tách cookie theo người. Chưa xong nghĩa là **chưa mở cho 
 
 ---
 
-## C. CHỜ ANH QUYẾT — 3 việc đang đứng im vì thiếu câu trả lời
+## C. CHỜ ANH QUYẾT — 4 việc đang đứng im vì thiếu câu trả lời
 
 ### C1. Nút "Xoá" xoá cái gì? *(đã hỏi 4 lần, chưa có đáp)*
 
@@ -101,6 +101,42 @@ Tool chạy ở địa chỉ riêng, không có phiên đăng nhập của meta-
 - **(b)** để trình duyệt gọi thẳng meta-auto — *khuyến nghị*: ít mã hơn, không giữ token, và mỗi người chỉ thấy đúng phần mình có quyền
 - **(c)** đồng bộ định kỳ — **đã loại**, vì dữ liệu sẽ lệch âm thầm
 
+### C4. Ai được xem toàn bộ hàng đợi? *(cần anh cho danh sách email)*
+
+Hiện danh sách admin trên mini (`VIDEODL_ADMIN_EMAILS`) đang **rỗng** ⇒ **chưa ai xem được
+hàng đợi của cả team**, kể cả anh. Mỗi người chỉ thấy lượt của chính mình. Đây là mặc định
+an toàn có chủ đích, không phải lỗi.
+
+Cần anh: **danh sách email được xem hết**, để đặt vào `~/.config/videodl/env` trên mini rồi
+khởi động lại dịch vụ.
+
+⚠ **THỨ TỰ BẮT BUỘC — ĐƯA MÃ LÊN MINI TRƯỚC, ĐẶT BIẾN SAU.**
+Đặt biến trước thì **không có tác dụng gì**, mà lại **trông y như đang hỏng** — sẽ mất công
+đi tìm một lỗi không tồn tại.
+
+Lý do, đo lúc **17/09 10:09**: đoạn mã đọc biến này nằm trong đúng bản **chưa** đưa lên mini.
+
+```
+grep -c ENV_ADMIN_EMAILS web/auth.py    →  máy dev: 2   ·   mini: 0
+grep -c "def is_admin"   web/auth.py    →  máy dev: 1   ·   mini: 0
+```
+
+Bốn commit chưa lên mini: `2e5f31e` · `13000cc` · `eafb2bf` · `1c9c630`. Trong đó `13000cc`
+mang **cả** quyền admin **lẫn** việc "hàng đợi chỉ thấy lượt của mình".
+
+⇒ **Hệ quả thứ hai, đáng biết:** quyết định anh chốt 16/09 — *"/jobs chỉ thấy lượt của
+mình"* — **chưa có hiệu lực trên máy thật**. Bản đang chạy vẫn liệt kê mọi lượt của mọi
+người: hàm liệt kê trên mini **không có tham số lọc** (`SELECT * FROM jobs` trơn), trong khi
+bản ở máy dev lọc theo người tạo. Đo 10:10 có **2 địa chỉ ngoài** đang mở trang.
+
+Bán kính thật **nhỏ**: cả kho có **4 lượt tải**, mang **2 tên người tạo** — nhưng chỉ **một**
+là người đã đăng nhập (1 lượt, 16/09); 3 lượt còn lại mang tên `khach`, tức từ trước khi nối
+đăng nhập vào tool. Hai địa chỉ ngoài kia **chưa phân định** là hai người hay một người ở
+hai mạng, và **không cần phân định để quyết**: trang này phơi dữ liệu cho **bất kỳ ai đăng
+nhập được**, nên cái chặn là số người có tài khoản, không phải số người đang mở trang.
+
+Đưa mã lên mini cần anh gật (luật 16/09: commit/push tự do, **deploy phải xin anh**).
+
 ---
 
 ## D. ĐÃ BỎ — ghi lại để không ai làm lại
@@ -122,4 +158,5 @@ Tool chạy ở địa chỉ riêng, không có phiên đăng nhập của meta-
 1. **B1** — cookie từng người. Đây là thứ duy nhất chặn việc mở cho cả team.
 2. **B2** — nghiệm thu toàn hệ, cần hẹn giờ vì phải khởi động lại máy dùng chung.
 3. **B3** — thêm link trong meta-auto (nhanh).
-4. **C1 · C2 · C3** — làm ngay khi anh trả lời, không phụ thuộc nhau.
+4. **C1 · C2 · C3 · C4** — làm ngay khi anh trả lời, không phụ thuộc nhau.
+   Riêng **C4** có ràng buộc thứ tự: đưa mã lên mini **trước**, đặt biến **sau**.
