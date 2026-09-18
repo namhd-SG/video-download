@@ -6,6 +6,13 @@
   // ========================================================================
   const UNKNOWN = "__unknown__"; // khoá bucket dùng chung cho mọi trường thiếu dữ liệu
 
+  // Creative Desk — cùng đội, URL công khai, người dùng đã đăng nhập sẵn ở đó.
+  const CREATIVE_DESK_URL = "https://automation.nobidigital.asia";
+  // Trần số video một bộ. Lý do là ĐỘ DÀI URL, không phải giới hạn nghiệp vụ:
+  // payload đi trong query string, và trình duyệt/proxy bắt đầu cắt quanh 8KB.
+  // 30 item giữ URL dưới ~6KB kể cả khi tiêu đề dài và có dấu.
+  const HANDOFF_MAX = 30;
+
   const STATUS_LABEL = {
     pending: "Đang chờ", running: "Đang chạy", done: "Xong",
     failed: "Lỗi", interrupted: "Bị ngắt", cancelled: "Đã rút",
@@ -580,7 +587,50 @@
       return;
     }
     if (action === "loai") loaiDaChon();
+    if (action === "self-bundle") moBoTuTim();
   });
+
+  // "Tạo bộ tự tìm" — bàn giao sang Creative Desk qua THANH ĐỊA CHỈ, không
+  // qua API.
+  //
+  // Vì sao mở tab thay vì gọi backend bên kia: trang này nằm ở origin
+  // `video.*`, Creative Desk ở `automation.*`, và cả hai sau Cloudflare
+  // Access. Một lời gọi chéo origin từ đây sẽ cần Video Desk cầm token của
+  // người dùng hoặc một service token — tức là dựng một bề mặt mạo danh cho
+  // một việc vốn chỉ là copy file. Đưa TRÌNH DUYỆT sang đó thì người dùng
+  // mang sẵn phiên của chính họ, và bộ được tạo đứng tên đúng người mà bên
+  // này không cầm gì cả.
+  function moBoTuTim() {
+    const daChon = state.videos.filter((v) => state.selected.has(v.video_id));
+    // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ qua chúng và nói ra số
+    // bị bỏ — im lặng gửi thiếu là cách người dùng mất video mà không biết.
+    const chuaLenDrive = daChon.filter((v) => !v.drive_file_id);
+    const items = daChon
+      .filter((v) => v.drive_file_id)
+      .map((v) => ({ f: v.drive_file_id, n: v.title || v.video_id, u: v.url }));
+
+    if (!items.length) {
+      showToast("Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+      return;
+    }
+    if (items.length > HANDOFF_MAX) {
+      showToast(`Chọn tối đa ${HANDOFF_MAX} video cho một bộ.`);
+      return;
+    }
+    if (chuaLenDrive.length) {
+      showToast(`${chuaLenDrive.length} video chưa lên Drive nên không gửi kèm.`);
+    }
+
+    // base64url: payload đi trong URL nên `+` `/` `=` đều phải biến mất.
+    // `TextEncoder` trước `btoa` vì tiêu đề video có tiếng Việt và emoji —
+    // `btoa` một mình ném `InvalidCharacterError` ở ký tự ngoài Latin-1.
+    const json = JSON.stringify({ v: 1, items });
+    const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    window.open(
+      `${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk=${b64}`,
+      "_blank", "noopener");
+  }
 
   async function loaiDaChon() {
     const ids = [...state.selected];

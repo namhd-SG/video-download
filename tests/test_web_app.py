@@ -1623,3 +1623,40 @@ def test_list_jobs_gan_vi_tri_cho_job_dang_cho(tmp_path, monkeypatch):
 
     assert [j["id"] for j in jobs] == [cua_toi], "chỉ thấy job của mình"
     assert jobs[0]["vi_tri"] == 2, "phải đếm cả job người khác đang chờ trước"
+
+
+# ---------------------------------------------------------------------------
+# T3 — nút "Tạo bộ tự tìm" bàn giao sang Creative Desk.
+#
+# Repo không có hạ tầng test JS, nên hai test dưới đây KHÔNG kiểm hành vi —
+# chúng canh đúng một tính chất AN TOÀN, và tính chất đó kiểm được bằng cách
+# đọc tệp: Video Desk **không gọi API** của Creative Desk. Bàn giao phải đi
+# qua thanh địa chỉ, để danh tính là phiên của chính người dùng bên đó.
+#
+# Hành vi (payload đúng, URL đúng) được nghiệm thu bằng trình duyệt thật —
+# xem báo cáo 18/09. Đừng đọc hai test này thành "đã phủ tính năng".
+# ---------------------------------------------------------------------------
+STATIC = Path(app_mod.__file__).parent / "static"
+
+
+def test_nut_tao_bo_tu_tim_co_mat_trong_thanh_chon():
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    assert 'data-action="self-bundle"' in html
+
+
+def test_video_desk_khong_goi_api_creative_desk():
+    """Đột biến: đổi `window.open(...)` thành `fetch(CREATIVE_DESK_URL + ...)`
+    ⇒ test này ĐỎ. Đó là cả điểm của nó.
+
+    Gọi API chéo origin sẽ buộc Video Desk cầm token của người dùng hoặc một
+    service token — dựng một bề mặt mạo danh cho việc vốn chỉ là copy file.
+    """
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+
+    assert "CREATIVE_DESK_URL" in js, "chưa có hằng số đích — test này thành vô nghĩa"
+    assert "window.open(" in js, "bàn giao phải qua thanh địa chỉ"
+
+    for dong in js.splitlines():
+        if "fetch(" in dong or "XMLHttpRequest" in dong or "EventSource(" in dong:
+            assert "CREATIVE_DESK_URL" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
+            assert "automation.nobidigital.asia" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"

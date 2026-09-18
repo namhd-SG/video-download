@@ -103,9 +103,14 @@
 <div class="selection-bar" id="selection-bar" hidden>
   <span id="selection-count" class="muted"></span>
   <div class="selection-actions">
-    <!-- Chỉ ship nút CÓ backend. "Tạo bộ tự tìm" và "Phân tích" chưa nối nên
-         chưa có mặt: một nút bấm vào báo "chưa làm" là một nút hỏng, và người
-         dùng đã phàn nàn đúng chuyện đó. -->
+    <!-- Chỉ ship nút CÓ đường đi thật. "Phân tích nội dung" vẫn chưa có mặt:
+         một nút bấm vào báo "chưa làm" là một nút hỏng, và người dùng đã
+         phàn nàn đúng chuyện đó.
+         "Tạo bộ tự tìm" mở Creative Desk trong tab mới, nơi người dùng ĐANG
+         đăng nhập, và bộ được tạo bằng phiên của chính họ. Video Desk không
+         giữ token của ai và không gọi API bên đó, nên không có bề mặt mạo
+         danh. -->
+    <button type="button" data-action="self-bundle">Tạo bộ tự tìm</button>
     <button type="button" class="danger" data-action="loai">Xoá</button>
     <button type="button" class="ghost" data-action="clear">Bỏ chọn</button>
   </div>
