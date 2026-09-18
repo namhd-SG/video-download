@@ -146,10 +146,14 @@
      một mặt phẳng tối liền, và thư viện bên dưới nằm trên nền giấy sáng. Hai
      tông đó là nhận diện của trang; bỏ đi thì còn lại một dashboard bất kỳ. */
   .control-strip {
-    /* Ba panel từ 17/09 (thêm 'Cookie của tôi'). Giữ lưới 2 cột thì panel
-       thứ ba rơi xuống dưới và 'Hàng đợi' mất chỗ đứng riêng — đo bằng
-       ảnh chụp, không thấy được khi đọc mã. */
-    display: grid; grid-template-columns: 340px 320px 1fr; gap: 0;
+    /* HAI panel: 'Tạo lượt tải mới' + 'Hàng đợi'. Từng có panel thứ ba
+       ('Cookie của tôi', 17/09) nên lưới khai 3 cột `340px 320px 1fr`;
+       panel đó đã dời sang /settings.html nhưng cột `1fr` ở lại và trở
+       thành một MẢNG ĐEN chiếm gần nửa dải — user báo 18/09.
+       Bài học: gỡ panel thì phải gỡ cả rãnh của nó; số cột là một khai
+       báo về nội dung, không phải một hằng số trang trí. Không test nào
+       bắt được (không có test bố cục) — chỉ lộ khi mở trang thật. */
+    display: grid; grid-template-columns: 340px 1fr; gap: 0;
     margin-bottom: 28px; background: var(--strip); color: var(--strip-ink);
     border: 1px solid var(--strip-line); border-radius: var(--radius);
     overflow: hidden; box-shadow: var(--shadow);
@@ -190,9 +194,10 @@
   .control-strip a { color: var(--strip-accent); }
   .control-strip progress::-webkit-progress-bar { background: #16302c; }
   .control-strip progress::-webkit-progress-value { background: var(--strip-accent); }
-  /* Hai mốc: dưới 1100px xếp cookie xuống dưới form (vẫn còn hàng đợi
-     rộng), dưới 860px thì một cột như cũ. */
-  @media (max-width: 1100px) { .control-strip { grid-template-columns: 340px 1fr; } }
+  /* Còn đúng một mốc: dưới 860px thì form và hàng đợi xếp chồng một cột.
+     Mốc 1100px cũ đặt lưới về `340px 1fr` — nay đó ĐÃ là lưới mặc định,
+     nên luật đó không còn đổi gì; giữ lại chỉ làm người đọc tưởng có hai
+     bố cục khác nhau. */
   @media (max-width: 860px) { .control-strip { grid-template-columns: 1fr; } }
 
   .panel {
@@ -261,8 +266,8 @@
     background: var(--accent); color: #fff; border-radius: 999px; font-size: .68rem;
     padding: 0 .4rem; min-width: 1.1em; text-align: center;
   }
-  .filter-box.disabled .filter-trigger { cursor: not-allowed; opacity: .55; }
-  .filter-note { font-size: .68rem; color: var(--text-muted); }
+  /* `.filter-box.disabled` + `.filter-note` gỡ 18/09 cùng nhóm lọc "Khung":
+     không còn hộp lọc nào ở trạng thái chết, nên hai luật này mồ côi. */
   .filter-panel {
     position: absolute; top: calc(100% + 6px); left: 0; background: var(--surface);
     border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow);

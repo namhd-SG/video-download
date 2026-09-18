@@ -41,16 +41,20 @@
                     "tiktok.com, xuất cookie mới rồi dán lại.",
   };
 
-  // Sáu hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket
+  // Các hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket
   // {key,label} — mảng vì "Nguồn" có thể có nhiều giá trị trên một video
   // (một clip lên từ hai hashtag), còn các trường khác trả mảng 1 phần tử.
-  // `disabled` = có ô trong dải lọc nhưng không lọc được, vì KHÔNG có dữ
-  // liệu tỉ lệ khung ở đâu cả (chưa ai đọc nó từ ffmpeg) — thà disable còn
-  // hơn bịa lựa chọn không dựa trên dữ liệu thật.
+  //
+  // Bỏ nhóm "Khung" (tỉ lệ khung) 18/09: nó được ship ở dạng `disabled` kèm
+  // dòng chữ "Chưa có dữ liệu tỉ lệ khung (chưa đọc từ ffmpeg)" nằm ngay
+  // giữa dải lọc. Đó là một NÚT CHẾT cộng một câu giải thích rải ra giao
+  // diện — đúng hai thứ luật dự án cấm. Và nó tự mâu thuẫn với chính khối
+  // chú thích ngay dưới đây: nhóm "Người tải" đã bị bỏ vì "một bộ lọc không
+  // lọc được gì là một ô gây nhiễu", trong khi "Khung" lọc được ÍT HƠN THẾ.
+  // Dựng lại khi ffmpeg thật sự ghi tỉ lệ khung vào DB, và lúc đó nó là một
+  // nhóm bình thường có `getBuckets` — đừng bật lại ở dạng disabled.
   const FILTER_GROUPS = [
     { id: "nguon", label: "Nguồn", getBuckets: sourceBuckets },
-    { id: "khung", label: "Khung", disabled: true,
-      note: "Chưa có dữ liệu tỉ lệ khung (chưa đọc từ ffmpeg)" },
     { id: "dai", label: "Dài", getBuckets: (v) => [durationBucket(v.duration)] },
     { id: "thi_truong", label: "Thị trường", getBuckets: (v) => [regionBucket(v.region)] },
     { id: "ngay_tai", label: "Ngày tải", getBuckets: (v) => [dateBucket(v.tao_luc)] },
@@ -71,7 +75,7 @@
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
   };
-  for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id] = new Map();
+  for (const g of FILTER_GROUPS) state.filters[g.id] = new Map();
 
   // ========================================================================
   // HELPERS — escape, format, bucket
@@ -168,7 +172,6 @@
 
   function videoMatchesFilters(video) {
     return FILTER_GROUPS.every((g) => {
-      if (g.disabled) return true;
       const selected = state.filters[g.id];
       if (selected.size === 0) return true;
       return g.getBuckets(video).some((b) => selected.has(b.key));
@@ -279,14 +282,6 @@
   }
 
   function renderFilterBox(group) {
-    if (group.disabled) {
-      return `
-        <div class="filter-box disabled">
-          <button type="button" class="filter-trigger" disabled title="${escapeHtml(group.note)}">
-            ${escapeHtml(group.label)} <span class="filter-note">${escapeHtml(group.note)}</span>
-          </button>
-        </div>`;
-    }
     const selected = state.filters[group.id];
     return `
       <div class="filter-box" data-group="${group.id}">
@@ -320,7 +315,6 @@
     const wrap = document.getElementById("active-filters");
     const pills = [];
     for (const group of FILTER_GROUPS) {
-      if (group.disabled) continue;
       for (const [key, label] of state.filters[group.id]) {
         pills.push({ groupId: group.id, groupLabel: group.label, key, label });
       }
@@ -475,7 +469,7 @@
 
   document.getElementById("active-filters").addEventListener("click", (ev) => {
     if (ev.target.id === "clear-all-pill") {
-      for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id].clear();
+      for (const g of FILTER_GROUPS) state.filters[g.id].clear();
       renderFilterBar();
       renderLibrary();
       return;
@@ -489,7 +483,7 @@
   });
 
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
-    for (const g of FILTER_GROUPS) if (!g.disabled) state.filters[g.id].clear();
+    for (const g of FILTER_GROUPS) state.filters[g.id].clear();
     renderFilterBar();
     renderLibrary();
   });
