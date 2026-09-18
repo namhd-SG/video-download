@@ -129,8 +129,10 @@ CREATE TABLE IF NOT EXISTS nguoi_dung (
     la_admin INTEGER NOT NULL DEFAULT 0,
     tran_luot INTEGER,
     tran_video INTEGER,
-    lan_dau_thay TEXT NOT NULL,
-    lan_cuoi_thay TEXT NOT NULL,
+    -- NULL = có job từ trước khi bảng này tồn tại, chưa thấy đăng nhập lần nào.
+    -- Điền một mốc thời gian ở đây sẽ là một con số bịa.
+    lan_dau_thay TEXT,
+    lan_cuoi_thay TEXT,
     cap_boi TEXT,
     cap_luc TEXT
 )
@@ -159,6 +161,18 @@ def init_db(db_path: Path) -> None:
         conn.execute(_VIDEOS_SCHEMA)
         conn.execute(_SIGHTINGS_SCHEMA)
         conn.execute(_NGUOI_DUNG_SCHEMA)
+        # Bổ khuyết người đã có job từ trước khi bảng này tồn tại. Không có
+        # bước này thì ngay sau khi nâng cấp, trang Quản trị gần như TRỐNG và
+        # admin **không đặt được trần cho ai** cho tới khi từng người tự ghé
+        # trang — mà `jobs.nguoi_tao` là nguồn danh tính duy nhất đang có.
+        # `lan_dau_thay` để NULL: chưa "thấy" họ đăng nhập bao giờ, nên một mốc
+        # thời gian ở đây sẽ là một con số bịa.
+        conn.execute(
+            "INSERT OR IGNORE INTO nguoi_dung "
+            "(email, la_admin, lan_dau_thay, lan_cuoi_thay) "
+            "SELECT DISTINCT LOWER(TRIM(nguoi_tao)), 0, NULL, NULL FROM jobs "
+            "WHERE nguoi_tao IS NOT NULL AND TRIM(nguoi_tao) <> ''"
+        )
         for statement in _SIGHTINGS_INDEX:
             conn.execute(statement)
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an
@@ -220,30 +234,72 @@ def dem_admin(db_path: Path) -> int:
 
 
 def dat_quyen_admin(db_path: Path, email: str, la_admin: bool,
-                    cap_boi: str) -> None:
-    """Phong hoặc bỏ quyền admin. Người gọi phải kiểm 'admin cuối cùng' TRƯỚC.
+                    cap_boi: str) -> bool:
+    """Phong hoặc bỏ quyền admin. Trả `False` khi lượt bỏ bị TỪ CHỐI.
 
-    Ghi `cap_boi`/`cap_luc` để truy được ai đã cấp quyền cho ai — một bảng
-    phân quyền không có vết là một bảng không trả lời được câu hỏi duy nhất
-    người ta sẽ hỏi nó khi có chuyện.
+    Việc "còn admin nào khác không" nằm **trong chính câu UPDATE**, không phải
+    ở một lần đọc trước đó. Kiểm-rồi-ghi bằng hai lượt đọc-ghi rời nhau có hai
+    đường vỡ, cả hai đã được dựng lại và đo:
+
+      * **Đua.** Hai admin bỏ quyền của nhau cùng lúc: cả hai đọc "còn 2" trước
+        khi ai kịp ghi ⇒ cả hai lượt qua cửa ⇒ **còn 0 admin**.
+      * **Fail-open.** Người gọi hỏi "người này có phải admin không" qua một
+        hàm trả `False` khi DB lỗi thoáng qua; `False` làm điều kiện canh bị
+        bỏ qua hoàn toàn (short-circuit) ⇒ lượt bỏ đi thẳng ⇒ **còn 0 admin**.
+
+    `WHERE` có điều kiện con nên SQLite đánh giá nó trong cùng giao dịch với
+    phép ghi; không còn khe nào giữa "đếm" và "ghi". Trả `bool` thay vì `None`
+    vì người gọi PHẢI phân biệt được "đã đổi" với "bị từ chối" — một hàm im
+    lặng ở đây là một khoá không ai biết đã mở hay chưa.
     """
+    luc = datetime.now(timezone.utc).isoformat()
+    e = email.strip().lower()
     with _connect(db_path) as conn:
-        conn.execute(
-            "UPDATE nguoi_dung SET la_admin = ?, cap_boi = ?, cap_luc = ? "
-            "WHERE email = ?",
-            (1 if la_admin else 0, cap_boi,
-             datetime.now(timezone.utc).isoformat(), email.strip().lower()),
-        )
+        if la_admin:
+            cur = conn.execute(
+                "UPDATE nguoi_dung SET la_admin = 1, cap_boi = ?, cap_luc = ? "
+                "WHERE email = ?", (cap_boi, luc, e))
+        else:
+            # Chỉ hạ quyền khi VẪN CÒN admin khác sau lượt này.
+            cur = conn.execute(
+                "UPDATE nguoi_dung SET la_admin = 0, cap_boi = ?, cap_luc = ? "
+                "WHERE email = ? AND la_admin = 1 "
+                "AND (SELECT COUNT(*) FROM nguoi_dung WHERE la_admin = 1) > 1",
+                (cap_boi, luc, e))
+        return cur.rowcount > 0
 
 
-def dat_tran_nguoi_dung(db_path: Path, email: str, tran_luot: int | None,
-                        tran_video: int | None) -> None:
-    """`None` = dùng trần mặc định của hệ thống, không phải 'không giới hạn'."""
+def dat_tran_nguoi_dung(db_path: Path, email: str, **truong) -> bool:
+    """Đặt trần riêng. Chỉ ghi những cột ĐƯỢC TRUYỀN, trả `False` nếu không ai khớp.
+
+    Nhận `**truong` chứ không nhận hai tham số cố định, vì `None` ở đây có HAI
+    nghĩa không được lẫn: "không gửi trường này" và "đặt về mặc định hệ thống".
+    Ghi cả hai cột mỗi lượt biến một lượt sửa `tran_luot` thành lượt **xoá**
+    `tran_video` — mất cấu hình, không một lời cảnh báo. Đã dựng lại và đo.
+
+    `None` **có truyền** vẫn nghĩa là "về mặc định hệ thống" — không phải
+    "không giới hạn".
+    """
+    cho_phep = {"tran_luot", "tran_video"}
+    dat = {k: v for k, v in truong.items() if k in cho_phep}
+    if not dat:
+        return False
+    gan = ", ".join(f"{k} = ?" for k in dat)
     with _connect(db_path) as conn:
-        conn.execute(
-            "UPDATE nguoi_dung SET tran_luot = ?, tran_video = ? WHERE email = ?",
-            (tran_luot, tran_video, email.strip().lower()),
+        cur = conn.execute(
+            f"UPDATE nguoi_dung SET {gan} WHERE email = ?",
+            (*dat.values(), email.strip().lower()),
         )
+        return cur.rowcount > 0
+
+
+def tran_rieng_cua(db_path: Path, email: str) -> tuple[int | None, int | None]:
+    """Trần riêng của người này, `(None, None)` nếu chưa đặt hoặc chưa có hàng."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT tran_luot, tran_video FROM nguoi_dung WHERE email = ?",
+            (email.strip().lower(),)).fetchone()
+    return (row["tran_luot"], row["tran_video"]) if row else (None, None)
 
 
 def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:

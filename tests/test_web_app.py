@@ -1310,3 +1310,122 @@ def _co_bang(db_path, ten):
         return conn.execute(
             "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
             (ten,)).fetchone()[0] > 0
+
+
+# ===========================================================================
+# Các lỗ review tìm ra — mỗi test là một ca hỏng đã dựng lại được
+# ===========================================================================
+
+def test_a_per_user_cap_actually_stops_the_job(tmp_path, monkeypatch):
+    """Trần riêng phải CÓ HIỆU LỰC ở cổng chặn.
+
+    Ca hỏng review dựng: đặt `tran_luot=1` vào DB rồi tạo 3 job — cổng chặn
+    trả `None` cả ba lần vì nó vẫn dùng hằng số 20. Một trần ghi được mà cổng
+    không đọc thì chỉ là ô nhập liệu không làm gì.
+    """
+    db = _san_admin(tmp_path, monkeypatch)
+    models.dat_tran_nguoi_dung(db, TEST_USER, tran_luot=1, tran_video=10)
+    ck = tmp_path / "cookies"
+
+    models.create_job(db, "https://www.tiktok.com/tag/a", 1, TEST_USER)
+    tu_choi = lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=ck, nguoi_tao=TEST_USER, so_luong=1)
+
+    assert tu_choi is not None, "trần riêng 1 lượt phải chặn lượt thứ hai"
+    assert "1" in tu_choi
+
+
+def test_the_default_cap_still_applies_when_no_per_user_cap_is_set(tmp_path, monkeypatch):
+    """CA DƯƠNG: không đặt trần riêng thì vẫn theo mặc định, không phải chặn hết."""
+    db = _san_admin(tmp_path, monkeypatch)
+    ck = tmp_path / "cookies"
+    models.create_job(db, "https://www.tiktok.com/tag/a", 1, TEST_USER)
+
+    assert lifecycle.daily_cap_rejection(
+        db_path=db, cookies_dir=ck, nguoi_tao=TEST_USER, so_luong=1) is None
+
+
+def test_changing_one_cap_does_not_wipe_the_other(tmp_path, monkeypatch):
+    """Ca hỏng review dựng: đặt cả hai → 5/500; rồi PUT chỉ `tran_luot=7`
+    ⇒ `tran_video` bị xoá về NULL, không một lời cảnh báo."""
+    db = _san_admin(tmp_path, monkeypatch)
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(tran_luot=5, tran_video=500),
+                            nguoi_tao="sep@astronex.ai")
+    assert models.tran_rieng_cua(db, TEST_USER) == (5, 500)
+
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(tran_luot=7),
+                            nguoi_tao="sep@astronex.ai")
+
+    assert models.tran_rieng_cua(db, TEST_USER) == (7, 500), \
+        "sửa một trần không được xoá trần kia"
+
+
+def test_sending_a_null_cap_means_back_to_default(tmp_path, monkeypatch):
+    """`None` CÓ TRUYỀN = về mặc định hệ thống. Khác hẳn "không gửi"."""
+    db = _san_admin(tmp_path, monkeypatch)
+    models.dat_tran_nguoi_dung(db, TEST_USER, tran_luot=5, tran_video=500)
+
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(tran_luot=None),
+                            nguoi_tao="sep@astronex.ai")
+
+    assert models.tran_rieng_cua(db, TEST_USER) == (None, 500)
+
+
+def test_two_admins_demoting_each_other_cannot_reach_zero(tmp_path, monkeypatch):
+    """Ca hỏng review dựng bằng hai luồng: cả hai đọc "còn 2 admin" trước khi
+    ai kịp ghi ⇒ hai lượt 200 ⇒ **còn 0 admin**.
+
+    Ở đây đo bằng phép tương đương, không cần luồng: gọi tuần tự hai lượt bỏ
+    quyền. Điều kiện canh nằm TRONG câu UPDATE nên lượt thứ hai phải thất bại
+    dù người gọi không đếm gì cả — đó là tính chất chống đua, và nó kiểm được
+    mà không cần dựng đua.
+    """
+    db = _san_admin(tmp_path, monkeypatch)
+    models.dat_quyen_admin(db, TEST_USER, True, "sep@astronex.ai")
+    assert models.dem_admin(db) == 2
+
+    assert models.dat_quyen_admin(db, "sep@astronex.ai", False, "x") is True
+    assert models.dat_quyen_admin(db, TEST_USER, False, "x") is False, \
+        "lượt bỏ quyền thứ hai phải bị TỪ CHỐI, không phải im lặng thành công"
+    assert models.dem_admin(db) == 1, "không bao giờ được về 0 admin"
+
+
+def test_a_transient_db_error_cannot_unlock_the_last_admin_guard(tmp_path, monkeypatch):
+    """Ca hỏng review dựng: `is_admin` trả `False` khi DB lỗi thoáng qua, và
+    `False` làm điều kiện canh bị short-circuit ⇒ lượt bỏ quyền đi thẳng.
+
+    Sau bản vá, trạng thái lấy từ hàng đã đọc và quyết định nằm trong UPDATE,
+    nên `_la_admin` có trả sai cũng không mở được khoá.
+    """
+    db = _san_admin(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_mod, "_la_admin", lambda e: False)
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.admin_cap_nhat(email="sep@astronex.ai",
+                                body=app_mod.CapNhatNguoiDung(la_admin=False),
+                                nguoi_tao="sep@astronex.ai")
+
+    assert bat.value.status_code == 409
+    assert models.dem_admin(db) == 1
+
+
+def test_upgrading_an_old_database_keeps_the_people_who_already_downloaded(
+        tmp_path, monkeypatch):
+    """Ca hỏng review dựng: sau nâng cấp, trang Quản trị gần như trống và
+    **không đặt được trần cho ai** cho tới khi từng người tự ghé `/me`.
+
+    Máy thật đang có 6 lượt tải của 2 danh tính — họ phải có mặt ngay.
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.create_job(db, "https://www.tiktok.com/tag/x", 5, "nguoicu@astronex.ai")
+    # Xoá sạch bảng danh bạ để giả lập "DB có job nhưng chưa có bảng người dùng".
+    with models._connect(db) as conn:
+        conn.execute("DELETE FROM nguoi_dung")
+
+    models.init_db(db)          # nâng cấp lần nữa = chạy backfill
+
+    assert "nguoicu@astronex.ai" in {u["email"] for u in models.danh_sach_nguoi_dung(db)}

@@ -337,6 +337,24 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
     over-claim khi trần video được thêm vào cùng hàm mà không ai soát lại nó.
     Thêm nhánh vào một hàm thì phải soát mọi khẳng định đang đứng trên hàm đó.
     """
+    # Trần RIÊNG của người này (quản trị đặt ở trang Cài đặt) đè lên mặc định.
+    # Đọc ở đây chứ không ở route: cổng chặn là chỗ duy nhất trần có hiệu lực,
+    # và một trần ghi được vào cơ sở dữ liệu mà cổng không đọc thì chỉ là một ô
+    # nhập liệu không làm gì — đúng loại nút chết đã bị phàn nàn.
+    #
+    # ⚠ Hai khoá đếm khác nhau, cố ý: trần ĐẾM theo cookie (mối đe doạ là tài
+    # khoản TikTok), còn GIÁ TRỊ trần lấy theo người (quản trị đặt cho người).
+    # Ai chưa dán cookie thì vẫn chia chung túi đếm với mọi người chưa dán —
+    # trần riêng không tách túi cho họ, chỉ đổi mức.
+    try:
+        rieng_luot, rieng_video = models.tran_rieng_cua(db_path, nguoi_tao)
+    except Exception:  # noqa: BLE001 — bảng chưa có thì dùng mặc định, đừng chặn
+        rieng_luot = rieng_video = None
+    if rieng_luot is not None:
+        max_jobs_per_day = rieng_luot
+    if rieng_video is not None:
+        max_videos_per_day = rieng_video
+
     used = jobs_today_for_cookie(db_path, cookies_dir, nguoi_tao, now)
     if used >= max_jobs_per_day:
         return (f"cookie này đã chạy {used}/{max_jobs_per_day} job trong hôm nay "

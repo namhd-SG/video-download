@@ -25,7 +25,7 @@ from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web.auth import admin_tu_env, is_admin, require_user
-from web.cookies import (cookie_jar_path, cookies_path_for_user,
+from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
 from tiktok_music_downloader.gdrive_upload import UploadOutcome
 from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
@@ -417,6 +417,10 @@ def admin_liet_ke(nguoi_tao: str = Depends(require_admin)) -> dict:
         u["da_dung_video"] = videos_today_for_cookie(DB_PATH, COOKIES_DIR, u["email"])
         u["co_cookie"] = cookies_path_for_user(COOKIES_DIR, u["email"]) is not None
         u["dung_chung"] = not u["co_cookie"]
+        # Khoá mà ba bộ đếm thật sự dùng. Trả ra để giao diện gom được các hàng
+        # chia CÙNG một túi — và để không ai đọc con số đó thành "của riêng
+        # người này" nữa.
+        u["khoa_dem"] = cookie_identity(COOKIES_DIR, u["email"])
     return {
         "nguoi_dung": ds,
         "tran_mac_dinh": {
@@ -437,20 +441,28 @@ def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
     ngoài là một cái bẫy, không phải một tuỳ chọn.
     """
     e = email.strip().lower()
-    if not any(u["email"] == e for u in models.danh_sach_nguoi_dung(DB_PATH)):
+    hang = next((u for u in models.danh_sach_nguoi_dung(DB_PATH) if u["email"] == e), None)
+    if hang is None:
         raise HTTPException(status_code=404, detail="chưa thấy người này đăng nhập bao giờ")
 
     if body.la_admin is not None:
-        dang_la_admin = _la_admin(e)
-        if dang_la_admin and not body.la_admin and models.dem_admin(DB_PATH) <= 1:
-            raise HTTPException(
-                status_code=409,
-                detail="đây là quản trị viên cuối cùng — phong cho người khác trước "
-                       "khi bỏ quyền của người này")
-        models.dat_quyen_admin(DB_PATH, e, body.la_admin, nguoi_tao)
+        # Trạng thái lấy từ HÀNG VỪA ĐỌC, không hỏi `_la_admin` lần nữa: hàm đó
+        # trả `False` khi cơ sở dữ liệu lỗi thoáng qua, và một `False` ở đây sẽ
+        # làm điều kiện canh bị bỏ qua hoàn toàn — khoá fail-OPEN.
+        dang_la_admin = bool(hang["la_admin"])
+        if dang_la_admin != body.la_admin:
+            # `dat_quyen_admin` tự phán "còn admin khác không" TRONG chính câu
+            # UPDATE, nên không còn khe giữa đếm và ghi cho hai lượt song song.
+            if not models.dat_quyen_admin(DB_PATH, e, body.la_admin, nguoi_tao):
+                raise HTTPException(
+                    status_code=409,
+                    detail="đây là quản trị viên cuối cùng — phong cho người khác "
+                           "trước khi bỏ quyền của người này")
 
-    if body.tran_luot is not None or body.tran_video is not None:
-        models.dat_tran_nguoi_dung(DB_PATH, e, body.tran_luot, body.tran_video)
+    da_gui = body.model_fields_set & {"tran_luot", "tran_video"}
+    if da_gui:
+        models.dat_tran_nguoi_dung(
+            DB_PATH, e, **{k: getattr(body, k) for k in da_gui})
 
     return {"email": e, "la_admin": _la_admin(e)}
 
@@ -587,7 +599,7 @@ def _job_cua_toi_hoac_404(job_id: int, nguoi_tao: str) -> dict:
     people's rows but serves them one id at a time has not hidden anything.
     """
     job = models.get_job(DB_PATH, job_id)
-    if job is None or (not _la_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao):
+    if job is None or (job["nguoi_tao"] != nguoi_tao and not _la_admin(nguoi_tao)):
         raise HTTPException(status_code=404, detail="job không tồn tại")
     return job
 
@@ -608,7 +620,15 @@ async def job_events(job_id: int,
     lean on a guarantee that lives in another file — ids are not reused only
     because `models.py` declares the column AUTOINCREMENT — and nothing here
     would notice if that changed. The loop already re-reads the row for
-    progress, so the extra check is one string comparison: no query, no I/O.
+    progress, so for the stream's own owner the extra check costs one string
+    comparison and no query.
+
+    The order of that comparison matters and is not cosmetic: `is_admin` now
+    reads the users table, so testing it first would put a `connect` + `SELECT`
+    on every tick of every stream — about 0.35 ms measured, once a second per
+    viewer, inside an `async` generator. Owner-first keeps the common path at
+    zero queries; only a stream opened on somebody else's job pays for the
+    admin lookup, and that one is about to end anyway.
     Measured failure it closes: restore `jobs.db` from a backup while a stream
     is open and the same id can belong to someone else, at which point their
     URL, email and cookie status flow down a stream opened by another person.
@@ -621,7 +641,7 @@ async def job_events(job_id: int,
             job = models.get_job(DB_PATH, job_id)
             if job is None:
                 break
-            if not _la_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao:
+            if job["nguoi_tao"] != nguoi_tao and not _la_admin(nguoi_tao):
                 break
             payload = json.dumps(job)
             if payload != last_payload:
