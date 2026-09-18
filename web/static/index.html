@@ -43,15 +43,19 @@
         <button type="submit">Tạo lượt tải</button>
       </form>
       <p id="error" class="error-text" role="alert"></p>
-      <!-- Đo 16/09 trên mini, cookie thật còn hạn tới 14/11: /search chạy 5 lượt
-           ra 0 video, cả 5 lần TikTok trả HTTP 200 với body rỗng. Đối chứng cùng
-           lúc, cùng cookie: music page 10 video, hashtag 3 video — nên không
-           phải cookie hỏng, cũng không phải tool hỏng, mà riêng /search chết.
-           Nói ra ở đây vì để người dùng tự thử rồi tưởng tool hỏng là cách tệ
-           nhất. -->
-      <p class="note-nguon">Nguồn <strong>tìm kiếm</strong> (<code>/search</code>) hiện
-        không lấy được video — TikTok trả về rỗng. Dùng <strong>hashtag</strong>,
-        <strong>music</strong> hoặc <strong>@profile</strong>. <span class="note-ngay">đo 16/09</span></p>
+      <!-- Lịch sử đo, không phải một lời phán:
+             16/09 — 5 lượt `/search` với cookie thật: 0 video, cả 5 lần TikTok
+                     trả HTTP 200 với body RỖNG. Đối chứng cùng lúc, cùng cookie:
+                     music page 10 video, hashtag 3 video.
+             18/09 — 1 lượt `/search`: ra 1 video.
+           Một lần được sau năm lần trượt không đủ để nói "đã khỏi", cũng không
+           còn đủ để nói "chết". Câu chữ dưới đây nói ĐÚNG hai con số đó và để
+           người dùng tự quyết — bản cũ ghi "hiện không lấy được video" và nay
+           đã sai. -->
+      <p class="note-nguon">Nguồn <strong>tìm kiếm</strong> (<code>/search</code>)
+        <strong>chập chờn</strong>: 16/09 chạy 5 lượt ra 0 video, 18/09 chạy 1 lượt
+        ra 1 video. <strong>Hashtag</strong>, <strong>music</strong> và
+        <strong>@profile</strong> thì ổn định. <span class="note-ngay">đo 16 và 18/09</span></p>
     </div>
 
     <div class="panel">
