@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "tiktok-music-downloader"
 version = "0.1.0"
-description = "Video Download — bulk-download MP4s from TikTok (music/search), Facebook Ads Library, or a Google Drive folder. Optional animated-text watermark."
+description = "Video Download — bulk-download MP4s from TikTok (music/hashtag/search), Facebook Ads Library, or a Google Drive folder. Optional animated-text watermark."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -24,11 +24,21 @@ dependencies = [
   "requests>=2.31",
   # gdown: download public Google Drive files / folders without OAuth.
   "gdown>=5.0",
+  # google-api-python-client + google-auth: Phase 03's upload path
+  # (src/tiktok_music_downloader/gdrive_upload.py) — a Shared Drive service
+  # account, OAuth this time, separate from gdown's public-folder download
+  # path above. Not needed to run the test suite (upload is injected via a
+  # fake in tests/test_lifecycle.py), only for the real upload call.
+  "google-api-python-client>=2.100",
+  "google-auth>=2.30",
 ]
 
 [project.optional-dependencies]
 build = ["pyinstaller>=6.10"]
 dev = ["pytest>=8.0"]
+# Thin web layer (Phase 2): FastAPI + uvicorn serve the job queue since
+# Tkinter cannot be served over HTTP; sse-starlette pushes per-job progress.
+web = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "sse-starlette>=2.1"]
 
 [project.scripts]
 tiktok-music-dl = "tiktok_music_downloader.cli:app"

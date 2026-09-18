@@ -11,6 +11,7 @@ from playwright.sync_api import (
     Browser,
     BrowserContext,
     Page,
+    Response,
     TimeoutError as PWTimeout,
     sync_playwright,
 )
@@ -77,17 +78,23 @@ def _load_cookies(path: Path) -> list[dict]:
             "saving."
         )
     if not raw.startswith(("[", "{")):
+        # KHÔNG trích nội dung. Một bản xuất "Header String" bắt đầu bằng
+        # `sessionid=…`, nên `raw[:20]` ở đây từng đưa nguyên token vào thông
+        # điệp lỗi — mà thông điệp đó chảy vào log của dịch vụ web
+        # (`downloader.py` log.warning, `queue.py` log.exception) trên một máy
+        # dùng chung. Nói LOẠI hỏng là đủ để người dùng sửa.
         raise ValueError(
-            f"{path.name} doesn't look like JSON (starts with {raw[:20]!r}). "
-            "Re-export from Cookie-Editor and pick the JSON format, not 'Header "
-            "String' or 'Netscape'."
+            f"{path.name} doesn't look like JSON — it may be a 'Header String' "
+            "or 'Netscape' export. Re-export from Cookie-Editor and pick JSON."
         )
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+        # Vị trí và lý do thì an toàn; 80 ký tự đầu thì không — với một tệp
+        # cookie bị cắt cụt, 80 ký tự đầu chứa nguyên giá trị `sessionid`.
         raise ValueError(
             f"{path.name} is not valid JSON at line {exc.lineno} col {exc.colno}: "
-            f"{exc.msg}. First 80 chars: {raw[:80]!r}"
+            f"{exc.msg}"
         ) from exc
 
     # storage_state format: {"cookies": [...], "origins": [...]} — unwrap it.
@@ -106,13 +113,120 @@ def _load_cookies(path: Path) -> list[dict]:
 def _collect_links(page: Page) -> set[VideoRef]:
     """Snapshot all currently rendered video links on the page."""
     refs: set[VideoRef] = set()
-    for href in page.eval_on_selector_all(
+    hrefs = page.eval_on_selector_all(
         _VIDEO_LINK_SELECTOR, "els => els.map(e => e.href)"
-    ):
+    )
+    unparsed = 0
+    for href in hrefs:
         ref = parse_video_url(href)
-        if ref is not None:
-            refs.add(ref)
+        if ref is None:
+            unparsed += 1
+            continue
+        refs.add(ref)
+    # Every href here matched `a[href*="/video/"]`, so one the parser rejects
+    # is a URL shape we do not recognise — dropped with no other symptom than
+    # fewer videos. Count it so --verbose shows the loss.
+    if unparsed:
+        log.debug("links: %d hrefs seen, %d not parsed", len(hrefs), unparsed)
     return refs
+
+
+# Feed endpoints, one per page type. TikTok answers these with HTTP 200 and a
+# ZERO-LENGTH body when it withholds a feed, so every request looks healthy
+# while the page renders nothing at all. We watch for exactly that shape and
+# log it where it happens, so a zero-video scrape reports which side dropped
+# the data instead of sending the user off to re-export cookies.
+_FEED_API_MARKERS = (
+    "/api/challenge/item_list",   # hashtag page  (/tag/<slug>)
+    "/api/search/general",        # search page   (/search?q=...)
+    "/api/music/item_list",       # music page    (/music/...)
+)
+
+
+def _warn_empty_feed(marker: str, status: int, how: str) -> None:
+    log.warning(
+        "%s answered HTTP %d with a 0-byte body (measured via %s): the "
+        "response carried no items.",
+        marker, status, how,
+    )
+
+
+def _watch_feed_api(page: Page) -> None:
+    """Log feed endpoints that answer with no body, and say when we can't tell.
+
+    Reports only what it read off the response: endpoint, HTTP status, byte
+    count, and which measurement produced it. It draws no conclusion about WHY
+    a feed is empty — cookies, rate limiting and a server-side gate look
+    identical from here, and the caller knows the page type while this handler
+    does not.
+
+    The endpoint list is a snapshot of observed traffic, so absence of a
+    warning is NOT proof the feeds were healthy; every `/api/` response is
+    debug-logged so an unlisted feed endpoint shows up under --verbose.
+    """
+
+    def on_response(resp: Response) -> None:
+        # Nothing may escape this listener. Playwright stores an escaped
+        # exception and re-raises it on the NEXT channel call
+        # (_connection.py: "Save the error to throw at the next API call"),
+        # which would abort a scrape that had already collected refs.
+        try:
+            if "/api/" in resp.url:
+                log.debug("api response %s -> %d", resp.url.split("?")[0], resp.status)
+
+            marker = next((m for m in _FEED_API_MARKERS if m in resp.url), None)
+            if marker is None:
+                return
+
+            # A redirect or a non-GET carries no feed payload of its own: a 302
+            # with Content-Length: 0 is routine, and calling it an empty feed
+            # would be a false alarm while the target returns items fine.
+            if not (200 <= resp.status < 300) or resp.request.method != "GET":
+                log.debug("feed %s: skipped HTTP %d %s",
+                          marker, resp.status, resp.request.method)
+                return
+
+            declared = resp.header_value("content-length")
+            encoding = (resp.header_value("content-encoding") or "").strip().lower()
+
+            if declared == "0":
+                # Encoding-independent: zero octets decode to nothing.
+                _warn_empty_feed(marker, resp.status, "Content-Length: 0")
+                return
+            if declared is not None and declared.isdigit() and encoding in ("", "identity"):
+                # Uncompressed, so the declared length IS the decoded length —
+                # a non-zero value settles it without moving the payload.
+                return
+            # Either chunked (no length) or compressed, where Content-Length is
+            # the COMPRESSED size: gzip of an empty body is still 20 bytes, so
+            # the header cannot answer the question. Read the body.
+            try:
+                if len(resp.body()) == 0:
+                    _warn_empty_feed(marker, resp.status, "body read")
+            except Exception as exc:  # noqa: BLE001
+                if "No data found for resource" in str(exc):
+                    # Chromium keeps no retrievable body for a zero-length
+                    # reply; it says the same for one it has already evicted,
+                    # so this must not claim to know which.
+                    log.warning(
+                        "%s answered HTTP %d but its body could not be read "
+                        "(%s). Chromium reports this both for a 0-byte body "
+                        "and for a response it already dropped — this cannot "
+                        "tell which.",
+                        marker, resp.status, exc,
+                    )
+                else:
+                    # Measured on a SUCCESSFUL /music/ run: a feed response
+                    # landing during ctx.close() raises "Target page, context
+                    # or browser has been closed". That says nothing about the
+                    # feed, so warning here would cry wolf on the healthy path
+                    # — and a warning users learn to ignore protects nobody.
+                    log.debug("feed %s: HTTP %d, body unreadable (%s)",
+                              marker, resp.status, exc)
+        except Exception as exc:  # noqa: BLE001 — never escape the listener
+            log.debug("feed watcher gave up on %s: %s", resp.url[:120], exc)
+
+    page.on("response", on_response)
 
 
 # JS helper: find the actual scrollable container (TikTok search uses an inner
@@ -286,12 +400,20 @@ def scrape_music_page(
             ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
+        _watch_feed_api(page)
         try:
             page.goto(music_url, wait_until="domcontentloaded", timeout=30_000)
             try:
                 page.wait_for_selector(_VIDEO_LINK_SELECTOR, timeout=15_000)
             except PWTimeout:
-                log.warning("no video links after 15s — try --headful or --cookies")
+                # Neutral wording on purpose: the 0-byte feed warning above
+                # (if any) already names the real cause; cookies/headful are
+                # only worth trying when the server DID send items.
+                log.warning(
+                    "no video links rendered after 15s — if a '0-byte body' "
+                    "warning appeared above, the server sent no items; "
+                    "otherwise try --headful or --cookies"
+                )
 
             refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
         finally:

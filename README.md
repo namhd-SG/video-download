@@ -46,17 +46,44 @@ in the repo, so nothing else to install.
 | Source | URL shape | Notes |
 |--------|-----------|-------|
 | **TikTok — music page** | `https://www.tiktok.com/music/...-<id>` | all videos using that sound |
+| **TikTok — hashtag page** | `https://www.tiktok.com/tag/<hashtag>` | all videos under that hashtag |
 | **TikTok — search page** | `https://www.tiktok.com/search?q=...` | usually needs a Cookies file (logged-in session) |
 | **Facebook Ads Library** | `https://www.facebook.com/ads/library/?...` | downloads each ad's MP4 |
 | **Google Drive** | a shared **folder** link | downloads every MP4 in the folder |
 
 Anything else is rejected up front. Everything downloads to plain `.mp4`.
 
+> **Hashtag pages use an external index — and why.** TikTok answers its own
+> hashtag feed (`/api/challenge/item_list/`) and search feed
+> (`/api/search/general/…`) with HTTP 200 and a **zero-length body**. Measured
+> 2026-09-08 and 2026-09-09 across headless, headful, anonymous, a logged-in
+> cookies file, a persistent profile, two hashtags, two days and two machines,
+> while `/api/music/item_list/` returned 30 items under identical conditions.
+> yt-dlp hits the same wall from the other side: its `tiktok:tag` extractor is
+> flagged as broken, and supplying app-info arguments only gets an empty body
+> from the mobile endpoint instead. **Not tested:** a non-automated browser or
+> a different IP.
+>
+> So a hashtag URL never opens a browser. The video list comes from
+> **`tikwm.com`**, a third-party index: the **public hashtag name** and your IP
+> address reach it — no cookie, session or file ever does — and each video is
+> then downloaded straight from TikTok. `tikwm` is unofficial and may stop
+> working; it is isolated behind one function (`_provider_page` in
+> `hashtag_enumerator.py`) so it can be replaced without touching the rest.
+> A `--proxy` is honoured for the listing step too.
+>
+> **`/search?q=` still returns nothing** and has no such workaround yet; the
+> app prints an empty-feed warning when a watched endpoint declares
+> `Content-Length: 0`, and says when a listing came back incomplete rather
+> than reporting a short list as a finished one.
+
 ### Cookies — TikTok only
 
 The **Cookies** field is only for TikTok: the search page (`/search`) needs it,
 and a logged-in session lets you download **more than ~28 videos** (the guest
 limit). **Facebook and Google Drive don't need cookies** — leave it empty.
+Cookies did **not** unblock the hashtag/search empty-feed issue above when it
+was measured on 2026-09-08.
 
 How to export a TikTok cookies file (the GUI also has a **"Cách lấy cookie"** button):
 1. Install the **Cookie-Editor** browser extension (Chrome / Edge / Firefox).
