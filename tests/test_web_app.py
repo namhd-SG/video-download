@@ -1660,3 +1660,34 @@ def test_video_desk_khong_goi_api_creative_desk():
         if "fetch(" in dong or "XMLHttpRequest" in dong or "EventSource(" in dong:
             assert "CREATIVE_DESK_URL" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
             assert "automation.nobidigital.asia" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
+
+
+# ---------------------------------------------------------------------------
+# Dấu thời gian trong log.
+#
+# Log trên mini gộp stdout+stderr vào một tệp và định dạng mặc định của
+# uvicorn không có giờ, nên không ai định vị được sự kiện theo thời gian.
+# ---------------------------------------------------------------------------
+def test_log_co_dau_thoi_gian(caplog):
+    """Định dạng phải mang giờ, và phải THẮNG handler uvicorn đã gắn trước.
+
+    Đột biến: bỏ `force=True` trong `_dat_dinh_dang_log` ⇒ khi root logger đã
+    có handler (đúng tình trạng dưới uvicorn) `basicConfig` im lặng không làm
+    gì ⇒ test này ĐỎ. Đó là cả điểm của nó — không có `force`, hàm vẫn chạy,
+    vẫn không lỗi, và vẫn không đổi một dòng log nào.
+    """
+    import logging as _logging
+
+    # Dựng lại đúng tình trạng dưới uvicorn: root logger ĐÃ có handler.
+    goc = _logging.getLogger()
+    rac = _logging.StreamHandler()
+    rac.setFormatter(_logging.Formatter("%(message)s"))
+    goc.addHandler(rac)
+    try:
+        app_mod._dat_dinh_dang_log()
+        dinh_dang = goc.handlers[0].formatter._fmt
+    finally:
+        goc.removeHandler(rac)
+
+    assert "%(asctime)s" in dinh_dang, "thiếu dấu thời gian"
+    assert "%(levelname)s" in dinh_dang

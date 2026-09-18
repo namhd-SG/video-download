@@ -39,6 +39,35 @@ from web.queue import JobWorker
 
 log = logging.getLogger("videodl.web")
 
+
+def _dat_dinh_dang_log() -> None:
+    """Dán DẤU THỜI GIAN vào mọi dòng log của tiến trình này.
+
+    Dịch vụ trên mini là `uvicorn` chạy dưới launchd, và cả stdout lẫn stderr
+    đổ vào một tệp duy nhất. Định dạng mặc định của uvicorn KHÔNG có thời
+    gian, nên tệp đó không định vị được sự kiện theo giờ: cách duy nhất từng
+    dùng là đếm dòng tương đối với `Application startup complete` gần nhất.
+    Khi đang truy một sự cố, "trước hay sau lần khởi động lúc mấy giờ" là câu
+    hỏi đầu tiên, và một tệp log không trả lời được nó thì gần như vô dụng.
+
+    Đặt ở đây chứ không ở `run-service.sh`: tệp đó do `mini-setup.sh` SINH RA
+    TRÊN MINI và không nằm trong git, nên sửa nó chỉ ăn khi ai đó chạy lại
+    cài đặt. Mô-đun này thì được rsync mỗi chuyến deploy.
+
+    `force=True` là phần quan trọng: uvicorn đã gắn handler của nó trước khi
+    mô-đun này nạp, và `basicConfig` KHÔNG làm gì khi root logger đã có
+    handler — không có `force` thì hàm này chạy êm và không đổi một dòng nào.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,
+    )
+
+
+_dat_dinh_dang_log()
+
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data"
 DB_PATH = DATA_DIR / "jobs.db"
