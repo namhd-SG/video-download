@@ -21,7 +21,14 @@
     Phiên đăng nhập đã hết hạn — tải lại trang để đăng nhập lại.
   </p>
 
-  <section class="cai-dat" aria-label="Cài đặt của tôi">
+  <div class="tabs" role="tablist">
+    <button class="tab on" id="tab-cua-toi" role="tab" aria-selected="true">Của tôi</button>
+    <button class="tab" id="tab-quan-tri" role="tab" aria-selected="false" hidden>
+      Quản trị <span class="badge">admin</span>
+    </button>
+  </div>
+
+  <section class="cai-dat" id="vung-cua-toi" aria-label="Cài đặt của tôi">
 
     <div class="panel">
       <div class="panel-head">
@@ -80,6 +87,30 @@
       <div id="quota-list"></div>
     </div>
 
+  </section>
+
+  <section class="cai-dat" id="vung-quan-tri" aria-label="Quản trị" hidden>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Người dùng &amp; hạn mức</h2>
+        <span class="chip chip-warn">chỉ quản trị</span>
+      </div>
+      <p class="muted">Người có mặt ở đây là người đã từng đăng nhập. Không có nút
+        "thêm người" — ai vào được là do cửa đăng nhập của công ty quyết định, không
+        phải trang này.</p>
+      <div class="tbl-scroll">
+        <table id="bang-nguoi-dung">
+          <thead><tr>
+            <th>Người dùng</th><th>Cookie</th><th>Lượt/ngày</th><th>Video/ngày</th>
+            <th>Dùng hôm nay</th><th></th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="note-nguon">Người chưa dán cookie <strong>dùng chung một túi hạn mức</strong>
+        với mọi người chưa dán — không phải mỗi người một suất.</p>
+      <p id="admin-error" class="error-text" role="alert"></p>
+    </div>
   </section>
 </div>
 <script src="/settings.js"></script>

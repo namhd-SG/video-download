@@ -169,6 +169,99 @@
     });
   }
 
+  // -------------------------------------------------------------- quản trị
+  function escapeHtml(x) {
+    return String(x ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  function veNguoiDung(data) {
+    const tbody = document.querySelector("#bang-nguoi-dung tbody");
+    const md = data.tran_mac_dinh;
+    tbody.innerHTML = data.nguoi_dung.map((u) => {
+      const e = escapeHtml(u.email);
+      // `placeholder` là số mặc định đang áp, `value` rỗng khi chưa đặt riêng:
+      // ô trống nghĩa là "theo mặc định", KHÔNG phải "không giới hạn".
+      return `<tr data-email="${e}">
+        <td><span class="email">${e}</span>${u.la_admin ? '<span class="me">quản trị</span>' : ""}</td>
+        <td><span class="chip ${u.co_cookie ? "chip-ok" : "chip-off"}">${u.co_cookie ? "có" : "chưa có"}</span></td>
+        <td><input class="num" data-f="tran_luot" value="${u.tran_luot ?? ""}" placeholder="${md.luot}"></td>
+        <td><input class="num" data-f="tran_video" value="${u.tran_video ?? ""}" placeholder="${md.video}"></td>
+        <td class="fig">${u.da_dung_luot} lượt · ${u.da_dung_video} video${
+          u.dung_chung ? ' <span class="muted" title="Chưa dán cookie nên dùng chung túi hạn mức với mọi người chưa dán — đây là số của cả túi, không phải của riêng người này.">(túi chung)</span>' : ""}</td>
+        <td>
+          <button type="button" class="ghost sm" data-act="quyen" data-to="${u.la_admin ? 0 : 1}">
+            ${u.la_admin ? "Bỏ quyền admin" : "Cho làm admin"}
+          </button>
+          <button type="button" class="ghost sm" data-act="luu">Lưu trần</button>
+        </td>
+      </tr>`;
+    }).join("");
+  }
+
+  async function loadNguoiDung() {
+    veNguoiDung(await apiGet("/admin/nguoi-dung"));
+  }
+
+  async function guiCapNhat(email, body) {
+    const loi = document.getElementById("admin-error");
+    loi.textContent = "";
+    try {
+      await apiSend("PUT", "/admin/nguoi-dung/" + encodeURIComponent(email), body);
+      await loadNguoiDung();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      // 409 = khoá "admin cuối cùng". Nói ra lý do, đừng để người dùng bấm lại
+      // mãi một nút sẽ không bao giờ chạy.
+      loi.textContent = err.ma || ("Không lưu được: " + err.message);
+    }
+  }
+
+  function noiQuanTri() {
+    document.querySelector("#bang-nguoi-dung tbody").addEventListener("click", (ev) => {
+      const nut = ev.target.closest("button[data-act]");
+      if (!nut) return;
+      const tr = nut.closest("tr");
+      const email = tr.dataset.email;
+      if (nut.dataset.act === "quyen") {
+        const bo = nut.dataset.to === "0";
+        if (bo && !window.confirm(`Bỏ quyền quản trị của ${email}?`)) return;
+        guiCapNhat(email, { la_admin: !bo });
+      } else {
+        const so = (f) => {
+          const v = tr.querySelector(`input[data-f="${f}"]`).value.trim();
+          return v === "" ? null : Number(v);
+        };
+        guiCapNhat(email, { tran_luot: so("tran_luot"), tran_video: so("tran_video") });
+      }
+    });
+  }
+
+  function noiTab(laAdmin) {
+    const tabQT = document.getElementById("tab-quan-tri");
+    const tabCT = document.getElementById("tab-cua-toi");
+    const vungQT = document.getElementById("vung-quan-tri");
+    const vungCT = document.getElementById("vung-cua-toi");
+    // Ẩn tab cho người thường là chuyện ĐỠ RỐI MẮT, không phải phân quyền —
+    // cửa thật là `require_admin` ở server, trả 403 kể cả khi gọi thẳng API.
+    tabQT.hidden = !laAdmin;
+    if (!laAdmin) return;
+
+    const doi = (sangQT) => {
+      tabQT.classList.toggle("on", sangQT);
+      tabCT.classList.toggle("on", !sangQT);
+      tabQT.setAttribute("aria-selected", String(sangQT));
+      tabCT.setAttribute("aria-selected", String(!sangQT));
+      vungQT.hidden = !sangQT;
+      vungCT.hidden = sangQT;
+      if (sangQT) loadNguoiDung().catch(() => {});
+    };
+    tabQT.addEventListener("click", () => doi(true));
+    tabCT.addEventListener("click", () => doi(false));
+    noiQuanTri();
+  }
+
   // ----------------------------------------------------------------- theme
   const THEME_KEY = "videodl-theme";
   function applyTheme(theme) {
@@ -186,6 +279,9 @@
 
   // ------------------------------------------------------------------ init
   noiCookie();
+  apiGet("/me")
+    .then((me) => noiTab(me.la_admin))
+    .catch(() => { /* không biết mình là ai thì cứ coi như người thường */ });
   Promise.all([loadCookie(), loadQuota()]).catch((err) => {
     if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
     document.getElementById("cookie-error").textContent =

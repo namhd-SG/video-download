@@ -130,6 +130,14 @@ def quet_jar_tam(tmp_dir: Path) -> int:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
+    # Dựng/di trú lược đồ TRƯỚC mọi thứ đọc nó. `worker.start()` cũng gọi
+    # `init_db`, nhưng nó chạy SAU bước mồi admin bên dưới — và một cơ sở dữ
+    # liệu có từ trước khi bảng `nguoi_dung` tồn tại sẽ làm bước mồi ném
+    # `no such table` rồi giết cả tiến trình lúc khởi động. Đo được khi chạy
+    # thật trên máy: "Application startup failed. Exiting."
+    # `init_db` là idempotent (`CREATE TABLE IF NOT EXISTS` + ALTER dung thứ),
+    # nên gọi hai lần không tốn gì.
+    models.init_db(DB_PATH)
     # Mồi admin từ env — CHỈ khi bảng chưa có admin nào (xem docstring của hàm).
     da_moi = models.moi_admin_tu_env(DB_PATH, admin_tu_env())
     if da_moi:
@@ -400,9 +408,15 @@ def admin_liet_ke(nguoi_tao: str = Depends(require_admin)) -> dict:
     """
     ds = models.danh_sach_nguoi_dung(DB_PATH)
     for u in ds:
+        # ⚠ Hai con số này đếm theo COOKIE, không theo người — đó là thứ cổng
+        # chặn thật sự đếm. Ai chưa dán cookie thì dùng CHUNG một túi với mọi
+        # người chưa dán, nên con số của họ là số của cả túi. Trả kèm cờ
+        # `dung_chung` để giao diện nói ra; hiện một số dùng chung trong một
+        # hàng mang tên một người là nói dối bằng số.
         u["da_dung_luot"] = jobs_today_for_cookie(DB_PATH, COOKIES_DIR, u["email"])
         u["da_dung_video"] = videos_today_for_cookie(DB_PATH, COOKIES_DIR, u["email"])
         u["co_cookie"] = cookies_path_for_user(COOKIES_DIR, u["email"]) is not None
+        u["dung_chung"] = not u["co_cookie"]
     return {
         "nguoi_dung": ds,
         "tran_mac_dinh": {

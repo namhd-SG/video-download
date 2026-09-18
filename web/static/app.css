@@ -447,6 +447,49 @@
   .drop.dang-keo { border-color: var(--accent); background: var(--accent-soft); }
   .drop strong { color: var(--text); font-size: .9rem; }
 
+  /* ===== Tab + bảng quản trị ===== */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .tab {
+    padding: 10px 16px; border: 1px solid transparent; border-bottom: none;
+    border-radius: 8px 8px 0 0; color: var(--text-muted); font-size: .9rem;
+    background: none; font-family: inherit; cursor: pointer;
+  }
+  .tab.on {
+    background: var(--surface); border-color: var(--border); color: var(--text);
+    font-weight: 600; margin-bottom: -1px;
+  }
+  .badge {
+    font-size: .68rem; background: var(--accent-soft); color: var(--accent);
+    border-radius: 999px; padding: .05rem .45rem; margin-left: 6px;
+  }
+
+  .tbl-scroll { overflow-x: auto; }
+  #bang-nguoi-dung { width: 100%; border-collapse: collapse; font-size: .87rem; margin-top: 8px; }
+  #bang-nguoi-dung th {
+    text-align: left; font-weight: 600; color: var(--text-muted); font-size: .72rem;
+    text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px;
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  #bang-nguoi-dung td {
+    padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  #bang-nguoi-dung tr:last-child td { border-bottom: none; }
+  .email { font-family: var(--mono); font-size: .8rem; }
+  .me {
+    font-size: .66rem; color: var(--accent); border: 1px solid var(--accent);
+    border-radius: 999px; padding: 0 .35rem; margin-left: 6px;
+  }
+  .num {
+    width: 84px; font-family: var(--mono); font-size: .8rem; padding: .3rem .45rem;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: var(--surface-alt); color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .fig { font-variant-numeric: tabular-nums; }
+  button.sm { padding: .3rem .6rem; font-size: .76rem; border-radius: 6px;
+              border: 1px solid var(--border); background: transparent;
+              color: var(--text); font-family: inherit; cursor: pointer; }
+
   .quota-row { display: grid; grid-template-columns: 150px 120px 1fr;
                gap: 12px; align-items: center; padding: 8px 0;
                border-bottom: 1px solid var(--border); font-size: .88rem; }

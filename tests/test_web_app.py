@@ -1264,3 +1264,49 @@ def test_env_seeds_only_when_no_admin_exists(tmp_path, monkeypatch):
     assert models.moi_admin_tu_env(db, admin_tu_env()) == 0, "đã có admin thì KHÔNG mồi lại"
     assert app_mod._la_admin("sep@astronex.ai") is False, \
         "env không được phục hồi quyền đã bị bỏ ở giao diện"
+
+
+def test_startup_survives_a_database_older_than_the_users_table(tmp_path, monkeypatch):
+    """Ca đắt nhất, và test cũ KHÔNG bắt được vì test nào cũng gọi `init_db` tay.
+
+    Máy thật có `jobs.db` tạo từ trước khi bảng `nguoi_dung` tồn tại. Nếu bước
+    mồi admin chạy trước khi lược đồ được di trú thì nó ném `no such table` và
+    **giết cả tiến trình lúc khởi động** — đo được khi chạy app thật:
+    "Application startup failed. Exiting."
+    """
+    import asyncio
+    import sqlite3
+
+    db = tmp_path / "jobs.db"
+    # DB "đời cũ": có bảng jobs, KHÔNG có nguoi_dung.
+    conn = sqlite3.connect(db)
+    conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT)")
+    conn.commit()
+    conn.close()
+    assert not _co_bang(db, "nguoi_dung"), "sân phải bắt đầu KHÔNG có bảng"
+
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    monkeypatch.setattr(app_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(app_mod, "DOWNLOADS_DIR", tmp_path / "downloads")
+    monkeypatch.setattr(app_mod, "COOKIES_DIR", tmp_path / "cookies")
+    monkeypatch.setattr(app_mod, "COOKIE_TMP_DIR", tmp_path / "tmp")
+    monkeypatch.setattr(app_mod.worker, "start", lambda: None)
+    monkeypatch.setattr(app_mod.worker, "stop", lambda: None)
+
+    async def _chay():
+        async with app_mod._lifespan(app_mod.app):
+            pass
+
+    asyncio.run(_chay())      # không được ném
+
+    assert _co_bang(db, "nguoi_dung")
+    assert app_mod._la_admin("sep@astronex.ai") is True, "mồi admin phải chạy được"
+
+
+def _co_bang(db_path, ten):
+    import sqlite3
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            (ten,)).fetchone()[0] > 0
