@@ -403,8 +403,33 @@ def test_quota_says_you_are_no_longer_anonymous_once_you_paste(tmp_path, monkeyp
 
 def test_me_tells_the_page_who_it_is_talking_to(tmp_path, monkeypatch):
     monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    _moi_admin(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+
     assert app_mod.me(nguoi_tao=TEST_USER) == {"email": TEST_USER, "la_admin": False}
     assert app_mod.me(nguoi_tao="sep@astronex.ai")["la_admin"] is True
+
+
+def test_visiting_the_page_puts_you_in_the_directory(tmp_path, monkeypatch):
+    """Bảng người dùng phải thấy người CHƯA tạo job nào.
+
+    Danh tính chỉ sống ở `jobs.nguoi_tao` và tên tệp cookie `sha256(email)`
+    (một chiều) — nên không ghi lúc đăng nhập thì trang Quản trị chỉ thấy
+    người đã tải, đúng lúc admin cần thấy người mới để đặt trần cho họ.
+    """
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+
+    assert models.danh_sach_nguoi_dung(db) == []
+    app_mod.me(nguoi_tao="nguoimoi@astronex.ai")
+
+    ds = models.danh_sach_nguoi_dung(db)
+    assert [u["email"] for u in ds] == ["nguoimoi@astronex.ai"]
+    assert ds[0]["la_admin"] == 0, "vào trang không tự làm ai thành admin"
 
 
 # Route nào được phép KHÔNG kiểm quyền sở hữu, và vì sao. Danh sách này là
@@ -417,6 +442,8 @@ KHONG_CAN_KIEM_CHU = {
     "/me": "chính người đang gọi",
     "/me/cookie": "chính người đang gọi",
     "/me/quota": "chính người đang gọi",
+    "/admin/nguoi-dung": "require_admin — 403 cho người thường",
+    "/admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
     "/videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
 }
 
@@ -452,11 +479,22 @@ def test_every_route_demands_a_verified_user():
         if not isinstance(r, APIRoute) or r.path == "/healthz":
             continue
         ten_tham_so = set(r.dependant.query_params + r.dependant.path_params)
-        co_require = any(
-            d.call is require_user for d in r.dependant.dependencies)
+        # `require_admin` hợp lệ vì nó BỌC `require_user` — nhưng chuỗi đó phải
+        # được chứng minh (khẳng định dưới cùng), không phải được giả định.
+        cua_hop_le = {require_user, app_mod.require_admin}
+        co_require = any(d.call in cua_hop_le for d in r.dependant.dependencies)
         if not co_require:
             thieu.append(r.path)
     assert not thieu, f"route không đòi người dùng đã xác thực: {sorted(thieu)}"
+
+    # Chứng minh chuỗi: `require_admin` thật sự đi qua `require_user`. Thiếu
+    # khẳng định này thì việc chấp nhận `require_admin` ở trên là một giả định,
+    # và một ngày nào đó ai đó gỡ `Depends(require_user)` khỏi nó mà lưới vẫn xanh.
+    import inspect
+    assert any(v.default.dependency is require_user
+               for v in inspect.signature(app_mod.require_admin).parameters.values()
+               if hasattr(v.default, "dependency")), \
+        "require_admin không còn đi qua require_user — cửa ngoài đã mất"
 
 
 def _thu_vien_hai_nguoi(tmp_path, monkeypatch):
@@ -468,6 +506,7 @@ def _thu_vien_hai_nguoi(tmp_path, monkeypatch):
     """
     db = tmp_path / "jobs.db"
     models.init_db(db)
+    _moi_admin(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
     job_toi = models.create_job(db, "https://www.tiktok.com/tag/cua-toi", 5, TEST_USER)
     job_ho = models.create_job(db, "https://www.tiktok.com/tag/cua-ho", 5, "ho@astronex.ai")
@@ -991,9 +1030,21 @@ def test_a_normal_video_id_still_reaches_the_lookup(tmp_path, monkeypatch):
 # ĐỘT BIẾN: bỏ lọc trong route (`models.list_jobs(DB_PATH, None)`) ⇒ ca âm ĐỎ.
 # ---------------------------------------------------------------------------
 
+def _moi_admin(db_path):
+    """Làm đúng thứ `_lifespan` làm lúc khởi động: mồi bảng admin từ env.
+
+    Không có bước này thì test set `VIDEODL_ADMIN_EMAILS` rồi đo một bảng
+    rỗng — tức đo một hệ thống chưa khởi động xong, và mọi ca dương admin sẽ
+    đỏ vì lý do sai.
+    """
+    from web.auth import admin_tu_env
+    models.moi_admin_tu_env(db_path, admin_tu_env())
+
+
 def _hai_nguoi(tmp_path, monkeypatch):
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
+    _moi_admin(db_path)
     monkeypatch.setattr(app_mod, "DB_PATH", db_path)
     a = models.create_job(db_path, "https://www.tiktok.com/tag/cua-A", 5, "a@astronex.ai")
     b = models.create_job(db_path, "https://www.tiktok.com/tag/BI-MAT-CUA-B", 5, "b@astronex.ai")
@@ -1089,3 +1140,127 @@ def test_an_empty_admin_list_makes_nobody_admin(tmp_path, monkeypatch):
     db_path, job_a, _ = _hai_nguoi(tmp_path, monkeypatch)
 
     assert [j["id"] for j in app_mod.list_jobs(nguoi_tao="a@astronex.ai")] == [job_a]
+
+
+# ===========================================================================
+# Trang Quản trị — T2.1
+# ===========================================================================
+
+def _san_admin(tmp_path, monkeypatch):
+    """Sân: SEP là admin (mồi từ env), NHANVIEN là người thường."""
+    monkeypatch.setenv("VIDEODL_ADMIN_EMAILS", "sep@astronex.ai")
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    _moi_admin(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    monkeypatch.setattr(app_mod, "COOKIES_DIR", tmp_path / "cookies")
+    (tmp_path / "cookies").mkdir(exist_ok=True)
+    app_mod.me(nguoi_tao=TEST_USER)          # người thường ghé qua → vào danh bạ
+    return db
+
+
+def test_a_member_cannot_open_the_admin_page(tmp_path, monkeypatch):
+    """403 ở SERVER, không phải giấu nút. Giấu nút không phải phân quyền —
+    người thường vẫn gọi thẳng API được."""
+    _san_admin(tmp_path, monkeypatch)
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.require_admin(nguoi_tao=TEST_USER)
+    assert bat.value.status_code == 403
+
+    # CA DƯƠNG: admin vào được. Thiếu nó thì bản vá "403 tất" vẫn xanh.
+    assert app_mod.require_admin(nguoi_tao="sep@astronex.ai") == "sep@astronex.ai"
+
+
+def test_the_admin_list_shows_people_who_only_logged_in(tmp_path, monkeypatch):
+    db = _san_admin(tmp_path, monkeypatch)
+
+    out = app_mod.admin_liet_ke(nguoi_tao="sep@astronex.ai")
+
+    emails = {u["email"] for u in out["nguoi_dung"]}
+    assert TEST_USER in emails, "người mới đăng nhập phải có trong danh bạ"
+    assert out["tran_mac_dinh"]["luot"] == lifecycle.MAX_JOBS_PER_COOKIE_PER_DAY
+
+
+def test_granting_admin_takes_effect_immediately(tmp_path, monkeypatch):
+    db = _san_admin(tmp_path, monkeypatch)
+    assert app_mod._la_admin(TEST_USER) is False
+
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(la_admin=True),
+                            nguoi_tao="sep@astronex.ai")
+
+    assert app_mod._la_admin(TEST_USER) is True
+    # Truy được ai đã cấp — một bảng phân quyền không có vết thì không trả lời
+    # được câu duy nhất người ta sẽ hỏi nó khi có chuyện.
+    hang = next(u for u in models.danh_sach_nguoi_dung(db) if u["email"] == TEST_USER)
+    assert hang["cap_boi"] == "sep@astronex.ai"
+
+
+def test_the_last_admin_cannot_remove_themselves(tmp_path, monkeypatch):
+    """Bỏ hết admin thì không còn ai vào được trang này để phong lại — đường
+    duy nhất còn lại là gõ shell trên máy thật rồi khởi động lại dịch vụ. Một
+    giao diện cho phép tự khoá mình ra ngoài là cái bẫy, không phải tuỳ chọn."""
+    _san_admin(tmp_path, monkeypatch)
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.admin_cap_nhat(email="sep@astronex.ai",
+                                body=app_mod.CapNhatNguoiDung(la_admin=False),
+                                nguoi_tao="sep@astronex.ai")
+    assert bat.value.status_code == 409
+    assert app_mod._la_admin("sep@astronex.ai") is True
+
+
+def test_an_admin_can_step_down_once_someone_else_is_admin(tmp_path, monkeypatch):
+    """CA DƯƠNG cho khoá trên: khoá phải chặn ĐÚNG ca cuối cùng, không phải
+    chặn mọi lượt bỏ quyền."""
+    _san_admin(tmp_path, monkeypatch)
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(la_admin=True),
+                            nguoi_tao="sep@astronex.ai")
+
+    app_mod.admin_cap_nhat(email="sep@astronex.ai",
+                            body=app_mod.CapNhatNguoiDung(la_admin=False),
+                            nguoi_tao="sep@astronex.ai")
+
+    assert app_mod._la_admin("sep@astronex.ai") is False
+    assert app_mod._la_admin(TEST_USER) is True
+
+
+def test_a_cap_cannot_be_raised_past_the_hard_ceiling(tmp_path, monkeypatch):
+    """Trang quản trị không được thành cửa tắt lưới. Ai cần vượt trần cứng thì
+    phải đụng code, tức phải có người soát."""
+    _san_admin(tmp_path, monkeypatch)
+
+    with pytest.raises(Exception):
+        app_mod.CapNhatNguoiDung(tran_luot=app_mod.MAX_TRAN_LUOT + 1)
+    # CA DƯƠNG: ngay dưới trần thì nhận.
+    assert app_mod.CapNhatNguoiDung(tran_luot=app_mod.MAX_TRAN_LUOT).tran_luot \
+        == app_mod.MAX_TRAN_LUOT
+
+
+def test_editing_someone_who_never_logged_in_is_a_404(tmp_path, monkeypatch):
+    _san_admin(tmp_path, monkeypatch)
+    with pytest.raises(HTTPException) as bat:
+        app_mod.admin_cap_nhat(email="chua-tung-vao@x.com",
+                                body=app_mod.CapNhatNguoiDung(la_admin=True),
+                                nguoi_tao="sep@astronex.ai")
+    assert bat.value.status_code == 404
+
+
+def test_env_seeds_only_when_no_admin_exists(tmp_path, monkeypatch):
+    """"Một lần" định nghĩa bằng TRẠNG THÁI, không bằng cờ. Nếu env thắng mãi
+    thì admin cấp từ env không bỏ được ở giao diện, và nút "Bỏ quyền admin"
+    thành nút bấm-không-làm-gì."""
+    db = _san_admin(tmp_path, monkeypatch)
+    app_mod.admin_cap_nhat(email=TEST_USER,
+                            body=app_mod.CapNhatNguoiDung(la_admin=True),
+                            nguoi_tao="sep@astronex.ai")
+    app_mod.admin_cap_nhat(email="sep@astronex.ai",
+                            body=app_mod.CapNhatNguoiDung(la_admin=False),
+                            nguoi_tao="sep@astronex.ai")
+
+    from web.auth import admin_tu_env
+    assert models.moi_admin_tu_env(db, admin_tu_env()) == 0, "đã có admin thì KHÔNG mồi lại"
+    assert app_mod._la_admin("sep@astronex.ai") is False, \
+        "env không được phục hồi quyền đã bị bỏ ở giao diện"

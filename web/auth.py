@@ -232,13 +232,35 @@ def require_user(request: Request) -> str:
 ENV_ADMIN_EMAILS = "VIDEODL_ADMIN_EMAILS"
 
 
-def is_admin(email: str) -> bool:
-    """`True` nếu email này nằm trong danh sách admin.
+def admin_tu_env() -> list[str]:
+    """Danh sách admin ghi trong env — chỉ dùng để MỒI bảng lần đầu.
 
     So khớp không phân biệt hoa thường và bỏ khoảng trắng: danh sách do người
     gõ tay vào tệp env, và một khoảng trắng thừa không nên biến một admin
     thành người thường mà không ai biết vì sao.
     """
     raw = os.environ.get(ENV_ADMIN_EMAILS, "")
-    ds = {e.strip().lower() for e in raw.split(",") if e.strip()}
-    return email.strip().lower() in ds
+    return [e.strip().lower() for e in raw.split(",") if e.strip()]
+
+
+def is_admin(email: str, db_path=None) -> bool:
+    """`True` nếu email này là admin.
+
+    **Bảng là nguồn sự thật; env chỉ là mồi ban đầu** (`models.moi_admin_tu_env`
+    chạy lúc khởi động, và chỉ chạy khi bảng chưa có admin nào). Nếu để env
+    thắng mãi thì admin cấp từ env sẽ không bỏ được ở giao diện, và nút "Bỏ
+    quyền admin" thành nút bấm-không-làm-gì.
+
+    `db_path=None` ⇒ rơi về env. Đó là đường cho các chỗ gọi chưa có DB trong
+    tay, và nó **nghiêng về phía CHẶT hơn**: env rỗng thì không ai là admin.
+    """
+    e = email.strip().lower()
+    if db_path is not None:
+        from web import models
+        try:
+            return any(u["email"] == e and u["la_admin"]
+                       for u in models.danh_sach_nguoi_dung(db_path))
+        except Exception:  # noqa: BLE001 — DB hỏng thì KHÔNG phong ai làm admin
+            log.error("không đọc được bảng người dùng — coi như không phải admin")
+            return False
+    return e in admin_tu_env()

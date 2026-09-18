@@ -123,6 +123,19 @@ def _connect(db_path: Path):
         conn.close()
 
 
+_NGUOI_DUNG_SCHEMA = """
+CREATE TABLE IF NOT EXISTS nguoi_dung (
+    email TEXT PRIMARY KEY,
+    la_admin INTEGER NOT NULL DEFAULT 0,
+    tran_luot INTEGER,
+    tran_video INTEGER,
+    lan_dau_thay TEXT NOT NULL,
+    lan_cuoi_thay TEXT NOT NULL,
+    cap_boi TEXT,
+    cap_luc TEXT
+)
+"""
+
 def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
     """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
 
@@ -145,6 +158,7 @@ def init_db(db_path: Path) -> None:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
         conn.execute(_SIGHTINGS_SCHEMA)
+        conn.execute(_NGUOI_DUNG_SCHEMA)
         for statement in _SIGHTINGS_INDEX:
             conn.execute(statement)
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an
@@ -166,6 +180,101 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
         _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
+
+
+def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:
+    """Người này vừa đăng nhập. Gọi mỗi lượt, rẻ và bắt buộc.
+
+    Không có bảng này thì KHÔNG CÓ CÁCH NÀO liệt kê người dùng: danh tính chỉ
+    tồn tại dưới dạng `jobs.nguoi_tao` (chỉ có ai đã TẠO JOB, không có ai mới
+    chỉ đăng nhập) và tên tệp cookie `sha256(email)` — một chiều, không lật
+    ngược được. Trang Quản trị mà không liệt kê được người thì không quản gì.
+
+    `INSERT … ON CONFLICT DO UPDATE` chỉ chạm `lan_cuoi_thay`: `la_admin` và
+    hai cột trần là thứ quản trị đặt, một lượt đăng nhập không được đụng vào.
+    """
+    luc = datetime.now(timezone.utc).isoformat()
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO nguoi_dung (email, lan_dau_thay, lan_cuoi_thay) "
+            "VALUES (?, ?, ?) "
+            "ON CONFLICT(email) DO UPDATE SET lan_cuoi_thay = excluded.lan_cuoi_thay",
+            (email.strip().lower(), luc, luc),
+        )
+
+
+def danh_sach_nguoi_dung(db_path: Path) -> list[dict]:
+    """Mọi người đã từng đăng nhập, kèm số đã dùng hôm nay để admin nhìn là biết."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT email, la_admin, tran_luot, tran_video, lan_dau_thay, "
+            "lan_cuoi_thay, cap_boi, cap_luc FROM nguoi_dung ORDER BY email"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def dem_admin(db_path: Path) -> int:
+    with _connect(db_path) as conn:
+        return int(conn.execute(
+            "SELECT COUNT(*) FROM nguoi_dung WHERE la_admin = 1").fetchone()[0])
+
+
+def dat_quyen_admin(db_path: Path, email: str, la_admin: bool,
+                    cap_boi: str) -> None:
+    """Phong hoặc bỏ quyền admin. Người gọi phải kiểm 'admin cuối cùng' TRƯỚC.
+
+    Ghi `cap_boi`/`cap_luc` để truy được ai đã cấp quyền cho ai — một bảng
+    phân quyền không có vết là một bảng không trả lời được câu hỏi duy nhất
+    người ta sẽ hỏi nó khi có chuyện.
+    """
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE nguoi_dung SET la_admin = ?, cap_boi = ?, cap_luc = ? "
+            "WHERE email = ?",
+            (1 if la_admin else 0, cap_boi,
+             datetime.now(timezone.utc).isoformat(), email.strip().lower()),
+        )
+
+
+def dat_tran_nguoi_dung(db_path: Path, email: str, tran_luot: int | None,
+                        tran_video: int | None) -> None:
+    """`None` = dùng trần mặc định của hệ thống, không phải 'không giới hạn'."""
+    with _connect(db_path) as conn:
+        conn.execute(
+            "UPDATE nguoi_dung SET tran_luot = ?, tran_video = ? WHERE email = ?",
+            (tran_luot, tran_video, email.strip().lower()),
+        )
+
+
+def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
+    """Mồi admin từ env — CHỈ khi bảng chưa có admin nào. Trả số đã mồi.
+
+    "Một lần" định nghĩa bằng TRẠNG THÁI, không bằng cờ: có admin rồi thì bỏ
+    qua env hoàn toàn. Nếu để env thắng mãi thì admin cấp từ env không bỏ được
+    ở giao diện, và nút "Bỏ quyền admin" thành một nút bấm-không-làm-gì — đúng
+    loại nút chết đã bị phàn nàn.
+
+    Bài toán mồi này không mở thêm cửa nào: người sửa được tệp env là người có
+    shell trên máy, vốn đã toàn quyền với cả dịch vụ lẫn cơ sở dữ liệu.
+    """
+    if dem_admin(db_path) > 0:
+        return 0
+    luc = datetime.now(timezone.utc).isoformat()
+    da_moi = 0
+    with _connect(db_path) as conn:
+        for email in emails:
+            e = email.strip().lower()
+            if not e:
+                continue
+            conn.execute(
+                "INSERT INTO nguoi_dung (email, la_admin, lan_dau_thay, lan_cuoi_thay, "
+                "cap_boi, cap_luc) VALUES (?, 1, ?, ?, 'mồi từ cấu hình máy', ?) "
+                "ON CONFLICT(email) DO UPDATE SET la_admin = 1, "
+                "cap_boi = 'mồi từ cấu hình máy', cap_luc = excluded.cap_luc",
+                (e, luc, luc, luc),
+            )
+            da_moi += 1
+    return da_moi
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:

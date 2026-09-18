@@ -24,7 +24,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
-from web.auth import is_admin, require_user
+from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
 from tiktok_music_downloader.gdrive_upload import UploadOutcome
@@ -130,6 +130,10 @@ def quet_jar_tam(tmp_dir: Path) -> int:
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
+    # Mồi admin từ env — CHỈ khi bảng chưa có admin nào (xem docstring của hàm).
+    da_moi = models.moi_admin_tu_env(DB_PATH, admin_tu_env())
+    if da_moi:
+        log.info("mồi %d admin từ cấu hình máy (bảng trước đó chưa có admin nào)", da_moi)
     worker.start()
     try:
         yield
@@ -170,6 +174,24 @@ class CreateJobRequest(BaseModel):
 
     url: str
     so_luong: int = Field(gt=0, le=MAX_SO_LUONG, description="Số video tối đa muốn tải")
+
+
+def _la_admin(email: str) -> bool:
+    """Một cửa duy nhất hỏi "người này có phải admin không", và nó LUÔN mang
+    `DB_PATH` theo. Gọi thẳng `is_admin(email)` ở đâu đó sẽ lặng lẽ rơi về env
+    — tức bỏ qua mọi thay đổi quản trị làm trên giao diện."""
+    return is_admin(email, DB_PATH)
+
+
+def require_admin(nguoi_tao: str = Depends(require_user)) -> str:
+    """Dependency cho các route quản trị. 403, không phải ẩn nút.
+
+    Kiểm ở SERVER mỗi lượt gọi. Giấu nút trên giao diện không phải phân quyền —
+    người thường vẫn gọi thẳng API được.
+    """
+    if not _la_admin(nguoi_tao):
+        raise HTTPException(status_code=403, detail="cần quyền quản trị")
+    return nguoi_tao
 
 
 @app.get("/healthz")
@@ -215,12 +237,18 @@ def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
     cá nhân (hết hạn / chưa đăng nhập). Lọc ở ĐÂY chứ không ở giao diện: ẩn
     trên màn hình mà API vẫn trả thì chưa sửa gì cả.
     """
-    return models.list_jobs(DB_PATH, None if is_admin(nguoi_tao) else nguoi_tao)
+    return models.list_jobs(DB_PATH, None if _la_admin(nguoi_tao) else nguoi_tao)
 
 
 # Jar thật trên mini đo 10 196 B. Trần rộng gấp ~25 lần là đủ cho mọi bản
 # xuất Cookie-Editor mà vẫn chặn được việc ai đó đẩy một tệp lớn qua đường này.
 MAX_COOKIE_BODY = 256 * 1024
+
+# Trần CỨNG cho trần: giao diện quản trị không được thành cửa tắt lưới. Ai cần
+# vượt số này thì phải đụng vào code, tức phải có người soát — đó là điểm.
+# Neo vào mặc định đang chạy (20 lượt / 1000 video), gấp 5 lần.
+MAX_TRAN_LUOT = 100
+MAX_TRAN_VIDEO = 5000
 
 
 class CookieBody(BaseModel):
@@ -258,7 +286,14 @@ def me(nguoi_tao: str = Depends(require_user)) -> dict:
     The page has no other way to know: identity arrives in a header that
     Cloudflare Access sets and JavaScript cannot read.
     """
-    return {"email": nguoi_tao, "la_admin": is_admin(nguoi_tao)}
+    # Ghi nhận ở ĐÂY vì `/me` là lời gọi đầu tiên của cả hai trang. Không ghi
+    # thì bảng người dùng chỉ có người đã TẠO JOB, và trang Quản trị sẽ không
+    # thấy người mới vào — đúng lúc admin cần thấy họ để đặt trần.
+    try:
+        models.ghi_nhan_nguoi_dung(DB_PATH, nguoi_tao)
+    except Exception as exc:  # noqa: BLE001 — sổ danh bạ hỏng không được chặn đăng nhập
+        log.warning("không ghi được người dùng %s (%s)", nguoi_tao, type(exc).__name__)
+    return {"email": nguoi_tao, "la_admin": _la_admin(nguoi_tao)}
 
 
 @app.get("/me/cookie")
@@ -350,6 +385,62 @@ def delete_my_cookie(nguoi_tao: str = Depends(require_user)) -> None:
     cookie_jar_path(COOKIES_DIR, nguoi_tao).unlink(missing_ok=True)
 
 
+class CapNhatNguoiDung(BaseModel):
+    la_admin: bool | None = None
+    tran_luot: int | None = Field(default=None, ge=1, le=MAX_TRAN_LUOT)
+    tran_video: int | None = Field(default=None, ge=1, le=MAX_TRAN_VIDEO)
+
+
+@app.get("/admin/nguoi-dung")
+def admin_liet_ke(nguoi_tao: str = Depends(require_admin)) -> dict:
+    """Bảng người dùng cho trang Quản trị, kèm số đã dùng hôm nay.
+
+    Đọc số đã dùng qua CHÍNH ba bộ đếm mà cổng chặn dùng, không dựng công thức
+    riêng — một bảng quản trị nói khác cổng chặn là một bảng nói dối.
+    """
+    ds = models.danh_sach_nguoi_dung(DB_PATH)
+    for u in ds:
+        u["da_dung_luot"] = jobs_today_for_cookie(DB_PATH, COOKIES_DIR, u["email"])
+        u["da_dung_video"] = videos_today_for_cookie(DB_PATH, COOKIES_DIR, u["email"])
+        u["co_cookie"] = cookies_path_for_user(COOKIES_DIR, u["email"]) is not None
+    return {
+        "nguoi_dung": ds,
+        "tran_mac_dinh": {
+            "luot": MAX_JOBS_PER_COOKIE_PER_DAY,
+            "video": MAX_VIDEOS_PER_COOKIE_PER_DAY,
+        },
+    }
+
+
+@app.put("/admin/nguoi-dung/{email}")
+def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
+                   nguoi_tao: str = Depends(require_admin)) -> dict:
+    """Đổi quyền admin và/hoặc trần riêng của một người.
+
+    **Không cho bỏ quyền admin CUỐI CÙNG.** Bỏ hết thì không còn ai vào được
+    trang này để phong lại, và đường duy nhất còn lại là gõ shell trên máy
+    thật rồi khởi động lại dịch vụ. Một giao diện cho phép tự khoá mình ra
+    ngoài là một cái bẫy, không phải một tuỳ chọn.
+    """
+    e = email.strip().lower()
+    if not any(u["email"] == e for u in models.danh_sach_nguoi_dung(DB_PATH)):
+        raise HTTPException(status_code=404, detail="chưa thấy người này đăng nhập bao giờ")
+
+    if body.la_admin is not None:
+        dang_la_admin = _la_admin(e)
+        if dang_la_admin and not body.la_admin and models.dem_admin(DB_PATH) <= 1:
+            raise HTTPException(
+                status_code=409,
+                detail="đây là quản trị viên cuối cùng — phong cho người khác trước "
+                       "khi bỏ quyền của người này")
+        models.dat_quyen_admin(DB_PATH, e, body.la_admin, nguoi_tao)
+
+    if body.tran_luot is not None or body.tran_video is not None:
+        models.dat_tran_nguoi_dung(DB_PATH, e, body.tran_luot, body.tran_video)
+
+    return {"email": e, "la_admin": _la_admin(e)}
+
+
 @app.get("/videos")
 def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
                 nguoi_tao: str = Depends(require_user)) -> dict:
@@ -371,7 +462,7 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
             detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset không được âm")
-    chi_cua = None if is_admin(nguoi_tao) else nguoi_tao
+    chi_cua = None if _la_admin(nguoi_tao) else nguoi_tao
     videos = models.list_videos(DB_PATH, chi_cua, limit=limit, offset=offset)
     # Một truy vấn `sources_for_videos` cho CẢ TRANG, không phải một truy vấn
     # mỗi video: bộ lọc "Nguồn" của UI cần biết mọi hashtag/music/profile mà
@@ -410,7 +501,7 @@ def loai_video(body: LoaiVideoRequest,
     không phải của mình, bao nhiêu id trash trượt. Gộp ba thứ đó thành một
     trạng thái là cách một lỗi Drive đi qua mà không ai thấy.
     """
-    chi_cua = None if is_admin(nguoi_tao) else nguoi_tao
+    chi_cua = None if _la_admin(nguoi_tao) else nguoi_tao
     cua_toi = models.video_de_loai(DB_PATH, body.video_ids, chi_cua)
     da_loai, drive_truot = [], []
 
@@ -466,7 +557,7 @@ def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResp
     # bất kỳ ai đăng nhập, và id thật thì CHÍNH tool này phát ra hàng loạt
     # (`hashtag_enumerator.py:165`) — "id khó đoán" không phải lớp bảo vệ.
     if not models.video_nay_cua_toi(DB_PATH, video_id,
-                                    None if is_admin(nguoi_tao) else nguoi_tao):
+                                    None if _la_admin(nguoi_tao) else nguoi_tao):
         raise HTTPException(status_code=404, detail="chưa có ảnh cho video này")
     return FileResponse(path, media_type="image/webp")
 
@@ -482,7 +573,7 @@ def _job_cua_toi_hoac_404(job_id: int, nguoi_tao: str) -> dict:
     people's rows but serves them one id at a time has not hidden anything.
     """
     job = models.get_job(DB_PATH, job_id)
-    if job is None or (not is_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao):
+    if job is None or (not _la_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao):
         raise HTTPException(status_code=404, detail="job không tồn tại")
     return job
 
@@ -516,7 +607,7 @@ async def job_events(job_id: int,
             job = models.get_job(DB_PATH, job_id)
             if job is None:
                 break
-            if not is_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao:
+            if not _la_admin(nguoi_tao) and job["nguoi_tao"] != nguoi_tao:
                 break
             payload = json.dumps(job)
             if payload != last_payload:
