@@ -97,7 +97,13 @@ def _isolate_lifecycle_state():
     lifecycle.reset_backpressure_state()
     lifecycle.reset_job_folder_cache()
     lifecycle.set_uploader(None)
+    # Không ngủ thật giữa các lần thử lại: ĐO được suite đi 4s → 31s khi để
+    # nguyên. Thay hàm chờ chứ không hạ trần chờ xuống 0 trong code production —
+    # test không được đổi hằng số mà máy thật đang chạy.
+    goc = lifecycle._cho_giua_lan_thu
+    lifecycle._cho_giua_lan_thu = lambda giay: None
     yield
+    lifecycle._cho_giua_lan_thu = goc
     lifecycle.reset_backpressure_state()
     lifecycle.reset_job_folder_cache()
     lifecycle.set_uploader(None)
@@ -156,7 +162,7 @@ def test_successful_upload_deletes_local_file(tmp_path):
 def test_failed_upload_keeps_local_file(tmp_path):
     video = tmp_path / "abc.mp4"
     video.write_bytes(b"fake video bytes")
-    lifecycle.set_uploader(FakeUploader([_failed()]))
+    lifecycle.set_uploader(FakeUploader([_failed()] * lifecycle.DRIVE_RETRY_LAN))
 
     lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id="abc", url="u"), path=video)
 
@@ -179,7 +185,9 @@ def test_not_configured_upload_keeps_local_file(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_three_consecutive_failures_trip_backpressure_and_reject_new_jobs(tmp_path):
-    fake = FakeUploader([_failed("f1"), _failed("f2"), _failed("f3")])
+    fake = FakeUploader(
+        [r for ly_do in ("f1", "f2", "f3")
+         for r in [_failed(ly_do)] * lifecycle.DRIVE_RETRY_LAN])
     lifecycle.set_uploader(fake)
 
     kept_paths = []
@@ -200,7 +208,7 @@ def test_three_consecutive_failures_trip_backpressure_and_reject_new_jobs(tmp_pa
 
 
 def test_backpressure_resets_after_one_successful_upload(tmp_path):
-    fake = FakeUploader([_failed(), _failed(), _success()])
+    fake = FakeUploader([_failed()] * lifecycle.DRIVE_RETRY_LAN * 2 + [_success()])
     lifecycle.set_uploader(fake)
 
     for i in range(2):
@@ -220,7 +228,7 @@ def test_backpressure_resets_after_one_successful_upload(tmp_path):
 
 
 def test_two_failures_alone_do_not_trip_backpressure(tmp_path):
-    fake = FakeUploader([_failed(), _failed()])
+    fake = FakeUploader([_failed()] * lifecycle.DRIVE_RETRY_LAN * 2)
     lifecycle.set_uploader(fake)
     for i in range(2):
         video = tmp_path / f"v{i}.mp4"
@@ -309,7 +317,10 @@ def test_not_configured_gate_does_not_mask_real_backpressure_once_configured(tmp
     thật liên tiếp, gate `should_reject_new_job` vẫn phải báo lý do TRƯỢT,
     không phải lý do "chưa cấu hình" — hai gate độc lập, không cái nào che
     mất cái kia."""
-    fake = FakeUploader([_failed("f1"), _failed("f2"), _failed("f3")], configured=True)
+    fake = FakeUploader(
+        [r for ly_do in ("f1", "f2", "f3")
+         for r in [_failed(ly_do)] * lifecycle.DRIVE_RETRY_LAN],
+        configured=True)
     lifecycle.set_uploader(fake)
     for i in range(3):
         video = tmp_path / f"v{i}.mp4"
@@ -652,7 +663,7 @@ def test_a_failed_upload_records_nothing(tmp_path):
     models.init_db(db)
     video = tmp_path / "7004.mp4"
     video.write_bytes(b"fake video bytes")
-    lifecycle.set_uploader(FakeUploader([_failed()]))
+    lifecycle.set_uploader(FakeUploader([_failed()] * lifecycle.DRIVE_RETRY_LAN))
 
     lifecycle.on_video_verified(job_id=1, ref=_ref("7004"), path=video, db_path=db)
 
@@ -1144,3 +1155,91 @@ def test_the_listing_cap_leaves_ordinary_use_alone(tmp_path):
 
     assert lifecycle.daily_cap_rejection(
         db_path=db, cookies_dir=cookies, nguoi_tao="khach", so_luong=20, now=now) is None
+
+
+# ===========================================================================
+# Đẩy Drive trượt thì tự thử lại — T1.4
+# ===========================================================================
+
+def test_a_flaky_upload_succeeds_on_a_retry(tmp_path):
+    """Trượt hai lần rồi được: chỉ MỘT tệp lên Drive, và file local phải được
+    dọn — tức đường thành công đi trọn vẹn, không dừng nửa chừng."""
+    fake = FakeUploader([_failed("mang chớp"), _failed("mang chớp"), _success()])
+    lifecycle.set_uploader(fake)
+    video = tmp_path / "abc.mp4"
+    video.write_bytes(b"x")
+
+    ket_qua = lifecycle.on_video_verified(
+        job_id=1, ref=VideoRef(video_id="abc", url="u"), path=video)
+
+    assert ket_qua.ok
+    assert len(fake.calls) == 3, "phải thử đủ 3 lần trước khi được"
+    assert not video.exists(), "lên Drive rồi thì file local phải dọn"
+    assert lifecycle.get_backpressure_status().consecutive_failures == 0, \
+        "trượt tạm rồi được KHÔNG được tính là một video hỏng"
+
+
+def test_retries_stop_at_the_cap(tmp_path):
+    """Trần là trần. Không có nó thì một Drive chết biến mỗi video thành một
+    vòng lặp vô hạn, và cả hàng đợi đứng mà không ai thấy vì sao."""
+    fake = FakeUploader([_failed("mạng")] * 10)
+    lifecycle.set_uploader(fake)
+    video = tmp_path / "abc.mp4"
+    video.write_bytes(b"x")
+
+    ket_qua = lifecycle.on_video_verified(
+        job_id=1, ref=VideoRef(video_id="abc", url="u"), path=video)
+
+    assert not ket_qua.ok
+    assert len(fake.calls) == lifecycle.DRIVE_RETRY_LAN
+    assert video.exists(), "hết trần thì GIỮ file, đừng xoá thứ chưa lên Drive"
+    assert ket_qua.reason == "mạng", "lý do thật phải đi ra, không bị nuốt"
+
+
+def test_a_permission_error_is_not_retried(tmp_path):
+    """403/404 không tự khỏi. Thử lại chúng là ba lần chắc chắn trượt cộng
+    mấy giây im lặng — và nó đẩy một lỗi cấu hình ra xa chỗ người ta nhìn."""
+    fake = FakeUploader([_failed("PermissionDenied")] * 5)
+    lifecycle.set_uploader(fake)
+    video = tmp_path / "abc.mp4"
+    video.write_bytes(b"x")
+
+    lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id="abc", url="u"),
+                                 path=video)
+
+    assert len(fake.calls) == 1, "lỗi quyền phải bỏ cuộc ngay lần đầu"
+
+
+def test_an_unconfigured_drive_is_not_retried(tmp_path):
+    """"Chưa cấu hình" là trạng thái, không phải sự cố. Thử lại nó ba lần là
+    ba lần trả lời cùng một câu."""
+    fake = FakeUploader([_not_configured()] * 5, configured=False)
+    lifecycle.set_uploader(fake)
+    video = tmp_path / "abc.mp4"
+    video.write_bytes(b"x")
+
+    lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id="abc", url="u"),
+                                 path=video)
+
+    assert len(fake.calls) == 1
+
+
+def test_the_wait_between_retries_is_bounded_and_declared(tmp_path):
+    """Trần thời gian chờ phải KHAI ĐƯỢC, không phải phát hiện khi có sự cố.
+
+    Đo trực tiếp thay vì đọc comment: comment trôi, phép đo thì không.
+    """
+    da_cho = []
+    goc = lifecycle._cho_giua_lan_thu
+    lifecycle._cho_giua_lan_thu = lambda giay: da_cho.append(giay)
+    try:
+        lifecycle.set_uploader(FakeUploader([_failed("mạng")] * 10))
+        video = tmp_path / "abc.mp4"
+        video.write_bytes(b"x")
+        lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id="abc", url="u"),
+                                     path=video)
+    finally:
+        lifecycle._cho_giua_lan_thu = goc
+
+    assert da_cho == [2.0, 4.0], f"giãn cách phải là 2s rồi 4s, đo được {da_cho}"
+    assert sum(da_cho) <= 8.0, "tổng chờ giữa các lần vượt trần đã khai"

@@ -18,6 +18,7 @@ import logging
 import shutil
 import subprocess
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -520,6 +521,82 @@ def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef,
         return False
 
 
+# Trần thử lại cho đường ĐẨY LÊN DRIVE. Ba con số này neo vào phép đo, không
+# chép từ đâu:
+#
+#   * Kích thước thật: 10/10 video đã đẩy, hỏi thẳng Drive API
+#     (`files().get(fields="size")`) ngày 17/09 — nhỏ nhất 0,48 MB, trung vị
+#     1,67 MB, lớn nhất 4,07 MB.
+#   * `MediaFileUpload(..., resumable=False)` (`gdrive_upload.py:207`) nghĩa là
+#     MỖI lần thử đẩy LẠI TOÀN BỘ tệp từ byte 0 — không nối tiếp chỗ dở. Ở cỡ
+#     trên thì một lần đẩy lại tốn dưới một giây, nên 3 lần là rẻ.
+#
+# ⚠ GIỚI HẠN CỦA PHÉP ĐO, đọc trước khi nới: n=10, toàn video TikTok ngắn, và
+# cột `duration` lúc đó rỗng hoàn toàn nên KHÔNG có đường đối chiếu thứ hai. Ai
+# gặp tệp 500 MB thì trần này chưa từng được đo ở cỡ đó — tính lại, đừng nhân lên.
+#
+# Tổng thời gian chờ tối đa = 2 + 4 = 6 giây (chờ GIỮA các lần; chi phí của mỗi
+# lần đẩy nằm ngoài con số này).
+DRIVE_RETRY_LAN = 3
+DRIVE_RETRY_CHO_TOI_DA = 8.0
+
+
+def _cho_giua_lan_thu(giay: float) -> None:
+    """Chờ giữa hai lần thử. Tách ra thành hàm riêng để test thay được.
+
+    Không tách thì mỗi test chạm đường trượt phải ngủ thật 6 giây — đo được:
+    suite đi từ 4 giây lên 31 giây ngay lần chạy đầu. Một suite chậm là một
+    suite người ta bắt đầu bỏ qua.
+    """
+    time.sleep(giay)
+
+
+def _dang_tam_thoi(result: UploadResult) -> bool:
+    """Lỗi này có đáng thử lại không.
+
+    Thử lại một `403 forbidden` hay `404 not found` là ba lần chắc chắn trượt
+    cộng sáu giây im lặng: quyền sai và tệp không tồn tại không tự khỏi. Chỉ
+    lỗi mạng và lỗi phía Google (429/5xx) mới có cửa.
+
+    Đọc theo HÌNH DẠNG chuỗi `reason` chứ không theo mã: `reason` ở đây là tên
+    lớp ngoại lệ (`gdrive_upload.py` cố ý không nhét nội dung vào đó), nên đây
+    là thứ duy nhất có sẵn mà không phải nới hợp đồng của `UploadResult`.
+    """
+    ly_do = (result.reason or "").lower()
+    if any(x in ly_do for x in ("forbidden", "notfound", "permission", "invalid")):
+        return False
+    return True
+
+
+def _upload_co_thu_lai(uploader: UploaderLike, path: Path,
+                       parent_folder_id: str | None) -> tuple[UploadResult, int]:
+    """Đẩy lên Drive, thử lại khi trượt tạm thời. Trả (kết quả, số lần thử lại).
+
+    Trả luôn SỐ LẦN THỬ LẠI thay vì chỉ kết quả: con số đó là thứ duy nhất cho
+    biết đường mạng đang tệ đi hay đỡ đi. Không đếm thì một hệ thống phải thử
+    hai lần cho mọi video trông y hệt một hệ thống chạy trơn.
+    """
+    lan_thu_lai = 0
+    cho = 2.0
+    while True:
+        result = uploader.upload_file(path, parent_folder_id=parent_folder_id)
+        if result.ok or result.outcome is UploadOutcome.NOT_CONFIGURED:
+            return result, lan_thu_lai
+        if lan_thu_lai >= DRIVE_RETRY_LAN - 1 or not _dang_tam_thoi(result):
+            # Hết trần, hoặc lỗi không đáng thử lại: trả về NGUYÊN kết quả thật
+            # kèm lý do. Nuốt nó thành một lỗi chung là thứ làm người sau không
+            # biết vì sao video không lên được Drive.
+            if lan_thu_lai:
+                log.warning("upload %s trượt sau %d lần thử lại (%s)",
+                            path.name, lan_thu_lai, result.reason)
+            return result, lan_thu_lai
+        lan_thu_lai += 1
+        log.info("upload %s trượt (%s) — thử lại lần %d sau %.0fs",
+                 path.name, result.reason, lan_thu_lai, cho)
+        _cho_giua_lan_thu(cho)
+        cho = min(cho * 2, DRIVE_RETRY_CHO_TOI_DA)
+
+
 def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
                        db_path: Path | None = None) -> UploadResult:
     """`web/queue.py`'s `LifecycleHook` implementation.
@@ -538,7 +615,10 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
     """
     uploader = _get_uploader()
     parent_folder_id = _ensure_job_folder(job_id, uploader, db_path)
-    result = uploader.upload_file(path, parent_folder_id=parent_folder_id)
+    result, lan_thu_lai = _upload_co_thu_lai(uploader, path, parent_folder_id)
+    if lan_thu_lai:
+        log.info("job %s: video %s lên Drive sau %d lần thử lại",
+                 job_id, ref.video_id, lan_thu_lai)
     _note_upload_outcome(result)
 
     if result.ok:
