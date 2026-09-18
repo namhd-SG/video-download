@@ -465,6 +465,70 @@ def claim_next_pending_job(db_path: Path) -> dict | None:
         return job
 
 
+def vi_tri_hang_doi(db_path: Path, job_ids: list[int]) -> dict[int, int]:
+    """Mỗi job đang chờ đứng thứ mấy — ĐẾM CẢ JOB ĐANG CHẠY.
+
+    Cái bẫy ở đây là ngữ nghĩa, không phải SQL. `pending` KHÔNG đồng nghĩa
+    "chưa chạy": `claim_next_pending_job` lật job sang `running` ngay khi
+    nhặt, nên một job đang tải dở đã rời `pending`. Đếm mỗi `pending` thì
+    người đứng ngay sau nó thấy "0 lượt trước bạn" trong lúc vẫn phải đợi
+    job kia tải xong — một con số đúng-về-SQL và sai-về-nghĩa.
+
+    Nên số trả về là: (số job đang chạy) + (số job pending vào trước mình).
+    Thứ tự tin được vì worker một luồng và `claim_next_pending_job` gọi
+    `ORDER BY tao_luc ASC, id ASC` — cùng thứ tự đếm ở đây.
+
+    KHÔNG trả ETA. Số đo duy nhất đang có là 6,6 giây/video từ ĐÚNG MỘT lượt
+    (job 10 video / 65,7s); dựng một lời hứa thời gian trên n=1 là bịa.
+    """
+    if not job_ids:
+        return {}
+    with _connect(db_path) as conn:
+        dang_chay = conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE trang_thai = 'running'"
+        ).fetchone()[0]
+        cho = conn.execute(
+            "SELECT id, tao_luc FROM jobs WHERE trang_thai = 'pending' "
+            "ORDER BY tao_luc ASC, id ASC"
+        ).fetchall()
+    thu_tu = {int(r["id"]): i for i, r in enumerate(cho)}
+    return {jid: dang_chay + thu_tu[jid] + 1
+            for jid in job_ids if jid in thu_tu}
+
+
+def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:
+    """Rút một lượt CHƯA CHẠY của chính mình. Trả lý do, không trả bool.
+
+    `rowcount == 0` có HAI nguyên nhân khác hẳn nhau — không phải job của
+    mình, và job đã rời `pending` vì worker vừa nhặt — và người dùng cần
+    nghe hai câu khác nhau ("không thấy lượt này" vs "đang tải rồi, không
+    rút được nữa"). Trả chung một giá trị cho hai ca là đúng lỗi mà
+    `_send` từng dẫm: gộp "chưa cấu hình" với "đã cấu hình mà trượt".
+
+    Kiểm-và-ghi nằm trong MỘT câu UPDATE có điều kiện, như bản vá khoá
+    admin cuối cùng: đọc trạng thái rồi mới ghi là mở một cửa sổ cho worker
+    chen vào giữa. Câu SELECT sau đó chỉ để PHÂN BIỆT hai ca thất bại, và
+    nó chỉ chạy khi đã biết mình không đổi gì.
+
+    Trả: "da_huy" | "khong_phai_cua_toi" | "dang_chay".
+    """
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET trang_thai = 'cancelled', xong_luc = ? "
+            "WHERE id = ? AND nguoi_tao = ? AND trang_thai = 'pending'",
+            (_now(), job_id, nguoi_tao),
+        )
+        if cur.rowcount == 1:
+            return "da_huy"
+        row = conn.execute(
+            "SELECT trang_thai FROM jobs WHERE id = ? AND nguoi_tao = ?",
+            (job_id, nguoi_tao),
+        ).fetchone()
+    if row is None:
+        return "khong_phai_cua_toi"
+    return "dang_chay"
+
+
 def set_job_total(db_path: Path, job_id: int, tong: int) -> None:
     with _connect(db_path) as conn:
         conn.execute("UPDATE jobs SET tong = ? WHERE id = ?", (tong, job_id))

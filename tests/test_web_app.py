@@ -435,16 +435,32 @@ def test_visiting_the_page_puts_you_in_the_directory(tmp_path, monkeypatch):
 # Route nào được phép KHÔNG kiểm quyền sở hữu, và vì sao. Danh sách này là
 # cái phải sửa khi thêm route — không phải một danh sách route-có-kiểm gõ tay,
 # vì danh sách kiểu đó im lặng khi ai đó quên thêm vào.
+# Khoá theo "METHOD /đường-dẫn", KHÔNG theo đường dẫn trần.
+#
+# Bản trước khoá theo đường dẫn, và đó là một LƯỚI GIẢ đo được 18/09: thêm
+# `DELETE /jobs/{job_id}` vào một đường dẫn ĐÃ CÓ `GET` thì tập đường dẫn
+# không đổi một phần tử nào ⇒ suite xanh trọn cho một route ghi hoàn toàn
+# mới. Tệ hơn: suất miễn trừ của `/jobs/{job_id}` được cấp vì GET đi qua
+# `_job_cua_toi_hoac_404`, rồi nó che luôn cho một DELETE không đi qua hàm
+# đó. Một lưới mà cách qua mặt là "dùng lại đường dẫn cũ" thì nó canh tên
+# route, không canh quyền.
 KHONG_CAN_KIEM_CHU = {
-    "/healthz": "thăm dò, không đọc dữ liệu của ai",
-    "/jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
-    "/videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
-    "/me": "chính người đang gọi",
-    "/me/cookie": "chính người đang gọi",
-    "/me/quota": "chính người đang gọi",
-    "/admin/nguoi-dung": "require_admin — 403 cho người thường",
-    "/admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
-    "/videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
+    "GET /healthz": "thăm dò, không đọc dữ liệu của ai",
+    "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
+    "POST /jobs": "tạo cho chính người đang gọi",
+    "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
+    "GET /me": "chính người đang gọi",
+    "GET /me/cookie": "chính người đang gọi",
+    "PUT /me/cookie": "chính người đang gọi",
+    "DELETE /me/cookie": "chính người đang gọi",
+    "GET /me/quota": "chính người đang gọi",
+    "GET /admin/nguoi-dung": "require_admin — 403 cho người thường",
+    "GET /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
+    "PUT /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
+    "POST /videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
+    "DELETE /jobs/{job_id}": "`models.huy_job_dang_cho` ràng `nguoi_tao` NGAY "
+                             "trong câu UPDATE, nên không cần cổng ngoài; "
+                             "404 cho job người khác, giống GET",
 }
 
 
@@ -461,10 +477,16 @@ def test_every_route_that_takes_an_id_checks_who_is_asking():
     """
     from fastapi.routing import APIRoute
 
-    duong_dan = {r.path for r in app_mod.app.routes if isinstance(r, APIRoute)}
-    chua_khai = duong_dan - set(KHONG_CAN_KIEM_CHU) - {"/jobs/{job_id}",
-                                                       "/jobs/{job_id}/events",
-                                                       "/thumbs/{video_id}"}
+    duong_dan = {
+        f"{method} {r.path}"
+        for r in app_mod.app.routes if isinstance(r, APIRoute)
+        for method in r.methods if method != "HEAD"
+    }
+    chua_khai = duong_dan - set(KHONG_CAN_KIEM_CHU) - {
+        "GET /jobs/{job_id}",
+        "GET /jobs/{job_id}/events",
+        "GET /thumbs/{video_id}",
+    }
     assert not chua_khai, (
         f"route chưa khai: {sorted(chua_khai)} — hoặc cho nó qua "
         f"`_job_cua_toi_hoac_404`, hoặc thêm vào KHONG_CAN_KIEM_CHU kèm lý do")
@@ -1429,3 +1451,175 @@ def test_upgrading_an_old_database_keeps_the_people_who_already_downloaded(
     models.init_db(db)          # nâng cấp lần nữa = chạy backfill
 
     assert "nguoicu@astronex.ai" in {u["email"] for u in models.danh_sach_nguoi_dung(db)}
+
+
+# ---------------------------------------------------------------------------
+# T2.2 — vị trí trong hàng đợi + rút lượt chưa chạy.
+#
+# Hai thứ dễ ship sai ở đây, và cả hai đều SAI ÂM THẦM:
+#   · đếm vị trí bằng mỗi `pending` ⇒ người đứng sau một job đang tải thấy
+#     "0 lượt trước bạn" mà vẫn phải đợi;
+#   · trả cùng một câu cho "job của người khác" và "job vừa bắt đầu chạy" ⇒
+#     người bấm đúng lúc bị bảo là bấm nhầm.
+# ---------------------------------------------------------------------------
+NGUOI_KHAC = "nguoikhac@astronex.ai"
+
+
+def _mk_job(db_path, url, nguoi_tao=TEST_USER, trang_thai="pending"):
+    job_id = models.create_job(db_path, url, 5, nguoi_tao)
+    if trang_thai != "pending":
+        with models._connect(db_path) as conn:
+            conn.execute("UPDATE jobs SET trang_thai = ? WHERE id = ?",
+                         (trang_thai, job_id))
+    return job_id
+
+
+def test_vi_tri_dem_ca_job_dang_chay(tmp_path):
+    """Job đang tải đã rời `pending` nhưng vẫn chiếm chỗ của worker.
+
+    Đột biến: đếm mỗi `pending` (bỏ vế `running`) ⇒ chờ_1 thành 1 ⇒ ĐỎ.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    _mk_job(db_path, "https://www.tiktok.com/tag/a", trang_thai="running")
+    cho_1 = _mk_job(db_path, "https://www.tiktok.com/tag/b")
+    cho_2 = _mk_job(db_path, "https://www.tiktok.com/tag/c")
+
+    vi_tri = models.vi_tri_hang_doi(db_path, [cho_1, cho_2])
+
+    assert vi_tri[cho_1] == 2, "một job đang chạy phải chiếm chỗ thứ nhất"
+    assert vi_tri[cho_2] == 3
+
+
+def test_vi_tri_chi_gan_cho_job_dang_cho(tmp_path):
+    """Job xong/đang chạy không có vị trí — số đó vô nghĩa với chúng."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    xong = _mk_job(db_path, "https://www.tiktok.com/tag/a", trang_thai="done")
+    cho = _mk_job(db_path, "https://www.tiktok.com/tag/b")
+
+    vi_tri = models.vi_tri_hang_doi(db_path, [xong, cho])
+
+    assert xong not in vi_tri
+    assert vi_tri[cho] == 1
+
+
+def test_vi_tri_theo_thu_tu_worker_thuc_su_nhat(tmp_path):
+    """Thứ tự đếm phải TRÙNG thứ tự `claim_next_pending_job` nhặt.
+
+    Không phải hai câu SQL giống nhau về hình thức — mà là: job worker lấy
+    ra tiếp theo phải đúng là job đang mang vị trí 1. Đây là phép phân
+    định thật; so hai chuỗi ORDER BY chỉ là đọc chính mình.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    a = _mk_job(db_path, "https://www.tiktok.com/tag/a")
+    b = _mk_job(db_path, "https://www.tiktok.com/tag/b")
+
+    vi_tri = models.vi_tri_hang_doi(db_path, [a, b])
+    dau_tien = min(vi_tri, key=lambda jid: vi_tri[jid])
+    nhat_duoc = models.claim_next_pending_job(db_path)
+
+    assert nhat_duoc is not None
+    assert nhat_duoc["id"] == dau_tien
+
+
+def test_huy_job_dang_cho_thi_worker_khong_nhat_nua(tmp_path):
+    """Nghiệm thu chính của mục: rút rồi thì worker phải BỎ QUA nó.
+
+    Đột biến: bỏ `AND trang_thai = 'pending'` khỏi câu UPDATE thì test
+    `test_huy_job_dang_chay_tra_409` ĐỎ; bỏ hẳn việc đổi trạng thái thì
+    test này ĐỎ vì worker nhặt đúng job vừa bị rút.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    bi_huy = _mk_job(db_path, "https://www.tiktok.com/tag/a")
+    con_lai = _mk_job(db_path, "https://www.tiktok.com/tag/b")
+
+    assert models.huy_job_dang_cho(db_path, bi_huy, TEST_USER) == "da_huy"
+
+    assert models.get_job(db_path, bi_huy)["trang_thai"] == "cancelled"
+    nhat_duoc = models.claim_next_pending_job(db_path)
+    assert nhat_duoc is not None and nhat_duoc["id"] == con_lai
+
+
+def test_huy_job_dang_chay_tra_409(tmp_path, monkeypatch):
+    """Bấm đúng nhưng chậm một nhịp — KHÔNG được trả 404 như bấm nhầm."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    dang_chay = _mk_job(db_path, "https://www.tiktok.com/tag/a",
+                        trang_thai="running")
+
+    with pytest.raises(HTTPException) as e:
+        app_mod.huy_job(dang_chay, nguoi_tao=TEST_USER)
+
+    assert e.value.status_code == 409
+    assert models.get_job(db_path, dang_chay)["trang_thai"] == "running"
+
+
+def test_huy_job_cua_nguoi_khac_tra_404_va_khong_dong_gi(tmp_path, monkeypatch):
+    """404 chứ không 403: id job chạy tuần tự, 403 là xác nhận id có thật."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    cua_ho = _mk_job(db_path, "https://www.tiktok.com/tag/a",
+                     nguoi_tao=NGUOI_KHAC)
+
+    with pytest.raises(HTTPException) as e:
+        app_mod.huy_job(cua_ho, nguoi_tao=TEST_USER)
+
+    assert e.value.status_code == 404
+    assert models.get_job(db_path, cua_ho)["trang_thai"] == "pending"
+
+
+def test_huy_job_khong_ton_tai_cung_tra_404(tmp_path, monkeypatch):
+    """Hai ca không phân biệt được từ ngoài — có chủ đích."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+
+    with pytest.raises(HTTPException) as e:
+        app_mod.huy_job(99999, nguoi_tao=TEST_USER)
+
+    assert e.value.status_code == 404
+
+
+def test_admin_khong_rut_ho_job_nguoi_khac(tmp_path, monkeypatch):
+    """Admin ĐỌC được job người khác nhưng không rút hộ.
+
+    Xem là đọc, rút là ghi vào việc đang chờ của người khác. Nếu sau này
+    mở cửa đó thì phải có màn hình cho nó — test này sẽ ĐỎ và buộc người
+    sửa phải quyết định có chủ đích, thay vì để nó trôi vào.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "_la_admin", lambda ai: True)
+    cua_ho = _mk_job(db_path, "https://www.tiktok.com/tag/a",
+                     nguoi_tao=NGUOI_KHAC)
+
+    with pytest.raises(HTTPException) as e:
+        app_mod.huy_job(cua_ho, nguoi_tao=TEST_USER)
+
+    assert e.value.status_code == 404
+    assert models.get_job(db_path, cua_ho)["trang_thai"] == "pending"
+
+
+def test_list_jobs_gan_vi_tri_cho_job_dang_cho(tmp_path, monkeypatch):
+    """Vị trí phải do MÁY CHỦ đếm, không để trang tự đếm.
+
+    Trang chỉ thấy job của chính mình; nếu nó tự đếm thì nó bỏ qua hàng
+    đợi của người khác và ra một con số nhỏ hơn sự thật.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "_la_admin", lambda ai: False)
+    _mk_job(db_path, "https://www.tiktok.com/tag/x", nguoi_tao=NGUOI_KHAC)
+    cua_toi = _mk_job(db_path, "https://www.tiktok.com/tag/b")
+
+    jobs = app_mod.list_jobs(nguoi_tao=TEST_USER)
+
+    assert [j["id"] for j in jobs] == [cua_toi], "chỉ thấy job của mình"
+    assert jobs[0]["vi_tri"] == 2, "phải đếm cả job người khác đang chờ trước"

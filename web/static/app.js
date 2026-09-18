@@ -8,7 +8,7 @@
 
   const STATUS_LABEL = {
     pending: "Đang chờ", running: "Đang chạy", done: "Xong",
-    failed: "Lỗi", interrupted: "Bị ngắt",
+    failed: "Lỗi", interrupted: "Bị ngắt", cancelled: "Đã rút",
   };
 
   // Ba lý do dừng sớm KHÁC NHAU (hashtag_enumerator.py) trông giống hệt nhau
@@ -267,8 +267,29 @@
           <span>${job.xong}/${job.tong}${hasErrors ? ` · ${job.loi} lỗi` : ""}</span>
         </div>
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
+        ${queueLine(job)}
         <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}</div>
       </li>`;
+  }
+
+  // Dòng "thứ N trong hàng" + nút rút. CHỈ cho job đang chờ: job đang tải
+  // không rút được (worker đã nhặt), và một nút bấm vào là báo lỗi thì thà
+  // đừng vẽ ra.
+  //
+  // KHÔNG hứa thời gian. Số đo duy nhất đang có là 6,6 giây/video từ đúng
+  // một lượt; "còn khoảng N phút" dựng trên n=1 là một lời hứa bịa, và
+  // người dùng sẽ đo nó bằng đồng hồ thật.
+  function queueLine(job) {
+    if (job.trang_thai !== "pending") return "";
+    const thu = job.vi_tri
+      ? (job.vi_tri === 1 ? "Tiếp theo trong hàng"
+                          : `Thứ ${job.vi_tri} trong hàng`)
+      : "Đang chờ tới lượt";
+    return `
+      <div class="queue-line">
+        <span class="queue-pos">${escapeHtml(thu)}</span>
+        <button type="button" class="queue-cancel" data-huy="${job.id}">Rút lượt</button>
+      </div>`;
   }
 
   // ========================================================================
@@ -436,6 +457,31 @@
       if (t.dataset.toggle !== exceptGroupId) t.setAttribute("aria-expanded", "false");
     });
   }
+
+  // Rút lượt. Uỷ quyền trên `queue-list` vì hàng đợi vẽ lại mỗi nhịp poll —
+  // gắn trực tiếp lên từng nút thì nút mới sau mỗi lần vẽ sẽ không có tay
+  // nghe nào, và hỏng ÂM THẦM: nút vẫn ở đó, bấm không ra gì.
+  document.getElementById("queue-list").addEventListener("click", async (ev) => {
+    const btn = ev.target.closest("[data-huy]");
+    if (!btn) return;
+    const jobId = Number(btn.dataset.huy);
+    btn.disabled = true;
+    try {
+      await apiSend("DELETE", `/jobs/${jobId}`);
+      showToast("Đã rút lượt khỏi hàng đợi.");
+    } catch (err) {
+      if (err instanceof PhienHetHan) throw err;
+      // 409 là ca THẬT, không phải lỗi người dùng: worker vừa nhặt job
+      // đúng lúc họ bấm. Nói đúng chuyện đó, đừng nói "không tìm thấy".
+      showToast(String(err.message).includes("409")
+        ? "Lượt này vừa bắt đầu tải nên không rút được nữa."
+        : "Không rút được lượt này.");
+    } finally {
+      // Vẽ lại từ máy chủ trong MỌI ca, kể cả ca trượt: trạng thái thật
+      // nằm ở DB, và sau một lần 409 thì hàng này đã sang "Đang chạy".
+      await loadJobs();
+    }
+  });
 
   document.getElementById("filter-bar").addEventListener("click", (ev) => {
     const trigger = ev.target.closest("[data-toggle]");
@@ -605,7 +651,21 @@
     es.addEventListener("progress", (ev) => {
       const job = JSON.parse(ev.data);
       const idx = state.jobs.findIndex((j) => j.id === job.id);
-      if (idx >= 0) state.jobs[idx] = job; else state.jobs.unshift(job);
+      // `vi_tri` chỉ có ở `GET /jobs` (máy chủ đếm cả hàng đợi của người
+      // khác); payload SSE là một hàng job trần. Gán đè nguyên hàng thì vị
+      // trí BIẾN MẤT ngay nhịp tiến độ đầu tiên và dòng chữ tụt về "Đang
+      // chờ tới lượt" — đo được bằng ảnh chụp 18/09, test API không thấy vì
+      // nó không đi qua đường này. Giữ lại giữa hai nhịp poll `loadJobs`.
+      if (idx >= 0) {
+        const vi_tri_cu = state.jobs[idx].vi_tri;
+        state.jobs[idx] = job;
+        if (job.vi_tri === undefined && job.trang_thai === "pending"
+            && vi_tri_cu !== undefined) {
+          state.jobs[idx].vi_tri = vi_tri_cu;
+        }
+      } else {
+        state.jobs.unshift(job);
+      }
       renderQueue();
       if (job.trang_thai !== "pending" && job.trang_thai !== "running") {
         es.close();

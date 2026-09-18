@@ -245,7 +245,16 @@ def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
     cá nhân (hết hạn / chưa đăng nhập). Lọc ở ĐÂY chứ không ở giao diện: ẩn
     trên màn hình mà API vẫn trả thì chưa sửa gì cả.
     """
-    return models.list_jobs(DB_PATH, None if _la_admin(nguoi_tao) else nguoi_tao)
+    jobs = models.list_jobs(DB_PATH, None if _la_admin(nguoi_tao) else nguoi_tao)
+    # `vi_tri` chỉ có nghĩa với job đang chờ, nên chỉ job đang chờ mang nó.
+    # Gắn ở đây thay vì để giao diện tự đếm: trang chỉ thấy job CỦA MÌNH,
+    # nên nếu nó tự đếm thì nó đếm thiếu đúng phần hàng đợi của người khác —
+    # ra một con số nhỏ hơn sự thật và không ai phát hiện.
+    vi_tri = models.vi_tri_hang_doi(DB_PATH, [j["id"] for j in jobs])
+    for j in jobs:
+        if j["id"] in vi_tri:
+            j["vi_tri"] = vi_tri[j["id"]]
+    return jobs
 
 
 # Jar thật trên mini đo 10 196 B. Trần rộng gấp ~25 lần là đủ cho mọi bản
@@ -607,6 +616,35 @@ def _job_cua_toi_hoac_404(job_id: int, nguoi_tao: str) -> dict:
 @app.get("/jobs/{job_id}")
 def get_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
     return _job_cua_toi_hoac_404(job_id, nguoi_tao)
+
+
+@app.delete("/jobs/{job_id}")
+def huy_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
+    """Rút một lượt CHƯA CHẠY của chính mình khỏi hàng đợi.
+
+    Chỉ CHỦ job huỷ được — admin xem được job người khác (`_job_cua_toi_
+    hoac_404`) nhưng không rút hộ. Xem là đọc, rút là ghi vào việc đang chờ
+    của người khác; mở cửa đó thì phải có màn hình cho nó, và chưa ai đặt.
+
+    Ba câu trả lời cho ba sự việc khác nhau:
+      · 200 — đã rút.
+      · 409 — job đã rời `pending` (worker vừa nhặt). Không phải lỗi của
+        người bấm, và câu chữ phải nói thế: họ bấm hợp lệ, chỉ chậm mất
+        một nhịp.
+      · 404 — không phải job của mình, HOẶC không tồn tại. Gộp hai ca này
+        là CỐ Ý, cùng lý do đã ghi ở `_job_cua_toi_hoac_404`: id job chạy
+        tuần tự, nên một câu 403 sẽ xác nhận "id này có thật, của người
+        khác" cho bất cứ ai chịu khó đếm lên.
+    """
+    ket_qua = models.huy_job_dang_cho(DB_PATH, job_id, nguoi_tao)
+    if ket_qua == "dang_chay":
+        raise HTTPException(
+            status_code=409,
+            detail="Lượt này đã bắt đầu tải nên không rút được nữa.",
+        )
+    if ket_qua == "khong_phai_cua_toi":
+        raise HTTPException(status_code=404, detail="job không tồn tại")
+    return {"trang_thai": "cancelled"}
 
 
 @app.get("/jobs/{job_id}/events")
