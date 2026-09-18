@@ -31,11 +31,20 @@
     --pending-text: #4c5a56;
     /* Dải điều khiển giữ nền tối ở CẢ HAI theme — trong mock nó là một mặt
        phẳng riêng, không phải một thẻ sáng màu; đó là nửa nhận diện của trang. */
-    --strip: #101a18;
-    --strip-ink: #d9e6e2;
-    --strip-ink-2: #7d9a94;
-    --strip-line: #1e332e;
-    --strip-accent: #2f9d8c;
+    /* Dải điều khiển ĐI THEO THEME. Tới 18/09 nó giữ nền tối ở cả hai
+       theme (mock 15/09 dựng nó như một mặt phẳng riêng) — USER BÁC ngày
+       18/09: ở chế độ sáng, một khối đen sì chiếm nửa trên trông như trang
+       chưa đổi theme. Đừng "sửa lại cho khớp mock": mock cũ hơn quyết định
+       này. Dark vẫn giữ nguyên tông cũ. */
+    --strip: #ffffff;
+    --strip-ink: #14201d;
+    --strip-ink-2: #4c5a56;
+    --strip-line: #d5ded9;
+    --strip-accent: #0d5c55;
+    --strip-accent-ink: #ffffff;
+    --strip-field: #f3f6f4;
+    --strip-raise: #f3f6f4;
+    --strip-track: #e7ede9;
     --shadow: 0 1px 2px rgba(20, 32, 29, .06), 0 10px 28px rgba(20, 32, 29, .06);
     --radius: 7px;
     --display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
@@ -69,6 +78,10 @@
       --strip-ink-2: #7d9a94;
       --strip-line: #1a2a27;
       --strip-accent: #5ecdbf;
+      --strip-accent-ink: #04100e;
+      --strip-field: #08120f;
+      --strip-raise: rgba(255, 255, 255, .04);
+      --strip-track: #16302c;
       --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
       color-scheme: dark;
     }
@@ -98,6 +111,10 @@
     --strip-ink-2: #7d9a94;
     --strip-line: #1a2a27;
     --strip-accent: #5ecdbf;
+    --strip-accent-ink: #04100e;
+    --strip-field: #08120f;
+    --strip-raise: rgba(255, 255, 255, .04);
+    --strip-track: #16302c;
     --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
     color-scheme: dark;
   }
@@ -168,18 +185,20 @@
      dải mà không cần biết dải tồn tại. */
   .control-strip {
     --accent: var(--strip-accent);
-    --accent-ink: #04100e;
+    --accent-ink: var(--strip-accent-ink);
     --text: var(--strip-ink);
     --text-muted: var(--strip-ink-2);
     --text-faint: var(--strip-ink-2);
     --border: var(--strip-line);
     --border-strong: var(--strip-line);
     --surface: transparent;
-    --surface-alt: rgba(255, 255, 255, .04);
+    --surface-alt: var(--strip-raise);
     /* `--bg` là nền trang; trong dải nó là nền ô nhập. Nhờ đặt ở đây mà
        `#job-form input { background: var(--bg) }` — một selector có id, tức
-       thắng mọi luật lớp — tự lấy đúng màu tối, không cần ai đè nó. */
-    --bg: #08120f;
+       thắng mọi luật lớp — tự lấy đúng màu, không cần ai đè nó. Là token
+       theo theme từ 18/09: giá trị cứng `#08120f` biến ô nhập thành hố đen
+       trên dải sáng. */
+    --bg: var(--strip-field);
   }
 
   .control-strip .panel {
@@ -187,12 +206,12 @@
     color: var(--strip-ink);
   }
   .control-strip .queue-item {
-    background: rgba(255, 255, 255, .03); border-color: var(--strip-line);
+    background: var(--strip-raise); border-color: var(--strip-line);
   }
   .control-strip .queue-url { color: var(--strip-ink); }
   .control-strip .queue-meta, .control-strip .empty-hint { color: var(--strip-ink-2); }
   .control-strip a { color: var(--strip-accent); }
-  .control-strip progress::-webkit-progress-bar { background: #16302c; }
+  .control-strip progress::-webkit-progress-bar { background: var(--strip-track); }
   .control-strip progress::-webkit-progress-value { background: var(--strip-accent); }
   /* Còn đúng một mốc: dưới 860px thì form và hàng đợi xếp chồng một cột.
      Mốc 1100px cũ đặt lưới về `340px 1fr` — nay đó ĐÃ là lưới mặc định,
