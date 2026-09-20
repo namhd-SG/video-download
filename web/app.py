@@ -54,9 +54,17 @@ def _dat_dinh_dang_log() -> None:
     TRÊN MINI và không nằm trong git, nên sửa nó chỉ ăn khi ai đó chạy lại
     cài đặt. Mô-đun này thì được rsync mỗi chuyến deploy.
 
-    `force=True` là phần quan trọng: uvicorn đã gắn handler của nó trước khi
-    mô-đun này nạp, và `basicConfig` KHÔNG làm gì khi root logger đã có
-    handler — không có `force` thì hàm này chạy êm và không đổi một dòng nào.
+    `force=True` là phần quan trọng cho ROOT logger: `basicConfig` KHÔNG làm gì
+    khi root đã có handler.
+
+    ⚠ NHƯNG HÀM NÀY MỘT MÌNH KHÔNG ĐỦ, và bản 18/09 đã ship thiếu:
+    `uvicorn` dựng cấu hình log của nó **SAU** khi mô-đun này được import, cấp
+    cho `uvicorn.access`/`uvicorn.error` **handler riêng** và đặt
+    `propagate = False`. Đo 20/09 ngay sau khi deploy: **0 dòng** trong
+    `~/Library/Logs/videodl.log` mang dấu thời gian, vì gần như mọi dòng là của
+    `uvicorn.access` — nó không bao giờ đi qua root.
+    Phần vá thật nằm ở `_dong_dau_thoi_gian_vao_uvicorn()`, gọi trong
+    `_lifespan` (chạy SAU cấu hình của uvicorn).
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -64,6 +72,26 @@ def _dat_dinh_dang_log() -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
         force=True,
     )
+
+
+def _dong_dau_thoi_gian_vao_uvicorn() -> None:
+    """Dán dấu thời gian vào handler của CHÍNH uvicorn.
+
+    Phải chạy SAU khi uvicorn dựng log config, nếu không nó bị ghi đè. Chỗ
+    chắc chắn sau là `_lifespan` — lúc đó server đã lên.
+
+    Chỉ đổi FORMATTER của handler đang có, không thay handler: thay handler là
+    đổi cả nơi dòng log chảy tới (launchd đang gom stdout+stderr vào một tệp),
+    còn đổi formatter chỉ đổi hình dạng dòng.
+
+    `%(levelprefix)s` của uvicorn là formatter riêng của nó (kèm mã màu); thay
+    bằng `%(levelname)s` để dòng đọc được trong tệp, nơi mã màu chỉ là rác.
+    """
+    dinh_dang = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    for ten in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        for handler in logging.getLogger(ten).handlers:
+            handler.setFormatter(dinh_dang)
 
 
 _dat_dinh_dang_log()
@@ -158,6 +186,9 @@ def quet_jar_tam(tmp_dir: Path) -> int:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
+    # Trước mọi thứ khác: từ đây mọi dòng log phải có giờ, kể cả dòng do chính
+    # bước khởi động bên dưới sinh ra.
+    _dong_dau_thoi_gian_vao_uvicorn()
     prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
     # Dựng/di trú lược đồ TRƯỚC mọi thứ đọc nó. `worker.start()` cũng gọi
     # `init_db`, nhưng nó chạy SAU bước mồi admin bên dưới — và một cơ sở dữ

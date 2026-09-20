@@ -1691,3 +1691,44 @@ def test_log_co_dau_thoi_gian(caplog):
 
     assert "%(asctime)s" in dinh_dang, "thiếu dấu thời gian"
     assert "%(levelname)s" in dinh_dang
+
+
+def test_log_uvicorn_cung_co_dau_thoi_gian():
+    """Test cũ kiểm ROOT logger và XANH, trong khi log thật không đổi một dòng.
+
+    Đo 20/09 ngay sau deploy: 0/6800 dòng trong `videodl.log` có dấu thời
+    gian. Nguyên nhân đo được: uvicorn dựng log config **SAU** khi mô-đun app
+    được import, cấp cho `uvicorn.access` handler riêng và đặt
+    `propagate = False` — nên định dạng đặt ở root không bao giờ chạm tới nó,
+    mà gần như mọi dòng trong tệp là của `uvicorn.access`.
+
+    Test này dựng lại ĐÚNG thứ tự đó (nạp app trước, uvicorn cấu hình sau) rồi
+    mới gọi hàm vá. Đột biến: bỏ `_dong_dau_thoi_gian_vao_uvicorn()` khỏi
+    `_lifespan`, hoặc bỏ `uvicorn.access` khỏi danh sách trong hàm đó ⇒ ĐỎ.
+    """
+    import logging as _logging
+    import logging.config as _config
+    import uvicorn.config
+
+    # Thứ tự THẬT: app đã nạp (conftest/import ở đầu tệp), giờ uvicorn cấu hình.
+    _config.dictConfig(uvicorn.config.LOGGING_CONFIG)
+    access = _logging.getLogger("uvicorn.access")
+    assert access.handlers, "khuôn test sai: uvicorn.access phải có handler riêng"
+    assert access.propagate is False, "khuôn test sai: uvicorn.access phải ngắt khỏi root"
+    # Trước khi vá, định dạng là của uvicorn — đây là phép phân định.
+    assert "%(asctime)s" not in access.handlers[0].formatter._fmt
+
+    app_mod._dong_dau_thoi_gian_vao_uvicorn()
+
+    for ten in ("uvicorn", "uvicorn.access", "uvicorn.error"):
+        h = _logging.getLogger(ten).handlers
+        if h:
+            assert "%(asctime)s" in h[0].formatter._fmt, f"{ten} vẫn thiếu giờ"
+            assert "%(levelprefix)s" not in h[0].formatter._fmt, f"{ten} còn mã màu"
+
+
+def test_lifespan_co_goi_va_uvicorn():
+    """Vá đúng mà không ai gọi thì log vẫn trần. Đột biến: xoá lời gọi ⇒ ĐỎ."""
+    import inspect
+    nguon = inspect.getsource(app_mod._lifespan)
+    assert "_dong_dau_thoi_gian_vao_uvicorn()" in nguon
