@@ -295,3 +295,39 @@ chiếu độc lập · thêm việc ghi-trang-tăng-dần (§3 mục 4).
    xoá, không phải rủi ro thiết kế.
 6. **Đơn vị trần** — *đã đóng* ở R4: "trang index" và "response feed" đều là *1 request → 1 mảng
    video*, cộng chung vào 800 là chuẩn.
+
+---
+
+## 8. VÒNG REVIEW + USER CHỐT ĐỢT 2 (21/09 14:16-14:30)
+
+### 8.1 Review bắt 1 CRITICAL + 2 HIGH — đều là thứ 5 vòng agy KHÔNG thấy
+
+| mức | lỗ | vá |
+|---|---|---|
+| **CRITICAL** | Bỏ ghi đè `tong` (vấn đề 1) làm `SUM(tong)` ở cổng hạn mức quay sang trừ theo **số XIN**. Đo: 2 job × xin 500, tìm được 1 video mỗi cái ⇒ **1000/1000** trần ngày, job sau bị 429. **Lật quyết định user 16/09** ghi nguyên văn ở `lifecycle.py:316-326`. | job **đã xong** đếm `tim_thay`; job **đang chờ/chạy** vẫn tạm trừ `tong` (không có vế sau thì xếp hàng 20 job × 100 là lách được trần) |
+| **HIGH** | `_auto_scroll` ngừng khi THẤY đủ `max_videos` thô, mà multi truyền **cùng** `max_videos` mọi lượt ⇒ lượt 2..5 quét lại **đúng cửa sổ lượt 1**. Thư viện có trọn cửa sổ đó ⇒ 0 video mới mãi mãi + báo `already_owned` sai. **Tính năng chính không chạy đúng ca nó sinh ra để chữa.** | mục tiêu thô nới dần `= đã_thấy + còn_thiếu` |
+| **HIGH** | Xoá sạch `dem_trang()` trong `_watch_feed_api` ⇒ suite vẫn **XANH**. Hai test "phủ" nó có scraper giả **tự gọi** `dem_trang()` ⇒ chỉ đo hạ lưu. | 4 test gọi thẳng handler thật, kèm ca âm |
+
+**Vì sao CRITICAL lọt qua 5 vòng:** tôi tra `models.py` + `queue.py`; lý do thật ghi ở `lifecycle.py`. Đúng luật đã có — *soát tính đầy đủ thì tra NGUỒN, đừng tra bản tóm* — nhưng tra **hai** kho là thiếu. Bài học bổ sung: **đổi ý nghĩa một CỘT thì phải grep mọi nơi ĐỌC cột đó, không chỉ nơi GHI nó.**
+
+**Bẫy đo của chính reviewer, ghi lại vì sẽ tái phát:** nó vá `src/` trong **bản sao** rồi chạy pytest — package cài **editable** trỏ về repo thật ⇒ 2 đột biến đầu báo "sống" dù **chưa từng được áp**. Phải `PYTHONPATH=<bản-sao>/src`.
+
+### 8.2 User chốt đợt 2 — `AskUserQuestion` 21/09 14:30
+
+| | chốt | hệ quả |
+|---|---|---|
+| job chết TRƯỚC khi quét | **trừ 0** | đúng hành vi đã code; nhất quán với quyết định 16/09 (trần chia khẩu phần **tải thật**) |
+| job hụt mục tiêu | **thêm nhãn "Thiếu"** | suy ra Ở GIAO DIỆN (`done` và `xong < tong`), **không** thêm trạng thái DB — `trang_thai` là máy trạng thái của worker, "thiếu" là nhận xét về kết quả |
+| hình thức báo lý do | **giữ khối chữ trong thẻ** | không làm popup; xem thật vài ngày rồi quyết tiếp |
+| deploy | **CHƯA — chờ user bảo** | không có gì lên mini |
+
+### 8.3 PHÉP ĐO BẮT BUỘC ở lần chạy thật đầu tiên (chưa làm được hôm nay)
+
+Mọi phép đo đào sâu tới giờ chạy với **scraper giả**. Chưa lần nào chạm TikTok thật.
+
+Ngay sau chuyến deploy có vấn đề 2, **lượt chạy thật đầu tiên phải đo**:
+1. `so_trang` của job đó ⇒ **một job music/search ăn bao nhiêu trong trần 800/ngày**. Đây là con số **chưa ai có**, và là điều kiện để bàn lại trần 800 (`§7.2`).
+2. Số lượt thật đã cào (log `multipass: … qua N lượt đã cào`) và lý do dừng thật.
+3. Có chạm rate-limit không ⇒ dữ kiện đầu tiên cho câu *"TikTok chặn ở ngưỡng nào"* (`§7.2`).
+
+Không có ba số này thì hai trần 600s/5 vòng vẫn là **lựa chọn**, không phải **hiệu chỉnh** — đừng để ai đọc chúng thành số đo.
