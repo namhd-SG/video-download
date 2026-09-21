@@ -267,6 +267,10 @@
   .status-running { background: var(--warn-bg); color: var(--warn); }
   .status-done { background: var(--success-bg); color: var(--success); }
   .status-failed, .status-interrupted { background: var(--danger-bg); color: var(--danger); }
+  /* "Thiếu" KHÔNG dùng màu lỗi: job chạy hết, không hỏng gì — nó chỉ không
+     đạt mục tiêu. Màu cảnh báo để mắt dừng lại khi lướt, mà không báo động
+     một sự cố không có thật. */
+  .status-thieu { background: var(--warn-bg); color: var(--text); }
   /* "Đã rút" là người dùng tự quyết, KHÔNG phải hỏng — nên dùng tông trung
      tính của `pending`, không mượn tông đỏ của `failed`. Thiếu luật này thì
      nhãn rơi về chữ trần không nền, lạc hẳn khỏi hàng badge còn lại (thấy

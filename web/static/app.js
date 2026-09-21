@@ -269,6 +269,24 @@
     list.innerHTML = state.jobs.map(renderQueueItem).join("");
   }
 
+  // "Xong" cho một job hụt mục tiêu đọc thành thành công.
+  //
+  // USER CHỐT 21/09: job chạy hết mà không đủ số đã xin phải mang nhãn RIÊNG.
+  // Đây cố ý là một phép suy ra Ở GIAO DIỆN, không phải một trạng thái mới
+  // trong DB: `trang_thai` là máy trạng thái của worker (`VALID_END_STATES`),
+  // còn "thiếu" là một nhận xét về KẾT QUẢ. Nhét nó vào `trang_thai` là đổi
+  // máy trạng thái, kéo theo migration và mọi nhánh đang so `== "done"` — đắt
+  // hơn nhiều, và lui lại khó hơn nhiều, so với thứ user thật sự xin.
+  //
+  // Chỉ áp cho `done`: `failed`/`cancelled`/`interrupted` đã có câu chuyện
+  // riêng và không được cái nhãn này che mất.
+  function nhanTrangThai(job) {
+    if (job.trang_thai === "done" && job.tong > 0 && job.xong < job.tong) {
+      return { chu: "Thiếu", lop: "thieu" };
+    }
+    return { chu: STATUS_LABEL[job.trang_thai] || job.trang_thai, lop: job.trang_thai };
+  }
+
   function renderQueueItem(job) {
     const pct = job.tong > 0 ? Math.min(100, Math.round((job.xong / job.tong) * 100)) : 0;
     const hasErrors = job.loi > 0;
@@ -283,7 +301,7 @@
       <li class="queue-item" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
           <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
-          <span class="status-badge status-${escapeHtml(job.trang_thai)}">${escapeHtml(STATUS_LABEL[job.trang_thai] || job.trang_thai)}</span>
+          <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
         </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
