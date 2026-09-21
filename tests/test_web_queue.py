@@ -1225,3 +1225,66 @@ def test_a_rubbish_duration_does_not_kill_the_job():
 
     assert ra.duration is None
     assert ra.play_count == 12
+
+
+# ---------------------------------------------------------------------------
+# Nguồn KHÔNG phải hashtag (search / music / profile) cũng phải nói vì sao
+# lượt chạy ra 0 video.
+#
+# Ca thật 21/09: hai người dán hai link `/search` KHÁC NHAU về cùng chủ đề,
+# TikTok trả đúng video mà thư viện đã có, job hiện "Xong · 0/0" không một
+# chữ. Người dùng đọc nó thành hỏng và hỏi "có lỗi không?".
+#
+# `hashtag_enumerator.py:55-58` đã vá đúng chuyện này cho nhánh hashtag, và
+# bản vá dừng ở ranh giới nhánh.
+# ---------------------------------------------------------------------------
+def _fake_ref(vid):
+    from tiktok_music_downloader.utils import VideoRef
+    return VideoRef(video_id=vid, url=f"https://www.tiktok.com/@a/video/{vid}")
+
+
+def _bat_ly_do(monkeypatch, refs, da_co, tmp_path):
+    """Chạy `_fetch_refs` với scraper giả, trả lý do dừng đã ghi vào DB."""
+    from web import models
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/search?q=x", 10, "ai@do.vn")
+    for vid in da_co:
+        models.record_video(db, job_id, vid, f"https://x/{vid}")
+
+    monkeypatch.setattr(queue_mod, "scrape_music_page",
+                        lambda url, **kw: [_fake_ref(v) for v in refs])
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/search?q=x", max_videos=10,
+                                cookies_path=None, db_path=db, job_id=job_id)
+    return giu, models.get_job(db, job_id)["ly_do_dung"]
+
+
+def test_search_noi_ro_khi_thu_vien_da_co_het(monkeypatch, tmp_path):
+    """Nguồn CÓ video nhưng mình đã có hết ⇒ `already_owned`, không im lặng.
+
+    Đột biến: bỏ lời gọi `_note_stop` ở nhánh không-hashtag ⇒ ĐỎ.
+    """
+    giu, ly_do = _bat_ly_do(monkeypatch, refs=["v1", "v2"], da_co=["v1", "v2"],
+                            tmp_path=tmp_path)
+    assert giu == []
+    assert ly_do == "already_owned"
+
+
+def test_search_phan_biet_nguon_rong_voi_da_co_het(monkeypatch, tmp_path):
+    """Hai ca khác nhau ⇒ người dùng làm hai việc khác nhau sau đó.
+
+    Nguồn rỗng ⇒ link có thể sai/hết hạn. Đã có hết ⇒ đổi nguồn, chạy lại vô
+    ích. Trả cùng một mã cho hai ca là đúng lỗi "chưa cấu hình" vs "đã cấu
+    hình mà trượt". Đột biến: dùng chung một mã ⇒ ĐỎ.
+    """
+    _, ly_do = _bat_ly_do(monkeypatch, refs=[], da_co=[], tmp_path=tmp_path)
+    assert ly_do == "source_empty"
+
+
+def test_search_khong_dat_ly_do_khi_van_co_video_moi(monkeypatch, tmp_path):
+    """Lượt chạy bình thường KHÔNG được mang lý do dừng — nếu không mọi job
+    thành công cũng hiện một câu giải thích không ai cần."""
+    giu, ly_do = _bat_ly_do(monkeypatch, refs=["v1", "v2"], da_co=["v1"],
+                            tmp_path=tmp_path)
+    assert [r.video_id for r in giu] == ["v2"]
+    assert not ly_do

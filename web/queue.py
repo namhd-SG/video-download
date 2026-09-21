@@ -17,7 +17,10 @@ from typing import Callable, Protocol
 
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
-from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.hashtag_enumerator import (
+    STOP_ALREADY_OWNED,
+    enumerate_hashtag,
+)
 from tiktok_music_downloader.scraper import scrape_music_page
 from dataclasses import replace
 
@@ -188,6 +191,23 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             _note_skip(ref)
         else:
             kept.append(ref)
+
+    # Nhánh hashtag gọi `on_stop` khi lượt chạy chỉ toàn video ĐÃ CÓ; nhánh
+    # này thì KHÔNG, và đó là một lỗ đo được 21/09: người dùng dán một link
+    # `/search` khác với link của đồng nghiệp, TikTok trả về đúng video mà
+    # thư viện đã có, job hiện **"Xong · 0/0" không một chữ giải thích** —
+    # rồi họ hỏi "có lỗi không, sao hai link khác nhau lại ra giống nhau".
+    #
+    # Chính xác cái `hashtag_enumerator.py:55-58` đã vá cho hashtag, và vá
+    # đó dừng lại ở ranh giới nhánh. Im lặng ở đây KHÔNG phải "không có gì
+    # để nói": nó là kết cục THƯỜNG GẶP NHẤT khi hai người quét cùng một
+    # chủ đề, và không nói ra thì người dùng đọc nó thành hỏng.
+    #
+    # Phân biệt hai ca, vì người dùng làm hai việc khác nhau sau đó:
+    #   · nguồn CÓ video nhưng mình đã có hết ⇒ đổi nguồn, chạy lại vô ích
+    #   · nguồn không đưa ra video nào       ⇒ link có thể sai, hoặc hết hạn
+    if not kept:
+        _note_stop(STOP_ALREADY_OWNED if refs else "source_empty")
     return kept
 
 
