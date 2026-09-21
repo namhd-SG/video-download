@@ -28,6 +28,22 @@
                "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
     index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
                   "lỗi giữa chừng — thử lại sau.",
+    // Ba mã dưới đây sinh ra 21/09 cùng lúc với việc nhánh music/search/profile
+    // biết đào sâu. Mỗi câu phải khuyên MỘT việc khác nhau — đó là cả lý do
+    // chúng là ba mã chứ không phải một:
+    //   · hết giờ / hết vòng ⇒ chạy lại CÓ THỂ ra thêm
+    //   · nghi bị chặn       ⇒ NGHỈ đã, chạy lại ngay chỉ làm đậm dấu vết
+    //   · đã có hết          ⇒ ĐỔI NGUỒN (mã `already_owned`, đã có ở trên)
+    // Gộp chúng thành "không lấy đủ video" là quay về đúng sự im lặng mà bản
+    // vá này sinh ra để chấm dứt.
+    het_thoi_gian: "Dừng: hết thời gian cho một lượt tải (10 phút) trước khi " +
+                   "đủ số bạn xin. Những video đã tìm được vẫn được giữ — " +
+                   "chạy lại lượt này có thể ra thêm.",
+    het_vong: "Dừng: đã quét lại hết số vòng cho phép mà chưa đủ số bạn xin. " +
+              "Nguồn có thể còn video — chạy lại lượt này có thể ra thêm.",
+    nghi_bi_chan: "Dừng: nguồn đang trả video rồi đột ngột ngừng — nhiều khả " +
+                  "năng TikTok đang tạm chặn. Hãy NGHỈ một lúc rồi chạy lại; " +
+                  "chạy lại ngay thường bị chặn tiếp.",
     // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói
     // cách chữa, không được rơi vào nhánh "báo cho người phát triển" ở dưới.
     // Nguồn còn sống, chỉ là thư viện đã có hết những gì nó đưa ra. Câu này

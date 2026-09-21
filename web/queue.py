@@ -17,11 +17,8 @@ from typing import Callable, Protocol
 
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
-from tiktok_music_downloader.hashtag_enumerator import (
-    STOP_ALREADY_OWNED,
-    enumerate_hashtag,
-)
-from tiktok_music_downloader.scraper import scrape_music_page
+from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import VideoRef, parse_tag_slug
@@ -37,6 +34,21 @@ from web.lifecycle import on_video_verified
 log = logging.getLogger("videodl.web")
 
 POLL_INTERVAL_SECONDS = 1.0
+
+# Trần cho một lượt ĐÀO SÂU trên nhánh music/search/profile — USER CHỐT 21/09
+# qua `AskUserQuestion`, không phải số chọn tay.
+#
+# 10 phút: mỗi lượt quét lại phải nghỉ 60-180s (jitter) để không thành một nhịp
+# TikTok nhận ra, nên 10 phút là chỗ cho khoảng 4 lượt. Hụt thì job dừng với mã
+# `het_thoi_gian` — ca này khuyên CHẠY LẠI, khác hẳn `already_owned`.
+# 5 vòng: giữ nguyên trần cứng vốn có trong `scrape_music_page_multi`, đã chạy
+# thật trong bản desktop. Cái nào chạm trước thì dừng.
+#
+# ⚠ Hai số này CHƯA có nền đo từ phía TikTok — chưa ai biết TikTok chặn ở
+# ngưỡng nào. Chúng là lựa chọn của người dùng với đánh đổi đã bày ra, không
+# phải kết quả hiệu chỉnh. Đổi chúng thì phải hỏi lại người dùng.
+TRAN_GIAY_MOT_LUOT = 600.0
+SO_VONG_DAO_SAU = 5
 
 # One line of ffmpeg's `-i` stderr for a real video stream looks like:
 #   Stream #0:0(eng): Video: h264 (High), yuv420p, 720x1280, ...
@@ -155,6 +167,25 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         except Exception:  # noqa: BLE001
             log.warning("job %s: không ghi được số trang index", job_id)
 
+    # Bộ đếm trang cho nhánh music/search/profile, ghi TĂNG DẦN chứ không phải
+    # một lần lúc xong.
+    #
+    # Vì sao không gộp vào `_note_pages`: nhánh hashtag báo tổng MỘT LẦN ở cuối
+    # (`hashtag_enumerator.py`), và đó là một lỗ đo được 21/09 — job bị huỷ hay
+    # chết giữa chừng đã tiêu request thật với TikTok nhưng sổ ghi 0, còn job
+    # đang chạy thì chưa ghi gì nên job xếp hàng kế tiếp được duyệt trên sổ cũ
+    # (`app.py` kiểm trần lúc TẠO job, đọc `SUM(so_trang)` đã commit). Bản vá
+    # đào sâu kéo một job từ ~1 phút lên tới 10 phút, tức nó LÀM CỬA SỔ ĐÓ RỘNG
+    # RA — nên nhánh mới không được thừa kế cách ghi cũ.
+    #
+    # `guard-marker-and-claim-write-ordering.md` vế 3: mốc "đã tiêu" và mốc
+    # "đã xong" là hai mốc khác nhau. Cái đầu phải ghi ngay khi tiêu.
+    _da_doc = {"trang": 0}
+
+    def _dem_mot_trang() -> None:
+        _da_doc["trang"] += 1
+        _note_pages(_da_doc["trang"])
+
     def _note_stop(ly_do: str) -> None:
         if db_path is None or job_id is None:
             return
@@ -173,42 +204,42 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                                   on_stop=_note_stop,
                                   on_pages=_note_pages)
 
-    refs = scrape_music_page(
+    # Đào sâu tới khi đủ `max_videos` video MỚI — không còn "lấy một danh sách
+    # rồi lọc một lần ở cuối".
+    #
+    # `scrape_music_page_multi` đã tồn tại từ lâu và GUI desktop đã dùng nó cho
+    # đúng ba loại trang này; chỉ đường web là gọi bản một lượt. Nên đây là NỐI
+    # lại thứ đã chạy thật, không phải viết mới một cơ chế phân trang — và nhờ
+    # vậy giữ nguyên phần chống chặn đã đo: đóng hẳn context giữa các lượt,
+    # nghỉ jitter 60-180s, dừng khi độ mới tụt, dừng khi nghi bị chặn mềm.
+    refs = scrape_music_page_multi(
         url,
+        passes=SO_VONG_DAO_SAU,
         max_videos=max_videos,
+        max_seconds=TRAN_GIAY_MOT_LUOT,
+        already_have=_already_have,
+        on_skip=_note_skip,
+        on_stop=_note_stop,
         cookies_path=cookies_path,
         proxy=proxy,
         profile_dir=None,
+        dem_trang=_dem_mot_trang,
     )
-    # Every source, not just hashtags: re-running a music page today uploads a
-    # SECOND copy of the same video to Drive (Drive allows duplicate names),
-    # while `ON CONFLICT DO NOTHING` keeps the first row — so the second file
-    # exists with nothing pointing at it.
-    owned = _already_have([r.video_id for r in refs])
-    kept = []
-    for ref in refs:
-        if ref.video_id in owned:
-            _note_skip(ref)
-        else:
-            kept.append(ref)
-
-    # Nhánh hashtag gọi `on_stop` khi lượt chạy chỉ toàn video ĐÃ CÓ; nhánh
-    # này thì KHÔNG, và đó là một lỗ đo được 21/09: người dùng dán một link
-    # `/search` khác với link của đồng nghiệp, TikTok trả về đúng video mà
-    # thư viện đã có, job hiện **"Xong · 0/0" không một chữ giải thích** —
-    # rồi họ hỏi "có lỗi không, sao hai link khác nhau lại ra giống nhau".
+    # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
+    # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
+    # hay dừng. Lọc một lần ở ngoài, sau khi quét xong, chính là cái không bù
+    # được số hụt — và `on_skip` chạy trong đó nên video bị bỏ vẫn để lại dấu
+    # nguồn của lượt này, đúng như trước.
     #
-    # Chính xác cái `hashtag_enumerator.py:55-58` đã vá cho hashtag, và vá
-    # đó dừng lại ở ranh giới nhánh. Im lặng ở đây KHÔNG phải "không có gì
-    # để nói": nó là kết cục THƯỜNG GẶP NHẤT khi hai người quét cùng một
-    # chủ đề, và không nói ra thì người dùng đọc nó thành hỏng.
-    #
-    # Phân biệt hai ca, vì người dùng làm hai việc khác nhau sau đó:
-    #   · nguồn CÓ video nhưng mình đã có hết ⇒ đổi nguồn, chạy lại vô ích
-    #   · nguồn không đưa ra video nào       ⇒ link có thể sai, hoặc hết hạn
-    if not kept:
-        _note_stop(STOP_ALREADY_OWNED if refs else "source_empty")
-    return kept
+    # `on_stop` cũng do nó gọi, với BỐN ca phân biệt được thay vì hai:
+    #   · `source_empty`     nguồn không đưa ra gì  ⇒ link có thể sai/hết hạn
+    #   · `already_owned`    mình đã có hết         ⇒ ĐỔI NGUỒN, chạy lại vô ích
+    #   · `het_thoi_gian` / `het_vong`              ⇒ chạy lại CÓ THỂ ra thêm
+    #   · `nghi_bi_chan`     đang trả rồi ngừng     ⇒ NGHỈ rồi hãy chạy lại
+    # Ba nhóm đó bảo người dùng ba việc khác nhau; gộp lại là quay về "một dòng
+    # chữ lặng lẽ" — thứ đã khiến người dùng hỏi "có lỗi không, sao hai link
+    # khác nhau lại ra giống nhau".
+    return refs
 
 
 def _bo_sung_metadata(ref: VideoRef, info: dict | None) -> VideoRef:

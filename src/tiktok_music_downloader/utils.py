@@ -227,3 +227,35 @@ def adaptive_backoff(failure_streak: int, max_seconds: float = 300.0) -> float:
         return 0.0
     seconds = min(30.0 * (2 ** (failure_streak - 1)), max_seconds)
     return seconds
+
+
+# ===========================================================================
+# MÃ LÝ DO DỪNG — một bộ duy nhất cho MỌI nhánh quét
+# ===========================================================================
+# Cố ý là hằng ngắn chứ không phải câu văn: caller phải SO SÁNH được, và chuỗi
+# tiếng Anh dài sẽ bị ai đó sửa cho "dễ đọc" rồi làm hỏng so sánh. Câu chữ cho
+# người dùng nằm ở `web/static/app.js::STOP_REASON_TEXT`.
+#
+# Bộ này nằm ở `utils` vì từ 21/09 có HAI nơi sinh ra nó: `hashtag_enumerator`
+# (nhánh hashtag) và `scraper` (music/search/profile, khi biết đào sâu). Hai
+# bản sao của cùng một bộ mã là hai bản sẽ lệch, và lệch ở đây nghĩa là giao
+# diện hiện một câu cho một lý do nó không hiểu.
+STOP_COMPLETE = ""            # lấy đủ số đã xin
+STOP_INDEX_FAILED = "index_failed"
+STOP_STALLED = "stalled"
+STOP_PAGE_CAP = "page_cap"
+# Nguồn còn trả dữ liệu tốt, nhưng MỌI thứ nó đưa ra thư viện đã có.
+STOP_ALREADY_OWNED = "already_owned"
+# Nguồn không đưa ra video nào ngay từ lượt ĐẦU — link sai, hết hạn, hoặc
+# loại trang này không trả item cho phiên hiện tại.
+STOP_SOURCE_EMPTY = "source_empty"
+# Chạm trần thời gian của một lượt tải (user chốt 10 phút, 21/09). Chạy lại
+# CÓ THỂ ra thêm — khác hẳn `already_owned`, nơi chạy lại chắc chắn vô ích.
+STOP_HET_THOI_GIAN = "het_thoi_gian"
+# Đã dùng hết số vòng quét lại cho phép (user chốt 5, 21/09).
+STOP_HET_VONG = "het_vong"
+# Một lượt giữa chừng trả về 0 video sau khi lượt trước đã ra video. Dấu hiệu
+# bị chặn mềm, nên lời khuyên là NGHỈ rồi hãy chạy lại — chạy lại ngay chỉ làm
+# đậm thêm dấu vết. Phân biệt với `source_empty`: ở đó nguồn chưa bao giờ trả
+# gì, ở đây nó đang trả rồi ngừng.
+STOP_NGHI_BI_CHAN = "nghi_bi_chan"

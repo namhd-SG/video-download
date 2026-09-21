@@ -29,7 +29,14 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
-from tiktok_music_downloader.utils import VideoRef
+from tiktok_music_downloader.utils import (
+    STOP_ALREADY_OWNED,
+    STOP_COMPLETE,
+    STOP_INDEX_FAILED,
+    STOP_PAGE_CAP,
+    STOP_STALLED,
+    VideoRef,
+)
 
 log = logging.getLogger("ttmd")
 
@@ -45,18 +52,15 @@ _PAGE_SIZE = 30
 _REQUEST_GAP_SECONDS = 1.2   # provider's free tier is about one request/second
 _STALL_PAGES = 2             # consecutive pages adding nothing before giving up
 
-# Mã lý do dừng. Cố ý là hằng ngắn chứ không phải câu văn: caller phải SO SÁNH
-# được, và chuỗi tiếng Anh dài sẽ bị ai đó sửa cho "dễ đọc" rồi làm hỏng so sánh.
-STOP_COMPLETE = ""            # lấy đủ số đã xin
-STOP_INDEX_FAILED = "index_failed"
-STOP_STALLED = "stalled"
-STOP_PAGE_CAP = "page_cap"
-# Nguồn còn trả dữ liệu tốt, nhưng MỌI thứ nó đưa ra thư viện đã có. Sau khi
-# lọc trùng ra đời (5a7782e) đây là kết cục THƯỜNG GẶP NHẤT cho một hashtag
-# team dùng lại — mà trước đó nó đội lốt hai mã khác: hoặc `page_cap` (UI
-# khuyên "thử chạy lại" ⇒ người dùng lặp vô hạn), hoặc KHÔNG mã nào cả (nhánh
-# `not has_more` thoát mà không gọi `on_stop` ⇒ "Xong · 0/0" không một chữ).
-STOP_ALREADY_OWNED = "already_owned"
+# Mã lý do dừng: định nghĩa ở `utils` từ 21/09, vì nhánh music/search/profile
+# giờ cũng sinh ra chúng. Nhập lại vào đây để mọi caller cũ
+# (`from ...hashtag_enumerator import STOP_ALREADY_OWNED`) không phải đổi.
+#
+# `STOP_ALREADY_OWNED` đáng nhắc riêng: sau khi lọc trùng ra đời (5a7782e) đây
+# là kết cục THƯỜNG GẶP NHẤT cho một hashtag team dùng lại — mà trước đó nó
+# đội lốt hai mã khác: hoặc `page_cap` (UI khuyên "thử chạy lại" ⇒ người dùng
+# lặp vô hạn), hoặc KHÔNG mã nào cả (nhánh `not has_more` thoát mà không gọi
+# `on_stop` ⇒ "Xong · 0/0" không một chữ).
 
 
 def _fetch(url: str, user_agent: str, timeout: float = 25.0,
