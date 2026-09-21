@@ -103,7 +103,17 @@ trong `plan.md`). Cùng kỷ luật: quyền `0700`, không vào log, không và
 - [ ] **Đột biến:** bỏ backpressure ⇒ test phải ĐỎ (ép Drive trượt, file phải tích
       lại **và** job mới phải bị từ chối)
 - [ ] Ép Drive trượt 3 lần ⇒ file **vẫn còn**, job mới **bị từ chối**, UI nói rõ lý do
-- [ ] Trong suốt lượt thử, đĩa mini **không tụt** quá 100 MB so với lúc bắt đầu
+- [ ] ~~Trong suốt lượt thử, đĩa mini **không tụt** quá 100 MB~~ — **BỎ 21/09,
+      cùng lý do đã bỏ bản *"200 video ⇒ đĩa không dưới 8 GB"* ở dòng trên, chỉ
+      ngược chiều: bản đó cấu tạo không thể ĐỎ, bản này ĐỎ GIẢ.** Đĩa mini là tài
+      nguyên **dùng chung với Promax của đội khác**. Đo 21/09 10:05 bằng
+      `scripts/do-nghiem-thu-t4.sh mau 10`: đĩa tụt **185 MB trong 10 giây** trong
+      khi cột `job_running = 0` suốt — tức tụt do hàng xóm, tool không chạy gì.
+      Ngưỡng tuyệt đối trên máy dùng chung không phân định được ai gây ra.
+      **Thay bằng** `du -sm` thư mục tải ≤ 50 MB (thứ tool thật sự kiểm soát) +
+      `ps -o rss` < 1,5 GB. Cột đĩa vẫn in ra nhưng là **thông tin**, không phải
+      tiêu chí. Muốn con số đĩa có nghĩa thì phải so hai lượt cùng độ dài, một
+      lượt có job và một lượt không — hiệu số mới là phần của tool.
 
 ## Risk Assessment
 

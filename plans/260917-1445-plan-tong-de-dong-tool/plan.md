@@ -76,7 +76,7 @@ Chỗ đứng trong plan: **sau T1, song song T2**, worktree riêng từ `origin
 | phép | trước/sau | nguồn |
 |---|---|---|
 | **Reboot mini** → dịch vụ tự lên | chụp mốc 30s trước: `launchctl list \| grep -c astronex` = 5 · promax 302 · 0 job dở; sau reboot đo lại **đúng 3 thứ** | phase-06:119; handoff 16/09 §B2 |
-| **Job ~50 video**: `du -sh` thư mục làm việc lấy mẫu 5s **≤50MB**, `ps -o rss` <1,5GB, đĩa không tụt >100MB | ghép vào một job thật của người dùng, không dựng riêng | phase-03:96-106, phase-02:74 |
+| **Job ~50 video**: `du -sm` thư mục tải lấy mẫu 5s **≤50MB** · `ps -o rss` **<1,5GB**. ⚠ Ngưỡng *"đĩa không tụt >100MB"* **BỎ 21/09**: đĩa mini dùng chung với Promax, đo được **185MB tụt trong 10s với `job_running=0`** ⇒ ĐỎ GIẢ. Cột đĩa giữ làm **thông tin**. Dụng cụ: `scripts/do-nghiem-thu-t4.sh mau <giây>` | ghép vào một job thật của người dùng, không dựng riêng | phase-03:96-106, phase-02:74 |
 | **Hai người bấm cùng lúc** → tuần tự, jar không lẫn | log worker: 2 job `running` không bao giờ chồng thời gian; `cookies_path` đi vào `download_all` đúng chủ (test đã có `0fa50a0`) | phase-06:126 |
 | Link Drive **mở được bằng mắt** | 1 lần | handoff 16/09 |
 | Đổi `status: completed` cho `plans/260914-1412-…/plan.md`; CHECKLIST mục B2 tick kèm giờ | | |
