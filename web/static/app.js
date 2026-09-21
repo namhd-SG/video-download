@@ -801,14 +801,49 @@
     const banner = document.getElementById("cookie-banner");
     if (!banner) return;
     try {
-      const tt = await apiGet("/me/cookie");
-      banner.hidden = tt.co_jar;
+      veTrangThaiCookie(banner, await apiGet("/me/cookie"));
     } catch (err) {
-      // Không đọc được thì ẩn banner: thà không nhắc còn hơn nhắc sai rằng
-      // người đã dán cookie là đang ẩn danh.
+      // Không đọc được thì ẩn hẳn: thà không nói gì còn hơn nói sai rằng người
+      // đã dán cookie là đang ẩn danh.
       banner.hidden = true;
       throw err;
     }
+  }
+
+  // BA trạng thái, không phải hai.
+  //
+  // Bản cũ là một dòng: `banner.hidden = tt.co_jar`. Nó coi "có tệp jar" là
+  // "cookie dùng được — không cần nói gì", nhưng `/me/cookie` trả `co_jar:true`
+  // cho CẢ jar hết hạn, jar rỗng và jar chưa đăng nhập. Hậu quả đo được: cookie
+  // hết hạn thì trang chính trông **y hệt** lúc cookie khoẻ, và tín hiệu duy
+  // nhất người dùng có là một sự VẮNG MẶT — thứ không phân biệt được với "trang
+  // này vốn không nói gì về cookie". Đúng nguyên văn lời người dùng: *"nhìn vô
+  // không biết là có cookie chưa"*.
+  //
+  // Nên trạng thái khoẻ cũng phải nói ra — nhưng bằng MỘT CHIP, không phải một
+  // dải chữ: chỗ này người dùng đi qua mỗi lần tạo lượt tải, và một khối cảnh
+  // báo cho tin tốt là tiếng ồn.
+  function veTrangThaiCookie(banner, tt) {
+    banner.hidden = false;
+    if (!tt.co_jar) {
+      banner.className = "banner-an-danh";
+      banner.innerHTML = 'Chưa có cookie — lượt tải của bạn chạy <strong>ẩn danh</strong> ' +
+        'và chia chung hạn mức với mọi người chưa dán. ' +
+        '<a href="/settings.html">Dán cookie của bạn →</a>';
+      return;
+    }
+    if (tt.trang_thai !== "dung_duoc") {
+      // Câu chữ lấy từ bảng dùng chung với trang Cài đặt — hai trang nói cùng
+      // một câu về cùng một tệp, nếu không người dùng phải tự ghép hai cách nói.
+      const cach_chua = (window.MA_COOKIE_TRANG_THAI || {})[tt.trang_thai];
+      banner.className = "banner-an-danh";
+      banner.innerHTML = "Cookie của bạn <strong>không dùng được</strong> — lượt tải sẽ chạy " +
+        "ẩn danh. " + (cach_chua ? escapeHtml(cach_chua) + " " : "") +
+        '<a href="/settings.html">Dán lại cookie →</a>';
+      return;
+    }
+    banner.className = "chip chip-ok";
+    banner.textContent = "Cookie đang dùng được";
   }
 
   // ========================================================================

@@ -1732,3 +1732,41 @@ def test_lifespan_co_goi_va_uvicorn():
     import inspect
     nguon = inspect.getsource(app_mod._lifespan)
     assert "_dong_dau_thoi_gian_vao_uvicorn()" in nguon
+
+
+def test_van_tay_doi_khi_thay_cookie_va_khong_mang_byte_nao_cua_jar(tmp_path, monkeypatch):
+    """Vân tay phải PHÂN ĐỊNH được hai jar, và không được rò nội dung.
+
+    Hai phép đo, vì một mình phép đầu không đủ: một hằng số cũng "có mặt" ở mọi
+    lượt gọi, nên phải chứng minh nó ĐỔI khi jar đổi, và GIỮ NGUYÊN khi jar
+    không đổi. Đây đúng chỗ dễ dựng một trường trang trí mà không ai kiểm.
+    """
+    _san_cookie(tmp_path, monkeypatch)
+
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le("JAR-MOT")),
+                          nguoi_tao=TEST_USER)
+    mot = app_mod.get_my_cookie(nguoi_tao=TEST_USER)["van_tay"]
+    # Đọc lại cùng một jar: cùng nội dung ⇒ cùng vân tay.
+    assert app_mod.get_my_cookie(nguoi_tao=TEST_USER)["van_tay"] == mot
+
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le("JAR-HAI")),
+                          nguoi_tao=TEST_USER)
+    hai = app_mod.get_my_cookie(nguoi_tao=TEST_USER)["van_tay"]
+
+    assert hai != mot, "thay cookie mà vân tay không đổi ⇒ không kiểm được bản thay đã ăn"
+    assert len(mot) == 8 and len(hai) == 8
+
+    # Và không mang byte nào của jar: giá trị bí mật không xuất hiện ở BẤT KỲ
+    # trường nào, không riêng `van_tay`.
+    tt = app_mod.get_my_cookie(nguoi_tao=TEST_USER)
+    assert "JAR-HAI" not in json.dumps(tt)
+    assert "sessionid" not in json.dumps(tt)
+
+
+def test_chua_dan_cookie_thi_van_tay_la_none(tmp_path, monkeypatch):
+    """Không có jar ⇒ `van_tay` là None, không phải chuỗi rỗng hay thiếu khoá:
+    trang Cài đặt phân biệt "chưa có" với "có mà không đọc được"."""
+    _san_cookie(tmp_path, monkeypatch)
+    tt = app_mod.get_my_cookie(nguoi_tao=TEST_USER)
+    assert tt["co_jar"] is False
+    assert "van_tay" in tt and tt["van_tay"] is None

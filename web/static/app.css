@@ -435,7 +435,13 @@
 
   /* Cookie của tôi — dùng lại token màu sẵn có để hai chế độ sáng/tối tự
      đúng, không đặt màu cứng. */
+  /* `inline-block`, không để thẻ tự quyết: chip này dùng trên `<span>` ở trang
+     Cài đặt VÀ trên `<p id="cookie-banner">` ở trang chính. Thẻ `<p>` là block
+     nên viên thuốc bị kéo dài hết chiều ngang — đúng hình dạng của một dải cảnh
+     báo, tức là nói sai mức độ cho một tin TỐT. Đo bằng mắt 21/09; đọc DOM thì
+     `class="chip chip-ok"` vẫn trông đúng. */
   .chip {
+    display: inline-block;
     font-size: .72rem; padding: .15rem .5rem; border-radius: 999px;
     border: 1px solid var(--border); background: var(--surface-alt);
   }
