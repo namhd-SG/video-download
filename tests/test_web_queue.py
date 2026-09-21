@@ -1586,3 +1586,81 @@ def test_dao_sau_phai_NOI_RONG_cua_so_quet_qua_tung_luot(tmp_path, monkeypatch):
     assert len(giu) == 2, f"phải gom đủ 2 video mới, chỉ được {[r.video_id for r in giu]}"
     assert models.get_job(db, job_id)["ly_do_dung"] in (None, ""), \
         "đủ số thì không được mang lý do dừng"
+
+
+# ---------------------------------------------------------------------------
+# Đào sâu: đo KẾT QUẢ NGƯỜI DÙNG NHẬN, không đo "cửa sổ có nới"
+# ---------------------------------------------------------------------------
+# `test_dao_sau_phai_NOI_RONG_cua_so_quet_qua_tung_luot` ở trên khẳng định cửa
+# sổ lượt 2 > lượt 1. Nó XANH cả khi cửa sổ nới TUYẾN TÍNH — mà nới tuyến tính
+# thì trang 200 video có 40 cái đầu đã-có, xin 10, trả về **0** (đo 21/09).
+# "Cửa sổ có nới" là mệnh đề YẾU HƠN "người dùng nhận đủ N", và test yếu hơn
+# mệnh đề cần bảo vệ là test không bảo vệ gì.
+
+def _chay_dao_sau(monkeypatch, tmp_path, *, tong_video, so_da_co, xin):
+    """Một trang `tong_video` video, thư viện đã có `so_da_co` cái ĐẦU TIÊN.
+
+    Tiền tố đã-có nằm ở ĐẦU là ca thật, không phải ca dựng cho dễ: hai người
+    quét cùng một nguồn thì người sau gặp đúng phần người trước đã lấy.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=xin)
+    trang = [f"v{i:03d}" for i in range(tong_video)]
+    for vid in trang[:so_da_co]:
+        models.record_video(db, job_id=1, video_id=vid, url="u")
+
+    def scraper_gia(url, max_videos=None, **kw):
+        # Mô phỏng `_auto_scroll`: ngừng cuộn khi THẤY đủ `max_videos` video
+        # thô, luôn tính từ đầu trang.
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=xin,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+    return giu, models.get_job(db, job_id)["ly_do_dung"]
+
+
+def test_dao_qua_duoc_tien_to_da_co_dai(monkeypatch, tmp_path):
+    """Thư viện đã có 40 video ĐẦU trang, xin 10 ⇒ phải nhận ĐỦ 10.
+
+    ĐỘT BIẾN: nới cửa sổ tuyến tính (`đã_thấy + còn_thiếu`) thay vì gấp đôi
+    ⇒ ĐỎ, ra 0/10 — cửa sổ bò 10→20→30→40 rồi hết lượt.
+    """
+    giu, ly_do = _chay_dao_sau(monkeypatch, tmp_path, tong_video=200, so_da_co=40, xin=10)
+    assert len(giu) == 10, f"phải đủ 10 video mới, chỉ được {len(giu)}"
+    assert not ly_do, "đủ số thì không mang lý do dừng"
+
+
+def test_dao_qua_duoc_tien_to_RAT_dai(monkeypatch, tmp_path):
+    """100/200 video đầu đã có. Gấp đôi vượt tiền tố dài sau ~log2(N) lượt;
+    tuyến tính thì không bao giờ trong 5 lượt."""
+    giu, _ = _chay_dao_sau(monkeypatch, tmp_path, tong_video=200, so_da_co=100, xin=10)
+    assert len(giu) == 10
+
+
+def test_khong_dao_thua_khi_chua_co_gi(monkeypatch, tmp_path):
+    """Ca âm 1: thư viện rỗng ⇒ đủ ngay lượt đầu, KHÔNG được quét thêm lượt
+    nào. Không có ca này thì "gấp đôi" có thể xanh vì nó quét bừa thật nhiều."""
+    goi = []
+    db, job_id = _san_dao_sau(tmp_path, xin=10)
+    trang = [f"v{i:03d}" for i in range(200)]
+
+    def scraper_gia(url, max_videos=None, **kw):
+        goi.append(max_videos)
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+    assert len(giu) == 10
+    assert len(goi) == 1, f"đủ ngay lượt đầu mà vẫn quét {len(goi)} lượt"
+
+
+def test_nguon_can_that_thi_tra_phan_con_lai_roi_dung(monkeypatch, tmp_path):
+    """Ca âm 2: trang chỉ có 12 video, 10 cái đã có, xin 5 ⇒ nhận 2 rồi DỪNG.
+
+    Phân định "đào chưa tới" với "nguồn hết thật": nếu test trên xanh mà test
+    này treo hoặc quét vô hạn thì cơ chế đang đào bừa, không phải đào đúng.
+    """
+    giu, ly_do = _chay_dao_sau(monkeypatch, tmp_path, tong_video=12, so_da_co=10, xin=5)
+    assert [r.video_id for r in giu] == ["v011", "v010"]
+    assert ly_do, "hụt vì nguồn cạn thì vẫn phải nói vì sao"

@@ -562,8 +562,20 @@ def scrape_music_page_multi(
         #
         # Muốn có thêm `còn_thiếu` video mới thì phải cuộn qua hết những cái đã
         # thấy rồi mới tới phần chưa thấy ⇒ mục tiêu thô = đã_thấy + còn_thiếu.
+        # NỚI GẤP ĐÔI, không nới theo số còn thiếu.
+        #
+        # Bản đầu dùng `đã_thấy + còn_thiếu`, tức nới TUYẾN TÍNH mỗi lượt đúng
+        # bằng phần hụt. Đo 21/09, trang 200 video mà thư viện đã có 40 cái
+        # ĐẦU, xin 10 mới: cửa sổ đi 10 → 20 → 30 → 40 rồi hết lượt ⇒ **0
+        # video mới**, trong khi 160 cái chưa ai có nằm ngay dưới. Phần đầu
+        # trang mà thư viện đã có dài bao nhiêu là chuyện của thư viện, KHÔNG
+        # liên quan gì tới số người dùng xin — nên lấy số xin làm bước nhảy là
+        # lấy sai đại lượng.
+        #
+        # Gấp đôi thì vượt một tiền tố đã-có dài N sau khoảng log2(N) lượt:
+        # 40 cái đã có bị bỏ lại ngay ở lượt 3 thay vì lượt 5.
         con_thieu = max_videos - len(moi)
-        muc_tieu_tho = max(max_videos, len(da_thay) + con_thieu)
+        muc_tieu_tho = max(max_videos, (len(da_thay) + con_thieu) * 2)
         batch = scrape_music_page(music_url, max_videos=muc_tieu_tho, **kwargs)
         if not batch:
             # Lượt ĐẦU ra 0 = nguồn chưa bao giờ đưa gì (link sai/hết hạn).
@@ -580,6 +592,20 @@ def scrape_music_page_multi(
         da_cao += 1
         fresh = [r for r in batch if r.video_id not in da_thay]
         da_thay.update(r.video_id for r in fresh)
+        # Mẫu số là CẢ RỔ, cố ý giữ nguyên.
+        #
+        # Có một bản vá thử đổi mẫu số thành "phần cửa sổ vừa nới thêm", với lý
+        # do nghe rất xuôi: cửa sổ nới dần nên `batch` là tập cha của lượt
+        # trước, mẫu số phình mà tử số thì không. Đo lại thì bản đó SAI hai lần:
+        #   · không test nào cần nó — đột biến hoàn nguyên nó vẫn XANH, vì phép
+        #     nới GẤP ĐÔI đã giữ tỉ lệ trên ngưỡng rồi;
+        #   · và nó PHÁ đường GUI (`gui.py`), nơi cửa sổ KHÔNG nới: ở đó
+        #     `len(batch) - đã_thấy_trước = 0` ⇒ mẫu số rơi về 1 ⇒ `rate` luôn
+        #     ≥ 1 ⇒ cửa "lợi ích giảm dần" KHÔNG BAO GIỜ đóng, và bản desktop
+        #     quét đủ 5 lượt mỗi lần. Đo: batch 50, đã thấy 50, mới 10 ⇒ cũ
+        #     0,20 (dừng, đúng ý) · mới 10,0 (chạy tiếp mãi).
+        # Một bản vá không ai cần mà lại đổi hành vi một đường không ai yêu cầu
+        # sửa thì không phải bản vá.
         rate = len(fresh) / len(batch)
 
         owned = already_have([r.video_id for r in fresh]) if (already_have and fresh) else set()

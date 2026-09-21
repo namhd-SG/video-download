@@ -10,7 +10,11 @@
   // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói cách
   // chữa. Bảng đã chuyển sang `cookie-status-text.js` để dải nhắc trên trang
   // chính dùng CÙNG một câu thay vì chép bản thứ hai.
-  const MA_COOKIE = window.MA_COOKIE_TRANG_THAI;
+  // `|| {}`: nếu `cookie-status-text.js` không nạp được (HTML cũ còn trong
+  // cache trình duyệt sau một chuyến deploy, hoặc tệp 404) thì thiếu bảng chữ
+  // là phiền — nhưng ném `TypeError` ở đây giết CẢ khối cookie, đúng cái trang
+  // người ta mở ra để CHỮA cookie. Mất câu hướng dẫn còn hơn mất cả trang.
+  const MA_COOKIE = window.MA_COOKIE_TRANG_THAI || {};
 
   class PhienHetHan extends Error {}
 
