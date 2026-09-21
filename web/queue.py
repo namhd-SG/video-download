@@ -161,7 +161,19 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
 
     def _note_pages(so_trang: int) -> None:
         """Ghi số trang index đã đọc. Trong `try` riêng: mất con số này thì
-        trần liệt kê hụt, nhưng không được làm hỏng một lượt tải đã chạy xong."""
+        trần liệt kê hụt, nhưng không được làm hỏng một lượt tải đã chạy xong.
+
+        Cửa `db_path is None` giống hệt `_note_skip`/`_note_stop` ở trên, và
+        nó KHÔNG thừa: không có DB (đường CLI/GUI, và test) thì đây là "chưa
+        cấu hình", không phải "đã cấu hình mà trượt". Hai ca đó mà trả cùng
+        một dòng cảnh báo thì cảnh báo mất hết giá trị — và từ 21/09 hàm này
+        chạy MỖI LỜI GỌI FEED chứ không còn một lần cuối job, nên ca đầu đẻ
+        ra hàng chục dòng rác che đúng ca thứ hai. Đo được: 3 lời gọi feed
+        không DB ⇒ 3 dòng `job None: không ghi được số trang index`.
+        (`guard-marker-and-claim-write-ordering.md` vế 2.)
+        """
+        if db_path is None or job_id is None:
+            return
         try:
             models.set_job_pages(db_path, job_id, so_trang)
         except Exception:  # noqa: BLE001

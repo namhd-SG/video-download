@@ -1491,3 +1491,30 @@ def test_tran_thoi_gian_cat_luot_chay_va_noi_dung_ly_do(tmp_path, monkeypatch):
 
     assert models.get_job(db, job_id)["ly_do_dung"] == "het_thoi_gian"
     assert len(giu) >= 1, "cắt vì hết giờ vẫn phải giữ những gì đã gom được"
+
+
+def test_khong_co_db_thi_dem_trang_IM_LANG_khong_canh_bao(monkeypatch, caplog):
+    """Không có DB = "chưa cấu hình", không phải "đã cấu hình mà trượt". Hai ca
+    đó trả cùng một dòng cảnh báo thì dòng đó mất hết giá trị.
+
+    Từ 21/09 `_note_pages` chạy MỖI lời gọi feed chứ không còn một lần cuối
+    job, nên ca "chưa cấu hình" đẻ ra hàng chục dòng rác — và rác đó che đúng
+    ca thứ hai, ca thật sự cần nhìn.
+
+    ĐỘT BIẾN: bỏ cửa `if db_path is None` trong `_note_pages` ⇒ ĐỎ (đo được
+    3 dòng cho 3 lời gọi feed).
+    """
+    def scraper_gia(url, dem_trang=None, **kw):
+        for _ in range(3):
+            if dem_trang is not None:
+                dem_trang()
+        return [_fake_ref("v1")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=1)
+    with caplog.at_level("WARNING", logger="videodl.web"):
+        refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=1,
+                                      cookies_path=None)
+
+    assert [r.video_id for r in refs] == ["v1"], "không DB thì vẫn phải trả đủ ref"
+    assert caplog.records == [], \
+        f"không có DB mà vẫn cảnh báo: {[r.message for r in caplog.records]}"

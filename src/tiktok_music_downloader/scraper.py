@@ -522,7 +522,11 @@ def scrape_music_page_multi(
     moi: dict[str, VideoRef] = {}      # mới với THƯ VIỆN, giữ thứ tự gặp
     bo_qua = 0                         # số video bỏ vì thư viện đã có
     ly_do = STOP_COMPLETE
-    i = 0
+    # Số lượt ĐÃ CÀO THẬT, không phải số lượt đã thử. Hai con số lệch nhau ở
+    # đúng ca trần thời gian cắt TRƯỚC khi `scrape_music_page` kịp chạy: dùng
+    # `i + 1` cho câu log cuối sẽ báo dư một lượt chưa từng xảy ra. Một dòng
+    # log khai nhiều hơn thứ nó đo được là thứ người sau sẽ trích như số đo.
+    da_cao = 0
 
     def _con_lai() -> float | None:
         if max_seconds is None:
@@ -559,6 +563,7 @@ def scrape_music_page_multi(
                 ly_do = STOP_NGHI_BI_CHAN
             break
 
+        da_cao += 1
         fresh = [r for r in batch if r.video_id not in da_thay]
         da_thay.update(r.video_id for r in fresh)
         rate = len(fresh) / len(batch)
@@ -618,8 +623,8 @@ def scrape_music_page_multi(
     # phải trả về ĐÚNG như trước, kể cả thứ tự. Đổi thứ tự ở đây là đổi thứ tự
     # tải của một công cụ không ai yêu cầu sửa.
     ket_qua = sorted(moi.values(), key=lambda r: r.video_id, reverse=True)[:max_videos]
-    log.info("multipass: %d video mới qua %d lượt, lý do dừng=%r",
-             len(ket_qua), i + 1, ly_do or "đủ")
+    log.info("multipass: %d video mới qua %d lượt đã cào, lý do dừng=%r",
+             len(ket_qua), da_cao, ly_do or "đủ")
     return ket_qua
 
 
