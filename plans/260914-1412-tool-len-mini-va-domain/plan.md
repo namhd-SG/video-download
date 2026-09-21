@@ -109,7 +109,7 @@ nó thỉnh thoảng đứt.
 **14/09 17:45 — MVP CHẠY TRỌN VÒNG trên mini.** Đo thật, không phải test:
 `POST /jobs` → **done 3/3, 0 lỗi, 18 giây** · `drive_folder_link` trả về trong API ·
 thư mục làm việc **0 file** còn lại · `healthz` **200** · **SIGKILL → tự lên lại**
-(pid 10171→46348) · `promax` **302 suốt** · label astronex **4→5**, không mất cái nào ·
+(pid 10171→46348) · `promax` **302 suốt** · label astronex: so **danh sách tên** trước/sau, khớp từng tên (bản cũ ghi "4→5" — số đếm không nói mất cái nào; sửa 21/09) ·
 suite **127 passed** chạy ngay trên mini.
 
 Ba chỗ suýt hỏng âm thầm, bắt được nhờ kiểm tại nguồn: **tên biến môi trường tôi đặt

@@ -72,7 +72,12 @@ lượt sau còn biết job nào dở.
       trong SQLite (không biến mất, không báo "xong" giả)
 - [x] Hai job gửi cùng lúc → chạy **tuần tự**, đo bằng mốc thời gian trong DB
 - [ ] RAM lúc chạy job: `ps -o rss` của tiến trình < 1,5 GB
-- [x] `promax.nobidigital.asia` **302 suốt**, label astronex 4→5 không mất cái nào
+- [x] `promax.nobidigital.asia` **302 suốt**; label astronex so bằng **DANH SÁCH TÊN**
+      trước/sau, không bằng số đếm — `launchctl list | grep astronex | awk '{print $3}' | sort`.
+      *(Sửa 21/09: bản cũ ghi "4→5 không mất cái nào". Một con số **cấu tạo không
+      thể** nói mất CÁI NÀO, mà câu cần trả lời là "mình có làm hỏng hàng xóm không".
+      Ca thật 21/09: một lane đếm ra 4 rồi suýt báo động mất dịch vụ của đội khác —
+      thật ra là 5, `tail` cắt mất dòng đầu.)*
 
 ## Risk Assessment
 
