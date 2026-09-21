@@ -331,3 +331,62 @@ Ngay sau chuyến deploy có vấn đề 2, **lượt chạy thật đầu tiên
 3. Có chạm rate-limit không ⇒ dữ kiện đầu tiên cho câu *"TikTok chặn ở ngưỡng nào"* (`§7.2`).
 
 Không có ba số này thì hai trần 600s/5 vòng vẫn là **lựa chọn**, không phải **hiệu chỉnh** — đừng để ai đọc chúng thành số đo.
+
+---
+
+## 9. CHỜ USER QUYẾT — 4 mục (soạn 21/09 14:45, HEAD `b0397ad`)
+
+Đọc mục này trước khi gõ gì. Ba mục đầu là **đánh đổi user phải biết**; mục 4 là cái gật.
+
+### 9.1 Job đang chạy KHOÁ hàng đợi tới 10 phút — hệ quả của chính trần user chốt
+`app.py::huy_job` → `models.huy_job_dang_cho`: **chỉ rút được job `pending`**; job đang chạy trả
+**409** *"đã bắt đầu tải nên không rút được nữa"*. `JobWorker` **tuần tự theo cấu tạo** — một job
+chạy thì không job nào khác bắt đầu.
+
+⇒ Trước bản vá: job music/search chạy ~1 lượt. Sau: **tới 10 phút**, trong đó **người tạo không
+rút được** và **cả nhóm không ai chạy được job nào**.
+
+Đây là cái giá của trần 10 phút, và **lane KHÔNG bày ra lúc user chốt** — lỗi trình bày đánh đổi,
+không phải lỗi của lựa chọn. Ba đường: (a) giữ nguyên, chấp nhận · (b) hạ trần thời gian · (c) cho
+rút job đang chạy (= đổi vòng đời worker, việc lớn nhất trong ba).
+
+### 9.2 Tính năng chính đã hỏng HAI LẦN, cả hai đều do cửa ngoài bắt
+- Lần 1 (reviewer): `_auto_scroll` ngừng khi thấy đủ `max_videos` thô, mọi lượt xin cùng cửa sổ ⇒
+  lượt 2..5 quét lại chỗ cũ.
+- Lần 2 (điều phối): bản vá lần 1 nới **tuyến tính theo số user xin** — sai đại lượng. Đo: trang
+  200 video, thư viện có 40 cái ĐẦU, xin 10 ⇒ **0/10**.
+- Nay nới **gấp đôi**, 5 kịch bản gồm 2 ca âm đều đạt.
+
+⇒ **Điều user cần biết:** cơ chế này chưa lần nào chạm TikTok thật. Nó đúng trên scraper giả, và
+đã hai lần "đúng trên giả, sai trên thật-nếu-chạy". Lượt chạy thật đầu tiên phải soi tận mắt.
+
+### 9.3 Giờ trên thẻ job sai 7 tiếng (lỗi CŨ, không phải của 3 bản vá)
+`app.js:112-114` `fmtDateTime` là **phẫu thuật chuỗi** (`replace("T"," ").slice(0,19)`), không đổi
+múi giờ; server ghi UTC (`models.py:106-109`); mini chạy `+07` (đo). ⇒ job tạo **14:30** hiện
+**07:30**. Trang Cài đặt render **đúng** (`toLocaleString`) ⇒ sản phẩm tự mâu thuẫn.
+Vá **1 dòng**. ⚠ Đừng cộng tay 7 tiếng — để `new Date()` đọc offset, nếu không là cắm cứng một
+múi giờ vào mã.
+
+### 9.4 Deploy — chưa gật
+Đề xuất: **1 + 3 + mọi bản vá từ review** một chuyến; **vấn đề 2 chuyến riêng** (cái duy nhất có
+rủi ro TikTok chặn, và gộp thì lui lại không tách được phần nào gây ra).
+Danh mục bắt buộc mỗi chuyến: sao lưu `jobs.db` trên mini · liệt **TÊN** label trước/sau (không so
+số đếm) · `promax = 302` hai đầu · sau khi lên đo mắt `20/50` + 3 trạng thái cookie.
+
+---
+
+## 10. ĐÍNH CHÍNH + NỢ
+
+**Đính chính lời commit `8b72c93`.** Nó viết hợp đồng CLI/GUI *"không đổi"*. Sai một vế: khoá lọc
+trùng đổi từ `VideoRef` đầy đủ sang `video_id`. Thực tế không cắn (đường Playwright để trống mọi
+ô metadata nên hai khoá trùng nhau), nhưng **lời khai vẫn sai** và commit đã push nên không nắn
+lịch sử — đính chính ở đây.
+
+**Nợ, không vá:** `tim_thay` chưa tới mắt người dùng. Nó **không còn là cột chỉ-ghi** (cổng hạn
+mức đọc nó từ `eff86de`), nhưng UI vẫn in `xong/tong`. Nhãn "Thiếu" đã phủ ca user nêu, nên chưa
+đáng thêm một con số nữa lên thẻ.
+
+**Luật rút ra, đáng mang ra ngoài repo này:** *lập luận nghe xuôi + không đột biến nào đỏ = CHƯA
+ĐỦ để ship.* Ca thật: bản vá mẫu số `rate` nghe hoàn toàn hợp lý, đột biến hoàn nguyên nó **XANH**
+(không mệnh đề nào cần nó), và soi tiếp thì nó **phá đường GUI** — mẫu số rơi về 1 ⇒ cửa "lợi ích
+giảm dần" không bao giờ đóng. Đột biến xanh là **tín hiệu**, không phải phiền toái.
