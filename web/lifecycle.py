@@ -318,8 +318,12 @@ def daily_cap_rejection(*, db_path: Path, cookies_dir: Path, nguoi_tao: str,
 
       * trần JOB dùng `COUNT(*)` ⇒ job liệt kê ra RỖNG **vẫn tính**. Đo
         16/09: 2 job ra rỗng = đã tiêu 2 lượt.
-      * trần VIDEO dùng `SUM(tong)` ⇒ đúng 2 job đó **tính 0 video**, vì
-        `process_job` ghi đè `tong` bằng số ref THẬT sau khi lọc trùng.
+      * trần VIDEO đếm `tim_thay` cho job ĐÃ XONG ⇒ đúng 2 job đó **tính 0
+        video**. (Tới 21/09 nó là `SUM(tong)` và cho kết quả y hệt, vì hồi đó
+        `process_job` ghi đè `tong` bằng số ref THẬT. Từ khi `tong` giữ luôn
+        số user XIN, `SUM(tong)` bắt đầu trừ theo số xin — xem
+        `models.py::sum_videos_since_by_creator`. Quyết định dưới đây KHÔNG
+        đổi; chỉ cột dùng để đo nó đổi.)
 
     Giữ như vậy có chủ đích: xin 2000 mà nhận 3 rồi bị trừ 2000 là phạt người
     dùng vì thứ họ không điều khiển được. Thứ đang được chia khẩu phần là lưu

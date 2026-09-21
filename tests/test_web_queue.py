@@ -1518,3 +1518,71 @@ def test_khong_co_db_thi_dem_trang_IM_LANG_khong_canh_bao(monkeypatch, caplog):
     assert [r.video_id for r in refs] == ["v1"], "không DB thì vẫn phải trả đủ ref"
     assert caplog.records == [], \
         f"không có DB mà vẫn cảnh báo: {[r.message for r in caplog.records]}"
+
+
+def test_tran_video_tru_theo_SO_TIM_DUOC_khong_phai_so_XIN(tmp_path):
+    """Quyết định user 16/09: *"xin 2000 mà nhận 3 rồi bị trừ 2000 là phạt
+    người dùng vì thứ họ không điều khiển được"*.
+
+    Quyết định đó từng được thi hành NHỜ việc `process_job` ghi đè `tong`. Bản
+    vá 21/09 thôi đè `tong` ⇒ `SUM(tong)` lặng lẽ quay sang trừ theo SỐ XIN, và
+    không test nào thấy: chỗ hỏng nằm ở cổng hạn mức, cách hai module.
+
+    ĐỘT BIẾN: đổi lại thành `SUM(tong)` ⇒ ĐỎ (2 job xin 500 tìm được 1 ⇒ 1000).
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    for _ in range(2):
+        jid = models.create_job(db, "https://www.tiktok.com/music/x-1", 500, "ai@do.vn")
+        models.set_job_found(db, jid, 1)      # quét ra đúng 1 video
+        models.finish_job(db, jid, "done")
+
+    dem = models.sum_videos_since_by_creator(db, "2000-01-01T00:00:00")
+    assert dem["ai@do.vn"] == 2, "2 job tìm được 1 video mỗi cái ⇒ tiêu 2, không phải 1000"
+
+
+def test_job_chua_xong_van_bi_TAM_TRU_theo_so_xin(tmp_path):
+    """Ca ngược, để bản vá trên không thành một đường lách trần: job đang chờ
+    chưa có số thật, nếu tính 0 thì xếp hàng 20 job × 100 video sẽ đi thẳng qua
+    trần 1000 — cổng chặn chạy lúc TẠO job."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.create_job(db, "https://www.tiktok.com/music/x-1", 100, "ai@do.vn")
+
+    dem = models.sum_videos_since_by_creator(db, "2000-01-01T00:00:00")
+    assert dem["ai@do.vn"] == 100, "job đang chờ phải tạm trừ theo số xin"
+
+
+def test_dao_sau_phai_NOI_RONG_cua_so_quet_qua_tung_luot(tmp_path, monkeypatch):
+    """Lượt sau phải cuộn SÂU HƠN lượt trước, không quét lại đúng chỗ cũ.
+
+    `_auto_scroll` ngừng khi THẤY đủ `max_videos` video thô — nó không biết gì
+    về thư viện. Truyền cùng một `max_videos` mọi lượt thì mọi lượt dừng ở cùng
+    cửa sổ; thư viện đã có trọn cửa sổ đó ⇒ 0 video mới mãi mãi, rồi báo
+    `already_owned` (*"đổi nguồn, chạy lại vô ích"*) trong khi phần chưa ai có
+    nằm ngay dưới mép cuộn.
+
+    ĐỘT BIẾN: truyền `max_videos=max_videos` thay vì mục tiêu thô nới dần ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=2)
+    # Thư viện đã có 3 video ĐẦU trang.
+    for vid in ("p1", "p2", "p3"):
+        models.record_video(db, job_id=1, video_id=vid, url="u")
+
+    trang = [f"p{i}" for i in range(1, 21)]      # trang có 20 video
+    xin_tho = []
+
+    def scraper_gia(url, max_videos=None, **kw):
+        # Mô phỏng `_auto_scroll`: chỉ trả về `max_videos` video ĐẦU TIÊN.
+        xin_tho.append(max_videos)
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=2,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert xin_tho[1] > xin_tho[0], \
+        f"lượt 2 phải xin cửa sổ SÂU HƠN lượt 1, nhưng xin {xin_tho}"
+    assert len(giu) == 2, f"phải gom đủ 2 video mới, chỉ được {[r.video_id for r in giu]}"
+    assert models.get_job(db, job_id)["ly_do_dung"] in (None, ""), \
+        "đủ số thì không được mang lý do dừng"

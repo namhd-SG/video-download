@@ -406,14 +406,36 @@ def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
 def sum_videos_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     """How many videos each creator's jobs account for since `since`.
 
-    Sums `tong`, which is the requested count until `process_job` replaces it
-    with the real ref count — i.e. the best number known for each job at the
-    moment it is asked for. That is what the video cap rations: calls actually
-    made to TikTok, not jobs started.
+    Two different numbers, picked by whether the job has finished:
+
+      * finished (`done`/`failed`) -> `tim_thay`, the refs the scrape really
+        produced. This is the 16/09 user decision, spelled out in
+        `lifecycle.py`: asking for 2000 and receiving 3 must not cost 2000,
+        because what is being rationed is real download traffic and the
+        shortfall is not something the user controls.
+      * still pending or running -> `tong`, what they asked for. An unfinished
+        job has no real count yet, and charging it 0 would let someone queue
+        twenty 100-video jobs straight past a 1000/day cap, since the gate
+        runs at job-creation time.
+
+    ⚠ This used to be a plain `SUM(tong)` and it worked only because
+    `process_job` overwrote `tong` with the real count. Once `tong` started
+    holding the requested number for good (21/09, so the progress bar could
+    stop reading `20/20` for a job that missed 50), that same `SUM` silently
+    began charging the requested amount forever — measured: two jobs asking
+    500 that found one video each burned the whole 1000/day cap. The fix for
+    a lying progress bar reached into a quota gate two modules away; the only
+    reason it surfaced is that a reviewer re-ran the cap, not the bar.
+
+    One consequence is genuinely new, and deliberate: a job that dies BEFORE
+    the scrape (bad cookie, disk gate) now counts 0 instead of its requested
+    number. It downloaded nothing, and this cap rations downloads.
     """
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT nguoi_tao, COALESCE(SUM(tong), 0) AS n FROM jobs "
+            "SELECT nguoi_tao, COALESCE(SUM("
+            "  CASE WHEN trang_thai IN ('done', 'failed') THEN tim_thay ELSE tong END"
+            "), 0) AS n FROM jobs "
             "WHERE tao_luc >= ? GROUP BY nguoi_tao",
             (since,),
         ).fetchall()

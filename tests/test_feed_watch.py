@@ -179,3 +179,52 @@ def test_non_api_response_is_ignored_entirely(caplog):
         _fire(FakeResponse("https://www.tiktok.com/tag/ai80slook",
                            content_length="0"))
     assert not caplog.records
+
+
+# ---------------------------------------------------------------------------
+# Bộ đếm trang: đo CHÍNH mối nối, không đo hạ lưu
+# ---------------------------------------------------------------------------
+# Hai test đào sâu trong `test_web_queue.py` có scraper giả TỰ gọi `dem_trang()`,
+# nên chúng chỉ chứng minh "đếm được thì ghi đúng" — xoá sạch lời gọi
+# `dem_trang()` trong `_watch_feed_api` mà chúng vẫn XANH (đo 21/09: 283 passed,
+# y hệt control). Đó là test bóng ma ở đúng mối nối bản vá tạo ra. Các test dưới
+# đây gọi thẳng handler thật.
+
+def _dem_duoc(resp: FakeResponse) -> int:
+    """Số lần `_watch_feed_api` đếm cho một response."""
+    page = FakePage()
+    dem = {"n": 0}
+    _watch_feed_api(page, lambda: dem.__setitem__("n", dem["n"] + 1))
+    assert page.handler is not None
+    page.handler(resp)
+    return dem["n"]
+
+
+def test_moi_response_feed_2xx_duoc_dem_mot_lan():
+    """ĐỘT BIẾN: xoá lời gọi `dem_trang()` trong `_watch_feed_api` ⇒ ĐỎ.
+    Không có test này thì `so_trang` lặng lẽ về 0 — đúng trạng thái mà bản vá
+    nói là đang chữa, và trần 800 mù trở lại."""
+    assert _dem_duoc(FakeResponse(MUSIC_API, content_length="4096")) == 1
+    assert _dem_duoc(FakeResponse(TAG_API, content_length="4096")) == 1
+
+
+def test_response_feed_RONG_van_duoc_dem():
+    """Lượt gọi đã tiêu thì tiêu, kể cả khi TikTok trả 0 byte. Trần này đo LƯU
+    LƯỢNG mình tạo ra, không đo mình thu được gì — đếm sau khi biết rỗng sẽ
+    miễn phí đúng những lượt bị chặn, tức đúng lúc cần bó nhất."""
+    assert _dem_duoc(FakeResponse(MUSIC_API, content_length="0")) == 1
+
+
+def test_khong_dem_thu_khong_phai_feed():
+    """Phép thử phải có SỨC PHÂN ĐỊNH: nếu mọi response đều được đếm thì hai
+    test trên xanh vì lý do sai."""
+    assert _dem_duoc(FakeResponse("https://www.tiktok.com/api/khac/", content_length="99")) == 0
+    assert _dem_duoc(FakeResponse(MUSIC_API, status=302, content_length="0")) == 0
+    assert _dem_duoc(FakeResponse(MUSIC_API, content_length="99", method="POST")) == 0
+
+
+def test_khong_truyen_dem_trang_thi_khong_no():
+    """Đường CLI/GUI không đo trần nên không truyền `dem_trang`."""
+    page = FakePage()
+    _watch_feed_api(page)
+    page.handler(FakeResponse(MUSIC_API, content_length="4096"))

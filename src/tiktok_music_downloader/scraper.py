@@ -550,7 +550,21 @@ def scrape_music_page_multi(
             time.sleep(delay)
 
         log.info("=== pass %d/%d ===", i + 1, passes)
-        batch = scrape_music_page(music_url, max_videos=max_videos, **kwargs)
+        # CỬA SỔ QUÉT phải SÂU DẦN, nếu không "đào sâu" chỉ là quét lại chỗ cũ.
+        #
+        # `_auto_scroll` ngừng cuộn ngay khi THẤY đủ `max_videos` video — nó
+        # đếm video THÔ, không biết gì về thư viện. Truyền cùng một
+        # `max_videos` cho mọi lượt thì lượt 2..5 dừng lại ở đúng cửa sổ lượt 1
+        # đã dừng, và nếu thư viện đã có trọn cửa sổ đó thì mọi lượt đều về 0
+        # video mới — rồi lý do dừng thành `already_owned` ("đổi nguồn, chạy
+        # lại chắc chắn vô ích") trong khi phần chưa ai có nằm ngay dưới mép
+        # cuộn. Đó là hỏng ÂM THẦM đúng trong ca tính năng này sinh ra để chữa.
+        #
+        # Muốn có thêm `còn_thiếu` video mới thì phải cuộn qua hết những cái đã
+        # thấy rồi mới tới phần chưa thấy ⇒ mục tiêu thô = đã_thấy + còn_thiếu.
+        con_thieu = max_videos - len(moi)
+        muc_tieu_tho = max(max_videos, len(da_thay) + con_thieu)
+        batch = scrape_music_page(music_url, max_videos=muc_tieu_tho, **kwargs)
         if not batch:
             # Lượt ĐẦU ra 0 = nguồn chưa bao giờ đưa gì (link sai/hết hạn).
             # Lượt SAU ra 0 = nó đang đưa rồi ngừng ⇒ nghi bị chặn mềm. Hai ca
