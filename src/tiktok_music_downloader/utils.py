@@ -7,17 +7,28 @@ import re
 import time
 from dataclasses import dataclass
 
-_VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)")
+# `re.I`: hosts are case-insensitive per RFC 3986, and `.match()` is not.
+# Chromium already lowercases `.href` from the DOM, so this only covers a
+# hand-typed or autocapitalised paste like `Https://WWW.TikTok.com/tag/x`.
+_VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)", re.I)
 # Slug allows: \w (Unicode word chars — Vietnamese, Russian, etc.),
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
-_MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)")
-_SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?")
-_FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?")
+_MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)", re.I)
+_SEARCH_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/search/?\?", re.I)
+# Hashtag page: /tag/<slug>. Same slug charset as music (Unicode word chars,
+# hyphen, percent-encoding) but with no trailing numeric id to anchor on.
+_TAG_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/tag/([\w\-%]+)", re.I)
+# Profile page: /@handle with nothing after it. The trailing anchor keeps
+# /@handle/video/<id> out — that is one video, not a page to enumerate.
+# Ported from the MacBook lineage (macbook-legacy-main, dec9fdc), re-anchored
+# to this tree's .match() convention.
+_PROFILE_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/?(?:[?#]|$)", re.I)
+_FB_ADS_RE = re.compile(r"https?://(?:www\.)?facebook\.com/ads/library/?\?", re.I)
 # Google Drive folder share link. Covers all three URL shapes the share UI
 # emits: `/folders/<ID>`, `/drive/folders/<ID>`, and `/drive/u/<N>/folders/<ID>`.
 # ID is base64-ish — word chars and dashes.
 _GDRIVE_FOLDER_RE = re.compile(
-    r"https?://drive\.google\.com/(?:drive/(?:u/\d+/)?)?folders/([\w\-]+)"
+    r"https?://drive\.google\.com/(?:drive/(?:u/\d+/)?)?folders/([\w\-]+)", re.I
 )
 # FBCDN MP4 URLs embed `xpv_asset_id` inside a base64-encoded `efg=` query
 # param. Extracting it lets us name the downloaded file deterministically so
@@ -59,10 +70,29 @@ def setup_logger(verbose: bool = False) -> logging.Logger:
 
 @dataclass(frozen=True)
 class VideoRef:
-    """Stable reference to one TikTok video."""
+    """Stable reference to one TikTok video.
+
+    Everything after `url` is optional catalogue metadata: the hashtag index
+    hands it to us for free (its response carries 31 fields; this tool used to
+    read two), while the Playwright scrapers and the Facebook Ads path have no
+    equivalent and leave it None. Nothing in the download path reads these —
+    they exist so the library grid can filter by market and show duration
+    without a second round trip, and a source that cannot supply them still
+    works exactly as before.
+    """
 
     video_id: str
     url: str
+    title: str | None = None
+    author: str | None = None
+    region: str | None = None
+    duration: int | None = None
+    play_count: int | None = None
+    # The sound this video uses. Kept because "more like this" starts from the
+    # sound more often than from the hashtag — a music page is one of the two
+    # sources that actually enumerate well here, and TikTok trends cluster by
+    # sound. Like the rest, it rides along free in the index response.
+    music_id: str | None = None
 
     @property
     def filename(self) -> str:
@@ -71,7 +101,7 @@ class VideoRef:
 
 def parse_video_url(url: str) -> VideoRef | None:
     """Extract video_id from a TikTok video URL. Returns None if no match."""
-    m = _VIDEO_RE.search(url)
+    m = _VIDEO_RE.match(url.strip())
     if not m:
         return None
     return VideoRef(video_id=m.group(1), url=url)
@@ -79,27 +109,57 @@ def parse_video_url(url: str) -> VideoRef | None:
 
 def is_music_page(url: str) -> bool:
     """True if url is a TikTok music aggregation page."""
-    return bool(_MUSIC_RE.search(url))
+    return bool(_MUSIC_RE.match(url.strip()))
 
 
 def is_search_page(url: str) -> bool:
     """True if url is a TikTok search results page (`/search?q=...`)."""
-    return bool(_SEARCH_RE.search(url))
+    return bool(_SEARCH_RE.match(url.strip()))
+
+
+def is_tag_page(url: str) -> bool:
+    """True if url is a TikTok hashtag page (`/tag/<slug>`)."""
+    return bool(_TAG_RE.match(url.strip()))
+
+
+def parse_tag_slug(url: str) -> str | None:
+    """Extract the hashtag name from a /tag/<slug> URL, or None.
+
+    Reads the slug out of the match group. Splitting on the literal
+    "tiktok.com/tag/" looked equivalent but is case-SENSITIVE, while the
+    pattern is `re.I` — so a hand-typed "Https://WWW.TikTok.com/tag/x" matched
+    the gate and then raised IndexError, which is exactly the paste `re.I` was
+    added to accept.
+    """
+    m = _TAG_RE.match(url.strip())
+    return m.group(1) if m else None
+
+
+def is_profile_page(url: str) -> bool:
+    """True if url is a TikTok profile page (`/@handle`, nothing after it)."""
+    return bool(_PROFILE_RE.match(url.strip()))
 
 
 def is_tiktok_collection(url: str) -> bool:
-    """Any TikTok URL the scraper can enumerate — music page or search."""
-    return is_music_page(url) or is_search_page(url)
+    """Any TikTok URL this tool can enumerate — music, search, tag, profile.
+
+    Music, search and profile pages render the same `a[href*="/video/"]` cards
+    in a lazy-loading scroller, so `scrape_music_page` handles them without
+    page-type branching. A hashtag does NOT come from the browser at all — see
+    `hashtag_enumerator` for why TikTok makes that impossible.
+    """
+    return (is_music_page(url) or is_search_page(url)
+            or is_tag_page(url) or is_profile_page(url))
 
 
 def is_gdrive_folder(url: str) -> bool:
     """True if url is a public Google Drive folder share link."""
-    return bool(_GDRIVE_FOLDER_RE.search(url))
+    return bool(_GDRIVE_FOLDER_RE.match(url.strip()))
 
 
 def is_fb_ads_library(url: str) -> bool:
     """True if url targets Facebook's Ads Library (any filter combination)."""
-    return bool(_FB_ADS_RE.search(url))
+    return bool(_FB_ADS_RE.match(url.strip()))
 
 
 def parse_fb_video_url(url: str) -> "VideoRef | None":

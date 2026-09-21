@@ -1,0 +1,517 @@
+<title>Màn hình Video Desk</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#f3f6f4; --panel:#ffffff; --panel-2:#e7ede9;
+  --ink:#14201d; --ink-2:#4c5a56; --ink-3:#7d8b86;
+  --line:#d5ded9; --line-strong:#b4c2bb;
+  --accent:#0d5c55; --accent-soft:#d8eae6; --accent-ink:#ffffff;
+  --warn:#8a5a00; --warn-soft:#f7ecd6;
+  --ok:#1d6b3f;
+  --strip:#101a18; --strip-ink:#d9e6e2; --strip-ink-2:#7d9a94; --strip-line:#1e332e;
+  --shadow:0 1px 2px rgba(20,32,29,.06),0 10px 28px rgba(20,32,29,.06);
+  --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+  --body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1413; --panel:#161e1c; --panel-2:#1e2926;
+    --ink:#e7efec; --ink-2:#a6b4af; --ink-3:#74827d;
+    --line:#293430; --line-strong:#3a4844;
+    --accent:#5ecdbf; --accent-soft:#12302c; --accent-ink:#04100e;
+    --warn:#e0b872; --warn-soft:#2e2415;
+    --ok:#63c48c;
+    --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.32);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1413; --panel:#161e1c; --panel-2:#1e2926;
+  --ink:#e7efec; --ink-2:#a6b4af; --ink-3:#74827d;
+  --line:#293430; --line-strong:#3a4844;
+  --accent:#5ecdbf; --accent-soft:#12302c; --accent-ink:#04100e;
+  --warn:#e0b872; --warn-soft:#2e2415;
+  --ok:#63c48c;
+  --shadow:0 1px 2px rgba(0,0,0,.45),0 10px 28px rgba(0,0,0,.32);
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);
+  line-height:1.55;margin:0;padding-block:38px;padding-left:20px;padding-right:20px}
+.wrap{max-width:1060px;margin:0 auto;display:flex;flex-direction:column;gap:50px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0;letter-spacing:-.02em}
+h1{font-size:clamp(29px,5vw,44px);font-weight:800;line-height:1.06}
+h2{font-size:clamp(20px,3vw,26px);font-weight:600}
+h3{font-size:16px;font-weight:600}
+p{margin:0}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-3)}
+.lede{color:var(--ink-2);max-width:64ch;font-size:16px}
+header{display:flex;flex-direction:column;gap:13px;
+  border-bottom:1px solid var(--line);padding-bottom:26px}
+section{display:flex;flex-direction:column;gap:16px}
+.note{font-size:13.5px;color:var(--ink-2);max-width:72ch}
+.demo{display:inline-flex;align-self:flex-start;background:var(--warn-soft);
+  color:var(--warn);border-radius:4px;padding:5px 10px;
+  font-size:12.5px;font-family:var(--mono)}
+
+.frame{border:1px solid var(--line-strong);border-radius:7px;overflow:hidden;
+  box-shadow:var(--shadow);background:var(--panel)}
+.chrome{display:flex;align-items:center;gap:7px;padding:9px 12px;
+  background:var(--panel-2);border-bottom:1px solid var(--line)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--line-strong);flex:none}
+.addr{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:6px}
+
+/* ---------- dải điều khiển ---------- */
+.strip{background:var(--strip);color:var(--strip-ink)}
+.strip .top{display:flex;align-items:center;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid var(--strip-line)}
+.brand{font-family:var(--display);font-weight:600;font-size:15px;color:#7fd8c9}
+.who{font-family:var(--mono);font-size:11px;color:var(--strip-ink-2)}
+.stats{display:flex;gap:20px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;
+  color:var(--strip-ink-2)}
+.stats b{color:var(--strip-ink);font-weight:500;font-variant-numeric:tabular-nums}
+.runbar{display:flex;gap:8px;flex-wrap:wrap;padding:13px 16px;align-items:center}
+.runbar input,.runbar .count{background:#08120f;border:1px solid #274743;
+  color:var(--strip-ink);border-radius:4px;padding:8px 11px;
+  font-family:var(--mono);font-size:12px}
+.runbar input{flex:1;min-width:180px}
+.runbar .count{width:78px}
+.runbar button{background:#2f9d8c;color:#04100e;border:0;border-radius:4px;
+  padding:8px 17px;font-weight:600;font-family:var(--body);font-size:13px;cursor:pointer}
+.queue{padding:0 16px 13px;display:flex;flex-direction:column;gap:9px}
+.qrow{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;
+  font-family:var(--mono);font-size:11.5px;color:#c0d3ce}
+.qrow .bar{grid-column:1/-1;height:3px;background:#16302c;border-radius:2px;overflow:hidden}
+.qrow .bar i{display:block;height:100%;background:#2f9d8c}
+.qrow .dup{grid-column:1/-1;font-size:10.5px;color:#d4ae62}
+.pill{display:inline-block;padding:1px 7px;border-radius:3px;font-size:10px;
+  font-family:var(--mono)}
+.run{background:#0f3d37;color:#6fd9c8}
+.wait{background:#2b2416;color:#d4ae62}
+.done{background:#123524;color:#6cc78d}
+
+/* ---------- thư viện ---------- */
+.lib{background:var(--panel)}
+.filters{padding:11px 16px;border-bottom:1px solid var(--line);
+  display:flex;flex-direction:column;gap:9px;position:relative}
+.selects{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sel{display:flex;align-items:center;gap:6px;border:1px solid var(--line-strong);
+  border-radius:5px;padding:6px 10px;background:var(--panel);font-size:13px;
+  color:var(--ink);cursor:pointer;font-family:var(--body)}
+.sel .k{font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+  text-transform:uppercase;color:var(--ink-3)}
+.sel .v{font-weight:500}
+.sel .caret{color:var(--ink-3);font-size:10px}
+.sel.active{border-color:var(--accent);background:var(--accent-soft)}
+.sel.active .v{color:var(--accent)}
+.sel.open{border-color:var(--accent)}
+/* bảng xổ */
+.pop{position:absolute;z-index:5;top:46px;left:16px;min-width:224px;
+  background:var(--panel);border:1px solid var(--line-strong);border-radius:6px;
+  box-shadow:var(--shadow);padding:5px;display:flex;flex-direction:column;gap:1px}
+.pop .opt{display:flex;align-items:center;gap:9px;padding:6px 9px;border-radius:4px;
+  font-size:13px;cursor:pointer;color:var(--ink)}
+.pop .opt:hover{background:var(--panel-2)}
+.pop .opt .n{margin-left:auto;font-family:var(--mono);font-size:11px;
+  color:var(--ink-3);font-variant-numeric:tabular-nums}
+.pop .box{width:14px;height:14px;border-radius:3px;border:1.5px solid var(--line-strong);
+  flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;
+  line-height:1;color:var(--accent-ink)}
+.pop .opt.on .box{background:var(--accent);border-color:var(--accent)}
+.pop .opt.unknown{color:var(--warn)}
+.pop .opt.unknown .box{border-color:var(--warn);border-style:dashed}
+.pop .sep{height:1px;background:var(--line);margin:4px 2px}
+/* dòng đang lọc */
+.active-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:12.5px;
+  color:var(--ink-3)}
+.tagpill{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);
+  color:var(--accent);border-radius:12px;padding:2px 9px;font-family:var(--mono);
+  font-size:11px}
+.tagpill .x{opacity:.7}
+
+/* thanh thao tác khi có thẻ được chọn */
+.selbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:10px 16px;background:var(--accent-soft);
+  border-bottom:1px solid var(--line);font-size:13.5px}
+.selbar b{font-variant-numeric:tabular-nums}
+.selbar .grow{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.btn{border:1px solid var(--accent);background:none;color:var(--accent);
+  border-radius:4px;padding:5px 12px;font-size:13px;font-family:var(--body);
+  cursor:pointer;font-weight:500}
+.btn.solid{background:var(--accent);color:var(--accent-ink)}
+
+.grid{padding:14px 16px;display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:12px}
+.card{display:flex;flex-direction:column;gap:5px;position:relative}
+.thumb{aspect-ratio:9/16;max-width:100%;border-radius:5px;position:relative;
+  overflow:hidden;background:linear-gradient(165deg,#31463f,#55786d)}
+.thumb.b{background:linear-gradient(165deg,#4c3b2c,#7d5f42)}
+.thumb.c{background:linear-gradient(165deg,#2e3651,#4d5779)}
+.thumb.d{background:linear-gradient(165deg,#48303c,#77485f)}
+.card.sel .thumb{outline:3px solid var(--accent);outline-offset:1px}
+.tick{position:absolute;left:5px;top:5px;width:17px;height:17px;border-radius:50%;
+  border:1.5px solid rgba(255,255,255,.75);background:rgba(0,0,0,.35);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:#fff;line-height:1}
+.card.sel .tick{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.badge{position:absolute;right:5px;bottom:5px;font-family:var(--mono);font-size:9.5px;
+  color:#fff;background:rgba(0,0,0,.58);padding:1px 5px;border-radius:3px}
+.ratio{position:absolute;right:5px;top:5px;font-family:var(--mono);font-size:9px;
+  color:#fff;background:rgba(0,0,0,.45);padding:1px 5px;border-radius:3px}
+.thumb.none{background:var(--panel-2);display:flex;align-items:center;
+  justify-content:center;border:1px dashed var(--line-strong)}
+.thumb.none span{font-family:var(--mono);font-size:9.5px;color:var(--ink-3);
+  text-align:center;padding:0 6px}
+.cap{font-family:var(--mono);font-size:10px;color:var(--ink-3);
+  display:flex;justify-content:space-between;gap:5px}
+.cap b{font-weight:500;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.libfoot{border-top:1px solid var(--line);padding:10px 16px;display:flex;
+  gap:16px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.empty{padding:42px 20px;display:flex;flex-direction:column;align-items:center;
+  gap:9px;text-align:center}
+.empty .big{font-family:var(--display);font-size:19px;font-weight:600}
+.empty .sub{color:var(--ink-2);font-size:14px;max-width:46ch}
+
+/* tầng dữ liệu */
+.tiers{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;
+  background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.tier{background:var(--panel);padding:14px 16px;display:flex;flex-direction:column;gap:7px}
+.tier .t{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;
+  letter-spacing:.09em;color:var(--ink-3)}
+.tier h3{font-size:15px}
+.tier ul{margin:0;padding-left:17px;font-size:13.5px;color:var(--ink-2);
+  display:flex;flex-direction:column;gap:3px}
+.tier .cost{font-size:12.5px;font-family:var(--mono);margin-top:2px}
+.cost.free{color:var(--ok)}
+.cost.paid{color:var(--warn)}
+
+.basket{background:var(--panel)}
+.bhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 16px;
+  border-bottom:1px solid var(--line)}
+.bhead h3{margin-right:auto}
+.bmeta{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+.bactions{display:flex;gap:8px;flex-wrap:wrap;padding:11px 16px;
+  border-bottom:1px solid var(--line);background:var(--panel-2)}
+.btn.danger{border-color:#a33; color:#a33}
+:root[data-theme="dark"] .btn.danger,:root:not([data-theme="light"]) .btn.danger{border-color:#e08a8a;color:#e08a8a}
+.seedbox{padding:13px 16px;display:flex;flex-direction:column;gap:9px;
+  border-bottom:1px solid var(--line)}
+.seedbox .t{font-size:13.5px;color:var(--ink-2)}
+.seedrow{display:flex;align-items:center;gap:9px;font-size:13px;flex-wrap:wrap}
+.seedrow .box{width:14px;height:14px;border-radius:3px;border:1.5px solid var(--line-strong);
+  flex:none;display:flex;align-items:center;justify-content:center;font-size:10px;
+  line-height:1;color:var(--accent-ink)}
+.seedrow.on .box{background:var(--accent);border-color:var(--accent)}
+.seedrow code{font-size:12px}
+.seedrow .miss{font-family:var(--mono);font-size:11px;color:var(--warn)}
+.asks{display:flex;flex-direction:column;gap:12px}
+.ask{background:var(--panel);border:1px solid var(--line);
+  border-left:3px solid var(--warn);border-radius:5px;padding:14px 16px;
+  display:flex;flex-direction:column;gap:6px}
+.ask h3{font-family:var(--body);font-size:15px;font-weight:600}
+.ask p{font-size:14px;color:var(--ink-2)}
+.ask .opts{font-size:13.5px;display:flex;flex-direction:column;gap:4px;margin-top:2px}
+code{font-family:var(--mono);font-size:.88em;background:var(--panel-2);
+  padding:1px 5px;border-radius:3px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Duyệt màn hình · bản 2 · 15/09/2026</p>
+  <h1>Màn hình Video Desk</h1>
+  <p class="lede">Dải điều khiển trên, thư viện dưới. Bản này gộp những gì anh vừa chốt:
+  <strong>thẻ lọc theo nguồn</strong> chứ không theo nước, <strong>chọn thẻ để gồm vào
+  giỏ</strong>, <strong>tránh tải trùng</strong>, và mọi bộ lọc thiếu dữ liệu đều phải
+  hiện ô <em>không rõ</em> thay vì giấu.</p>
+</header>
+
+<!-- ============ MÀN HÌNH ============ -->
+<section>
+  <h2>Màn hình khi đang chọn thẻ</h2>
+  <p class="demo">Số và ảnh dưới là ví dụ — thư viện thật hiện đang rỗng</p>
+
+  <div class="frame">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i>
+      <span class="addr">video.nobidigital.asia</span></div>
+
+    <div class="strip">
+      <div class="top">
+        <span class="brand">Video Desk</span>
+        <span class="who">namhd@astronex.ai</span>
+        <div class="stats">
+          <span>hàng đợi <b>1</b></span>
+          <span>thư viện <b>1 074</b></span>
+          <span>đĩa máy <b>7,6 GB</b></span>
+        </div>
+      </div>
+      <div class="runbar">
+        <input id="url-main" value="https://www.tiktok.com/tag/80ssaudi" readonly aria-label="Đường dẫn trang TikTok">
+        <input class="count" id="count-main" value="200" readonly aria-label="Số video">
+        <button type="button">Chạy</button>
+      </div>
+      <div class="queue">
+        <div class="qrow">
+          <span>#80ssaudi</span><span class="pill run">đang chạy</span><span>68 / 200</span>
+          <div class="bar"><i style="width:34%"></i></div>
+          <div class="dup">đã bỏ 60 video trùng, đang duyệt sâu thêm để đủ 200 cái mới</div>
+        </div>
+        <div class="qrow">
+          <span>#ريترو <span style="color:#5d766f">· thuỳ</span></span>
+          <span class="pill wait">chờ</span><span>— / 200</span>
+          <div class="bar"><i style="width:0"></i></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lib">
+      <div class="filters">
+        <div class="selects">
+          <button class="sel active" type="button"><span class="k">Nguồn</span><span class="v">#80ssaudi</span><span class="caret">▾</span></button>
+          <button class="sel" type="button"><span class="k">Khung</span><span class="v">tất cả</span><span class="caret">▾</span></button>
+          <button class="sel" type="button"><span class="k">Dài</span><span class="v">tất cả</span><span class="caret">▾</span></button>
+          <button class="sel open" type="button"><span class="k">Thị trường</span><span class="v">đang mở</span><span class="caret">▾</span></button>
+          <button class="sel" type="button"><span class="k">Ngày tải</span><span class="v">7 ngày qua</span><span class="caret">▾</span></button>
+          <button class="sel" type="button"><span class="k">Người tải</span><span class="v">tất cả</span><span class="caret">▾</span></button>
+        </div>
+        <div class="active-row">
+          đang lọc:
+          <span class="tagpill">#80ssaudi <span class="x">✕</span></span>
+          <span class="tagpill">7 ngày qua <span class="x">✕</span></span>
+        </div>
+        <!-- bảng xổ của "Thị trường", vẽ mở sẵn để thấy ô không rõ nằm đâu -->
+        <div class="pop" style="left:auto;right:16px">
+          <div class="opt on"><span class="box">✓</span>Brazil<span class="n">276</span></div>
+          <div class="opt"><span class="box"></span>Ả-rập Xê-út<span class="n">258</span></div>
+          <div class="opt"><span class="box"></span>Indonesia<span class="n">245</span></div>
+          <div class="opt"><span class="box"></span>Malaysia<span class="n">234</span></div>
+          <div class="sep"></div>
+          <div class="opt unknown"><span class="box"></span>không rõ<span class="n">61</span></div>
+        </div>
+      </div>
+      <div class="selbar">
+        <b>3</b> video đang chọn
+        <span class="grow">
+          <button class="btn" type="button">Bỏ chọn</button>
+          <button class="btn" type="button">Phân tích nội dung</button>
+          <button class="btn solid" type="button">Gồm vào giỏ</button>
+        </span>
+      </div>
+
+      <div class="grid">
+        <div class="card sel">
+          <div class="thumb"><span class="tick">✓</span><span class="ratio">9:16</span><span class="badge">0:14</span></div>
+          <div class="cap"><span>#trendanos80</span><b>1,2 M</b></div>
+        </div>
+        <div class="card sel">
+          <div class="thumb b"><span class="tick">✓</span><span class="ratio">9:16</span><span class="badge">0:21</span></div>
+          <div class="cap"><span>#80ssaudi</span><b>840 K</b></div>
+        </div>
+        <div class="card">
+          <div class="thumb c"><span class="tick"></span><span class="ratio">1:1</span><span class="badge">0:09</span></div>
+          <div class="cap"><span>#fototahun80an</span><b>512 K</b></div>
+        </div>
+        <div class="card sel">
+          <div class="thumb none"><span class="tick">✓</span><span>chưa cắt<br>được ảnh</span></div>
+          <div class="cap"><span>music page</span><b>—</b></div>
+        </div>
+        <div class="card">
+          <div class="thumb d"><span class="tick"></span><span class="ratio">9:16</span><span class="badge">0:32</span></div>
+          <div class="cap"><span>#80slook</span><b>2,1 M</b></div>
+        </div>
+        <div class="card">
+          <div class="thumb c"><span class="tick"></span><span class="ratio">9:16</span><span class="badge">0:16</span></div>
+          <div class="cap"><span>#80ssaudi</span><b>784 K</b></div>
+        </div>
+      </div>
+      <div class="libfoot">
+        <span>1 074 video · 2,2 MB ảnh</span>
+        <span>giỏ: 2 bộ</span>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><strong>Ô “không rõ · 61” nằm cuối hộp xổ, sau một đường kẻ.</strong> Thị trường và lượt xem chỉ
+  có với nguồn hashtag; video từ music page hoặc Facebook Ads không có. Không có ô đó thì
+  lọc “BR” sẽ <em>âm thầm giấu</em> 61 video và người dùng tưởng thư viện chỉ có bấy nhiêu.
+  Cùng lý do thẻ thứ tư để trống ảnh: thiếu dữ liệu phải nhìn thấy được.</p>
+</section>
+
+<!-- ============ BA TẦNG ============ -->
+<section>
+  <h2>Bộ lọc lấy dữ liệu từ đâu</h2>
+  <p class="note">Ba nguồn khác nhau về giá tới mức phải tách bạch, nếu không sẽ dựng một
+  bộ lọc không có số để chạy.</p>
+  <div class="tiers">
+    <div class="tier">
+      <p class="t">Tầng 1</p>
+      <h3>Từ chính file video</h3>
+      <ul>
+        <li>tỉ lệ khung 9:16 / 1:1</li>
+        <li>thời lượng thật</li>
+        <li>độ phân giải, fps</li>
+        <li>có tiếng hay không</li>
+      </ul>
+      <p class="cost free">miễn phí · phủ MỌI nguồn</p>
+      <p class="note" style="font-size:12.5px">Tool đã chạy <code>ffmpeg -i</code> trên mọi
+      video để loại photo-post, rồi đọc đúng một giá trị đúng/sai và vứt hết phần còn lại.</p>
+    </div>
+    <div class="tier">
+      <p class="t">Tầng 2</p>
+      <h3>Từ index hashtag</h3>
+      <ul>
+        <li>thị trường</li>
+        <li>lượt xem, lượt tim</li>
+        <li>tác giả, tiêu đề</li>
+        <li>ngày đăng</li>
+      </ul>
+      <p class="cost free">miễn phí · CHỈ nguồn hashtag</p>
+      <p class="note" style="font-size:12.5px">Response có 31 trường, code cũ đọc 2. Đây là
+      lý do phải có ô “không rõ”.</p>
+    </div>
+    <div class="tier">
+      <p class="t">Tầng 3</p>
+      <h3>Nhìn vào nội dung</h3>
+      <ul>
+        <li>kiểu creative</li>
+        <li>hook mở đầu</li>
+        <li>có chữ trên hình</li>
+      </ul>
+      <p class="cost paid">~16k token mỗi ảnh</p>
+      <p class="note" style="font-size:12.5px">Chỉ chạy cho lô anh chọn rồi bấm — không tự
+      chạy cho 1 000 video mà phần lớn không ai mở.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ RỖNG ============ -->
+<section>
+  <h2>Hôm nay mở ra thì thấy cái này</h2>
+  <p class="note">Bảng <code>videos</code> đang <strong>0 dòng</strong>. Bốn video tải hôm
+  qua nằm trên Drive nhưng chạy trước khi lớp chụp ảnh lên, nên thư viện không biết chúng
+  và ảnh của chúng <strong>không lấy lại được</strong>.</p>
+  <div class="frame">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i>
+      <span class="addr">video.nobidigital.asia</span></div>
+    <div class="strip">
+      <div class="top">
+        <span class="brand">Video Desk</span>
+        <span class="who">namhd@astronex.ai</span>
+        <div class="stats"><span>hàng đợi <b>0</b></span><span>thư viện <b>0</b></span>
+          <span>đĩa máy <b>7,6 GB</b></span></div>
+      </div>
+      <div class="runbar">
+        <input id="url-empty" value="" placeholder="Dán link hashtag, trang nhạc, hồ sơ TikTok…" readonly aria-label="Đường dẫn trang TikTok">
+        <input class="count" id="count-empty" value="200" readonly aria-label="Số video">
+        <button type="button">Chạy</button>
+      </div>
+    </div>
+    <div class="lib">
+      <div class="empty">
+        <p class="big">Thư viện chưa có gì</p>
+        <p class="sub">Dán một link ở trên rồi bấm Chạy. Video tải xong sẽ lên Drive và
+        hiện ở đây.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============ GIỎ ============ -->
+<section>
+  <h2>Giỏ, sau khi gồm</h2>
+  <p class="note">Gồm xong thì giỏ là một tập đặt tên được. Từ đây có hai việc anh nêu:
+  <strong>xoá</strong> và <strong>tạo task tự tìm</strong>.</p>
+
+  <div class="frame">
+    <div class="chrome"><i class="dot"></i><i class="dot"></i><i class="dot"></i>
+      <span class="addr">video.nobidigital.asia</span></div>
+    <div class="basket">
+      <div class="bhead">
+        <h3>Giỏ · Retro 80s Ả-rập</h3>
+        <span class="bmeta">3 video · gồm 15/09 bởi namhd</span>
+      </div>
+      <div class="bactions">
+        <button class="btn solid" type="button">Tạo task tự tìm</button>
+        <button class="btn" type="button">Phân tích nội dung</button>
+        <button class="btn" type="button">Mở trên Drive</button>
+        <button class="btn danger" type="button">Xoá</button>
+      </div>
+      <div class="seedbox">
+        <p class="t">Tạo task tự tìm — tool điền sẵn, anh bấm mới chạy:</p>
+        <div class="seedrow on"><span class="box">✓</span>
+          Cùng bài nhạc <code>/music/x-7218…</code> · 3 bài
+          <span class="miss">cần lưu music id — hiện đang vứt đi</span>
+        </div>
+        <div class="seedrow on"><span class="box">✓</span>
+          Cùng hashtag <code>#80ssaudi</code> <code>#retro</code> · 5 thẻ
+        </div>
+        <div class="seedrow"><span class="box"></span>
+          Cùng tác giả <code>@user80s</code> · 2 người
+        </div>
+      </div>
+      <div class="grid" style="padding-top:13px">
+        <div class="card">
+          <div class="thumb"><span class="ratio">9:16</span><span class="badge">0:14</span></div>
+          <div class="cap"><span>#trendanos80</span><b>1,2 M</b></div>
+        </div>
+        <div class="card">
+          <div class="thumb b"><span class="ratio">9:16</span><span class="badge">0:21</span></div>
+          <div class="cap"><span>#80ssaudi</span><b>840 K</b></div>
+        </div>
+        <div class="card">
+          <div class="thumb none"><span>chưa cắt<br>được ảnh</span></div>
+          <div class="cap"><span>music page</span><b>—</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note"><strong>Ba đường tự tìm, hai đường đã có dữ liệu.</strong> Hashtag rút từ
+  <code>title</code> và tác giả đều đã lưu. Còn <strong>nhạc thì chưa</strong> —
+  <code>music_info.id</code> nằm sẵn trong response index, tool đang vứt đi. Đó là đường
+  đáng giá nhất: music page là một trong hai nguồn chạy tốt, và “cùng bài nhạc” đúng cách
+  trend TikTok cụm lại. Không chụp bây giờ thì video tải từ giờ trở đi vĩnh viễn không tự
+  tìm theo nhạc được.</p>
+</section>
+
+<!-- ============ CÒN TREO ============ -->
+<section>
+  <h2>Ba chỗ còn treo</h2>
+  <div class="asks">
+    <div class="ask">
+      <h3>Lưu <code>music_info.id</code> ngay bây giờ chứ?</h3>
+      <p>Không lưu thì “tìm thêm theo nhạc” không làm được, và <strong>video tải từ giờ
+      trở đi mất luôn đường đó</strong> — index chỉ trả video hiện tại của hashtag, không
+      trả lại danh sách ta đã tải. Lưu thì tốn một cột. Đây là lần thứ ba trong ngày cùng
+      một dạng: dữ liệu miễn phí trong response, chờ thì mất.</p>
+      <div class="opts">
+        <span><strong>a.</strong> Lưu ngay, cùng lúc với các thay đổi khác</span>
+        <span><strong>b.</strong> Bỏ đường tìm-theo-nhạc, chỉ tìm theo hashtag và tác giả</span>
+      </div>
+    </div>
+    <div class="ask">
+      <h3>Nút “Xoá” ở giỏ xoá cái gì?</h3>
+      <p>Treo từ 14/09, tôi hỏi ba lần chưa có đáp — và giờ nó có hai nghĩa khác nhau: xoá
+      <em>cái giỏ</em> (chỉ bỏ tập hợp, video còn nguyên) hay xoá <em>video</em> khỏi Drive.</p>
+      <div class="opts">
+        <span><strong>a.</strong> Xoá giỏ thôi — video vẫn ở thư viện và Drive</span>
+        <span><strong>b.</strong> Xoá luôn video trên Drive, có bước xác nhận</span>
+        <span><strong>c.</strong> Hai nút riêng, nhãn khác nhau</span>
+      </div>
+    </div>
+    <div class="ask">
+      <h3>Một video ở hai hashtag thì thẻ nguồn nào?</h3>
+      <p>Hộp xổ “Nguồn” cần biết video đến từ đâu. Hiện mỗi video giữ <strong>một</strong>
+      <code>job_id</code>, lần tải sau ghi đè lần trước ⇒ mất hashtag đầu. Giữ đủ cả hai
+      thì cần bảng quan hệ riêng — rẻ, nhưng làm sau thì dữ liệu cũ đã mất.</p>
+      <div class="opts">
+        <span><strong>a.</strong> Giữ đủ mọi nguồn đã thấy video đó</span>
+        <span><strong>b.</strong> Chỉ giữ nguồn đầu tiên tìm ra nó</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div>

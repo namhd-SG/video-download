@@ -1,0 +1,318 @@
+<title>Video Desk Cài đặt</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* Bảng màu lấy NGUYÊN từ app đang chạy (web/static/app.css) — mockup phải
+     trông ra chính sản phẩm, không phải một bản vẽ rời. */
+  :root{
+    --bg:#f3f6f4; --surface:#ffffff; --surface-alt:#e7ede9; --border:#d5ded9;
+    --border-strong:#b4c2bb; --text:#14201d; --text-muted:#4c5a56; --text-faint:#7d8b86;
+    --accent:#0d5c55; --accent-soft:#d8eae6; --accent-ink:#ffffff;
+    --success:#1d6b3f; --success-bg:#dcefe2; --warn:#8a5a00; --warn-bg:#f7ecd6;
+    --danger:#a33; --danger-bg:#f7dede;
+    --strip:#101a18; --strip-ink:#d9e6e2; --strip-ink-2:#7d9a94; --strip-line:#1e332e;
+    --strip-accent:#2f9d8c;
+    --shadow:0 1px 2px rgba(20,32,29,.06), 0 10px 28px rgba(20,32,29,.06);
+    --radius:7px;
+    --display:"Bricolage Grotesque","Trebuchet MS",sans-serif;
+    --body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+    color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0d1513; --surface:#141f1c; --surface-alt:#1e2926; --border:#27332f;
+      --border-strong:#3a4a45; --text:#e6efec; --text-muted:#9fb3ad; --text-faint:#6f837e;
+      --accent:#5ecdbf; --accent-soft:#12302c; --accent-ink:#04100e;
+      --success:#6fc38d; --success-bg:#12301f; --warn:#e0b35e; --warn-bg:#31260f;
+      --danger:#e08a8a; --danger-bg:#3a1c1c;
+      --strip:#0a1211; --strip-line:#182622;
+      --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.35);
+      color-scheme:dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0d1513; --surface:#141f1c; --surface-alt:#1e2926; --border:#27332f;
+    --border-strong:#3a4a45; --text:#e6efec; --text-muted:#9fb3ad; --text-faint:#6f837e;
+    --accent:#5ecdbf; --accent-soft:#12302c; --accent-ink:#04100e;
+    --success:#6fc38d; --success-bg:#12301f; --warn:#e0b35e; --warn-bg:#31260f;
+    --danger:#e08a8a; --danger-bg:#3a1c1c;
+    --strip:#0a1211; --strip-line:#182622;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 10px 28px rgba(0,0,0,.35);
+    color-scheme:dark;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);
+       font-size:15px;line-height:1.55}
+  h1,h2{font-family:var(--display);font-weight:700;margin:0;text-wrap:balance}
+  .mono,code{font-family:var(--mono)}
+
+  .topbar{background:var(--strip);color:var(--strip-ink);border-bottom:1px solid var(--strip-line);
+          padding:14px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+          position:sticky;top:env(safe-area-inset-top,0px);z-index:5}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--strip-accent);flex:none}
+  .brand{font-family:var(--display);font-weight:700;font-size:15px}
+  .sep{color:var(--strip-ink-2)}
+  .back{margin-left:auto;color:var(--strip-accent);text-decoration:none;font-size:.86rem}
+
+  .wrap{max-width:980px;margin:0 auto;padding-inline:20px;padding-block:24px 64px;
+        display:flex;flex-direction:column;gap:18px}
+
+  .flag{background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);
+        border-radius:6px;padding:.45rem .75rem;font-size:.78rem;align-self:flex-start}
+
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--border)}
+  .tab{padding:10px 16px;border:1px solid transparent;border-bottom:none;
+       border-radius:8px 8px 0 0;color:var(--text-muted);font-size:.9rem;
+       background:none;font-family:inherit;cursor:default}
+  .tab.on{background:var(--surface);border-color:var(--border);color:var(--text);
+          font-weight:600;margin-bottom:-1px}
+  .badge{font-size:.68rem;background:var(--accent-soft);color:var(--accent);
+         border-radius:999px;padding:.05rem .45rem;margin-left:6px}
+
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+        padding:20px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:6px}
+  .card-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:1.02rem}
+  .hint{color:var(--text-muted);font-size:.84rem;margin:0}
+
+  .chip{font-size:.72rem;padding:.16rem .55rem;border-radius:999px;
+        border:1px solid var(--border);background:var(--surface-alt);white-space:nowrap}
+  .ok{background:var(--success-bg);border-color:var(--success);color:var(--success)}
+  .warn{background:var(--warn-bg);border-color:var(--warn);color:var(--warn)}
+  .off{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
+
+  .cookie-grid{display:grid;grid-template-columns:1fr 250px;gap:18px;margin-top:8px}
+  @media(max-width:720px){.cookie-grid{grid-template-columns:1fr}}
+  .lbl{display:flex;align-items:center;gap:10px;color:var(--text-faint);font-size:.72rem;
+       text-transform:uppercase;letter-spacing:.07em;margin:0 0 8px}
+  .lbl::before,.lbl::after{content:"";flex:1;height:1px;background:var(--border)}
+  textarea{width:100%;min-height:148px;font-family:var(--mono);font-size:.78rem;
+           border:1px solid var(--border);border-radius:8px;padding:10px;resize:vertical;
+           background:var(--surface-alt);color:var(--text)}
+  .drop{border:1.5px dashed var(--border-strong);border-radius:8px;padding:16px;
+        text-align:center;color:var(--text-muted);font-size:.82rem;background:var(--surface-alt);
+        display:flex;flex-direction:column;justify-content:center;align-items:center;
+        gap:8px;min-height:148px}
+  .drop b{color:var(--text);font-size:.9rem}
+
+  .btn{border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);
+       border-radius:8px;padding:.5rem 1rem;font-size:.85rem;font-family:inherit;cursor:default}
+  .btn.ghost{background:transparent;color:var(--text);border-color:var(--border)}
+  .btn.danger{background:transparent;color:var(--danger);border-color:var(--danger)}
+  .btn.sm{padding:.3rem .6rem;font-size:.76rem}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px}
+
+  dl.kv{display:grid;grid-template-columns:auto 1fr;gap:5px 16px;font-size:.87rem;margin:8px 0 0}
+  dl.kv dt{color:var(--text-muted)} dl.kv dd{margin:0}
+
+  .tbl-scroll{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.87rem;margin-top:8px}
+  th{text-align:left;font-weight:600;color:var(--text-muted);font-size:.72rem;
+     text-transform:uppercase;letter-spacing:.05em;padding:8px 10px;
+     border-bottom:1px solid var(--border);white-space:nowrap}
+  td{padding:10px;border-bottom:1px solid var(--border);vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  .email{font-family:var(--mono);font-size:.8rem}
+  .num{width:84px;font-family:var(--mono);font-size:.8rem;padding:.3rem .45rem;
+       border:1px solid var(--border);border-radius:6px;background:var(--surface-alt);
+       color:var(--text);font-variant-numeric:tabular-nums}
+  .bar{height:5px;border-radius:999px;background:var(--surface-alt);overflow:hidden;margin-top:5px}
+  .bar i{display:block;height:100%;background:var(--accent)}
+  .bar.hot i{background:var(--warn)}
+  .me{font-size:.66rem;color:var(--accent);border:1px solid var(--accent);
+      border-radius:999px;padding:0 .35rem;margin-left:5px}
+  .fig{font-variant-numeric:tabular-nums}
+
+  .note{border-left:3px solid var(--warn);background:var(--warn-bg);color:var(--text);
+        padding:10px 14px;border-radius:0 8px 8px 0;font-size:.84rem;margin-top:10px}
+  .note b{color:var(--warn)}
+
+  /* ===== thanh chọn của THƯ VIỆN — phần (a) user vừa chốt ===== */
+  .selbar{background:var(--strip);color:var(--strip-ink);border:1px solid var(--strip-line);
+          border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;
+          gap:10px;flex-wrap:wrap;margin-top:8px}
+  .selbar .count{font-size:.85rem;color:var(--strip-ink-2);margin-right:auto}
+  .selbar .btn{border-color:#2c453f;background:#16302c;color:var(--strip-ink)}
+  .selbar .btn.primary{background:var(--strip-accent);border-color:var(--strip-accent);color:#04100e}
+  .selbar .btn.danger{background:transparent;border-color:#7d4a4a;color:#e8a0a0}
+</style>
+
+<div class="topbar">
+  <span class="dot"></span>
+  <span class="brand">Video Desk</span>
+  <span class="sep">/</span>
+  <span>Cài đặt</span>
+  <a class="back" href="#">← Về trang tải video</a>
+</div>
+
+<div class="wrap">
+
+  <span class="flag">MOCKUP — chưa nối backend, số liệu là ví dụ. Bản thật hai tab hiện riêng; đây xếp chồng để duyệt một lần.</span>
+
+  <div class="tabs">
+    <button class="tab on">Của tôi</button>
+    <button class="tab">Quản trị <span class="badge">admin</span></button>
+  </div>
+
+  <!-- ============ CỦA TÔI ============ -->
+  <div class="card">
+    <div class="card-head">
+      <h2>Cookie TikTok của tôi</h2>
+      <span class="chip ok">Đang dùng được</span>
+    </div>
+    <p class="hint">Cookie quyết định lượt tải của bạn chạy dưới tài khoản TikTok nào.
+      Không dán thì vẫn tải được hashtag, nhưng chạy ẩn danh và <b>chia chung hạn mức</b>
+      với mọi người chưa dán.</p>
+
+    <dl class="kv">
+      <dt>Trạng thái</dt><dd>Dùng được — kiểm ngay lúc dán</dd>
+      <dt>Hạn đến</dt><dd class="fig">14/11/2026</dd>
+      <dt>Cập nhật lần cuối</dt><dd class="fig">17/09/2026 10:41</dd>
+    </dl>
+
+    <div class="cookie-grid">
+      <div>
+        <p class="lbl">Cách 1 — dán</p>
+        <textarea id="ck-paste" placeholder="Dán chuỗi JSON xuất từ Cookie-Editor…"></textarea>
+      </div>
+      <div>
+        <p class="lbl">Cách 2 — chọn tệp</p>
+        <div class="drop">
+          <b>Kéo tệp .json vào đây</b>
+          <span>hoặc</span>
+          <button class="btn ghost">Chọn tệp…</button>
+          <span style="font-size:.75rem">tệp xuất từ Cookie-Editor</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <button class="btn">Lưu cookie</button>
+      <button class="btn danger">Xoá cookie của tôi</button>
+    </div>
+    <p class="hint" style="margin-top:6px">Cài tiện ích <b>Cookie-Editor</b> → mở tiktok.com →
+      <i>Export → Export as JSON</i> → dán hoặc lưu tệp rồi chọn ở đây.</p>
+
+    <div class="note"><b>Cookie hỏng không ghi đè cookie đang chạy được.</b>
+      Hệ thống kiểm trước; hỏng thì báo lý do và giữ nguyên cái cũ.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Hạn mức của tôi — hôm nay</h2>
+      <span class="chip">reset 00:00 giờ VN</span></div>
+    <p class="hint">Trần do quản trị đặt. Bạn xem được, không sửa được — trần tồn tại để
+      TikTok không chặn IP của cả văn phòng.</p>
+    <div class="tbl-scroll"><table>
+      <tr><td style="width:180px">Lượt tải</td>
+        <td><b class="fig">7</b> <span class="hint" style="display:inline">/ 20</span>
+          <div class="bar"><i style="width:35%"></i></div></td></tr>
+      <tr><td>Số video</td>
+        <td><b class="fig">184</b> <span class="hint" style="display:inline">/ 1000</span>
+          <div class="bar"><i style="width:18%"></i></div></td></tr>
+      <tr><td>Trang đã quét</td>
+        <td><b class="fig">612</b> <span class="hint" style="display:inline">/ 800</span>
+          <div class="bar hot"><i style="width:76%"></i></div></td></tr>
+    </table></div>
+  </div>
+
+  <!-- ============ QUẢN TRỊ ============ -->
+  <div class="card">
+    <div class="card-head"><h2>Người dùng &amp; hạn mức</h2>
+      <span class="chip warn">chỉ quản trị</span></div>
+    <p class="hint">Người có mặt ở đây là người đã từng đăng nhập. Không có nút "thêm người"
+      — ai vào được là do cửa đăng nhập của công ty quyết định, không phải trang này.</p>
+
+    <div class="tbl-scroll"><table>
+      <thead><tr>
+        <th>Người dùng</th><th>Cookie</th><th>Lượt/ngày</th><th>Video/ngày</th>
+        <th>Dùng hôm nay</th><th></th>
+      </tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="email">namduchoang10@gmail.com</span><span class="me">bạn</span>
+              <div class="hint">quản trị</div></td>
+          <td><span class="chip ok">có</span></td>
+          <td><input class="num" id="q1" value="20"></td>
+          <td><input class="num" id="v1" value="1000"></td>
+          <td class="fig">7 lượt · 184 video</td>
+          <td><button class="btn ghost sm">Bỏ quyền admin</button></td>
+        </tr>
+        <tr>
+          <td><span class="email">linh@astronex.ai</span><div class="hint">thành viên</div></td>
+          <td><span class="chip ok">có</span></td>
+          <td><input class="num" id="q2" value="20"></td>
+          <td><input class="num" id="v2" value="1000"></td>
+          <td class="fig">2 lượt · 41 video</td>
+          <td><button class="btn ghost sm">Cho làm admin</button></td>
+        </tr>
+        <tr>
+          <td><span class="email">kien@astronex.ai</span><div class="hint">thành viên</div></td>
+          <td><span class="chip off">chưa có</span></td>
+          <td><input class="num" id="q3" value="20"></td>
+          <td><input class="num" id="v3" value="1000"></td>
+          <td class="fig">0 lượt · 0 video</td>
+          <td><button class="btn ghost sm">Cho làm admin</button></td>
+        </tr>
+      </tbody>
+    </table></div>
+
+    <div class="note"><b>Người chưa dán cookie dùng chung một túi hạn mức.</b>
+      Ở trên là <span class="email">kien@astronex.ai</span> — mọi người chưa dán chia nhau
+      <b>20 lượt/ngày</b>, không phải mỗi người 20.</div>
+
+    <div class="row"><button class="btn">Lưu thay đổi</button>
+      <button class="btn ghost">Huỷ</button></div>
+  </div>
+
+  <div class="card">
+    <div class="card-head"><h2>Trần chung toàn công ty</h2>
+      <span class="chip warn">chạm là ảnh hưởng cả team</span></div>
+    <p class="hint">Trần từng người cộng lại vẫn đi ra <b>một địa chỉ IP văn phòng</b>.
+      Đây là cái chặn tổng — nó tồn tại vì TikTok chặn theo IP, không theo người.</p>
+    <div class="tbl-scroll"><table>
+      <tr><td style="width:250px">Tổng video / ngày, cả công ty</td>
+          <td><input class="num" id="g1" value="3000"></td></tr>
+      <tr><td>Số video tối đa mỗi lượt</td>
+          <td><input class="num" id="g2" value="2000">
+              <span class="hint" style="display:inline">thành viên:</span>
+              <input class="num" id="g3" value="200"></td></tr>
+      <tr><td>Chạy song song</td>
+          <td><span class="chip">1 lượt một lúc</span>
+              <span class="hint" style="display:inline">— đổi số này là đổi rủi ro bị chặn IP, chưa mở</span></td></tr>
+    </table></div>
+    <div class="row"><button class="btn">Lưu</button></div>
+  </div>
+
+  <!-- ============ THANH CHỌN Ở THƯ VIỆN ============ -->
+  <div class="card">
+    <div class="card-head"><h2>Thanh chọn ở Thư viện</h2>
+      <span class="chip">không thuộc trang Cài đặt</span></div>
+    <p class="hint">Bỏ "Gồm vào giỏ". Chọn video xong thì còn đúng ba việc làm được —
+      và cả ba đều <b>làm thật</b>, không còn nút báo "chưa có backend".</p>
+
+    <div class="selbar">
+      <span class="count fig">4 đã chọn</span>
+      <button class="btn primary">Tạo bộ tự tìm</button>
+      <button class="btn">Phân tích</button>
+      <button class="btn danger">Xoá</button>
+      <button class="btn ghost" style="border-color:#2c453f;color:var(--strip-ink-2)">Bỏ chọn</button>
+    </div>
+
+    <dl class="kv" style="margin-top:14px">
+      <dt>Tạo bộ tự tìm</dt>
+      <dd>Đẩy 4 video đã chọn sang Creative Desk thành một bộ, đứng tên bạn.</dd>
+      <dt>Phân tích</dt>
+      <dd>Đọc nội dung từng video rồi trả về mô tả và thẻ chủ đề.</dd>
+      <dt>Xoá</dt>
+      <dd>Bỏ khỏi thư viện <b>của bạn</b> và đưa tệp vào Thùng rác Drive.
+          Người khác vẫn quét và tải lại được — xoá là việc riêng của bạn.</dd>
+    </dl>
+
+    <div class="note"><b>Xoá đi vào Thùng rác, không xoá vĩnh viễn</b> — còn lấy lại được
+      trong 30 ngày. Và lượt quét sau của bạn sẽ không tải lại thứ bạn đã loại.</div>
+  </div>
+
+</div>

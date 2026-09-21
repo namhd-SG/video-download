@@ -28,7 +28,18 @@ downloads/
 *cookies*.json
 tiktok-cookies*.json
 
+# Google Drive service-account credential (Phase 03, gdrive_upload.py) —
+# path comes from env var GDRIVE_SERVICE_ACCOUNT_FILE, never hardcoded, but
+# common naming conventions are ignored here as a safety net regardless of
+# where ops drops the key file.
+*service-account*.json
+*gdrive*credential*
+
 # NOTE: assets/ffmpeg-static/ (universal mac ffmpeg ~139MiB + ffmpeg.exe ~97MiB)
 # IS committed on purpose so the team can clone and watermark with zero setup.
 # These are tracked via Git LFS (see .gitattributes) — the mac binary exceeds
 # GitHub's 100MiB hard limit, so LFS is REQUIRED. Do NOT re-ignore this folder.
+
+# Dữ liệu chạy của lớp web — DB job, cookie người dùng, file tạm.
+# Cookie là secret; jobs.db chứa url + tên người tạo.
+web/data/

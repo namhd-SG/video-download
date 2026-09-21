@@ -27,6 +27,15 @@ from tiktok_music_downloader.watermark import WatermarkConfig, apply_watermark
 
 log = logging.getLogger("ttmd")
 
+# Jar Netscape tạm mang cookie ở dạng văn bản thuần. `download_all` xoá nó
+# trong `finally`, nhưng SIGKILL không chạy `finally` — và dịch vụ web chạy
+# dưới launchd `KeepAlive=true`, tức bị giết là dựng lại ngay. Lớp web trỏ
+# `COOKIE_TMP_DIR` vào thư mục dữ liệu 0700 của chính nó rồi quét sạch lúc
+# khởi động; để `None` thì hành vi y như cũ (thư mục tạm hệ thống), nên công
+# cụ dòng lệnh không đổi gì.
+COOKIE_TMP_PREFIX = "ttmd-cookies-"
+COOKIE_TMP_DIR: str | None = None
+
 BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
@@ -35,7 +44,14 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
     """yt-dlp options for TikTok no-watermark MP4."""
     opts: dict = {
         # Prefer no-watermark h264 formats; fall back to best MP4 if extractor changes.
-        "format": "bv*[vcodec^=h264][protocol^=http]+ba/best[ext=mp4]/best",
+        # Every branch must carry a VIDEO stream. A TikTok photo/slideshow post
+        # offers exactly one format — `vcodec=none, acodec=mp3` — so an
+        # unconstrained `/best` tail accepts it and yt-dlp reports success for
+        # an .mp3 that is not a video at all. Measured 2026-09-10 on #trendanos80:
+        # 151 of 259 "downloads" came back as .mp3/.m4a that way. With
+        # `[vcodec!=none]` on every branch such a post fails loudly instead.
+        "format": ("bv*[vcodec^=h264][protocol^=http]+ba/"
+                   "best[ext=mp4][vcodec!=none]/best[vcodec!=none]"),
         "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
         "merge_output_format": "mp4",
         "quiet": True,
@@ -73,21 +89,47 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     from tiktok_music_downloader.scraper import _load_cookies
 
     cookies = _load_cookies(json_path)
-    fd, tmp = tempfile.mkstemp(prefix="ttmd-cookies-", suffix=".txt")
+    fd, tmp = tempfile.mkstemp(prefix=COOKIE_TMP_PREFIX, suffix=".txt",
+                                dir=COOKIE_TMP_DIR)
+    da_ghi = 0
+    bo_qua_ky_tu_la = 0
     with open(fd, "w", encoding="utf-8") as f:
         f.write("# Netscape HTTP Cookie File\n")
         for c in cookies:
             domain = c.get("domain") or ""
             if not domain:
                 continue
-            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
             path = c.get("path") or "/"
-            secure = "TRUE" if c.get("secure") else "FALSE"
-            expires = int(c.get("expires", 0) or 0)
             name = c.get("name", "")
             value = c.get("value", "")
+            # Netscape phân cột bằng TAB. Một cookie mang TAB/xuống dòng trong
+            # giá trị sẽ sinh ra dòng sai số cột, và yt-dlp KHÔNG ném lỗi — nó
+            # in NGUYÊN dòng đó (kèm `sessionid` đầy đủ) ra stderr rồi chạy
+            # tiếp. stderr của dịch vụ đổ thẳng vào ~/Library/Logs/videodl.log
+            # trên máy dùng chung, và file đó không nằm trong lớp 0700 nào.
+            # Đây là chỗ DUY NHẤT ta kiểm soát được — thông điệp của yt-dlp thì
+            # không. Bỏ qua cookie đó và chỉ đếm, không log giá trị.
+            if any("\t" in str(x) or "\n" in str(x) or "\r" in str(x)
+                   for x in (domain, path, name, value)):
+                bo_qua_ky_tu_la += 1
+                continue
+            include_subdomains = "TRUE" if domain.startswith(".") else "FALSE"
+            secure = "TRUE" if c.get("secure") else "FALSE"
+            # `expires` đi qua `_normalize_cookie` NGUYÊN XI (chỉ `expirationDate`
+            # mới được ép kiểu), nên bản xuất ghi ISO hay chuỗi float sẽ làm
+            # `int()` ném — và lời gọi này nằm trong một `except` nuốt lỗi rồi
+            # chạy tiếp KHÔNG cookie, tức hỏng âm thầm. Không đọc được hạn thì
+            # coi như cookie phiên.
+            try:
+                expires = int(c.get("expires", 0) or 0)
+            except (TypeError, ValueError):
+                expires = 0
             f.write(f"{domain}\t{include_subdomains}\t{path}\t{secure}\t{expires}\t{name}\t{value}\n")
-    log.info("wrote %d cookies to yt-dlp jar %s", len(cookies), tmp)
+            da_ghi += 1
+    if bo_qua_ky_tu_la:
+        log.warning("bỏ qua %d cookie có ký tự phân cột (TAB/xuống dòng) trong giá trị",
+                     bo_qua_ky_tu_la)
+    log.info("wrote %d cookies to yt-dlp jar %s", da_ghi, tmp)
     return Path(tmp)
 
 
@@ -96,9 +138,17 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     wait=wait_exponential(multiplier=2, min=2, max=20),
     reraise=True,
 )
-def _download_one(url: str, opts: dict) -> None:
+def _download_one(url: str, opts: dict) -> dict | None:
+    """Tải một video, và trả về metadata yt-dlp đã phải đọc để tải được nó.
+
+    `extract_info(download=True)` làm đúng việc `download()` làm, chỉ khác là
+    nó KHÔNG vứt cái dict nó vừa dựng. Đây là nguồn metadata duy nhất phủ được
+    mọi nguồn: chỉ trang hashtag có index trả `title`/`author`/`region`; music
+    page và profile thì scraper chỉ dựng được `VideoRef(video_id, url)` trần,
+    nên thư viện hiện "chưa có tiêu đề" cho mọi video tải từ hai nguồn đó.
+    """
     with YoutubeDL(opts) as ydl:
-        ydl.download([url])
+        return ydl.extract_info(url, download=True)
 
 
 def _looks_like_rate_limit(exc: BaseException) -> bool:
@@ -184,9 +234,21 @@ def download_all(
     failure_streak = 0
     since_rest = 0
 
-    def _note(kind: str) -> None:
-        """Inform the UI of a per-video outcome, if it supports `note()`."""
-        if progress is not None and hasattr(progress, "note"):
+    def _note(kind: str, info: dict | None = None) -> None:
+        """Inform the UI of a per-video outcome, if it supports `note()`.
+
+        `info` đi kèm chứ không sửa `refs` tại chỗ: `download_all` nhận
+        `Iterable`, nên không có gì bảo đảm người gọi đang giữ CÙNG một list —
+        một bản vá dựa vào việc sửa được phần tử sẽ im lặng không có tác dụng
+        với người gọi truyền generator.
+        """
+        if progress is None or not hasattr(progress, "note"):
+            return
+        try:
+            progress.note(kind, info)
+        except TypeError:
+            # `note()` cũ chỉ nhận một tham số. Giữ đường lui để thư viện này
+            # dùng được ngoài web app (CLI truyền progress riêng).
             progress.note(kind)
 
     try:
@@ -211,10 +273,11 @@ def download_all(
                 # FB Ads Library refs carry a signed FBCDN MP4 URL — yt-dlp
                 # can't authenticate them, so use a direct HTTP stream.
                 # TikTok refs go through yt-dlp as before.
+                info: dict | None = None
                 if ref.video_id.startswith("fb-"):
                     _download_url_direct(ref.url, target, proxy)
                 else:
-                    _download_one(ref.url, opts)
+                    info = _download_one(ref.url, opts)
                 # Post-process: apply watermark in-place if configured. Failures
                 # are non-fatal — the un-watermarked file remains on disk.
                 if watermark is not None and not watermark.is_empty:
@@ -239,7 +302,7 @@ def download_all(
                     time.sleep(cool)
             finally:
                 if outcome:
-                    _note(outcome)
+                    _note(outcome, info if outcome == "downloaded" else None)
                 if progress is not None:
                     progress.update(1)
     finally:

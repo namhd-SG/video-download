@@ -28,6 +28,7 @@ from tiktok_music_downloader.gui_style import (
     TEXT_DIM,
 )
 from tiktok_music_downloader.gdrive import download_folder as gdrive_download_folder
+from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.local_watermark import iter_mp4s, watermark_folder
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
@@ -47,9 +48,12 @@ def _pattern_key(combo_value: str) -> str:
     """Extract pattern key from a 'key — label' combobox value."""
     return (combo_value or "").split(" — ", 1)[0].strip() or "orbit"
 from tiktok_music_downloader.utils import (
+    parse_tag_slug,
     is_fb_ads_library,
     is_gdrive_folder,
+    is_profile_page,
     is_search_page,
+    is_tag_page,
     is_tiktok_collection,
     setup_logger,
 )
@@ -203,7 +207,7 @@ class App:
         # Platform note — the tool only downloads from these sources, so users
         # know what to paste. Keep in sync with the URL validator in _start().
         ttk.Label(src, style="Hint.TLabel",
-                  text="Hỗ trợ tải từ:  TikTok (trang /music/ • /search)  •  "
+                  text="Hỗ trợ tải từ:  TikTok (/music/ • /tag/ • /search • /@profile)  •  "
                        "Facebook Ads Library (/ads/library)  •  "
                        "Google Drive (link folder chia sẻ)"
                   ).grid(row=1, column=1, sticky="w", pady=(4, 0))
@@ -506,7 +510,8 @@ class App:
         ("Tải video — 3 bước tối thiểu", "h2"),
         ("1) Dán link vào ô URL.  2) Chọn thư mục lưu ở Output.  3) Bấm START.", ""),
         ("Nguồn hỗ trợ (dán vào ô URL)", "h2"),
-        ("• TikTok — trang nhạc (…/music/…) hoặc trang tìm kiếm (…/search?q=…).", ""),
+        ("• TikTok — trang nhạc (…/music/…), hashtag (…/tag/…), tìm kiếm "
+         "(…/search?q=…) hoặc trang cá nhân (…/@tên).", ""),
         ("• Facebook — trang Ads Library (…/ads/library?…).", ""),
         ("• Google Drive — link folder chia sẻ (tải mọi .mp4 trong folder đó).", ""),
         ("Link khác sẽ bị báo lỗi ngay khi bấm START.", ""),
@@ -685,14 +690,23 @@ class App:
         if not (is_tiktok_collection(url) or is_fb_ads_library(url)
                 or is_gdrive_folder(url)):
             self._append_log(
-                "ERROR: URL must be TikTok /music/, TikTok /search?q=…, "
-                "Facebook /ads/library/, or a Google Drive folder share link"
+                "ERROR: URL must be TikTok /music/, /tag/<hashtag>, "
+                "/search?q=…, /@profile, Facebook /ads/library/, or a Google "
+                "Drive folder share link"
             )
             return
-        if is_search_page(url) and not self.cookies_var.get().strip():
+        if is_tag_page(url):
             self._append_log(
-                "⚠ Search page usually needs Cookies (logged-in TikTok session). "
-                "Anonymous attempts often return 0 videos."
+                "ℹ Trang hashtag không mở browser và không cần Cookie. "
+                "TikTok trả feed hashtag rỗng, nên danh sách video được lấy "
+                "qua dịch vụ ngoài tikwm.com — chỉ TÊN hashtag và địa chỉ IP "
+                "của bạn đi ra ngoài, không có cookie hay dữ liệu nào khác. "
+                "Sau đó từng video tải thẳng từ TikTok."
+            )
+        if (is_search_page(url) or is_profile_page(url)) and not self.cookies_var.get().strip():
+            self._append_log(
+                "⚠ Trang search / @profile thường cần Cookies (phiên TikTok đã "
+                "đăng nhập). Không có cookie thì hay về 0 video."
             )
         self._attach_logger()
         self._reset_stats()
@@ -719,7 +733,14 @@ class App:
                      / "tiktok-music-downloader" / "playwright-profile")
                 profile_dir = str(p)
 
-            if is_fb_ads_library(url):
+            # Hashtags skip the browser entirely — see hashtag_enumerator.
+            tag = parse_tag_slug(url)
+            if tag is not None:
+                self.log_queue.put(("status", "Listing"))
+                refs = enumerate_hashtag(
+                    tag, max_videos=self.max_var.get(),
+                    proxy=self.proxy_var.get().strip() or None)
+            elif is_fb_ads_library(url):
                 # FB is more rate-aggressive than TikTok; default cap is lower
                 # and we do a single pass (no multi-visit — FB notices that).
                 refs = scrape_ads_library(
@@ -730,10 +751,11 @@ class App:
                     profile_dir=profile_dir,
                 )
             else:
-                # Both /music/ and /search?q= reuse scrape_music_page_multi —
-                # the scraper is generic (any TikTok page with `a[href*=/video/]`
-                # cards). Search additionally tends to need cookies for results
-                # to render, which the user is warned about in _start().
+                # /music/, /search?q= and /@profile reuse scrape_music_page_multi
+                # — the scraper is generic (any TikTok page with
+                # `a[href*=/video/]` cards). Hashtags never get here; they are
+                # handled above. Search additionally tends to need cookies for
+                # results to render, which the user is warned about in _start().
                 refs = scrape_music_page_multi(
                     url,
                     passes=self.passes_var.get(),
@@ -744,7 +766,21 @@ class App:
                     profile_dir=profile_dir,
                 )
             if not refs:
-                self.log_queue.put("no videos found — try Show browser (headful)")
+                # Page type is known here, not in the response handler.
+                if is_tag_page(url) or is_search_page(url):
+                    self.log_queue.put(
+                        "no videos found — nếu phía trên có cảnh báo feed rỗng "
+                        "thì server không trả item nào cho loại trang này "
+                        "(trang /music/ dùng endpoint khác, có thể vẫn chạy). "
+                        "KHÔNG có cảnh báo thì chưa chắc là server ổn: nó chỉ "
+                        "có nghĩa mấy endpoint bản này canh đều không rỗng — "
+                        "thử bật Show browser / thêm Cookie"
+                    )
+                else:
+                    self.log_queue.put(
+                        "no videos found — thử bật Show browser (headful) "
+                        "hoặc thêm Cookie"
+                    )
                 self.log_queue.put(("status", "Error"))
                 return
             self.log_queue.put(("stat_set", ("scraped", len(refs))))
