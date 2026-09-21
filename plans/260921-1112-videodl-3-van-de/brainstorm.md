@@ -1,7 +1,7 @@
 # Brainstorm — Video Desk, 3 vấn đề user giao 21/09 11:05
 
 **Lane** `06f2a326` (tk3) · **nhánh** `fix/log-path-and-name-list` · **HEAD lúc soạn** `03d8354`
-**Trạng thái**: CHƯA CODE. Chờ user chốt 4 ngưỡng ở §6.
+**Trạng thái**: brainstorm XONG · 4 ngưỡng user đã chốt 11:31 (§6) · 5 vòng phản biện agy đã KHÉP (§6b) · chưa code.
 
 ---
 
@@ -211,7 +211,31 @@ Không gộp làm một PR: (1) và (3) lui được rẻ, (2) thì không.
 
 ---
 
-## 6. CÂU HỎI CHO USER — bốn cái, phải chốt trước khi code vấn đề 2
+## 6. ĐÃ CHỐT — user trả lời qua `AskUserQuestion` lúc **21/09 11:31**
+
+| | chốt | hệ quả |
+|---|---|---|
+| Q1 trần thời gian | **10 phút** / job | đủ ~4 lượt; hụt thì mã `het_thoi_gian` + gợi ý chạy lại |
+| Q2 trần vòng | **giữ 5 lượt** | cái nào chạm trước thì dừng (giờ hoặc vòng) |
+| Q3 trần 800 | **đếm thật, DÙNG CHUNG trần 800** | music/search từ nay tiêu trần thật; user **đã biết trước** là sẽ chạm "hết hạn mức" sớm hơn hôm nay, và chấp nhận vì hôm nay con số đang sai |
+| Q4 UI cookie | **bản OFFLINE** | không gọi TikTok. Hiện: ai dán · dán lúc nào · hết hạn lúc nào · còn sống không · vân tay ngắn jar. **Không** hiện tên tài khoản TikTok |
+
+⚠ Q4 nghĩa là chữ *"đang dùng cookie tài khoản nào"* trong yêu cầu gốc **được thay** bằng "phân
+biệt được jar nào, của ai dán, còn sống không". User đã chọn với đầy đủ đánh đổi trước mắt.
+
+<details><summary>Bốn câu nguyên văn (giữ để truy nguồn)</summary>
+
+**Q1. Trần THỜI GIAN cho một job đào sâu?** Mỗi lượt quét lại phải nghỉ 60-180s để không bị TikTok
+nhận mặt. Xin 50 mà trùng nhiều ⇒ có thể 4-5 lượt ⇒ **5-15 phút một job**.
+
+**Q2. Trần SỐ VÒNG?** Code hiện chặn cứng 5 lượt.
+
+**Q3. Chấp nhận nhánh music/search/profile từ nay TIÊU trần 800 thật không?**
+
+**Q4. "Đang dùng cookie tài khoản nào" — chấp nhận bản offline không?**
+</details>
+
+### (lưu trữ) diễn giải bốn câu lúc còn mở
 
 **Q1. Trần THỜI GIAN cho một job đào sâu?** Mỗi lượt quét lại phải nghỉ 60-180s để không bị TikTok
 nhận mặt. Xin 50 mà trùng nhiều ⇒ có thể 4-5 lượt ⇒ **5-15 phút một job**. Anh muốn trần bao
