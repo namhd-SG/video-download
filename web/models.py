@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     nguoi_tao TEXT NOT NULL DEFAULT 'khach',
     drive_folder_link TEXT,
     ly_do_dung TEXT,
-    so_trang INTEGER NOT NULL DEFAULT 0
+    so_trang INTEGER NOT NULL DEFAULT 0,
+    tim_thay INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -194,6 +195,7 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
         _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
 
 
 def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:
@@ -334,10 +336,18 @@ def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
-    """Insert a pending job. `so_luong` (user's requested count) seeds `tong`;
-    `process_job` overwrites `tong` with the *actual* ref count once the
-    scrape/enumerate step returns, since that is the real progress-bar
-    denominator, not the ceiling the user asked for."""
+    """Insert a pending job. `so_luong` (what the user asked for) IS `tong`,
+    and nothing overwrites it afterwards.
+
+    It used to: `process_job` replaced `tong` with the ref count left after
+    dedupe, on the reasoning that the real count is the honest progress-bar
+    denominator. That reasoning is wrong in the one case that matters. Ask for
+    50, own 30 of them already, and the job reads `20/20` — a full bar, while
+    the goal missed by 30. The number the user can check the result against is
+    the number they typed, and overwriting `tong` was the only place it was
+    kept, so it was not merely hidden: it was gone.
+
+    The count actually found now lands in `tim_thay` (see `set_job_found`)."""
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
@@ -529,9 +539,12 @@ def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:
     return "dang_chay"
 
 
-def set_job_total(db_path: Path, job_id: int, tong: int) -> None:
+def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
+    """How many refs the scrape produced after dedupe — NOT how many the user
+    asked for. `tong` holds that and must stay untouched; the two differ by
+    exactly the amount a run fell short, which is the thing worth showing."""
     with _connect(db_path) as conn:
-        conn.execute("UPDATE jobs SET tong = ? WHERE id = ?", (tong, job_id))
+        conn.execute("UPDATE jobs SET tim_thay = ? WHERE id = ?", (tim_thay, job_id))
 
 
 def increment_job_counts(db_path: Path, job_id: int, xong_delta: int = 0,

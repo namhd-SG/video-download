@@ -349,7 +349,7 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 return
         refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
                             db_path=db_path, job_id=job_id)
-        models.set_job_total(db_path, job_id, len(refs))
+        models.set_job_found(db_path, job_id, len(refs))
         if not refs:
             models.finish_job(db_path, job_id, "done")
             return

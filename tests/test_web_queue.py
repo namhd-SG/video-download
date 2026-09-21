@@ -468,7 +468,13 @@ def test_process_job_marks_failed_on_exception_without_crashing_caller(tmp_path,
     assert job["xong_luc"] is not None
 
 
-def test_process_job_with_zero_refs_marks_done_with_zero_total(tmp_path, monkeypatch):
+def test_process_job_with_zero_refs_keeps_the_number_the_user_asked_for(tmp_path, monkeypatch):
+    """Một lượt ra 0 video vẫn phải nhớ user xin 20.
+
+    ĐỘT BIẾN: cho `process_job` ghi đè `tong` bằng số tìm thấy (hành vi cũ) ⇒ ĐỎ.
+    Đây là ca cực đoan của lỗi gốc: đè xong thì job đọc là `0/0` — "xong, không
+    có gì để làm" — trong khi sự thật là "xin 20, không kiếm được cái nào".
+    """
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
     job_id = models.create_job(db_path, "https://www.tiktok.com/tag/empty", 20, "a")
@@ -479,7 +485,8 @@ def test_process_job_with_zero_refs_marks_done_with_zero_total(tmp_path, monkeyp
 
     job = models.get_job(db_path, job_id)
     assert job["trang_thai"] == "done"
-    assert job["tong"] == 0
+    assert job["tong"] == 20, "`tong` là số user xin và không ai được đè nó"
+    assert job["tim_thay"] == 0
 
 
 def test_process_job_marks_failed_when_every_ref_errors_without_raising(tmp_path, monkeypatch):
@@ -865,10 +872,13 @@ def test_process_job_passes_the_db_through_so_dedupe_actually_runs(tmp_path, mon
         [VideoRef(video_id="111", url="u1"), VideoRef(video_id="222", url="u2")],
         db_path)
 
-    # `tong` được ghi bằng len(refs) SAU khi lọc, nên nó là tín hiệu phân định:
-    # dedupe chạy ⇒ 1, dedupe tắt ⇒ 2. (Hàng `videos` không dùng được ở đây —
-    # test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
-    assert models.get_job(db_path, job_id)["tong"] == 1, "chỉ ref MỚI được đưa vào tải"
+    # `tim_thay` được ghi bằng len(refs) SAU khi lọc, nên nó là tín hiệu phân
+    # định: dedupe chạy ⇒ 1, dedupe tắt ⇒ 2. (Hàng `videos` không dùng được ở
+    # đây — test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
+    # KHÔNG dùng `tong` làm tín hiệu này nữa: `tong` giữ số user xin, nó bằng
+    # nhau ở cả hai nhánh đột biến nên không phân định được gì.
+    ket_qua = models.get_job(db_path, job_id)
+    assert ket_qua["tim_thay"] == 1, "chỉ ref MỚI được đưa vào tải"
     # Và video bị bỏ qua phải để lại dấu nguồn của lượt này.
     assert models.sources_for_videos(db_path, ["111"], None) == {
         "111": ["https://www.tiktok.com/music/x-1"]}
