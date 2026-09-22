@@ -1770,3 +1770,51 @@ def test_chua_dan_cookie_thi_van_tay_la_none(tmp_path, monkeypatch):
     tt = app_mod.get_my_cookie(nguoi_tao=TEST_USER)
     assert tt["co_jar"] is False
     assert "van_tay" in tt and tt["van_tay"] is None
+
+
+# ---------------------------------------------------------------------------
+# Bàn giao bộ tự tìm phải BỎ CHỌN sau khi mở tab
+# ---------------------------------------------------------------------------
+
+def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
+    """Bấm "Tạo bộ tự tìm" xong mà lựa chọn còn nguyên thì lần bấm kế tiếp mở
+    thêm một tab với ĐÚNG danh sách cũ — người dùng đọc thành "bộ cũ không gỡ
+    được" (user báo 22/09, 9 video).
+
+    Đây là test HÀNH VI, không phải grep chuỗi: nó trích `moBoTuTim` từ
+    `app.js` thật rồi GỌI hàm đó với `window.open` giả. Assert bằng chuỗi sẽ
+    xanh cho một lời gọi `clear()` nằm sai nhánh.
+
+    Hai ca, và ca thứ hai mới là ca khó:
+      · tab mở được   ⇒ bỏ chọn, gỡ dấu trên thẻ, vẽ lại thanh
+      · popup bị chặn ⇒ GIỮ nguyên lựa chọn — chưa có gì được bàn giao, xoá ở
+        đó là bắt người dùng chọn lại vì một việc CHƯA xảy ra. Cùng khuôn với
+        `loaiDaChon`, nó chỉ `clear()` sau khi API thành công.
+
+    ĐỐI CHỨNG đã chạy trên `origin/main` trước khi vá: cả hai ca đều trả
+    `conChon=3` ⇒ phép đo này phân định được hai bản.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
+                    "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
+
+    harness = Path(__file__).parent / "js" / "chon-sau-ban-giao.js"
+    ket_qua = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+                             capture_output=True, text=True, timeout=30)
+    assert ket_qua.returncode == 0, ket_qua.stderr
+    do = json.loads(ket_qua.stdout)
+
+    binh_thuong = do["binh_thuong"]
+    assert binh_thuong["moTab"] == 1, "phải mở tab bàn giao"
+    assert binh_thuong["conChon"] == 0, "bàn giao xong mà lựa chọn còn nguyên"
+    assert binh_thuong["theConTo"] == 0, "thẻ còn tô trong khi state đã trống"
+    assert binh_thuong["veLaiThanh"] == 1, "thanh chọn phải được vẽ lại"
+
+    bi_chan = do["popup_bi_chan"]
+    assert bi_chan["conChon"] == 3, \
+        "popup bị chặn thì chưa bàn giao được — không được xoá lựa chọn"
