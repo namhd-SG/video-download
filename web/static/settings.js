@@ -8,14 +8,13 @@
   "use strict";
 
   // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói cách
-  // chữa. Giữ đồng bộ với bảng cùng tên trong `app.js` — thêm mã ở
-  // `web/cookies.py::MA_LOI_COOKIE` thì phải thêm câu ở CẢ HAI nơi.
-  const MA_COOKIE = {
-    cookie_khong_doc_duoc: "Tệp không đọc được — xuất lại dạng JSON (không phải RTF).",
-    cookie_rong: "Tệp không có cookie nào — xuất lại khi đang mở tiktok.com.",
-    cookie_chua_dang_nhap: "Cookie không có phiên đăng nhập — đăng nhập TikTok rồi xuất lại.",
-    cookie_het_han: "Cookie đăng nhập đã hết hạn — đăng nhập lại rồi xuất lại.",
-  };
+  // chữa. Bảng đã chuyển sang `cookie-status-text.js` để dải nhắc trên trang
+  // chính dùng CÙNG một câu thay vì chép bản thứ hai.
+  // `|| {}`: nếu `cookie-status-text.js` không nạp được (HTML cũ còn trong
+  // cache trình duyệt sau một chuyến deploy, hoặc tệp 404) thì thiếu bảng chữ
+  // là phiền — nhưng ném `TypeError` ở đây giết CẢ khối cookie, đúng cái trang
+  // người ta mở ra để CHỮA cookie. Mất câu hướng dẫn còn hơn mất cả trang.
+  const MA_COOKIE = window.MA_COOKIE_TRANG_THAI || {};
 
   class PhienHetHan extends Error {}
 
@@ -62,6 +61,7 @@
       set("ck-trang-thai", "Chưa dán cookie — lượt tải chạy ẩn danh");
       set("ck-han", "—");
       set("ck-luc", "—");
+      set("ck-van-tay", "—");
       return;
     }
     const tot = tt.trang_thai === "dung_duoc";
@@ -70,6 +70,9 @@
     set("ck-trang-thai", tot ? "Dùng được" : (MA_COOKIE[tt.trang_thai] || tt.trang_thai));
     set("ck-han", tt.het_han ? new Date(tt.het_han).toLocaleDateString("vi-VN") : "Không có hạn");
     set("ck-luc", tt.cap_nhat_luc ? new Date(tt.cap_nhat_luc).toLocaleString("vi-VN") : "—");
+    // `null` = không đọc được tệp. Hiện "—" chứ đừng hiện chuỗi rỗng: một ô
+    // trống trông như trang chưa nạp xong.
+    set("ck-van-tay", tt.van_tay || "—");
   }
 
   async function loadCookie() {

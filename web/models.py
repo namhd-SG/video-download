@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     nguoi_tao TEXT NOT NULL DEFAULT 'khach',
     drive_folder_link TEXT,
     ly_do_dung TEXT,
-    so_trang INTEGER NOT NULL DEFAULT 0
+    so_trang INTEGER NOT NULL DEFAULT 0,
+    tim_thay INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -194,6 +195,7 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "drive_folder_link", "TEXT")
         _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
 
 
 def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:
@@ -334,10 +336,18 @@ def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
-    """Insert a pending job. `so_luong` (user's requested count) seeds `tong`;
-    `process_job` overwrites `tong` with the *actual* ref count once the
-    scrape/enumerate step returns, since that is the real progress-bar
-    denominator, not the ceiling the user asked for."""
+    """Insert a pending job. `so_luong` (what the user asked for) IS `tong`,
+    and nothing overwrites it afterwards.
+
+    It used to: `process_job` replaced `tong` with the ref count left after
+    dedupe, on the reasoning that the real count is the honest progress-bar
+    denominator. That reasoning is wrong in the one case that matters. Ask for
+    50, own 30 of them already, and the job reads `20/20` — a full bar, while
+    the goal missed by 30. The number the user can check the result against is
+    the number they typed, and overwriting `tong` was the only place it was
+    kept, so it was not merely hidden: it was gone.
+
+    The count actually found now lands in `tim_thay` (see `set_job_found`)."""
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
@@ -396,14 +406,36 @@ def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
 def sum_videos_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     """How many videos each creator's jobs account for since `since`.
 
-    Sums `tong`, which is the requested count until `process_job` replaces it
-    with the real ref count — i.e. the best number known for each job at the
-    moment it is asked for. That is what the video cap rations: calls actually
-    made to TikTok, not jobs started.
+    Two different numbers, picked by whether the job has finished:
+
+      * finished (`done`/`failed`) -> `tim_thay`, the refs the scrape really
+        produced. This is the 16/09 user decision, spelled out in
+        `lifecycle.py`: asking for 2000 and receiving 3 must not cost 2000,
+        because what is being rationed is real download traffic and the
+        shortfall is not something the user controls.
+      * still pending or running -> `tong`, what they asked for. An unfinished
+        job has no real count yet, and charging it 0 would let someone queue
+        twenty 100-video jobs straight past a 1000/day cap, since the gate
+        runs at job-creation time.
+
+    ⚠ This used to be a plain `SUM(tong)` and it worked only because
+    `process_job` overwrote `tong` with the real count. Once `tong` started
+    holding the requested number for good (21/09, so the progress bar could
+    stop reading `20/20` for a job that missed 50), that same `SUM` silently
+    began charging the requested amount forever — measured: two jobs asking
+    500 that found one video each burned the whole 1000/day cap. The fix for
+    a lying progress bar reached into a quota gate two modules away; the only
+    reason it surfaced is that a reviewer re-ran the cap, not the bar.
+
+    One consequence is genuinely new, and deliberate: a job that dies BEFORE
+    the scrape (bad cookie, disk gate) now counts 0 instead of its requested
+    number. It downloaded nothing, and this cap rations downloads.
     """
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT nguoi_tao, COALESCE(SUM(tong), 0) AS n FROM jobs "
+            "SELECT nguoi_tao, COALESCE(SUM("
+            "  CASE WHEN trang_thai IN ('done', 'failed') THEN tim_thay ELSE tong END"
+            "), 0) AS n FROM jobs "
             "WHERE tao_luc >= ? GROUP BY nguoi_tao",
             (since,),
         ).fetchall()
@@ -529,9 +561,12 @@ def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:
     return "dang_chay"
 
 
-def set_job_total(db_path: Path, job_id: int, tong: int) -> None:
+def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
+    """How many refs the scrape produced after dedupe — NOT how many the user
+    asked for. `tong` holds that and must stay untouched; the two differ by
+    exactly the amount a run fell short, which is the thing worth showing."""
     with _connect(db_path) as conn:
-        conn.execute("UPDATE jobs SET tong = ? WHERE id = ?", (tong, job_id))
+        conn.execute("UPDATE jobs SET tim_thay = ? WHERE id = ?", (tim_thay, job_id))
 
 
 def increment_job_counts(db_path: Path, job_id: int, xong_delta: int = 0,

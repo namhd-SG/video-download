@@ -28,6 +28,22 @@
                "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
     index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
                   "lỗi giữa chừng — thử lại sau.",
+    // Ba mã dưới đây sinh ra 21/09 cùng lúc với việc nhánh music/search/profile
+    // biết đào sâu. Mỗi câu phải khuyên MỘT việc khác nhau — đó là cả lý do
+    // chúng là ba mã chứ không phải một:
+    //   · hết giờ / hết vòng ⇒ chạy lại CÓ THỂ ra thêm
+    //   · nghi bị chặn       ⇒ NGHỈ đã, chạy lại ngay chỉ làm đậm dấu vết
+    //   · đã có hết          ⇒ ĐỔI NGUỒN (mã `already_owned`, đã có ở trên)
+    // Gộp chúng thành "không lấy đủ video" là quay về đúng sự im lặng mà bản
+    // vá này sinh ra để chấm dứt.
+    het_thoi_gian: "Dừng: hết thời gian cho một lượt tải (10 phút) trước khi " +
+                   "đủ số bạn xin. Những video đã tìm được vẫn được giữ — " +
+                   "chạy lại lượt này có thể ra thêm.",
+    het_vong: "Dừng: đã quét lại hết số vòng cho phép mà chưa đủ số bạn xin. " +
+              "Nguồn có thể còn video — chạy lại lượt này có thể ra thêm.",
+    nghi_bi_chan: "Dừng: nguồn đang trả video rồi đột ngột ngừng — nhiều khả " +
+                  "năng TikTok đang tạm chặn. Hãy NGHỈ một lúc rồi chạy lại; " +
+                  "chạy lại ngay thường bị chặn tiếp.",
     // Bốn mã cookie: người dùng TỰ CHỮA ĐƯỢC cả bốn, nên câu chữ phải nói
     // cách chữa, không được rơi vào nhánh "báo cho người phát triển" ở dưới.
     // Nguồn còn sống, chỉ là thư viện đã có hết những gì nó đưa ra. Câu này
@@ -93,8 +109,15 @@
     }[c]));
   }
 
+  // Server ghi UTC kèm offset (`models.py::_now` → `…+00:00`), nên để `Date` tự
+  // đọc offset đó và đổi sang múi giờ của trình duyệt. Đừng cộng tay 7 tiếng:
+  // như vậy là cắm cứng một múi giờ vào mã. Cắt chuỗi (bản cũ) không đổi múi giờ
+  // chút nào, nên thẻ job hiện giờ UTC trong khi trang Cài đặt hiện giờ địa phương.
   function fmtDateTime(iso) {
-    return escapeHtml((iso || "").replace("T", " ").slice(0, 19)) || "—";
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return escapeHtml(String(iso));
+    return escapeHtml(d.toLocaleString("vi-VN"));
   }
 
   function fmtDuration(sec) {
@@ -253,6 +276,24 @@
     list.innerHTML = state.jobs.map(renderQueueItem).join("");
   }
 
+  // "Xong" cho một job hụt mục tiêu đọc thành thành công.
+  //
+  // USER CHỐT 21/09: job chạy hết mà không đủ số đã xin phải mang nhãn RIÊNG.
+  // Đây cố ý là một phép suy ra Ở GIAO DIỆN, không phải một trạng thái mới
+  // trong DB: `trang_thai` là máy trạng thái của worker (`VALID_END_STATES`),
+  // còn "thiếu" là một nhận xét về KẾT QUẢ. Nhét nó vào `trang_thai` là đổi
+  // máy trạng thái, kéo theo migration và mọi nhánh đang so `== "done"` — đắt
+  // hơn nhiều, và lui lại khó hơn nhiều, so với thứ user thật sự xin.
+  //
+  // Chỉ áp cho `done`: `failed`/`cancelled`/`interrupted` đã có câu chuyện
+  // riêng và không được cái nhãn này che mất.
+  function nhanTrangThai(job) {
+    if (job.trang_thai === "done" && job.tong > 0 && job.xong < job.tong) {
+      return { chu: "Thiếu", lop: "thieu" };
+    }
+    return { chu: STATUS_LABEL[job.trang_thai] || job.trang_thai, lop: job.trang_thai };
+  }
+
   function renderQueueItem(job) {
     const pct = job.tong > 0 ? Math.min(100, Math.round((job.xong / job.tong) * 100)) : 0;
     const hasErrors = job.loi > 0;
@@ -267,7 +308,7 @@
       <li class="queue-item" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
           <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
-          <span class="status-badge status-${escapeHtml(job.trang_thai)}">${escapeHtml(STATUS_LABEL[job.trang_thai] || job.trang_thai)}</span>
+          <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
         </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
@@ -801,14 +842,49 @@
     const banner = document.getElementById("cookie-banner");
     if (!banner) return;
     try {
-      const tt = await apiGet("/me/cookie");
-      banner.hidden = tt.co_jar;
+      veTrangThaiCookie(banner, await apiGet("/me/cookie"));
     } catch (err) {
-      // Không đọc được thì ẩn banner: thà không nhắc còn hơn nhắc sai rằng
-      // người đã dán cookie là đang ẩn danh.
+      // Không đọc được thì ẩn hẳn: thà không nói gì còn hơn nói sai rằng người
+      // đã dán cookie là đang ẩn danh.
       banner.hidden = true;
       throw err;
     }
+  }
+
+  // BA trạng thái, không phải hai.
+  //
+  // Bản cũ là một dòng: `banner.hidden = tt.co_jar`. Nó coi "có tệp jar" là
+  // "cookie dùng được — không cần nói gì", nhưng `/me/cookie` trả `co_jar:true`
+  // cho CẢ jar hết hạn, jar rỗng và jar chưa đăng nhập. Hậu quả đo được: cookie
+  // hết hạn thì trang chính trông **y hệt** lúc cookie khoẻ, và tín hiệu duy
+  // nhất người dùng có là một sự VẮNG MẶT — thứ không phân biệt được với "trang
+  // này vốn không nói gì về cookie". Đúng nguyên văn lời người dùng: *"nhìn vô
+  // không biết là có cookie chưa"*.
+  //
+  // Nên trạng thái khoẻ cũng phải nói ra — nhưng bằng MỘT CHIP, không phải một
+  // dải chữ: chỗ này người dùng đi qua mỗi lần tạo lượt tải, và một khối cảnh
+  // báo cho tin tốt là tiếng ồn.
+  function veTrangThaiCookie(banner, tt) {
+    banner.hidden = false;
+    if (!tt.co_jar) {
+      banner.className = "banner-an-danh";
+      banner.innerHTML = 'Chưa có cookie — lượt tải của bạn chạy <strong>ẩn danh</strong> ' +
+        'và chia chung hạn mức với mọi người chưa dán. ' +
+        '<a href="/settings.html">Dán cookie của bạn →</a>';
+      return;
+    }
+    if (tt.trang_thai !== "dung_duoc") {
+      // Câu chữ lấy từ bảng dùng chung với trang Cài đặt — hai trang nói cùng
+      // một câu về cùng một tệp, nếu không người dùng phải tự ghép hai cách nói.
+      const cach_chua = (window.MA_COOKIE_TRANG_THAI || {})[tt.trang_thai];
+      banner.className = "banner-an-danh";
+      banner.innerHTML = "Cookie của bạn <strong>không dùng được</strong> — lượt tải sẽ chạy " +
+        "ẩn danh. " + (cach_chua ? escapeHtml(cach_chua) + " " : "") +
+        '<a href="/settings.html">Dán lại cookie →</a>';
+      return;
+    }
+    banner.className = "chip chip-ok";
+    banner.textContent = "Cookie đang dùng được";
   }
 
   // ========================================================================

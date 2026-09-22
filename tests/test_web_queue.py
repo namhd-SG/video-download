@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from tiktok_music_downloader import hashtag_enumerator as he
+from tiktok_music_downloader import scraper as scraper_mod
 
 from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
 from tiktok_music_downloader.utils import VideoRef
@@ -24,6 +25,28 @@ from web import models
 from web import cookies as cookies_mod
 from web import queue as queue_mod
 from web.queue import JobWorker, _JobProgress, process_job
+
+
+def gia_lap_scraper(monkeypatch, tra_ve, so_vong: int = 1):
+    """Vá `scraper.scrape_music_page` — LỚP TRONG — chứ không phải
+    `queue_mod.scrape_music_page_multi`.
+
+    Vá lớp ngoài sẽ thay CẢ cơ chế đào sâu bằng một lambda: lọc trùng giữa các
+    lượt, bốn lý do dừng và bộ đếm trang đều nằm trong `scrape_music_page_multi`
+    từ 21/09, nên một test vá đè lên nó sẽ XANH cho một tính năng đã tắt. Đây
+    đúng lớp lỗi mà `test_process_job_passes_the_db_through_so_dedupe_actually_runs`
+    sinh ra để chặn.
+
+    `tra_ve` là list refs (mọi lượt trả như nhau) hoặc một callable(url, **kw).
+    `so_vong` hạ trần vòng xuống 1 cho test nào không nói về đào sâu — để lại 5
+    thì test phải ngồi chờ giấc nghỉ chống-chặn 60-180s giữa các lượt.
+    """
+    goi = tra_ve if callable(tra_ve) else (lambda url, **kw: list(tra_ve))
+    monkeypatch.setattr(scraper_mod, "scrape_music_page", goi)
+    monkeypatch.setattr(queue_mod, "SO_VONG_DAO_SAU", so_vong)
+    # Không ngủ thật trong test. Giữ `random.uniform` nguyên vẹn để nhánh
+    # "không ngủ giấc mình biết là sẽ không kịp tỉnh" vẫn được đi qua.
+    monkeypatch.setattr(scraper_mod.time, "sleep", lambda _s: None)
 
 _UPLOAD_OK = UploadResult(outcome=UploadOutcome.SUCCESS, file_id="f1", drive_id="d1")
 _UPLOAD_FAILED = UploadResult(outcome=UploadOutcome.FAILED, reason="upload trượt")
@@ -377,11 +400,11 @@ def test_scraper_call_always_passes_profile_dir_none(monkeypatch):
     captured = {}
 
     def fake_scrape_music_page(url, max_videos=None, cookies_path=None, proxy=None,
-                                profile_dir="__NOT_PASSED__"):
+                                profile_dir="__NOT_PASSED__", dem_trang=None):
         captured["profile_dir"] = profile_dir
         return []
 
-    monkeypatch.setattr(queue_mod, "scrape_music_page", fake_scrape_music_page)
+    gia_lap_scraper(monkeypatch, fake_scrape_music_page)
     queue_mod._fetch_refs("https://www.tiktok.com/music/song-123", max_videos=10,
                           cookies_path=None)
 
@@ -394,7 +417,7 @@ def test_hashtag_urls_never_reach_the_scraper(monkeypatch):
     def _boom(*args, **kwargs):
         raise AssertionError("scrape_music_page must not be called for a /tag/ URL")
 
-    monkeypatch.setattr(queue_mod, "scrape_music_page", _boom)
+    gia_lap_scraper(monkeypatch, _boom)
     monkeypatch.setattr(queue_mod, "enumerate_hashtag",
                          lambda tag, max_videos, proxy=None, **kw: [])
     queue_mod._fetch_refs("https://www.tiktok.com/tag/anos80", max_videos=10,
@@ -468,7 +491,13 @@ def test_process_job_marks_failed_on_exception_without_crashing_caller(tmp_path,
     assert job["xong_luc"] is not None
 
 
-def test_process_job_with_zero_refs_marks_done_with_zero_total(tmp_path, monkeypatch):
+def test_process_job_with_zero_refs_keeps_the_number_the_user_asked_for(tmp_path, monkeypatch):
+    """Một lượt ra 0 video vẫn phải nhớ user xin 20.
+
+    ĐỘT BIẾN: cho `process_job` ghi đè `tong` bằng số tìm thấy (hành vi cũ) ⇒ ĐỎ.
+    Đây là ca cực đoan của lỗi gốc: đè xong thì job đọc là `0/0` — "xong, không
+    có gì để làm" — trong khi sự thật là "xin 20, không kiếm được cái nào".
+    """
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
     job_id = models.create_job(db_path, "https://www.tiktok.com/tag/empty", 20, "a")
@@ -479,7 +508,8 @@ def test_process_job_with_zero_refs_marks_done_with_zero_total(tmp_path, monkeyp
 
     job = models.get_job(db_path, job_id)
     assert job["trang_thai"] == "done"
-    assert job["tong"] == 0
+    assert job["tong"] == 20, "`tong` là số user xin và không ai được đè nó"
+    assert job["tim_thay"] == 0
 
 
 def test_process_job_marks_failed_when_every_ref_errors_without_raising(tmp_path, monkeypatch):
@@ -749,9 +779,8 @@ def test_music_page_results_are_deduped_too(tmp_path, monkeypatch):
     db = tmp_path / "jobs.db"
     models.init_db(db)
     models.record_video(db, job_id=1, video_id="333", url="u")
-    monkeypatch.setattr(queue_mod, "scrape_music_page",
-                         lambda *a, **kw: [VideoRef(video_id="333", url="u1"),
-                                            VideoRef(video_id="444", url="u2")])
+    gia_lap_scraper(monkeypatch, [VideoRef(video_id="333", url="u1"),
+                                  VideoRef(video_id="444", url="u2")])
 
     refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
                                   cookies_path=None, db_path=db, job_id=2)
@@ -765,8 +794,7 @@ def test_listing_without_a_db_keeps_every_ref(tmp_path, monkeypatch):
     """Ca âm: CLI và GUI gọi cùng đường này mà không có DB nào. Thiếu db_path
     thì không được lọc mất gì — nếu không, ba test trên có thể xanh chỉ vì
     hàm luôn trả rỗng."""
-    monkeypatch.setattr(queue_mod, "scrape_music_page",
-                         lambda *a, **kw: [VideoRef(video_id="555", url="u")])
+    gia_lap_scraper(monkeypatch, [VideoRef(video_id="555", url="u")])
 
     refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
                                   cookies_path=None)
@@ -832,7 +860,7 @@ def _drive_one_job(tmp_path, monkeypatch, url, refs, db_path):
     """Chạy trọn `process_job` với downloader giả: không mạng, không ffmpeg."""
     job_id = models.create_job(db_path, url, 10, "namhd@astronex.ai")
     job = models.get_job(db_path, job_id)
-    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: list(refs))
+    gia_lap_scraper(monkeypatch, list(refs))
     monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
 
     def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
@@ -865,10 +893,13 @@ def test_process_job_passes_the_db_through_so_dedupe_actually_runs(tmp_path, mon
         [VideoRef(video_id="111", url="u1"), VideoRef(video_id="222", url="u2")],
         db_path)
 
-    # `tong` được ghi bằng len(refs) SAU khi lọc, nên nó là tín hiệu phân định:
-    # dedupe chạy ⇒ 1, dedupe tắt ⇒ 2. (Hàng `videos` không dùng được ở đây —
-    # test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
-    assert models.get_job(db_path, job_id)["tong"] == 1, "chỉ ref MỚI được đưa vào tải"
+    # `tim_thay` được ghi bằng len(refs) SAU khi lọc, nên nó là tín hiệu phân
+    # định: dedupe chạy ⇒ 1, dedupe tắt ⇒ 2. (Hàng `videos` không dùng được ở
+    # đây — test thay lifecycle_hook bằng stub nên không ai ghi hàng nào.)
+    # KHÔNG dùng `tong` làm tín hiệu này nữa: `tong` giữ số user xin, nó bằng
+    # nhau ở cả hai nhánh đột biến nên không phân định được gì.
+    ket_qua = models.get_job(db_path, job_id)
+    assert ket_qua["tim_thay"] == 1, "chỉ ref MỚI được đưa vào tải"
     # Và video bị bỏ qua phải để lại dấu nguồn của lượt này.
     assert models.sources_for_videos(db_path, ["111"], None) == {
         "111": ["https://www.tiktok.com/music/x-1"]}
@@ -973,7 +1004,7 @@ def _drive_job_as(tmp_path, monkeypatch, db_path, nguoi_tao, cookies_dir):
     bat_duoc = {}
     job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 10, nguoi_tao)
     job = models.get_job(db_path, job_id)
-    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: [VideoRef(video_id="900", url="u")])
+    gia_lap_scraper(monkeypatch, [VideoRef(video_id="900", url="u")])
     monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
 
     def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
@@ -1041,7 +1072,7 @@ def _chay_job_voi_jar(tmp_path, monkeypatch, db_path, noi_dung_jar: str | None):
     da_goi = {"download_all": False}
     job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 10, nguoi_tao)
     job = models.get_job(db_path, job_id)
-    monkeypatch.setattr(queue_mod, "scrape_music_page", lambda *a, **kw: [VideoRef(video_id="900", url="u")])
+    gia_lap_scraper(monkeypatch, [VideoRef(video_id="900", url="u")])
     monkeypatch.setattr(queue_mod, "verify_video_stream", lambda *a, **kw: True)
 
     def _fake_download(refs_, output_dir, cookies_path=None, progress=None, **kw):
@@ -1225,3 +1256,411 @@ def test_a_rubbish_duration_does_not_kill_the_job():
 
     assert ra.duration is None
     assert ra.play_count == 12
+
+
+# ---------------------------------------------------------------------------
+# Nguồn KHÔNG phải hashtag (search / music / profile) cũng phải nói vì sao
+# lượt chạy ra 0 video.
+#
+# Ca thật 21/09: hai người dán hai link `/search` KHÁC NHAU về cùng chủ đề,
+# TikTok trả đúng video mà thư viện đã có, job hiện "Xong · 0/0" không một
+# chữ. Người dùng đọc nó thành hỏng và hỏi "có lỗi không?".
+#
+# `hashtag_enumerator.py:55-58` đã vá đúng chuyện này cho nhánh hashtag, và
+# bản vá dừng ở ranh giới nhánh.
+# ---------------------------------------------------------------------------
+def _fake_ref(vid):
+    from tiktok_music_downloader.utils import VideoRef
+    return VideoRef(video_id=vid, url=f"https://www.tiktok.com/@a/video/{vid}")
+
+
+def _bat_ly_do(monkeypatch, refs, da_co, tmp_path, xin: int = 10):
+    """Chạy `_fetch_refs` với scraper giả, trả lý do dừng đã ghi vào DB."""
+    from web import models
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/search?q=x", xin, "ai@do.vn")
+    for vid in da_co:
+        models.record_video(db, job_id, vid, f"https://x/{vid}")
+
+    gia_lap_scraper(monkeypatch, lambda url, **kw: [_fake_ref(v) for v in refs])
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/search?q=x", max_videos=xin,
+                                cookies_path=None, db_path=db, job_id=job_id)
+    return giu, models.get_job(db, job_id)["ly_do_dung"]
+
+
+def test_search_noi_ro_khi_thu_vien_da_co_het(monkeypatch, tmp_path):
+    """Nguồn CÓ video nhưng mình đã có hết ⇒ `already_owned`, không im lặng.
+
+    Đột biến: bỏ lời gọi `_note_stop` ở nhánh không-hashtag ⇒ ĐỎ.
+    """
+    giu, ly_do = _bat_ly_do(monkeypatch, refs=["v1", "v2"], da_co=["v1", "v2"],
+                            tmp_path=tmp_path)
+    assert giu == []
+    assert ly_do == "already_owned"
+
+
+def test_search_phan_biet_nguon_rong_voi_da_co_het(monkeypatch, tmp_path):
+    """Hai ca khác nhau ⇒ người dùng làm hai việc khác nhau sau đó.
+
+    Nguồn rỗng ⇒ link có thể sai/hết hạn. Đã có hết ⇒ đổi nguồn, chạy lại vô
+    ích. Trả cùng một mã cho hai ca là đúng lỗi "chưa cấu hình" vs "đã cấu
+    hình mà trượt". Đột biến: dùng chung một mã ⇒ ĐỎ.
+    """
+    _, ly_do = _bat_ly_do(monkeypatch, refs=[], da_co=[], tmp_path=tmp_path)
+    assert ly_do == "source_empty"
+
+
+def test_lay_du_so_da_xin_thi_khong_mang_ly_do_dung(monkeypatch, tmp_path):
+    """Lượt chạy ĐỦ SỐ không được mang lý do dừng — nếu không mọi job thành
+    công cũng hiện một câu giải thích không ai cần.
+
+    ⚠ Bản cũ của test này xin 10, nhận 1, rồi khẳng định "không có lý do". Sau
+    21/09 đó là một ca HỤT, và hụt thì BẮT BUỘC phải nói vì sao — chính là thứ
+    người dùng yêu cầu. Nên tiền đề của test đổi, không phải luật bị nới: ở
+    đây xin đúng 1 và nhận đúng 1.
+    """
+    giu, ly_do = _bat_ly_do(monkeypatch, refs=["v1", "v2"], da_co=["v1"],
+                            tmp_path=tmp_path, xin=1)
+    assert [r.video_id for r in giu] == ["v2"]
+    assert not ly_do
+
+
+def test_hut_so_da_xin_thi_luon_noi_vi_sao(monkeypatch, tmp_path):
+    """Xin 10, nguồn chỉ có 2 mà 1 đã có ⇒ về 1. Người dùng PHẢI biết vì sao.
+
+    ĐỘT BIẾN: bỏ nhánh `else: ly_do = STOP_HET_VONG` trong
+    `scrape_music_page_multi` ⇒ ĐỎ. Không có test này, ca hụt lại im lặng đúng
+    như trước bản vá — và im lặng ở đây là cả lý do vấn đề 2 tồn tại.
+    """
+    giu, ly_do = _bat_ly_do(monkeypatch, refs=["v1", "v2"], da_co=["v1"],
+                            tmp_path=tmp_path, xin=10)
+    assert [r.video_id for r in giu] == ["v2"], "vẫn phải giữ video mới tìm được"
+    assert ly_do, "hụt mà không có lý do = đúng cái lỗi đang sửa"
+    assert ly_do != "already_owned", "có video mới thì không phải 'đã có hết'"
+
+
+# ===========================================================================
+# ĐÀO SÂU trên nhánh music/search/profile (21/09)
+# ===========================================================================
+
+def _san_dao_sau(tmp_path, xin: int):
+    """DB + job thật cho các test đào sâu."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/music/x-1", xin, "ai@do.vn")
+    return db, job_id
+
+
+def test_dao_sau_bu_du_so_khi_luot_dau_toan_video_da_co(tmp_path, monkeypatch):
+    """Xin 3, lượt đầu ra 3 video mà thư viện đã có 2 ⇒ phải ĐÀO TIẾP, không
+    dừng ở 1.
+
+    Đây là nguyên văn việc người dùng giao: *"xin 50 thì phải tải đủ 50 video
+    MỚI, trùng thì bỏ qua và quét tiếp"*.
+
+    ĐỘT BIẾN: cho `scrape_music_page_multi` đếm `max_videos` theo `fresh` (mới
+    với LƯỢT CHẠY) thay vì theo `moi` (mới với THƯ VIỆN) ⇒ ĐỎ, vì lượt đầu đã
+    có 3 "fresh" nên nó dừng ngay với 1 video.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=3)
+    models.record_video(db, job_id=1, video_id="a1", url="u")
+    models.record_video(db, job_id=1, video_id="a2", url="u")
+
+    luot = {"n": 0}
+
+    def scraper_gia(url, **kw):
+        luot["n"] += 1
+        if luot["n"] == 1:
+            return [_fake_ref("a1"), _fake_ref("a2"), _fake_ref("b1")]
+        return [_fake_ref("b2"), _fake_ref("b3")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=3,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert [r.video_id for r in giu] == ["b3", "b2", "b1"], "phải đủ 3 video MỚI"
+    assert luot["n"] >= 2, "dừng ở lượt 1 nghĩa là không đào sâu"
+    assert models.get_job(db, job_id)["ly_do_dung"] in (None, ""), "đủ số thì không có lý do dừng"
+
+
+def test_video_da_co_van_de_lai_dau_nguon_khi_dao_sau(tmp_path, monkeypatch):
+    """Video bị bỏ vì trùng không bao giờ đi tiếp vào đường tải, nên lượt này
+    là lúc DUY NHẤT nguồn của nó còn quan sát được. Đào sâu không được đánh
+    rơi việc đó."""
+    db, job_id = _san_dao_sau(tmp_path, xin=1)
+    models.record_video(db, job_id=1, video_id="a1", url="u")
+
+    gia_lap_scraper(monkeypatch, [_fake_ref("a1"), _fake_ref("b1")], so_vong=1)
+    queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=1,
+                          cookies_path=None, db_path=db, job_id=job_id)
+
+    assert models.sources_for_videos(db, ["a1"], None) == {
+        "a1": ["https://www.tiktok.com/music/x-1"]}
+
+
+def test_so_trang_ghi_TANG_DAN_trong_luc_chay_khong_phai_mot_lan_cuoi(tmp_path, monkeypatch):
+    """Trần 800 trang/ngày đọc `SUM(so_trang)` đã COMMIT, và cửa chặn chạy lúc
+    TẠO job. Ghi một lần ở cuối nghĩa là: job huỷ/chết giữa chừng ghi 0 dù đã
+    tiêu request thật, và job xếp hàng kế tiếp được duyệt trên sổ cũ.
+
+    Phép đo phải phân định được hai cách ghi, nên nó đọc DB **từ bên trong lượt
+    chạy thứ hai** — lúc đó bản ghi-một-lần-ở-cuối vẫn còn là 0.
+
+    ĐỘT BIẾN: dời `_note_pages` ra sau vòng lặp (kiểu nhánh hashtag) ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=99)
+    doc_duoc = {}
+    luot = {"n": 0}
+
+    def scraper_gia(url, dem_trang=None, **kw):
+        luot["n"] += 1
+        if luot["n"] == 2:
+            doc_duoc["giua_chung"] = models.get_job(db, job_id)["so_trang"]
+        # Mỗi lượt quét giả lập 3 lời gọi feed — đúng thứ `_watch_feed_api` đếm.
+        for _ in range(3):
+            if dem_trang is not None:
+                dem_trang()
+        return [_fake_ref(f"v{luot['n']}")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=2)
+    queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=99,
+                          cookies_path=None, db_path=db, job_id=job_id)
+
+    assert doc_duoc["giua_chung"] == 3, \
+        "đang ở lượt 2 mà sổ vẫn 0 ⇒ số trang chỉ được ghi lúc xong"
+    assert models.get_job(db, job_id)["so_trang"] == 6, "3 lời gọi feed × 2 lượt"
+
+
+def test_luot_sau_ra_rong_la_nghi_bi_chan_khong_phai_nguon_rong(tmp_path, monkeypatch):
+    """Nguồn đang trả video rồi ngừng ⇒ nghi bị chặn mềm ⇒ khuyên NGHỈ.
+    Khác hẳn `source_empty` (chưa bao giờ trả gì ⇒ link có thể sai). Hai ca
+    bảo người dùng hai việc khác nhau."""
+    db, job_id = _san_dao_sau(tmp_path, xin=99)
+    luot = {"n": 0}
+
+    def scraper_gia(url, **kw):
+        luot["n"] += 1
+        return [_fake_ref("v1")] if luot["n"] == 1 else []
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=99,
+                          cookies_path=None, db_path=db, job_id=job_id)
+
+    assert models.get_job(db, job_id)["ly_do_dung"] == "nghi_bi_chan"
+
+
+def test_het_gio_ma_khong_gom_duoc_gi_moi_thi_bao_da_co_het(tmp_path, monkeypatch):
+    """Ưu tiên lý do: hết giờ/hết vòng mà 0 video mới trong khi nguồn VẪN đưa
+    ra video ⇒ lý do thật là `already_owned`.
+
+    Vì hai câu khuyên ngược nhau: `already_owned` bảo ĐỔI NGUỒN (chạy lại chắc
+    chắn vô ích), `het_thoi_gian` bảo CHẠY LẠI (có thể ra thêm). Nói nhầm là
+    xúi người dùng lặp vô ích — đúng lỗi nhánh hashtag đã vá trước đây.
+
+    ĐỘT BIẾN: bỏ khối nâng cấp lý do ở cuối `scrape_music_page_multi` ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=99)
+    models.record_video(db, job_id=1, video_id="a1", url="u")
+
+    gia_lap_scraper(monkeypatch, [_fake_ref("a1")], so_vong=2)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=99,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert giu == []
+    assert models.get_job(db, job_id)["ly_do_dung"] == "already_owned"
+
+
+def test_tran_thoi_gian_cat_luot_chay_va_noi_dung_ly_do(tmp_path, monkeypatch):
+    """Trần 10 phút (user chốt 21/09) phải CẮT được lượt chạy, và nói đúng mã.
+
+    Đồng hồ bị đẩy tới bằng tay thay vì ngồi chờ thật: thứ cần đo là *nhánh
+    quyết định*, không phải khả năng ngủ của máy.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=99)
+    dong_ho = {"t": 0.0}
+    monkeypatch.setattr(scraper_mod.time, "monotonic", lambda: dong_ho["t"])
+
+    def scraper_gia(url, **kw):
+        dong_ho["t"] += 400.0        # mỗi lượt "tốn" 400s
+        return [_fake_ref(f"v{int(dong_ho['t'])}")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=99,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert models.get_job(db, job_id)["ly_do_dung"] == "het_thoi_gian"
+    assert len(giu) >= 1, "cắt vì hết giờ vẫn phải giữ những gì đã gom được"
+
+
+def test_khong_co_db_thi_dem_trang_IM_LANG_khong_canh_bao(monkeypatch, caplog):
+    """Không có DB = "chưa cấu hình", không phải "đã cấu hình mà trượt". Hai ca
+    đó trả cùng một dòng cảnh báo thì dòng đó mất hết giá trị.
+
+    Từ 21/09 `_note_pages` chạy MỖI lời gọi feed chứ không còn một lần cuối
+    job, nên ca "chưa cấu hình" đẻ ra hàng chục dòng rác — và rác đó che đúng
+    ca thứ hai, ca thật sự cần nhìn.
+
+    ĐỘT BIẾN: bỏ cửa `if db_path is None` trong `_note_pages` ⇒ ĐỎ (đo được
+    3 dòng cho 3 lời gọi feed).
+    """
+    def scraper_gia(url, dem_trang=None, **kw):
+        for _ in range(3):
+            if dem_trang is not None:
+                dem_trang()
+        return [_fake_ref("v1")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=1)
+    with caplog.at_level("WARNING", logger="videodl.web"):
+        refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=1,
+                                      cookies_path=None)
+
+    assert [r.video_id for r in refs] == ["v1"], "không DB thì vẫn phải trả đủ ref"
+    assert caplog.records == [], \
+        f"không có DB mà vẫn cảnh báo: {[r.message for r in caplog.records]}"
+
+
+def test_tran_video_tru_theo_SO_TIM_DUOC_khong_phai_so_XIN(tmp_path):
+    """Quyết định user 16/09: *"xin 2000 mà nhận 3 rồi bị trừ 2000 là phạt
+    người dùng vì thứ họ không điều khiển được"*.
+
+    Quyết định đó từng được thi hành NHỜ việc `process_job` ghi đè `tong`. Bản
+    vá 21/09 thôi đè `tong` ⇒ `SUM(tong)` lặng lẽ quay sang trừ theo SỐ XIN, và
+    không test nào thấy: chỗ hỏng nằm ở cổng hạn mức, cách hai module.
+
+    ĐỘT BIẾN: đổi lại thành `SUM(tong)` ⇒ ĐỎ (2 job xin 500 tìm được 1 ⇒ 1000).
+    """
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    for _ in range(2):
+        jid = models.create_job(db, "https://www.tiktok.com/music/x-1", 500, "ai@do.vn")
+        models.set_job_found(db, jid, 1)      # quét ra đúng 1 video
+        models.finish_job(db, jid, "done")
+
+    dem = models.sum_videos_since_by_creator(db, "2000-01-01T00:00:00")
+    assert dem["ai@do.vn"] == 2, "2 job tìm được 1 video mỗi cái ⇒ tiêu 2, không phải 1000"
+
+
+def test_job_chua_xong_van_bi_TAM_TRU_theo_so_xin(tmp_path):
+    """Ca ngược, để bản vá trên không thành một đường lách trần: job đang chờ
+    chưa có số thật, nếu tính 0 thì xếp hàng 20 job × 100 video sẽ đi thẳng qua
+    trần 1000 — cổng chặn chạy lúc TẠO job."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.create_job(db, "https://www.tiktok.com/music/x-1", 100, "ai@do.vn")
+
+    dem = models.sum_videos_since_by_creator(db, "2000-01-01T00:00:00")
+    assert dem["ai@do.vn"] == 100, "job đang chờ phải tạm trừ theo số xin"
+
+
+def test_dao_sau_phai_NOI_RONG_cua_so_quet_qua_tung_luot(tmp_path, monkeypatch):
+    """Lượt sau phải cuộn SÂU HƠN lượt trước, không quét lại đúng chỗ cũ.
+
+    `_auto_scroll` ngừng khi THẤY đủ `max_videos` video thô — nó không biết gì
+    về thư viện. Truyền cùng một `max_videos` mọi lượt thì mọi lượt dừng ở cùng
+    cửa sổ; thư viện đã có trọn cửa sổ đó ⇒ 0 video mới mãi mãi, rồi báo
+    `already_owned` (*"đổi nguồn, chạy lại vô ích"*) trong khi phần chưa ai có
+    nằm ngay dưới mép cuộn.
+
+    ĐỘT BIẾN: truyền `max_videos=max_videos` thay vì mục tiêu thô nới dần ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=2)
+    # Thư viện đã có 3 video ĐẦU trang.
+    for vid in ("p1", "p2", "p3"):
+        models.record_video(db, job_id=1, video_id=vid, url="u")
+
+    trang = [f"p{i}" for i in range(1, 21)]      # trang có 20 video
+    xin_tho = []
+
+    def scraper_gia(url, max_videos=None, **kw):
+        # Mô phỏng `_auto_scroll`: chỉ trả về `max_videos` video ĐẦU TIÊN.
+        xin_tho.append(max_videos)
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=2,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert xin_tho[1] > xin_tho[0], \
+        f"lượt 2 phải xin cửa sổ SÂU HƠN lượt 1, nhưng xin {xin_tho}"
+    assert len(giu) == 2, f"phải gom đủ 2 video mới, chỉ được {[r.video_id for r in giu]}"
+    assert models.get_job(db, job_id)["ly_do_dung"] in (None, ""), \
+        "đủ số thì không được mang lý do dừng"
+
+
+# ---------------------------------------------------------------------------
+# Đào sâu: đo KẾT QUẢ NGƯỜI DÙNG NHẬN, không đo "cửa sổ có nới"
+# ---------------------------------------------------------------------------
+# `test_dao_sau_phai_NOI_RONG_cua_so_quet_qua_tung_luot` ở trên khẳng định cửa
+# sổ lượt 2 > lượt 1. Nó XANH cả khi cửa sổ nới TUYẾN TÍNH — mà nới tuyến tính
+# thì trang 200 video có 40 cái đầu đã-có, xin 10, trả về **0** (đo 21/09).
+# "Cửa sổ có nới" là mệnh đề YẾU HƠN "người dùng nhận đủ N", và test yếu hơn
+# mệnh đề cần bảo vệ là test không bảo vệ gì.
+
+def _chay_dao_sau(monkeypatch, tmp_path, *, tong_video, so_da_co, xin):
+    """Một trang `tong_video` video, thư viện đã có `so_da_co` cái ĐẦU TIÊN.
+
+    Tiền tố đã-có nằm ở ĐẦU là ca thật, không phải ca dựng cho dễ: hai người
+    quét cùng một nguồn thì người sau gặp đúng phần người trước đã lấy.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=xin)
+    trang = [f"v{i:03d}" for i in range(tong_video)]
+    for vid in trang[:so_da_co]:
+        models.record_video(db, job_id=1, video_id=vid, url="u")
+
+    def scraper_gia(url, max_videos=None, **kw):
+        # Mô phỏng `_auto_scroll`: ngừng cuộn khi THẤY đủ `max_videos` video
+        # thô, luôn tính từ đầu trang.
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=xin,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+    return giu, models.get_job(db, job_id)["ly_do_dung"]
+
+
+def test_dao_qua_duoc_tien_to_da_co_dai(monkeypatch, tmp_path):
+    """Thư viện đã có 40 video ĐẦU trang, xin 10 ⇒ phải nhận ĐỦ 10.
+
+    ĐỘT BIẾN: nới cửa sổ tuyến tính (`đã_thấy + còn_thiếu`) thay vì gấp đôi
+    ⇒ ĐỎ, ra 0/10 — cửa sổ bò 10→20→30→40 rồi hết lượt.
+    """
+    giu, ly_do = _chay_dao_sau(monkeypatch, tmp_path, tong_video=200, so_da_co=40, xin=10)
+    assert len(giu) == 10, f"phải đủ 10 video mới, chỉ được {len(giu)}"
+    assert not ly_do, "đủ số thì không mang lý do dừng"
+
+
+def test_dao_qua_duoc_tien_to_RAT_dai(monkeypatch, tmp_path):
+    """100/200 video đầu đã có. Gấp đôi vượt tiền tố dài sau ~log2(N) lượt;
+    tuyến tính thì không bao giờ trong 5 lượt."""
+    giu, _ = _chay_dao_sau(monkeypatch, tmp_path, tong_video=200, so_da_co=100, xin=10)
+    assert len(giu) == 10
+
+
+def test_khong_dao_thua_khi_chua_co_gi(monkeypatch, tmp_path):
+    """Ca âm 1: thư viện rỗng ⇒ đủ ngay lượt đầu, KHÔNG được quét thêm lượt
+    nào. Không có ca này thì "gấp đôi" có thể xanh vì nó quét bừa thật nhiều."""
+    goi = []
+    db, job_id = _san_dao_sau(tmp_path, xin=10)
+    trang = [f"v{i:03d}" for i in range(200)]
+
+    def scraper_gia(url, max_videos=None, **kw):
+        goi.append(max_videos)
+        return [_fake_ref(v) for v in trang[:max_videos]]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=5)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=10,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+    assert len(giu) == 10
+    assert len(goi) == 1, f"đủ ngay lượt đầu mà vẫn quét {len(goi)} lượt"
+
+
+def test_nguon_can_that_thi_tra_phan_con_lai_roi_dung(monkeypatch, tmp_path):
+    """Ca âm 2: trang chỉ có 12 video, 10 cái đã có, xin 5 ⇒ nhận 2 rồi DỪNG.
+
+    Phân định "đào chưa tới" với "nguồn hết thật": nếu test trên xanh mà test
+    này treo hoặc quét vô hạn thì cơ chế đang đào bừa, không phải đào đúng.
+    """
+    giu, ly_do = _chay_dao_sau(monkeypatch, tmp_path, tong_video=12, so_da_co=10, xin=5)
+    assert [r.video_id for r in giu] == ["v011", "v010"]
+    assert ly_do, "hụt vì nguồn cạn thì vẫn phải nói vì sao"

@@ -267,6 +267,10 @@
   .status-running { background: var(--warn-bg); color: var(--warn); }
   .status-done { background: var(--success-bg); color: var(--success); }
   .status-failed, .status-interrupted { background: var(--danger-bg); color: var(--danger); }
+  /* "Thiếu" KHÔNG dùng màu lỗi: job chạy hết, không hỏng gì — nó chỉ không
+     đạt mục tiêu. Màu cảnh báo để mắt dừng lại khi lướt, mà không báo động
+     một sự cố không có thật. */
+  .status-thieu { background: var(--warn-bg); color: var(--text); }
   /* "Đã rút" là người dùng tự quyết, KHÔNG phải hỏng — nên dùng tông trung
      tính của `pending`, không mượn tông đỏ của `failed`. Thiếu luật này thì
      nhãn rơi về chữ trần không nền, lạc hẳn khỏi hàng badge còn lại (thấy
@@ -435,7 +439,13 @@
 
   /* Cookie của tôi — dùng lại token màu sẵn có để hai chế độ sáng/tối tự
      đúng, không đặt màu cứng. */
+  /* `inline-block`, không để thẻ tự quyết: chip này dùng trên `<span>` ở trang
+     Cài đặt VÀ trên `<p id="cookie-banner">` ở trang chính. Thẻ `<p>` là block
+     nên viên thuốc bị kéo dài hết chiều ngang — đúng hình dạng của một dải cảnh
+     báo, tức là nói sai mức độ cho một tin TỐT. Đo bằng mắt 21/09; đọc DOM thì
+     `class="chip chip-ok"` vẫn trông đúng. */
   .chip {
+    display: inline-block;
     font-size: .72rem; padding: .15rem .5rem; border-radius: 999px;
     border: 1px solid var(--border); background: var(--surface-alt);
   }

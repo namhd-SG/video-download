@@ -8,6 +8,7 @@ Run: `uvicorn web.app:app --host 127.0.0.1 --port 7870` from the repo root
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -337,15 +338,24 @@ def _trang_thai_cookie(nguoi_tao: str) -> dict:
     """What this person's jar looks like, said in codes and timestamps only.
 
     Not one byte of the jar leaves through here. `ly_do_jar_khong_dung_duoc`
-    returns a code from a closed set, and the only other fields are an
-    expiry and an mtime. That is a structural guarantee, not a promise to
-    remember to redact: there is no code path that can put file contents in
-    this dict.
+    returns a code from a closed set; the rest is an expiry, an mtime, and
+    `van_tay` — 8 hex characters of a SHA-256 over the file. A digest is not
+    a byte of the file and cannot be run backwards into one, but it is worth
+    naming precisely, because the guarantee this docstring makes is
+    structural and a reader has to be able to check it: no branch here can
+    return file contents.
+
+    `van_tay` exists so replacing a cookie is VERIFIABLE. The TikTok account
+    name is not in the jar (`cookies.py::COOKIE_DANG_NHAP` — sessionid and
+    friends, no username), so the page cannot say which account this is
+    without asking TikTok, which the user declined on 21/09. What it can do
+    is let them tell one jar from another: paste a new cookie, watch these 8
+    characters change, and know the replacement landed.
     """
     duong_dan = cookies_path_for_user(COOKIES_DIR, nguoi_tao)
     if duong_dan is None:
         return {"co_jar": False, "trang_thai": None,
-                "het_han": None, "cap_nhat_luc": None}
+                "het_han": None, "cap_nhat_luc": None, "van_tay": None}
     ma = ly_do_jar_khong_dung_duoc(duong_dan)
     return {
         "co_jar": True,
@@ -353,7 +363,20 @@ def _trang_thai_cookie(nguoi_tao: str) -> dict:
         "het_han": han_dung_nhat(duong_dan),
         "cap_nhat_luc": datetime.fromtimestamp(
             Path(duong_dan).stat().st_mtime, tz=timezone.utc).isoformat(),
+        "van_tay": _van_tay_jar(duong_dan),
     }
+
+
+def _van_tay_jar(duong_dan: str) -> str | None:
+    """8 ký tự hex của SHA-256 trên nội dung jar. `None` nếu không đọc được.
+
+    Đọc trượt trả `None` chứ không ném: trang Cài đặt phải hiện được trạng
+    thái của một jar hỏng — đó đúng là lúc người dùng cần nhìn nó nhất.
+    """
+    try:
+        return hashlib.sha256(Path(duong_dan).read_bytes()).hexdigest()[:8]
+    except OSError:
+        return None
 
 
 @app.get("/me")

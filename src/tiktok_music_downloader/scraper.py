@@ -5,7 +5,7 @@ import logging
 import random
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from playwright.sync_api import (
     Browser,
@@ -17,6 +17,13 @@ from playwright.sync_api import (
 )
 
 from tiktok_music_downloader.utils import (
+    STOP_ALREADY_OWNED,
+    STOP_COMPLETE,
+    STOP_HET_THOI_GIAN,
+    STOP_HET_VONG,
+    STOP_NGHI_BI_CHAN,
+    STOP_SOURCE_EMPTY,
+    STOP_STALLED,
     STEALTH_INIT_JS,
     VideoRef,
     parse_video_url,
@@ -151,8 +158,19 @@ def _warn_empty_feed(marker: str, status: int, how: str) -> None:
     )
 
 
-def _watch_feed_api(page: Page) -> None:
+def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None) -> None:
     """Log feed endpoints that answer with no body, and say when we can't tell.
+
+    `dem_trang` is called once per feed response that actually carried a
+    payload, which is how this branch pays into the daily index-page cap.
+    Until 21/09 it paid NOTHING: `on_pages` was wired only on the hashtag
+    path, so a music/search job recorded `so_trang = 0` while making just as
+    many requests. The cap was not loose here, it was blind.
+
+    One counted response = one request that answered with an array of videos,
+    the same unit the hashtag path counts as a "page". Counting a whole
+    multi-pass run as one page instead would undercount by however many times
+    the scroller fetched, which on a long scroll is most of the traffic.
 
     Reports only what it read off the response: endpoint, HTTP status, byte
     count, and which measurement produced it. It draws no conclusion about WHY
@@ -185,6 +203,13 @@ def _watch_feed_api(page: Page) -> None:
                 log.debug("feed %s: skipped HTTP %d %s",
                           marker, resp.status, resp.request.method)
                 return
+
+            # Đếm ở ĐÂY, ngay khi biết đây là một lượt feed thật (2xx, GET) —
+            # trước mọi nhánh phân tích rỗng/không-rỗng bên dưới. Một lượt gọi
+            # đã tiêu rồi thì nó tiêu, dù nó trả về rỗng: trần này đo LƯU LƯỢNG
+            # mình đã tạo ra với TikTok, không đo mình thu được gì.
+            if dem_trang is not None:
+                dem_trang()
 
             declared = resp.header_value("content-length")
             encoding = (resp.header_value("content-encoding") or "").strip().lower()
@@ -376,8 +401,14 @@ def scrape_music_page(
     cookies_path: str | None = None,
     proxy: str | None = None,
     profile_dir: str | None = None,
+    dem_trang: Callable[[], None] | None = None,
 ) -> list[VideoRef]:
-    """Open music page, scroll, return up-to-max unique VideoRefs (newest-first as rendered)."""
+    """Open music page, scroll, return up-to-max unique VideoRefs (newest-first as rendered).
+
+    `dem_trang` fires once per feed request this visit makes — see
+    `_watch_feed_api`. Callers that meter a daily request budget must pass it;
+    the CLI and the desktop GUI do not meter, so they leave it off.
+    """
     ua = random_user_agent()
     log.info(
         "scraping %s (max=%d, headless=%s, proxy=%s, profile=%s)",
@@ -400,7 +431,7 @@ def scrape_music_page(
             ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
-        _watch_feed_api(page)
+        _watch_feed_api(page, dem_trang)
         try:
             page.goto(music_url, wait_until="domcontentloaded", timeout=30_000)
             try:
@@ -433,6 +464,10 @@ def scrape_music_page_multi(
     pass_delay_max: float = 180.0,
     min_new_rate: float = 0.30,
     max_videos: int = 200,
+    already_have: Callable[[list[str]], set[str]] | None = None,
+    on_skip: Callable[[VideoRef], None] | None = None,
+    on_stop: Callable[[str], None] | None = None,
+    max_seconds: float | None = None,
     **kwargs,
 ) -> list[VideoRef]:
     """Run scrape_music_page N times, dedupe, with anti-block safeguards.
@@ -455,16 +490,59 @@ def scrape_music_page_multi(
     context (no cookies) for passes ≥ 2 if the user is worried about their
     account. Right now we don't downgrade cookies between passes — caller can
     choose to omit cookies_path for safer multipass.
+
+    ---- Đào sâu tới khi đủ N video MỚI (21/09) ----
+
+    `already_have` biến hàm này từ "gom N video" thành "gom N video mà THƯ VIỆN
+    CHƯA CÓ" — đúng việc nhánh hashtag đã làm, và là thứ người dùng thật sự xin.
+    Không có nó thì xin 50 mà trùng 30 sẽ về 20 và dừng, vì 50 "đã thấy" là đủ.
+
+    ⚠ HAI BỘ ĐẾM, KHÔNG ĐƯỢC GỘP — chỗ này gộp là hỏng cả hai chiều:
+
+      · `fresh` = chưa thấy Ở LƯỢT CHẠY NÀY → nuôi `rate` (độ mới). Nó trả lời
+        *"nguồn còn đưa ra thứ chưa thấy không"*, tức câu hỏi CHỐNG CHẶN.
+      · `moi`  = chưa có trong THƯ VIỆN → đếm về `max_videos`. Nó trả lời
+        *"đã đủ hàng cho người dùng chưa"*, tức câu hỏi CÔNG VIỆC.
+
+    Nhét "mới với thư viện" vào mẫu số của `rate` thì: chia cho batch gốc ⇒ một
+    lượt toàn video đã có cho `rate` thấp giả ⇒ DỪNG SỚM SAI đúng lúc cần đào
+    tiếp; chia cho batch đã lọc ⇒ mẫu số co theo tử số ⇒ `rate` không bao giờ
+    xuống ⇒ CHẠY TỚI KỊCH TRẦN. Cả hai đều là hỏng âm thầm.
+
+    `max_seconds` là trần thời gian cả lượt (user chốt 10 phút). Kiểm TRƯỚC khi
+    ngủ giữa hai lượt: ngủ 60-180s rồi mới phát hiện hết giờ là vứt đi đúng
+    khoảng thời gian vừa chờ.
     """
     if passes < 1:
         passes = 1
     passes = min(passes, 5)  # hard cap; >5 is "spray-and-pray" territory.
 
-    all_refs: set[VideoRef] = set()
+    bat_dau = time.monotonic()
+    da_thay: set[str] = set()          # mới với LƯỢT CHẠY NÀY
+    moi: dict[str, VideoRef] = {}      # mới với THƯ VIỆN, giữ thứ tự gặp
+    bo_qua = 0                         # số video bỏ vì thư viện đã có
+    ly_do = STOP_COMPLETE
+    # Số lượt ĐÃ CÀO THẬT, không phải số lượt đã thử. Hai con số lệch nhau ở
+    # đúng ca trần thời gian cắt TRƯỚC khi `scrape_music_page` kịp chạy: dùng
+    # `i + 1` cho câu log cuối sẽ báo dư một lượt chưa từng xảy ra. Một dòng
+    # log khai nhiều hơn thứ nó đo được là thứ người sau sẽ trích như số đo.
+    da_cao = 0
+
+    def _con_lai() -> float | None:
+        if max_seconds is None:
+            return None
+        return max_seconds - (time.monotonic() - bat_dau)
+
     for i in range(passes):
-        before = len(all_refs)
         if i > 0:
             delay = random.uniform(pass_delay_min, pass_delay_max)
+            con = _con_lai()
+            if con is not None and con <= delay:
+                # Không ngủ một giấc mà mình đã biết là sẽ không kịp tỉnh.
+                log.info("hết trần thời gian (%.0fs) trước lượt %d — dừng",
+                         max_seconds, i + 1)
+                ly_do = STOP_HET_THOI_GIAN
+                break
             log.info(
                 "pass %d/%d: waiting %.0fs to avoid rate-limit pattern…",
                 i + 1, passes, delay,
@@ -472,33 +550,122 @@ def scrape_music_page_multi(
             time.sleep(delay)
 
         log.info("=== pass %d/%d ===", i + 1, passes)
-        batch = scrape_music_page(music_url, max_videos=max_videos, **kwargs)
+        # CỬA SỔ QUÉT phải SÂU DẦN, nếu không "đào sâu" chỉ là quét lại chỗ cũ.
+        #
+        # `_auto_scroll` ngừng cuộn ngay khi THẤY đủ `max_videos` video — nó
+        # đếm video THÔ, không biết gì về thư viện. Truyền cùng một
+        # `max_videos` cho mọi lượt thì lượt 2..5 dừng lại ở đúng cửa sổ lượt 1
+        # đã dừng, và nếu thư viện đã có trọn cửa sổ đó thì mọi lượt đều về 0
+        # video mới — rồi lý do dừng thành `already_owned` ("đổi nguồn, chạy
+        # lại chắc chắn vô ích") trong khi phần chưa ai có nằm ngay dưới mép
+        # cuộn. Đó là hỏng ÂM THẦM đúng trong ca tính năng này sinh ra để chữa.
+        #
+        # Muốn có thêm `còn_thiếu` video mới thì phải cuộn qua hết những cái đã
+        # thấy rồi mới tới phần chưa thấy ⇒ mục tiêu thô = đã_thấy + còn_thiếu.
+        # NỚI GẤP ĐÔI, không nới theo số còn thiếu.
+        #
+        # Bản đầu dùng `đã_thấy + còn_thiếu`, tức nới TUYẾN TÍNH mỗi lượt đúng
+        # bằng phần hụt. Đo 21/09, trang 200 video mà thư viện đã có 40 cái
+        # ĐẦU, xin 10 mới: cửa sổ đi 10 → 20 → 30 → 40 rồi hết lượt ⇒ **0
+        # video mới**, trong khi 160 cái chưa ai có nằm ngay dưới. Phần đầu
+        # trang mà thư viện đã có dài bao nhiêu là chuyện của thư viện, KHÔNG
+        # liên quan gì tới số người dùng xin — nên lấy số xin làm bước nhảy là
+        # lấy sai đại lượng.
+        #
+        # Gấp đôi thì vượt một tiền tố đã-có dài N sau khoảng log2(N) lượt:
+        # 40 cái đã có bị bỏ lại ngay ở lượt 3 thay vì lượt 5.
+        con_thieu = max_videos - len(moi)
+        muc_tieu_tho = max(max_videos, (len(da_thay) + con_thieu) * 2)
+        batch = scrape_music_page(music_url, max_videos=muc_tieu_tho, **kwargs)
         if not batch:
-            log.warning("pass %d returned 0 videos — likely soft block, stopping", i + 1)
+            # Lượt ĐẦU ra 0 = nguồn chưa bao giờ đưa gì (link sai/hết hạn).
+            # Lượt SAU ra 0 = nó đang đưa rồi ngừng ⇒ nghi bị chặn mềm. Hai ca
+            # này khuyên người dùng hai việc ngược nhau, nên không được gộp.
+            if i == 0:
+                log.warning("lượt đầu ra 0 video — nguồn không đưa ra gì")
+                ly_do = STOP_SOURCE_EMPTY
+            else:
+                log.warning("lượt %d ra 0 video — nghi bị chặn mềm, dừng", i + 1)
+                ly_do = STOP_NGHI_BI_CHAN
             break
 
-        all_refs.update(batch)
-        added = len(all_refs) - before
-        rate = added / len(batch) if batch else 0.0
+        da_cao += 1
+        fresh = [r for r in batch if r.video_id not in da_thay]
+        da_thay.update(r.video_id for r in fresh)
+        # Mẫu số là CẢ RỔ, cố ý giữ nguyên.
+        #
+        # Có một bản vá thử đổi mẫu số thành "phần cửa sổ vừa nới thêm", với lý
+        # do nghe rất xuôi: cửa sổ nới dần nên `batch` là tập cha của lượt
+        # trước, mẫu số phình mà tử số thì không. Đo lại thì bản đó SAI hai lần:
+        #   · không test nào cần nó — đột biến hoàn nguyên nó vẫn XANH, vì phép
+        #     nới GẤP ĐÔI đã giữ tỉ lệ trên ngưỡng rồi;
+        #   · và nó PHÁ đường GUI (`gui.py`), nơi cửa sổ KHÔNG nới: ở đó
+        #     `len(batch) - đã_thấy_trước = 0` ⇒ mẫu số rơi về 1 ⇒ `rate` luôn
+        #     ≥ 1 ⇒ cửa "lợi ích giảm dần" KHÔNG BAO GIỜ đóng, và bản desktop
+        #     quét đủ 5 lượt mỗi lần. Đo: batch 50, đã thấy 50, mới 10 ⇒ cũ
+        #     0,20 (dừng, đúng ý) · mới 10,0 (chạy tiếp mãi).
+        # Một bản vá không ai cần mà lại đổi hành vi một đường không ai yêu cầu
+        # sửa thì không phải bản vá.
+        rate = len(fresh) / len(batch)
+
+        owned = already_have([r.video_id for r in fresh]) if (already_have and fresh) else set()
+        for ref in fresh:
+            if ref.video_id in owned:
+                bo_qua += 1
+                if on_skip is not None:
+                    # Video bị bỏ qua không bao giờ đi tiếp vào đường tải, nên
+                    # đây là lúc DUY NHẤT nguồn lần này của nó còn quan sát được.
+                    on_skip(ref)
+            elif ref.video_id not in moi:
+                moi[ref.video_id] = ref
+
         log.info(
-            "pass %d/%d: +%d new (%d/%d = %.0f%% novel), total unique %d",
-            i + 1, passes, added, added, len(batch), rate * 100, len(all_refs),
+            "pass %d/%d: %d/%d mới với lượt này (%.0f%%), %d mới với thư viện, "
+            "%d đã có — cộng dồn %d/%d",
+            i + 1, passes, len(fresh), len(batch), rate * 100,
+            len(moi), bo_qua, len(moi), max_videos,
         )
 
-        if len(all_refs) >= max_videos:
-            log.info("reached max_videos=%d across passes, stopping", max_videos)
+        if len(moi) >= max_videos:
+            log.info("đủ %d video mới, dừng", max_videos)
+            ly_do = STOP_COMPLETE
+            break
+        con = _con_lai()
+        if con is not None and con <= 0:
+            log.info("hết trần thời gian sau lượt %d", i + 1)
+            ly_do = STOP_HET_THOI_GIAN
             break
         if i > 0 and rate < min_new_rate:
             log.info(
-                "novelty %.0f%% < %.0f%% threshold — diminishing returns, stopping",
+                "độ mới %.0f%% < ngưỡng %.0f%% — nguồn cạn dần, dừng",
                 rate * 100, min_new_rate * 100,
             )
+            ly_do = STOP_STALLED
             break
+    else:
+        if len(moi) < max_videos:
+            ly_do = STOP_HET_VONG
 
-    ordered = sorted(all_refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
-    log.info("multipass total: %d unique videos across %d passes",
-             len(ordered), min(i + 1, passes))
-    return ordered
+    # Nâng cấp lý do — chép nguyên tắc của nhánh hashtag
+    # (`hashtag_enumerator.py`): dừng vì hết giờ/hết vòng/cạn dần mà KHÔNG gom
+    # được video mới nào trong khi nguồn vẫn đưa ra video, thì lý do thật không
+    # phải "hết giờ" — nó là "thư viện đã có hết những gì nguồn đưa". Hai ca
+    # bảo người dùng hai việc ngược nhau: một cái bảo ĐỔI NGUỒN (chạy lại chắc
+    # chắn vô ích), một cái bảo CHẠY LẠI (có thể ra thêm).
+    if ly_do in (STOP_HET_THOI_GIAN, STOP_HET_VONG, STOP_STALLED) and not moi and bo_qua:
+        ly_do = STOP_ALREADY_OWNED
+
+    if on_stop is not None and ly_do != STOP_COMPLETE:
+        on_stop(ly_do)
+
+    # Giữ nguyên phép sắp xếp của bản cũ (`video_id` giảm dần ≈ mới nhất trước):
+    # khi `already_have` không được truyền — đường CLI và GUI desktop — hàm này
+    # phải trả về ĐÚNG như trước, kể cả thứ tự. Đổi thứ tự ở đây là đổi thứ tự
+    # tải của một công cụ không ai yêu cầu sửa.
+    ket_qua = sorted(moi.values(), key=lambda r: r.video_id, reverse=True)[:max_videos]
+    log.info("multipass: %d video mới qua %d lượt đã cào, lý do dừng=%r",
+             len(ket_qua), da_cao, ly_do or "đủ")
+    return ket_qua
 
 
 def iter_refs(refs: Iterable[VideoRef]) -> Iterable[VideoRef]:
