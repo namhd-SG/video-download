@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     drive_folder_link TEXT,
     ly_do_dung TEXT,
     so_trang INTEGER NOT NULL DEFAULT 0,
-    tim_thay INTEGER NOT NULL DEFAULT 0
+    tim_thay INTEGER NOT NULL DEFAULT 0,
+    bo_qua INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -196,6 +197,7 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "ly_do_dung", "TEXT")
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(conn, "jobs", "bo_qua", "INTEGER NOT NULL DEFAULT 0")
 
 
 def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:
@@ -559,6 +561,21 @@ def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:
     if row is None:
         return "khong_phai_cua_toi"
     return "dang_chay"
+
+
+def set_job_skipped(db_path: Path, job_id: int, bo_qua: int) -> None:
+    """Số video lượt này bỏ qua vì thư viện đã có.
+
+    Người tìm sau nhận ít video hơn người tìm trước, và những video bị bỏ
+    không hiện ở đâu trong thư viện của họ — nên không có con số này thì họ
+    đọc một lượt thành công thành "nguồn đã cạn" và đổi nguồn mà không cần.
+
+    Ghi TĂNG DẦN trong lúc quét, không phải một lần lúc xong: job bị huỷ hay
+    chết giữa chừng vẫn đã bỏ qua thật, và con số đó phải còn lại để giải
+    thích cho phần video bị hụt. Cùng lý do với `set_job_pages`.
+    """
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET bo_qua = ? WHERE id = ?", (bo_qua, job_id))
 
 
 def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:

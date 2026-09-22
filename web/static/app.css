@@ -282,6 +282,12 @@
   .progress-fill { height: 100%; background: var(--accent); border-radius: 999px; transition: width .3s; }
   .progress-fill.has-errors { background: var(--danger); }
   .stop-reason { margin-top: 6px; font-size: .76rem; color: var(--warn); background: var(--warn-bg); border-radius: 6px; padding: 5px 8px; line-height: 1.35; }
+  /* Thông tin, KHÔNG phải cảnh báo: một lượt bỏ qua nhiều video vẫn là lượt
+     chạy đúng. Dùng nền trung tính `--surface-alt` chứ không dùng `--warn-bg`
+     của `.stop-reason` ngay trên — tô vàng sẽ dạy người dùng rằng lọc trùng là
+     một sự cố, đúng thứ hiểu nhầm bản vá này sinh ra để chấm dứt. Cả hai token
+     đều có bản dark mode nên không cần quy tắc riêng cho theme. */
+  .skip-note { margin-top: 6px; font-size: .76rem; color: var(--text-muted); background: var(--surface-alt); border-radius: 6px; padding: 5px 8px; line-height: 1.35; }
   .job-meta { margin-top: 4px; font-size: .72rem; color: var(--text-muted); }
   .job-meta a { color: var(--accent); }
   .empty-hint { color: var(--text-muted); font-size: .84rem; margin: 0; }
