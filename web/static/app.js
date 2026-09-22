@@ -632,17 +632,26 @@
     const action = ev.target.dataset.action;
     if (!action) return;
     if (action === "clear") {
-      state.selected.clear();
-      document.querySelectorAll(".card.selected").forEach((c) => {
-        c.classList.remove("selected");
-        c.setAttribute("aria-checked", "false");
-      });
-      renderSelectionBar();
+      boChonTatCa();
       return;
     }
     if (action === "loai") loaiDaChon();
     if (action === "self-bundle") moBoTuTim();
   });
+
+  // Bỏ chọn tất cả: xoá state VÀ gỡ dấu trên thẻ. Hai vế phải đi cùng nhau —
+  // `loaiDaChon` thoát được vế thứ hai chỉ vì nó `loadVideos()` dựng lại toàn
+  // bộ lưới ngay sau đó. Đường nào KHÔNG nạp lại lưới mà chỉ xoá state sẽ để
+  // thẻ tô xanh trong khi thanh chọn nói "0 video", và lần bấm kế tiếp đọc
+  // một state khác với cái người dùng đang nhìn.
+  function boChonTatCa() {
+    state.selected.clear();
+    document.querySelectorAll(".card.selected").forEach((c) => {
+      c.classList.remove("selected");
+      c.setAttribute("aria-checked", "false");
+    });
+    renderSelectionBar();
+  }
 
   // "Tạo bộ tự tìm" — bàn giao sang Creative Desk qua THANH ĐỊA CHỈ, không
   // qua API.
@@ -681,9 +690,24 @@
     const json = JSON.stringify({ v: 1, items });
     const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)))
       .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    window.open(
+    const tab = window.open(
       `${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk=${b64}`,
       "_blank", "noopener");
+
+    // Bỏ chọn sau khi đã bàn giao, KHÔNG phải trước. Bàn giao xong mà lựa chọn
+    // còn nguyên thì lần bấm kế tiếp mở thêm một tab với ĐÚNG danh sách cũ —
+    // người dùng đọc thành "bộ cũ không gỡ được".
+    //
+    // Chỉ bỏ khi tab thật sự mở. `window.open` trả `null` khi trình duyệt chặn
+    // popup, và lúc đó chưa có gì được bàn giao cả: xoá lựa chọn ở đó là bắt
+    // người dùng chọn lại từ đầu vì một việc CHƯA xảy ra. Đây cũng là khuôn của
+    // `loaiDaChon` bên dưới — nó chỉ `clear()` sau khi lời gọi API thành công.
+    if (!tab) {
+      showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại. " +
+                "Lựa chọn của bạn vẫn còn.");
+      return;
+    }
+    boChonTatCa();
   }
 
   async function loaiDaChon() {
