@@ -109,8 +109,15 @@
     }[c]));
   }
 
+  // Server ghi UTC kèm offset (`models.py::_now` → `…+00:00`), nên để `Date` tự
+  // đọc offset đó và đổi sang múi giờ của trình duyệt. Đừng cộng tay 7 tiếng:
+  // như vậy là cắm cứng một múi giờ vào mã. Cắt chuỗi (bản cũ) không đổi múi giờ
+  // chút nào, nên thẻ job hiện giờ UTC trong khi trang Cài đặt hiện giờ địa phương.
   function fmtDateTime(iso) {
-    return escapeHtml((iso || "").replace("T", " ").slice(0, 19)) || "—";
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return escapeHtml(String(iso));
+    return escapeHtml(d.toLocaleString("vi-VN"));
   }
 
   function fmtDuration(sec) {
