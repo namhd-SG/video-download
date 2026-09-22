@@ -48,7 +48,19 @@ POLL_INTERVAL_SECONDS = 1.0
 # ngưỡng nào. Chúng là lựa chọn của người dùng với đánh đổi đã bày ra, không
 # phải kết quả hiệu chỉnh. Đổi chúng thì phải hỏi lại người dùng.
 TRAN_GIAY_MOT_LUOT = 600.0
-SO_VONG_DAO_SAU = 5
+
+# Tạm ĐẶT VỀ 1 — USER CHỐT 22/09 qua `AskUserQuestion`. Một lượt nghĩa là không
+# đào sâu, tức xấp xỉ hành vi trước khi có tính năng này: mã đào sâu lên máy thật
+# nhưng nằm im, nên chuyến deploy này không mang rủi ro TikTok chặn.
+#
+# Lý do đặt ở đây thay vì gỡ commit: hai commit trên nhánh trộn lẫn hai vấn đề
+# trong cùng một thay đổi (vá hạn mức đụng scraper, vá cửa sổ quét đụng trang Cài
+# đặt), nên mổ tay ra sẽ tạo một tổ hợp chưa ai chạy.
+#
+# Mở lại = đổi số này về 5 rồi deploy. Chỉ làm thế khi đã sẵn sàng đo lượt chạy
+# thật đầu tiên, vì đó là lúc duy nhất lấy được ba số còn thiếu: một job ăn bao
+# nhiêu trang, số lượt đã cào thật kèm lý do dừng, và TikTok có chặn hay không.
+SO_VONG_DAO_SAU = 1
 
 # One line of ffmpeg's `-i` stderr for a real video stream looks like:
 #   Stream #0:0(eng): Video: h264 (High), yuv420p, 720x1280, ...
