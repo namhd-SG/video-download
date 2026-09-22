@@ -1664,3 +1664,98 @@ def test_nguon_can_that_thi_tra_phan_con_lai_roi_dung(monkeypatch, tmp_path):
     giu, ly_do = _chay_dao_sau(monkeypatch, tmp_path, tong_video=12, so_da_co=10, xin=5)
     assert [r.video_id for r in giu] == ["v011", "v010"]
     assert ly_do, "hụt vì nguồn cạn thì vẫn phải nói vì sao"
+
+
+# ---------------------------------------------------------------------------
+# bo_qua — số video bỏ vì thư viện đã có, phải TỚI ĐƯỢC người dùng
+# ---------------------------------------------------------------------------
+
+def test_bo_qua_toi_duoc_DB_khong_chi_nam_trong_scraper(tmp_path, monkeypatch):
+    """`CHECKLIST-VAN-HANH.md`: *"phải báo thẳng trên lượt tải — bỏ qua N video
+    đã có trong kho, nếu không họ sẽ tưởng nguồn cạn"*.
+
+    Trước bản vá, `bo_qua` là biến CỤC BỘ trong `scraper.py`: nó chỉ dùng để
+    nâng lý do dừng thành `already_owned` khi bỏ qua HẾT. Ca bỏ qua MỘT PHẦN —
+    ca hay gặp — không để lại dấu nào, nên người dùng nhận ít video hơn mà
+    không có gì giải thích.
+
+    Phép đo này phân định được hai bản: bản cũ cho `bo_qua == 0` ở đây, vì cột
+    không tồn tại và không ai ghi.
+
+    ĐỘT BIẾN: bỏ lời gọi `models.set_job_skipped` trong `_note_skip` ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=2)
+    # Thư viện đã có 3 trong 5 video nguồn sắp đưa ra.
+    for vid in ("v1", "v2", "v3"):
+        models.record_video(db, job_id=job_id, video_id=vid, url="u")
+
+    gia_lap_scraper(monkeypatch, [_fake_ref(f"v{i}") for i in range(1, 6)], so_vong=1)
+    refs = queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=2,
+                                 cookies_path=None, db_path=db, job_id=job_id)
+
+    assert [r.video_id for r in refs] == ["v5", "v4"], "chỉ v4,v5 là mới"
+    assert models.get_job(db, job_id)["bo_qua"] == 3, \
+        "3 video bị bỏ vì thư viện đã có — con số này phải ra tới DB"
+
+
+def test_bo_qua_ghi_TANG_DAN_nen_job_chet_giua_chung_van_giu_so(tmp_path, monkeypatch):
+    """Ghi một lần lúc xong thì job bị huỷ/chết giữa chừng ghi 0 — dù nó đã
+    thật sự bỏ qua video, và phần hụt đó chính là thứ cần giải thích.
+
+    Cùng nguyên tắc với `so_trang` (`guard-marker-and-claim-write-ordering.md`
+    vế 3): mốc "đã tiêu" khác mốc "đã xong", cái đầu phải ghi ngay khi tiêu.
+
+    Đọc DB **từ bên trong** lượt chạy thứ hai — lúc đó bản ghi-một-lần-ở-cuối
+    vẫn còn 0.
+
+    ĐỘT BIẾN: dời `set_job_skipped` ra sau khi `_fetch_refs` trả về ⇒ ĐỎ.
+    """
+    db, job_id = _san_dao_sau(tmp_path, xin=99)
+    for vid in ("a1", "a2", "b1"):
+        models.record_video(db, job_id=job_id, video_id=vid, url="u")
+    doc_duoc = {}
+    luot = {"n": 0}
+
+    def scraper_gia(url, **kw):
+        luot["n"] += 1
+        if luot["n"] == 2:
+            doc_duoc["giua_chung"] = models.get_job(db, job_id)["bo_qua"]
+            return [_fake_ref("b1"), _fake_ref("b2")]
+        return [_fake_ref("a1"), _fake_ref("a2")]
+
+    gia_lap_scraper(monkeypatch, scraper_gia, so_vong=2)
+    queue_mod._fetch_refs("https://www.tiktok.com/music/x-1", max_videos=99,
+                          cookies_path=None, db_path=db, job_id=job_id)
+
+    assert doc_duoc["giua_chung"] == 2, \
+        "đang ở lượt 2 mà sổ vẫn 0 ⇒ số bỏ qua chỉ được ghi lúc xong"
+    assert models.get_job(db, job_id)["bo_qua"] == 3
+
+
+def test_bo_qua_di_ra_API_qua_list_jobs(tmp_path):
+    """Thẻ job đọc `job.bo_qua` từ `/jobs`. `list_jobs` trả `dict(row)` nên cột
+    tự đi ra — test này khoá điều đó lại: bỏ cột khỏi bảng thì UI im lặng mất
+    dòng chữ mà không test nào khác đỏ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/music/x-1", 5, "ai@do.vn")
+    models.set_job_skipped(db, job_id, 7)
+
+    assert models.get_job(db, job_id)["bo_qua"] == 7
+    assert [j["bo_qua"] for j in models.list_jobs(db, "ai@do.vn")] == [7]
+
+
+def test_bo_qua_duoc_them_vao_DB_cu_khong_co_cot(tmp_path):
+    """DB trên mini có thật từ 14/09, `CREATE TABLE IF NOT EXISTS` không đụng
+    tới nó. Không có migration thì deploy làm mọi lượt đọc job nổ."""
+    import sqlite3
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE jobs DROP COLUMN bo_qua")
+        assert "bo_qua" not in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+
+    models.init_db(db)   # khởi động lại app
+
+    with sqlite3.connect(db) as conn:
+        assert "bo_qua" in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}

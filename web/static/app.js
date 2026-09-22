@@ -301,6 +301,18 @@
       ? (STOP_REASON_TEXT[job.ly_do_dung] ||
          `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
       : "";
+    // Vì sao con số này phải hiện: lọc trùng chạy trên TOÀN kho, nên người tìm
+    // sau nhận ít video hơn người tìm trước — và những video bị bỏ KHÔNG hiện ở
+    // đâu trong thư viện của họ. Không nói ra thì một lượt chạy đúng bị đọc
+    // thành "nguồn đã cạn", và họ đổi nguồn mà không cần.
+    // (`CHECKLIST-VAN-HANH.md`: "phải báo thẳng trên lượt tải".)
+    //
+    // Khác `already_owned` ở chỗ mã đó chỉ bắn khi bỏ qua HẾT. Ca hay gặp là bỏ
+    // qua MỘT PHẦN, và đó chính là ca không có gì giải thích cho tới bản vá này.
+    const boQua = Number(job.bo_qua) || 0;
+    const skipText = boQua > 0
+      ? `Bỏ qua ${boQua} video đã có trong kho.`
+      : "";
     const driveLink = job.drive_folder_link
       ? `<a href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`
       : "";
@@ -314,6 +326,7 @@
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
           <span>${job.xong}/${job.tong}${hasErrors ? ` · ${job.loi} lỗi` : ""}</span>
         </div>
+        ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
         ${queueLine(job)}
         <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}</div>

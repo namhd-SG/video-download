@@ -161,15 +161,29 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             return set()
         return models.known_video_ids(db_path, ids)
 
+    # Đếm video bỏ qua vì thư viện đã có. Ghi TĂNG DẦN mỗi lần bỏ, cùng lý do
+    # với `_dem_mot_trang` bên dưới: job bị huỷ hay chết giữa chừng vẫn đã bỏ
+    # qua thật, và người dùng cần con số đó để hiểu vì sao nhận ít video hơn
+    # số mình xin. Ghi một lần lúc xong thì ca chết giữa chừng mất con số.
+    _da_bo = {"so": 0}
+
     def _note_skip(ref: VideoRef) -> None:
         if db_path is None or job_id is None:
             return
+        _da_bo["so"] += 1
         try:
             models.record_sighting(db_path, video_id=ref.video_id, job_id=job_id,
                                     nguon=nguon, da_tai=False)
         except Exception as exc:  # noqa: BLE001 — a bookkeeping row must never kill a job
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         job_id, ref.video_id, type(exc).__name__)
+        # `try` riêng: mất con số này thì lời giải thích hụt, nhưng không được
+        # làm hỏng một lượt tải đang chạy. Và nó phải nằm NGOÀI `try` ở trên —
+        # gộp vào thì một sighting trượt sẽ nuốt luôn bộ đếm.
+        try:
+            models.set_job_skipped(db_path, job_id, _da_bo["so"])
+        except Exception:  # noqa: BLE001
+            log.warning("job %s: không ghi được số video bỏ qua", job_id)
 
     def _note_pages(so_trang: int) -> None:
         """Ghi số trang index đã đọc. Trong `try` riêng: mất con số này thì
