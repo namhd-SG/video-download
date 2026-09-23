@@ -170,5 +170,48 @@ def test_script_deploy_goi_ham_nghiem_thu():
     grep `exit 1` không thấy được lối thoát ngầm của `set -e`."""
     nguon = (REPO / "deploy" / "deploy-to-mini.sh").read_text(encoding="utf-8")
     assert "kiem_tep_da_dong_bo" in nguon, "bước 5 phải gọi hàm nghiệm thu mọi tệp"
+    assert "liet_mo_coi" in nguon.split("# --- 4.")[0].split("# --- 3.")[1], \
+        "bước 3 phải đo mồ côi — rsync kèm --backup-dir không xoá nên tự nó khai 0"
     assert "--itemize-changes" in nguon.split("# --- 3.")[1].split("# --- 4.")[0], \
         "rsync THẬT (bước 3) phải ghi itemize — không thì hàm nghiệm thu không có gì để đọc"
+
+
+def _mo_coi(nguon: Path, dich: str, env_path: str) -> subprocess.CompletedProcess:
+    lenh = (f'set -euo pipefail; . "{LIB}"; '
+            f'liet_mo_coi "$1" --exclude="*.egg-info/"')
+    return subprocess.run(["/bin/bash", "-c", lenh, "_", dich], cwd=nguon,
+                          env={"PATH": env_path}, capture_output=True, text=True, timeout=30)
+
+
+def test_mo_coi_duoc_bao_du_rsync_that_khai_xoa_0(san, tmp_path):
+    """Bước 3 chạy kèm `--backup-dir` ⇒ openrsync không xoá, khai "xoá 0". Đích
+    vẫn có tệp thừa ⇒ lượt đo riêng phải in cảnh báo, chỉ ra đúng tệp đó; tệp bị
+    loại trừ (egg-info) thì không phải mồ côi."""
+    nguon, dich = san["dev"], tmp_path / "dich"
+    shutil.copytree(nguon, dich)
+    (dich / "web/static/cu-da-xoa-khoi-git.js").write_text("sót\n", encoding="utf-8")
+    (dich / "src/x.egg-info").mkdir(parents=True)
+    (dich / "src/x.egg-info/PKG-INFO").write_text("mini cần\n", encoding="utf-8")
+    r = _mo_coi(nguon, f"{dich}/", "/usr/bin:/bin")
+    assert r.returncode == 0, r.stderr
+    assert "mồ côi ở đích: 1 mục" in r.stderr
+    assert "web/static/cu-da-xoa-khoi-git.js" in r.stderr
+    assert "egg-info" not in r.stderr
+
+
+def test_mo_coi_bang_0_khi_dich_sach(san, tmp_path):
+    nguon, dich = san["dev"], tmp_path / "dich"
+    shutil.copytree(nguon, dich)
+    r = _mo_coi(nguon, f"{dich}/", "/usr/bin:/bin")
+    assert r.returncode == 0, r.stderr
+    assert "mồ côi ở đích: 0 tệp" in r.stdout
+
+
+def test_mo_coi_khong_do_duoc_khong_in_thanh_0(san):
+    """rsync trượt (ssh giả chết) ⇒ "CHƯA KẾT LUẬN", mã 5 — không phải "0 tệp"."""
+    r = subprocess.run(
+        ["/bin/bash", "-c", f'set -euo pipefail; . "{LIB}"; liet_mo_coi "gia-host:~/x/"'],
+        cwd=san["dev"], env={"PATH": f"{san['bin']}:/usr/bin:/bin", "SSH_GIA_HONG": "1"},
+        capture_output=True, text=True, timeout=30)
+    assert r.returncode == 5, (r.stdout, r.stderr)
+    assert "CHƯA KẾT LUẬN" in r.stderr and "0 tệp" not in r.stdout

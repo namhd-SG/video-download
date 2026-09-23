@@ -7,7 +7,10 @@
 # Tham số là đúng cái tên mà deploy-to-mini.sh in ra ở dòng cuối.
 #
 # ⚠ GIỚI HẠN, khai trước để không ai tưởng đây là lui sạch:
-# `--backup-dir` của rsync chỉ giữ những file bị THAY hoặc bị XOÁ. File mà lần
+# `--backup-dir` của rsync chỉ giữ những file bị THAY. (Về lý thuyết nó giữ cả
+# file bị XOÁ — nhưng openrsync bỏ qua `--delete` khi có `--backup-dir`, đo
+# 23/09 trên mini, nên deploy KHÔNG xoá gì và bản lui không bao giờ chứa file bị
+# xoá. Xem comment bước 3 của deploy-to-mini.sh.) File mà lần
 # deploy đó THÊM MỚI thì không nằm trong bản lui, nên sau khi lui chúng vẫn còn
 # trên đĩa. Thường vô hại (không ai trỏ tới chúng nữa), nhưng nếu cần sạch
 # tuyệt đối thì deploy lại từ commit cũ, đừng dựa vào script này.

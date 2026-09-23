@@ -241,6 +241,9 @@ if [ "$rsync_rc" -ne 0 ]; then
   exit "$RC_NGHIEM_THU"
 fi
 echo "   xong"
+# Cảnh báo, không chặn: bước 3 cấu tạo không thể xoá (xem comment trên), nên
+# "xoá 0 tệp" ở bước 5 không có nghĩa đích sạch. Lượt này nói đích có gì thừa.
+liet_mo_coi "$HOST:~/$REMOTE_REPO/" "${EXCLUDES[@]}" || true
 
 # --- 4. Khởi động lại ĐÚNG label của mình ------------------------------------
 say "4. kickstart -k $LABEL"

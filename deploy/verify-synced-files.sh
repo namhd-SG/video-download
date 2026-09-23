@@ -92,3 +92,33 @@ kiem_tep_da_dong_bo() {
   [ "$lech" -eq 0 ] || return 4
   return 0
 }
+
+# liet_mo_coi <đích rsync> [cờ exclude…]
+# Tệp CÓ ở đích mà KHÔNG có ở nguồn (trừ tệp bị loại trừ) — thứ `--delete` lẽ
+# ra đã xoá. Vì sao cần: rsync thật ở bước 3 chạy kèm `--backup-dir`, và openrsync
+# BỎ QUA `--delete` khi có cờ đó (đo 23/09 trên mini) ⇒ bước 3 luôn khai "xoá 0
+# tệp" dù đích có tệp thừa. Lượt này chạy `--dry-run --delete` KHÔNG
+# `--backup-dir`: chỉ đọc, nên nó nói ĐÚNG những gì một lần xoá thật sẽ chạm.
+# Chỉ CẢNH BÁO, không chặn: mã mới đã lên; tệp thừa không làm hỏng tệp mới.
+# Trả 0 khi đo được (kể cả khi có mồ côi), 5 khi rsync trượt — "không đo được"
+# không được in thành "0 mồ côi".
+liet_mo_coi() {
+  local dich="$1"; shift
+  local ra
+  ra="$(rsync -a --dry-run --itemize-changes --delete "$@" ./ "$dich")" || {
+    echo "   ⚠ không đo được tệp mồ côi ở đích (rsync trượt) — CHƯA KẾT LUẬN" >&2
+    return 5
+  }
+  local mo_coi
+  # `sort -u`: openrsync in `*deleting` HAI LẦN cho cùng một mục (đo 23/09, cả
+  # thư mục cục bộ lẫn lên mini) — đếm thẳng là nhân đôi số mồ côi.
+  mo_coi="$(printf '%s\n' "$ra" | grep '^\*deleting ' | sed 's/^\*deleting //' | sort -u || true)"
+  if [ -z "$mo_coi" ]; then
+    echo "   mồ côi ở đích: 0 tệp"
+    return 0
+  fi
+  echo "   ⚠ mồ côi ở đích: $(printf '%s\n' "$mo_coi" | wc -l | tr -d ' ') mục — có ở mini, không có ở commit này" >&2
+  printf '%s\n' "$mo_coi" | head -20 | sed 's/^/      /' >&2
+  echo "      (rsync kèm --backup-dir không xoá chúng; dọn tay nếu đúng là rác)" >&2
+  return 0
+}

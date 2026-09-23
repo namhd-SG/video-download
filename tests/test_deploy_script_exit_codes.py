@@ -69,14 +69,25 @@ def clone(tmp_path_factory):
     bin_.mkdir()
     (bin_ / "ssh").write_text(SSH_GIA, encoding="utf-8")
     (bin_ / "ssh").chmod(0o755)
+    # rsync giả: thử khô thì im lặng thành công; chạy thật thì trượt (mã 23, như
+    # rsync thật khi truyền dở). Không có nó thì rsync THẬT đi qua ssh giả và
+    # trượt cả ở thử khô ⇒ ca "lành" không assert được rc.
+    (bin_ / "rsync").write_text(
+        '#!/usr/bin/env bash\n'
+        'for a in "$@"; do [ "$a" = --dry-run ] && exit 0; done\n'
+        'echo "rsync: connection unexpectedly closed" >&2; exit 23\n', encoding="utf-8")
+    (bin_ / "rsync").chmod(0o755)
     return ban, bin_
 
 
 def _chay(clone, kich_ban: str, *args: str, ssh_log: Path | None = None
           ) -> subprocess.CompletedProcess:
     ban, bin_ = clone
+    # `VIDEODL_MINI_HOST` là hàng rào THỨ HAI, ngoài ssh/rsync giả trên PATH: nếu
+    # một ngày PATH bị đổi và lệnh thật lọt qua, nó trỏ tới một tên miền không
+    # bao giờ phân giải được (`.invalid`, RFC 2606) chứ không phải mini.
     env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(ban.parent), "KICH_BAN": kich_ban,
-           "TMPDIR": str(ban.parent)}
+           "TMPDIR": str(ban.parent), "VIDEODL_MINI_HOST": "kiem-thu.invalid"}
     if ssh_log is not None:
         env["SSH_LOG"] = str(ssh_log)
     return subprocess.run(["/bin/bash", "deploy/deploy-to-mini.sh", *args], cwd=ban, env=env,
@@ -111,6 +122,7 @@ def test_thu_kho_lanh_di_toi_2b_va_rc_0(clone):
     """Control: ssh giả lành ⇒ đi hết cổng tới 2b rồi thử khô (rsync giả lập: ssh
     giả trả 0 cho mọi lệnh khác, nên rsync --dry-run sang nó không chạm gì thật)."""
     r = _chay(clone, "lanh")
+    assert r.returncode == 0, (r.returncode, r.stderr)
     assert "job đang chạy/chờ: 0" in r.stdout, (r.stdout, r.stderr)
     assert "THỬ KHÔ" in r.stdout
 
@@ -123,7 +135,7 @@ def test_rsync_truot_giua_chung_giu_log_va_in_duong_lui(clone, tmp_path):
     log = tmp_path / "ssh.log"
     r = _chay(clone, "lanh", "--yes", ssh_log=log)
     assert r.returncode == 4, (r.returncode, r.stderr)
-    assert "rsync trượt" in r.stderr and "rollback-on-mini.sh" in r.stderr
+    assert "rsync trượt (rc=23)" in r.stderr and "rollback-on-mini.sh" in r.stderr
     duong = next(d.split(": ", 1)[1] for d in r.stderr.splitlines() if "Tệp đã gửi:" in d)
     assert Path(duong.strip()).exists(), "log itemize phải còn để biết tệp nào đã lên"
     assert "kickstart" not in log.read_text(encoding="utf-8"), "không được tới bước 4"
