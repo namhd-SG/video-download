@@ -22,7 +22,10 @@ import json
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[2]
+# Chạy qua stdin trên mini (`ssh … 'cd <repo> && ./.venv/bin/python - …' < tệp`) thì
+# `__file__` là "<stdin>" — khi đó repo là thư mục đang đứng, không suy từ tên tệp.
+_F = Path(__file__)
+REPO = _F.resolve().parents[2] if _F.is_file() else Path.cwd()
 sys.path.insert(0, str(REPO / "src"))
 
 from playwright.sync_api import sync_playwright  # noqa: E402
