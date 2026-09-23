@@ -1850,3 +1850,55 @@ def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():
         assert do[nhanh]["oDanConLai"] == "", f"{nhanh}: cookie còn nằm trong ô dán"
     assert do["bi_tu_choi"]["loi"] == "hết hạn", "mã từ chối phải hiện câu của nó"
     assert do["thanh_cong"]["oDanConLai"] == "" and do["thanh_cong"]["loi"] == ""
+
+
+def test_bo_video_chia_lo_theo_tran_backend():
+    """Chọn nhiều hơn trần một lượt ⇒ FE chia lô ≤ trần, gửi tuần tự, không 422.
+
+    Ca thật 23/09 10:45: thư viện 86 video, bản cũ gửi nguyên lựa chọn trong MỘT
+    request ⇒ `max_length=50` trả 422 ⇒ không video nào được bỏ. Harness
+    `tests/js/loai-theo-lo.js` chạy `loaiDaChon` THẬT với `apiSend` giả áp ĐÚNG
+    `MAX_VIDEO_LOAI` của backend (truyền từ đây, không chép số).
+
+    Đối chứng: bản chưa vá ra `goi=[120]`, `conChon=120`, toast "Không bỏ được:
+    POST /videos/loai -> 422" — đúng câu user báo.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
+                    "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
+
+    harness = Path(__file__).parent / "js" / "loai-theo-lo.js"
+    ket_qua = subprocess.run([node, str(harness), str(STATIC / "app.js"),
+                              str(app_mod.MAX_VIDEO_LOAI)],
+                             capture_output=True, text=True, timeout=30)
+    assert ket_qua.returncode == 0, ket_qua.stderr
+    do = json.loads(ket_qua.stdout)
+
+    assert do["ba_lo"]["goi"] == [50, 50, 20], "120 id phải đi thành 3 lô ≤ trần"
+    assert do["ba_lo"]["conChon"] == 0 and do["ba_lo"]["toast"] == "đã bỏ 120"
+    assert do["mot_lo"]["goi"] == [30], "dưới trần vẫn là MỘT request như trước"
+    assert do["dung_ngay_50"]["goi"] == [50], "đúng bằng trần: một lô, không lô rỗng thứ hai"
+
+    loi = do["loi_lo_2"]
+    assert loi["goi"] == [50, 50], "lô lỗi ⇒ DỪNG, không gửi lô 3"
+    assert loi["conChon"] == 70, "chỉ gỡ lô đã bỏ được; lô lỗi + lô chưa gửi vẫn chọn"
+    assert "đã bỏ 50" in loi["toast"] and "dừng ở lô 2/3" in loi["toast"]
+    assert "còn 70 video đang chọn" in loi["toast"]
+    assert "-> 500" not in loi["toast"], "không in dòng kỹ thuật cho người dùng"
+    assert loi["lanNap"] == 1, "đã bỏ được một phần ⇒ phải nạp lại thư viện"
+
+
+def test_tran_lo_loai_khop_backend():
+    """Hằng FE `LOAI_TOI_DA_MOI_LUOT` phải bằng `MAX_VIDEO_LOAI`. Lệch ⇒ 422 quay lại
+    (FE lớn hơn) hoặc thừa lượt gọi (FE nhỏ hơn) mà không test hành vi nào kêu."""
+    import re
+
+    src = (STATIC / "app.js").read_text(encoding="utf-8")
+    m = re.search(r"const LOAI_TOI_DA_MOI_LUOT = (\d+);", src)
+    assert m, "không tìm thấy hằng lô trong app.js"
+    assert int(m.group(1)) == app_mod.MAX_VIDEO_LOAI
