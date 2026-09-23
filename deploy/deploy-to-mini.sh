@@ -99,15 +99,6 @@ truoc="$(ten_label)"
 echo "$truoc" | sed 's/^/   /'
 
 
-if [ "$THAT" -eq 0 ]; then
-  say "THỬ KHÔ — dừng ở đây. Chạy lại với --yes để làm thật."
-  echo "   sẽ rsync vào : $HOST:~/$REMOTE_REPO/"
-  echo "   bản lui giữ ở: $HOST:~/Projects/${BACKUP_DIR#../}/"
-  rsync -a --dry-run --itemize-changes --delete "${EXCLUDES[@]}" \
-        ./ "$HOST:~/$REMOTE_REPO/"
-  exit 0
-fi
-
 # --- 2b. CỔNG: có ai đang tải không? -----------------------------------------
 # `kickstart -k` ở bước 4 giết tiến trình rồi dựng lại, nên một job đang chạy
 # chết giữa chừng.
@@ -127,6 +118,11 @@ fi
 # ⚠ Còn một khe không bịt: job được tạo TRONG lúc rsync chạy (vài giây) vẫn bị
 # bước 4 cắt. Chấp nhận — job đó mới chạy vài giây, mất gần như không gì, còn
 # đóng khe thì phải kiểm hai lần và vẫn không kín.
+#
+# Và đứng TRƯỚC lối thoát của thử khô: nếu nó nằm sau, `--dry-run` sẽ báo
+# xanh cho một lần chạy thật mà đáng lẽ bị chặn — thử khô khi đó không còn
+# diễn tập cùng đường với lần chạy thật, tức là một lời hứa nó không giữ được.
+# (Đo 23/09: bản đầu đặt sau, thử khô nhảy thẳng từ bước 2 sang "THỬ KHÔ".)
 #
 # Câu SELECT lấy từ `plans/260917-1445-plan-tong-de-dong-tool/plan.md`, mục
 # "30 giây trước Deploy".
@@ -154,6 +150,15 @@ if [ "$dang_tai" != "0" ]; then
   echo "DỪNG: $dang_tai job đang chạy hoặc đang chờ — khởi động lại sẽ cắt ngang." >&2
   echo "      Chưa đụng gì tới máy đích. Đợi job xong rồi chạy lại script này." >&2
   exit "$RC_DANG_TAI"
+fi
+
+if [ "$THAT" -eq 0 ]; then
+  say "THỬ KHÔ — dừng ở đây. Chạy lại với --yes để làm thật."
+  echo "   sẽ rsync vào : $HOST:~/$REMOTE_REPO/"
+  echo "   bản lui giữ ở: $HOST:~/Projects/${BACKUP_DIR#../}/"
+  rsync -a --dry-run --itemize-changes --delete "${EXCLUDES[@]}" \
+        ./ "$HOST:~/$REMOTE_REPO/"
+  exit 0
 fi
 
 # --- 3. Đẩy mã, giữ bản cũ để lui -------------------------------------------
