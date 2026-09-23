@@ -25,6 +25,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
+from web import models_cum
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
@@ -588,8 +589,13 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     # là N+1 thật, không phải lý thuyết.
     sources = models.sources_for_videos(DB_PATH, [v["video_id"] for v in videos],
                                         chi_cua)
+    # Cụm theo NGƯỜI GỌI, kể cả admin: admin thấy cả kho video nhưng cụm là
+    # bàn làm việc riêng, nên `cum_id` luôn là cụm của chính người đang xem.
+    cums = models_cum.cum_cho_videos(DB_PATH, [v["video_id"] for v in videos],
+                                     nguoi_tao)
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
+        video["cum_id"] = cums.get(video["video_id"])
     return {
         "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,
@@ -642,6 +648,130 @@ def loai_video(body: LoaiVideoRequest,
         "khong_phai_cua_ban": sorted(set(body.video_ids) - {h["video_id"] for h in cua_toi}),
         "drive_truot": drive_truot,
     }
+
+
+# ---------------------------------------------------------------------------
+# Cụm của tôi. Mọi route: `Depends(require_user)`, và quyền sở hữu lọc TRONG
+# SQL (`web/models_cum.py`). Cụm của người khác trả 404, cùng câu chữ với cụm
+# không tồn tại — id cụm là số tăng dần, 403 sẽ cho ai đếm lên biết id nào có.
+# ---------------------------------------------------------------------------
+
+# Một lượt gán tối đa bằng một trang thư viện lớn nhất: "chọn cả trang → Đưa
+# vào cụm" phải đi được một phát.
+MAX_VIDEO_CUM = MAX_VIDEOS_PAGE_SIZE
+
+
+class TaoCumRequest(BaseModel):
+    usecase: str = Field(min_length=1, max_length=models_cum.USECASE_TOI_DA * 2)
+    insight_goc: str = Field(min_length=1, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    kieu: str = Field(min_length=1, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+
+
+class DoiKieuRequest(BaseModel):
+    kieu: str = Field(min_length=1, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+
+
+class GanVideoCumRequest(BaseModel):
+    video_ids: list[str] = Field(min_length=1, max_length=MAX_VIDEO_CUM)
+    bo: bool = False
+
+
+def _pham_vi(nguoi_tao: str) -> str | None:
+    """Phạm vi thư viện để đếm/gán video: None = admin (cả kho)."""
+    return None if _la_admin(nguoi_tao) else nguoi_tao
+
+
+def _cum_hoac_404(cum_id: int, nguoi_tao: str) -> dict:
+    cum = models_cum.lay_cum(DB_PATH, cum_id, nguoi_tao, _pham_vi(nguoi_tao))
+    if cum is None:
+        raise HTTPException(status_code=404, detail="cụm không tồn tại")
+    return cum
+
+
+@app.get("/cum")
+def liet_ke_cum(nguoi_tao: str = Depends(require_user)) -> dict:
+    """Cụm của người gọi + số video "chưa vào cụm" cho thanh bên."""
+    chi_cua = _pham_vi(nguoi_tao)
+    return {
+        "cum": models_cum.liet_ke_cum(DB_PATH, nguoi_tao, chi_cua),
+        "chua_vao_cum": (models.count_videos(DB_PATH, chi_cua)
+                         - models_cum.dem_da_vao_cum(DB_PATH, nguoi_tao, chi_cua)),
+    }
+
+
+@app.post("/cum")
+def tao_cum(body: TaoCumRequest, nguoi_tao: str = Depends(require_user)) -> dict:
+    try:
+        cum_id, da_co = models_cum.tao_cum(DB_PATH, nguoi_tao, body.usecase,
+                                           body.insight_goc, body.kieu)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Trùng (usecase, insight con) với cụm có sẵn ⇒ TRẢ LẠI cụm đó (200,
+    # `da_co: true`), không tạo cụm thứ hai: bấm đôi hay gõ lại cùng tên đều
+    # rơi về đúng một cụm, và người gọi vẫn nhận được id để gán video tiếp.
+    return {**_cum_hoac_404(cum_id, nguoi_tao), "da_co": da_co}
+
+
+@app.patch("/cum/{cum_id}")
+def doi_kieu_cum(cum_id: int, body: DoiKieuRequest,
+                 nguoi_tao: str = Depends(require_user)) -> dict:
+    try:
+        da_doi = models_cum.doi_kieu(DB_PATH, cum_id, nguoi_tao, body.kieu)
+    except models_cum.CumTrung as exc:
+        # Đổi kiểu thì KHÔNG gộp ngầm hai cụm — video của cả hai đang ở đâu là
+        # quyết định của người dùng. 409 kèm id cụm đang giữ tên đó.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not da_doi:
+        raise HTTPException(status_code=404, detail="cụm không tồn tại")
+    return _cum_hoac_404(cum_id, nguoi_tao)
+
+
+@app.delete("/cum/{cum_id}")
+def xoa_cum(cum_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
+    """Xoá cụm; video trong nó về "chưa vào cụm", không video nào bị loại."""
+    if not models_cum.xoa_cum(DB_PATH, cum_id, nguoi_tao):
+        raise HTTPException(status_code=404, detail="cụm không tồn tại")
+    return {"da_xoa": cum_id}
+
+
+@app.post("/cum/{cum_id}/video")
+def gan_video_cum(cum_id: int, body: GanVideoCumRequest,
+                  nguoi_tao: str = Depends(require_user)) -> dict:
+    """Gán (`bo=false`) hoặc gỡ (`bo=true`) nhiều video.
+
+    Trả số đã đổi và danh sách id bị bỏ qua — gán: id không thuộc thư viện của
+    bạn/đã loại; gỡ: id không nằm trong cụm này. Gộp hai con số thành một chữ
+    "xong" là cách một lượt gán hụt nửa đi qua mà không ai thấy.
+    """
+    if body.bo:
+        doi = models_cum.go_video(DB_PATH, cum_id, nguoi_tao, body.video_ids)
+    else:
+        doi = models_cum.gan_video(DB_PATH, cum_id, nguoi_tao, _pham_vi(nguoi_tao),
+                                   body.video_ids)
+    if doi is None:
+        raise HTTPException(status_code=404, detail="cụm không tồn tại")
+    return {
+        "so_video": len(doi),
+        "bo_qua": sorted(set(body.video_ids) - set(doi)),
+        "cum": _cum_hoac_404(cum_id, nguoi_tao),
+    }
+
+
+@app.post("/cum/{cum_id}/lo/{thu}/da-mo")
+def ghi_lo_da_mo(cum_id: int, thu: int,
+                 nguoi_tao: str = Depends(require_user)) -> dict:
+    """Ghi mốc "đã mở Creative Desk" cho lô `thu`. Trang chỉ gọi SAU khi
+    `window.open` trả một tab thật; mốc không bao giờ nghĩa là "đã tạo bộ"."""
+    cum = _cum_hoac_404(cum_id, nguoi_tao)
+    if not (1 <= thu <= cum["so_lo"]):
+        raise HTTPException(status_code=400,
+                            detail=f"lô phải trong khoảng 1..{cum['so_lo']}")
+    mo_luc = models_cum.ghi_lo_da_mo(DB_PATH, cum_id, nguoi_tao, thu)
+    if mo_luc is None:
+        raise HTTPException(status_code=404, detail="cụm không tồn tại")
+    return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc}
 
 
 @app.get("/thumbs/{video_id}")

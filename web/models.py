@@ -119,6 +119,12 @@ def _connect(db_path: Path):
         # WAL: worker thread writes progress while a request thread reads the
         # same row without either side blocking on a file lock.
         conn.execute("PRAGMA journal_mode=WAL")
+        # SQLite tắt khoá ngoại MẶC ĐỊNH, theo từng kết nối. Không có dòng này
+        # thì `ON DELETE CASCADE` của `video_cum`/`cum_lo_mo` là chữ chết: xoá
+        # cụm xong, video vẫn trỏ về một cụm không tồn tại và biến khỏi cả
+        # "Chưa vào cụm" lẫn mọi cụm — mất lặng lẽ. Các bảng cũ không có khoá
+        # ngoại nào, nên bật ở đây không đổi hành vi của chúng.
+        conn.execute("PRAGMA foreign_keys=ON")
         yield conn
         conn.commit()
     finally:
@@ -139,6 +145,54 @@ CREATE TABLE IF NOT EXISTS nguoi_dung (
     cap_luc TEXT
 )
 """
+
+# Cụm = một nhóm video người dùng tự gán tay, mang nhãn Creative Desk sẽ nhận
+# (usecase · insight gốc · kiểu). THEO NGƯỜI (`chu`), như việc loại video: cụm
+# của một người không bao giờ hiện, đếm hay nhận video của người khác.
+#
+# AUTOINCREMENT, không phải INTEGER PRIMARY KEY trần: `cum_id` đi sang Creative
+# Desk trong payload để truy vết. Id trần được SQLite dùng lại sau khi xoá hàng
+# lớn nhất, và một id tái sinh sẽ khiến vết cũ trỏ vào một cụm khác hẳn.
+_CUM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cum (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chu TEXT NOT NULL,
+    usecase TEXT NOT NULL,
+    insight_goc TEXT NOT NULL,
+    kieu TEXT NOT NULL,
+    tao_luc TEXT NOT NULL
+)
+"""
+
+# PRIMARY KEY(video_id, chu) là TOÀN BỘ luật "một video một cụm mỗi người":
+# gán sang cụm khác là GHI ĐÈ hàng này, không thêm hàng thứ hai. Bộ gửi sang
+# Creative Desk chỉ đồng nhất khi luật này đứng.
+_VIDEO_CUM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_cum (
+    video_id TEXT NOT NULL,
+    chu TEXT NOT NULL,
+    cum_id INTEGER NOT NULL REFERENCES cum(id) ON DELETE CASCADE,
+    PRIMARY KEY (video_id, chu)
+)
+"""
+
+# Mốc "đã mở Creative Desk" theo LÔ (cụm >30 video tách 30/30/…). Chỉ ghi SAU
+# khi trình duyệt thật sự mở được tab — Video Desk không biết bộ bên kia đã
+# được tạo hay chưa, nên mốc này không bao giờ mang nghĩa "đã tạo".
+_CUM_LO_MO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cum_lo_mo (
+    cum_id INTEGER NOT NULL REFERENCES cum(id) ON DELETE CASCADE,
+    thu INTEGER NOT NULL,
+    mo_luc TEXT NOT NULL,
+    PRIMARY KEY (cum_id, thu)
+)
+"""
+
+_CUM_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_cum_chu ON cum(chu)",
+    "CREATE INDEX IF NOT EXISTS idx_video_cum_cum ON video_cum(cum_id)",
+)
+
 
 def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
     """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
@@ -176,6 +230,11 @@ def init_db(db_path: Path) -> None:
             "WHERE nguoi_tao IS NOT NULL AND TRIM(nguoi_tao) <> ''"
         )
         for statement in _SIGHTINGS_INDEX:
+            conn.execute(statement)
+        conn.execute(_CUM_SCHEMA)
+        conn.execute(_VIDEO_CUM_SCHEMA)
+        conn.execute(_CUM_LO_MO_SCHEMA)
+        for statement in _CUM_INDEX:
             conn.execute(statement)
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an
         # already-created table needs them added. Same ad hoc migration the

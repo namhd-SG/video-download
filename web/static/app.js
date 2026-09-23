@@ -99,6 +99,8 @@
     soMoiTrang: 40,           // nạp lại từ localStorage lúc khởi động — xem docSoMoiTrang
     idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
+    cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
+    cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
   };
   for (const g of FILTER_GROUPS) state.filters[g.id] = new Map();
@@ -203,7 +205,16 @@
     });
   }
 
+  // Thanh bên "Cụm của tôi" là MỘT BỘ LỌC NỮA, chạy ở client trên thư viện đã
+  // nạp trọn (như bốn hộp lọc) — không có tham số lọc cụm ở server.
+  function videoKhopCum(video, cumLoc) {
+    if (cumLoc === "tat_ca") return true;
+    if (cumLoc === "chua") return video.cum_id == null;
+    return video.cum_id === cumLoc;
+  }
+
   function videoMatchesFilters(video) {
+    if (!videoKhopCum(video, state.cumLoc)) return false;
     return FILTER_GROUPS.every((g) => {
       const selected = state.filters[g.id];
       if (selected.size === 0) return true;
@@ -540,6 +551,8 @@
       grid.innerHTML = "";
       state.idTrang = [];
       vePhanTrang(null, 0);
+      renderCumRail();
+      renderCumHead();
       document.getElementById("library-count").textContent = "";
       renderActiveFilters();
       return;
@@ -567,6 +580,8 @@
     vePhanTrang(ct, filtered.length);
     wireThumbFallback();
     renderActiveFilters();
+    renderCumRail();
+    renderCumHead();
   }
 
   function renderCard(video) {
@@ -590,6 +605,7 @@
           ${video.url
             ? `<a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>`
             : `<span class="card-link card-link-trong">chưa rõ link gốc</span>`}
+          ${chipCum(video)}
         </div>
       </div>`;
   }
@@ -616,6 +632,7 @@
   function renderSelectionBar() {
     const bar = document.getElementById("selection-bar");
     bar.hidden = state.selected.size === 0;
+    if (bar.hidden) { const pop = document.getElementById("cum-popover"); if (pop) pop.hidden = true; }
     document.getElementById("selection-count").textContent = `${state.selected.size} đã chọn`;
   }
 
@@ -709,14 +726,20 @@
 
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
+    state.cumLoc = "tat_ca";
     sauKhiDoiBoLoc();
   });
 
+  function dongPopoverCum() {
+    const pop = document.getElementById("cum-popover");
+    if (pop) pop.hidden = true;
+  }
   document.addEventListener("click", (ev) => {
     if (!ev.target.closest(".filter-box")) closeAllFilterPanels(null);
+    if (!ev.target.closest(".pop-wrap")) dongPopoverCum();
   });
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") closeAllFilterPanels(null);
+    if (ev.key === "Escape") { closeAllFilterPanels(null); dongPopoverCum(); }
   });
 
   // ========================================================================
@@ -755,6 +778,54 @@
     }
     if (action === "loai") loaiDaChon();
     if (action === "self-bundle") moBoTuTim();
+    if (action === "cum") {
+      const pop = document.getElementById("cum-popover");
+      pop.hidden = !pop.hidden;
+      renderPopoverCum();
+    }
+  });
+
+  // Uỷ quyền trên vùng cha vì thanh bên, đầu cụm và ô popover đều vẽ lại sau
+  // mỗi lần lọc — gắn thẳng lên nút thì nút mới vẽ ra sẽ câm.
+  document.getElementById("cum-popover").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-gan-cum]");
+    if (b) ganVaoCumCoSan(Number(b.dataset.ganCum));
+  });
+  document.addEventListener("input", (ev) => {
+    if (ev.target.closest(".cum-form")) capNhatXemTruoc(ev.target.closest(".cum-form").parentElement);
+  });
+  document.addEventListener("submit", (ev) => {
+    const f = ev.target.closest(".cum-form");
+    if (!f) return;
+    ev.preventDefault();
+    guiFormCum(f);
+  });
+  document.getElementById("cum-rail").addEventListener("click", (ev) => {
+    const hang = ev.target.closest("[data-cum-loc]");
+    if (hang) {
+      const loc = hang.dataset.cumLoc;
+      doiCumLoc(loc === "tat_ca" || loc === "chua" ? loc : Number(loc));
+      return;
+    }
+    if (ev.target.closest("[data-cum-moi]")) {
+      const f = document.getElementById("cum-moi-form");
+      f.hidden = !f.hidden;
+      capNhatXemTruoc(f);
+    }
+  });
+  document.getElementById("cum-head").addEventListener("click", (ev) => {
+    const cum = state.cums.find((c) => c.id === state.cumLoc);
+    if (!cum) return;
+    const lo = ev.target.closest("[data-mo-lo]");
+    if (lo) {
+      moLoCum(cum.id, Number(lo.dataset.moLo)).then((kq) => {
+        if (kq === "chan") showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại.");
+      });
+      return;
+    }
+    if (ev.target.closest("[data-mo-het]")) { moHetLoCum(cum.id); return; }
+    if (ev.target.closest("[data-doi-kieu]")) { doiKieuCum(cum); return; }
+    if (ev.target.closest("[data-xoa-cum]")) xoaCum(cum);
   });
 
   // Bỏ chọn tất cả: xoá state VÀ gỡ dấu trên thẻ. Hai vế phải đi cùng nhau —
@@ -787,9 +858,7 @@
     // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ qua chúng và nói ra số
     // bị bỏ — im lặng gửi thiếu là cách người dùng mất video mà không biết.
     const chuaLenDrive = daChon.filter((v) => !v.drive_file_id);
-    const items = daChon
-      .filter((v) => v.drive_file_id)
-      .map((v) => ({ f: v.drive_file_id, n: v.title || v.video_id, u: v.url }));
+    const items = daChon.filter((v) => v.drive_file_id).map(itemBanGiao);
 
     if (!items.length) {
       showToast("Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
@@ -803,15 +872,8 @@
       showToast(`${chuaLenDrive.length} video chưa lên Drive nên không gửi kèm.`);
     }
 
-    // base64url: payload đi trong URL nên `+` `/` `=` đều phải biến mất.
-    // `TextEncoder` trước `btoa` vì tiêu đề video có tiếng Việt và emoji —
-    // `btoa` một mình ném `InvalidCharacterError` ở ký tự ngoài Latin-1.
-    const json = JSON.stringify({ v: 1, items });
-    const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)))
-      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-    const tab = window.open(
-      `${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk=${b64}`,
-      "_blank", "noopener");
+    // Chọn tay ⇒ KHÔNG có `nhan` (hợp đồng, quy tắc 2): bên nhận làm như cũ.
+    const tab = moTabCreativeDesk(urlBanGiao(dungPayload(items, null)));
 
     // Bỏ chọn sau khi đã bàn giao, KHÔNG phải trước. Bàn giao xong mà lựa chọn
     // còn nguyên thì lần bấm kế tiếp mở thêm một tab với ĐÚNG danh sách cũ —
@@ -827,6 +889,422 @@
       return;
     }
     boChonTatCa();
+  }
+
+  // ========================================================================
+  // BÀN GIAO — mã hoá payload `?videodesk=` (hợp đồng `nhan`,
+  // plans/260923-1558-tai-theo-cum/hop-dong-nhan.md). Dùng chung cho nút chọn
+  // tay và nút lô của cụm, để hai đường không bao giờ mã hoá khác nhau.
+  // ========================================================================
+  function itemBanGiao(v) {
+    return { f: v.drive_file_id, n: v.title || v.video_id, u: v.url };
+  }
+
+  // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
+  function dungPayload(items, nhan) {
+    const p = { v: 1, items };
+    if (nhan) p.nhan = nhan;
+    return p;
+  }
+
+  // Nhãn gửi kèm một lô của cụm. `insight` lấy NGUYÊN từ dữ liệu cụm server trả
+  // (`web/models_cum.py::ten_insight_con`) — JS không tự ghép tên, để hiển thị
+  // và payload không thể lệch nhau một dấu cách.
+  function nhanTuCum(cum, thu, tong) {
+    return { usecase: cum.usecase, insight: cum.insight, template: "Goc",
+             cum_id: cum.id, lo: { thu, tong } };
+  }
+
+  // base64url: payload đi trong URL nên `+` `/` `=` đều phải biến mất.
+  // `TextEncoder` trước `btoa` vì tiêu đề video có tiếng Việt và emoji —
+  // `btoa` một mình ném `InvalidCharacterError` ở ký tự ngoài Latin-1.
+  function maHoaPayload(p) {
+    return btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(p))))
+      .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  function urlBanGiao(p) {
+    return `${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk=${maHoaPayload(p)}`;
+  }
+
+  // Mở tab Creative Desk và trả tab, hoặc `null` khi trình duyệt chặn popup.
+  //
+  // KHÔNG truyền "noopener" vào `window.open`: với cờ đó trình duyệt LUÔN trả
+  // `null` dù tab đã mở (đo trên Chromium 23/09) — mọi phép kiểm "tab có mở
+  // không" phía sau sẽ đọc thành "bị chặn". Cắt `opener` bằng tay thay cho cờ.
+  function moTabCreativeDesk(url) {
+    const tab = window.open(url, "_blank");
+    if (tab) {
+      try {
+        tab.opener = null;
+      } catch (e) {
+        // Nhánh này chạy ⇒ opener KHÔNG bị cắt: tab Creative Desk vẫn với tới
+        // được trang này qua `window.opener`. Tab đã mở và bàn giao vẫn đi,
+        // nên vẫn trả `tab` — nhưng nói ra, đừng nuốt im.
+        console.warn("Không cắt được window.opener của tab Creative Desk — tab vẫn mở, opener CÒN nguyên:", e);
+      }
+    }
+    return tab;
+  }
+
+  // ========================================================================
+  // CỤM CỦA TÔI — thanh bên, đầu cụm, chip trên thẻ, "Đưa vào cụm"
+  // ========================================================================
+  // Hàm thuần: tách danh sách thành lô ≤ `toiDa` (64 ⇒ 30/30/4; 0 ⇒ không lô).
+  function chiaLo(ds, toiDa) {
+    const ra = [];
+    for (let i = 0; i < ds.length; i += toiDa) ra.push(ds.slice(i, i + toiDa));
+    return ra;
+  }
+
+  // Khoá so trùng cụm: trim + gộp khoảng trắng + không phân biệt hoa/thường.
+  function khoaNhan(s) {
+    return String(s || "").split(/\s+/).filter(Boolean).join(" ").toLowerCase();
+  }
+
+  // Cụm có sẵn trùng (usecase, insight gốc, kiểu) theo `khoaNhan`, hoặc null.
+  // "Couple" và "couple" là MỘT cụm — tạo hai là tạo hai insight trùng bên kia.
+  // Cùng khoá với server (`models_cum._khoa_ten`): usecase + insight CON — thứ
+  // Creative Desk nhìn thấy. Đây chỉ là gợi ý sớm cho ô xem trước; server mới
+  // là bên quyết (POST /cum trả lại cụm có sẵn khi trùng).
+  function timCumTrung(dsCum, usecase, goc, kieu) {
+    const k = [khoaNhan(usecase), khoaNhan(xemTruocTen(goc, kieu))].join("\u0000");
+    return dsCum.find((c) =>
+      [khoaNhan(c.usecase), khoaNhan(c.insight)].join("\u0000") === k) || null;
+  }
+
+  // CHỈ để xem trước tên trong ô "cụm mới" — cụm chưa tồn tại nên chưa có
+  // `insight` từ server. Cụm đã tạo thì mọi nơi đọc `cum.insight`.
+  function xemTruocTen(goc, kieu) {
+    return `${goc} ${kieu}`.split(/\s+/).filter(Boolean).join(" ");
+  }
+
+  // Video của cụm, CŨ trước: video mới đưa vào nối vào lô cuối thay vì xô lệch
+  // Bộ 1/n đã mở. ⚠ Giới hạn đã biết (điều phối chốt 23/09): mốc "đã mở" gắn
+  // theo SỐ THỨ TỰ lô; thêm/bớt video làm ranh giới lô dịch đi, và đổi kiểu
+  // cũng không xoá mốc cũ — không có cảnh báo "mở dưới tên cũ".
+  function videoCuaCum(cumId) {
+    return state.videos.filter((v) => v.cum_id === cumId).reverse();
+  }
+
+  function mauCum(id) { return `hsl(${(id * 67) % 360} 55% 50%)`; }
+
+  function renderCumRail() {
+    const rail = document.getElementById("cum-rail");
+    if (!rail) return;
+    const dem = new Map();
+    let chua = 0;
+    for (const v of state.videos) {
+      if (v.cum_id == null) chua++; else dem.set(v.cum_id, (dem.get(v.cum_id) || 0) + 1);
+    }
+    const hang = (loc, nhan, n, lop = "") =>
+      `<button type="button" class="cum-row ${lop}${state.cumLoc === loc ? " on" : ""}" data-cum-loc="${loc}">` +
+      `${nhan}<span class="n">${n}</span></button>`;
+    let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", state.videos.length) +
+      hang("chua", "Chưa vào cụm", chua, "chua") + `<hr class="rail-sep">`;
+    if (!state.cums.length) {
+      h += `<div class="rail-empty">Chưa có cụm nào. Chọn vài video cùng một kiểu (vd. cartoon) → bấm ` +
+        `<b>Đưa vào cụm</b> ở thanh dưới → chọn <b>insight gốc</b> và gõ <b>kiểu</b>. ` +
+        `Tên cụm = tên insight con bên Creative Desk.</div>`;
+    }
+    const nhom = new Map();
+    for (const c of state.cums) {
+      const k = `${c.usecase}\u0000${c.insight_goc}`;
+      if (!nhom.has(k)) nhom.set(k, []);
+      nhom.get(k).push(c);
+    }
+    for (const ds of nhom.values()) {
+      const tong = ds.reduce((a, c) => a + (dem.get(c.id) || 0), 0);
+      h += `<div class="ins-head"><b>${escapeHtml(ds[0].usecase)} › ${escapeHtml(ds[0].insight_goc)}</b>` +
+        `<span class="n">${tong}</span></div>`;
+      for (const c of ds) {
+        h += hang(c.id, `<span class="cum-dot" style="background:${mauCum(c.id)}"></span>` +
+          `<span class="cum-ten">${escapeHtml(c.insight)}</span>`, dem.get(c.id) || 0, "cum-sub");
+      }
+    }
+    h += `<button type="button" class="rail-add" data-cum-moi>＋ Cụm mới</button>` +
+      `<div id="cum-moi-form" hidden>${formCum("rail", 0)}</div>`;
+    rail.innerHTML = h;
+  }
+
+  // Ô tạo cụm dùng chung cho thanh chọn ("Đưa vào cụm") và thanh bên ("Cụm mới").
+  // Điền sẵn từ cụm đang xem, vì phân loại thường là nhiều kiểu dưới CÙNG một
+  // insight gốc.
+  function formCum(noi, soVideo) {
+    const goc = state.cums.find((c) => c.id === state.cumLoc) || {};
+    const o = (ten, nhan, gt) => `<label class="lb">${nhan}` +
+      `<input data-cum-o="${ten}" value="${escapeHtml(gt || "")}" autocomplete="off" /></label>`;
+    return `<form class="cum-form" data-noi="${noi}">` +
+      `<h4>${soVideo ? `Đưa ${soVideo} video vào cụm mới` : "Cụm mới"}</h4>` +
+      o("goc", "Insight gốc", goc.insight_goc) + o("usecase", "Usecase", goc.usecase) +
+      o("kieu", "Kiểu", "") +
+      `<div class="preview-name">Tên cụm = Insight con: <b data-xem-truoc></b></div>` +
+      `<div class="lock-field">Template <b>Goc</b> 🔒 (video tải về)</div>` +
+      `<button type="submit" class="btn primary ok">${soVideo ? `Tạo cụm và đưa ${soVideo} video vào` : "Tạo cụm"}</button>` +
+      `</form>`;
+  }
+
+  function renderCumHead() {
+    const head = document.getElementById("cum-head");
+    if (!head) return;
+    const cum = state.cums.find((c) => c.id === state.cumLoc);
+    head.hidden = !cum;
+    if (!cum) { head.innerHTML = ""; return; }
+    const lo = chiaLo(videoCuaCum(cum.id), HANDOFF_MAX);
+    const tong = lo.length;
+    const n = lo.reduce((a, l) => a + l.length, 0);
+    // Chỉ VẼ mốc của lô còn tồn tại (`thu ≤ số lô`); mốc cũ vẫn nằm trong DB.
+    const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m.mo_luc]));
+    const nut = tong === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
+      : tong === 1 ? `<button type="button" class="btn primary" data-mo-lo="1">Tạo bộ tự tìm từ cụm này (${n})</button>`
+      : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map((l) => l.length).join(" + ")})</button>`;
+    const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
+      const m = moLuc.get(i + 1);
+      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${l.length} video</span>` +
+        `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m)}` : "chưa mở"}</span><span class="grow"></span>` +
+        `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
+    }).join("")}</div>` : "";
+    const mot = tong === 1 && moLuc.get(1)
+      ? `<div class="sent-line">Đã mở Creative Desk cho cụm này lúc ${fmtDateTime(moLuc.get(1))} (${n} video). ` +
+        `Video Desk <b>không biết</b> bộ bên đó đã được tạo hay chưa.</div>` : "";
+    head.innerHTML =
+      `<div><div class="crumb">${escapeHtml(cum.usecase)} › ${escapeHtml(cum.insight_goc)} ›</div>` +
+      `<h3>${escapeHtml(cum.insight)}</h3><div class="tax-line">` +
+      `<span class="tax">Usecase <b>${escapeHtml(cum.usecase)}</b></span>` +
+      `<span class="tax">Insight <b>${escapeHtml(cum.insight)}</b></span>` +
+      `<span class="tax lock">Template <b>Goc</b> 🔒</span></div></div>` +
+      `<span class="muted">${n} video</span><span class="grow"></span>` +
+      `<button type="button" class="btn ghost" data-doi-kieu>Đổi kiểu</button>` +
+      `<button type="button" class="btn ghost danger" data-xoa-cum>Xoá cụm</button>${nut}` +
+      `<div class="handoff-note">Mở Creative Desk ở tab mới, điền sẵn <b>Usecase = ${escapeHtml(cum.usecase)}</b> · ` +
+      `<b>Insight = ${escapeHtml(cum.insight)}</b> · <b>Template = Goc</b>; bạn vẫn soát và bấm tạo bên đó.` +
+      (tong > 1 ? ` Cụm ${n} video vượt ${HANDOFF_MAX}/bộ ⇒ tự tách ${tong} bộ, mỗi bộ mở một tab.`
+                : ` Tối đa ${HANDOFF_MAX} video một bộ.`) + `</div>${dsLo}${mot}`;
+  }
+
+  function chipCum(video) {
+    if (!state.cumsDaNap) return "";
+    const cum = video.cum_id == null ? null : state.cums.find((c) => c.id === video.cum_id);
+    if (!cum) return `<span class="cum-chip none">chưa vào cụm</span>`;
+    return `<span class="cum-chip"><span class="cum-dot" style="background:${mauCum(cum.id)}"></span>` +
+      `${escapeHtml(cum.insight)}</span>`;
+  }
+
+  function doiCumLoc(loc) {
+    if (loc === state.cumLoc) return;
+    state.cumLoc = loc;
+    sauKhiDoiBoLoc();  // một bộ lọc nữa ⇒ về trang 1, GIỮ lựa chọn
+  }
+
+  async function loadCums() {
+    const res = await apiGet("/cum");
+    state.cums = res.cum;
+    state.cumsDaNap = true;
+    // Cụm đang xem vừa bị xoá (tab khác) ⇒ về "Tất cả" thay vì lưới rỗng câm.
+    if (typeof state.cumLoc === "number" && !state.cums.some((c) => c.id === state.cumLoc)) {
+      state.cumLoc = "tat_ca";
+    }
+  }
+
+  // Mở MỘT lô của cụm. Trả "mo" | "chan" | "rong".
+  //
+  // Thứ tự là cả điểm của hàm: mốc "đã mở" chỉ ghi SAU khi `window.open` trả
+  // một tab thật. Ghi trước thì popup bị chặn vẫn để lại "đã mở lúc …" cho một
+  // việc chưa xảy ra — và người dùng bỏ qua đúng lô chưa bao giờ sang bên kia.
+  async function moLoCum(cumId, thu) {
+    const cum = state.cums.find((c) => c.id === cumId);
+    if (!cum) return "rong";
+    const lo = chiaLo(videoCuaCum(cumId), HANDOFF_MAX);
+    const muc = lo[thu - 1];
+    const items = (muc || []).filter((v) => v.drive_file_id).map(itemBanGiao);
+    if (!items.length) {
+      showToast("Video của bộ này chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+      return "rong";
+    }
+    if (items.length < muc.length) {
+      showToast(`${muc.length - items.length} video chưa lên Drive nên không gửi kèm.`);
+    }
+    const tab = moTabCreativeDesk(urlBanGiao(dungPayload(items, nhanTuCum(cum, thu, lo.length))));
+    if (!tab) return "chan";
+    try {
+      const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`);
+      cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu).concat([{ thu, mo_luc: res.mo_luc }]);
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "mo"; }
+      showToast("Đã mở Creative Desk nhưng không ghi được mốc “đã mở” — bấm lại nếu cần.");
+    }
+    renderCumHead();
+    return "mo";
+  }
+
+  async function moHetLoCum(cumId) {
+    const tong = chiaLo(videoCuaCum(cumId), HANDOFF_MAX).length;
+    for (let thu = 1; thu <= tong; thu++) {
+      const kq = await moLoCum(cumId, thu);
+      if (kq === "chan") {
+        // Trình duyệt thường chỉ cho MỘT tab mỗi cú bấm. Nói đúng thế, và chỉ
+        // chỗ bấm tiếp — lô chưa mở vẫn ghi "chưa mở".
+        showToast(thu === 1
+          ? "Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại."
+          : `Đã mở ${thu - 1}/${tong} bộ. Trình duyệt chặn tab tiếp theo — bấm “Mở Creative Desk” ở từng bộ bên dưới.`);
+        return;
+      }
+      if (kq !== "mo") return;
+    }
+  }
+
+  // Id cụm mang tên `nhap`: cụm có sẵn trùng tên, hoặc cụm vừa tạo. Server tự
+  // trả lại cụm có sẵn khi trùng (`da_co`), nên kể cả khi `state.cums` cũ hơn
+  // server (tab khác vừa tạo) cũng không sinh cụm thứ hai.
+  async function layHoacTaoCum(nhap) {
+    const trung = timCumTrung(state.cums, nhap.usecase, nhap.goc, nhap.kieu);
+    if (trung) return { cumId: trung.id, daCo: true };
+    const moi = await apiSend("POST", "/cum",
+      { usecase: nhap.usecase, insight_goc: nhap.goc, kieu: nhap.kieu });
+    if (!state.cums.some((c) => c.id === moi.id)) state.cums.push(moi);
+    return { cumId: moi.id, daCo: Boolean(moi.da_co) };
+  }
+
+  // Gán `ids` vào ĐÚNG cụm `cumId` — không tra lại theo tên. Trả `{da, boQua}`.
+  async function ganIdsVaoCum(cumId, ids) {
+    let da = 0, boQua = 0;
+    for (let i = 0; i < ids.length; i += GAN_CUM_TOI_DA) {
+      const lo = ids.slice(i, i + GAN_CUM_TOI_DA);
+      const res = await apiSend("POST", `/cum/${cumId}/video`, { video_ids: lo });
+      const bo = new Set(res.bo_qua);
+      for (const v of state.videos) if (lo.includes(v.video_id) && !bo.has(v.video_id)) v.cum_id = cumId;
+      da += res.so_video;
+      boQua += res.bo_qua.length;
+    }
+    return { da, boQua };
+  }
+
+  function baoDaGan(cumId, daCo, soId, kq) {
+    const ten = (state.cums.find((c) => c.id === cumId) || {}).insight || "";
+    const phan = [daCo ? `Dùng lại cụm có sẵn “${ten}”` : `Đã tạo cụm “${ten}”`];
+    if (soId) phan.push(`đưa ${kq.da} video vào`);
+    if (kq.boQua) phan.push(`${kq.boQua} video không đưa được (không thuộc thư viện của bạn)`);
+    showToast(phan.join(" · "));
+  }
+
+  // Tạo (hoặc DÙNG LẠI cụm trùng tên) rồi đưa `ids` vào. Trả id cụm.
+  async function duaVaoCum(nhap, ids) {
+    const { cumId, daCo } = await layHoacTaoCum(nhap);
+    const kq = await ganIdsVaoCum(cumId, ids);
+    baoDaGan(cumId, daCo, ids.length, kq);
+    return cumId;
+  }
+
+  // Một lượt gửi cụm tại một thời điểm, cho CẢ form lẫn các dòng "cụm có sẵn".
+  // Bấm đôi mà không có cờ này thì hai lượt cùng đọc `state.cums` cũ và cùng
+  // POST — đúng ca để lại hai cụm trùng tên (review PR #13).
+  let dangGuiCum = false;
+
+  // Bằng `web/app.py::MAX_VIDEO_CUM`.
+  const GAN_CUM_TOI_DA = 1000;
+
+  function renderPopoverCum() {
+    const pop = document.getElementById("cum-popover");
+    if (!pop || pop.hidden) return;
+    const co = state.cums.length
+      ? `<h4>Đưa vào cụm có sẵn</h4>` + state.cums.map((c) =>
+          `<button type="button" class="cum-row" data-gan-cum="${c.id}"><span class="cum-dot" style="background:${mauCum(c.id)}"></span>` +
+          `<span class="cum-ten">${escapeHtml(c.insight)}</span><span class="n">${escapeHtml(c.usecase)}</span></button>`).join("") +
+        `<hr class="rail-sep">`
+      : "";
+    pop.innerHTML = co + formCum("thanh", state.selected.size);
+    capNhatXemTruoc(pop);
+  }
+
+  function capNhatXemTruoc(goc) {
+    const f = goc.querySelector(".cum-form");
+    if (!f) return;
+    const gt = (t) => f.querySelector(`[data-cum-o="${t}"]`).value;
+    // Trùng một cụm có sẵn ⇒ nói TRƯỚC khi bấm rằng sẽ dùng lại cụm đó, và
+    // hiện tên của CỤM ĐÓ (từ server), không phải chữ vừa gõ.
+    const trung = timCumTrung(state.cums, gt("usecase"), gt("goc"), gt("kieu"));
+    f.querySelector("[data-xem-truoc]").textContent =
+      trung ? `${trung.insight} (đã có — dùng lại cụm này)` : (xemTruocTen(gt("goc"), gt("kieu")) || "—");
+    const n = f.dataset.noi === "thanh" ? state.selected.size : 0;
+    f.querySelector("button[type=submit]").textContent = trung
+      ? (n ? `Đưa ${n} video vào cụm có sẵn` : "Cụm này đã có")
+      : (n ? `Tạo cụm và đưa ${n} video vào` : "Tạo cụm");
+  }
+
+  async function guiFormCum(form) {
+    const gt = (t) => form.querySelector(`[data-cum-o="${t}"]`).value;
+    const nhap = { goc: gt("goc"), usecase: gt("usecase"), kieu: gt("kieu") };
+    if (!khoaNhan(nhap.goc) || !khoaNhan(nhap.usecase) || !khoaNhan(nhap.kieu)) {
+      showToast("Điền đủ insight gốc, usecase và kiểu.");
+      return;
+    }
+    const ids = form.dataset.noi === "thanh" ? [...state.selected] : [];
+    if (dangGuiCum) return;
+    dangGuiCum = true;
+    const nut = form.querySelector("button[type=submit]");
+    nut.disabled = true;
+    try {
+      const cumId = await duaVaoCum(nhap, ids);
+      if (ids.length) boChonTatCa();
+      await loadCums();
+      document.getElementById("cum-popover").hidden = true;
+      state.cumLoc = cumId;
+      sauKhiDoiBoLoc();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast(`Không đưa được vào cụm: ${typeof err.ma === "string" ? err.ma : lyDoLoiLoai(err)}`);
+      await loadCums().catch(() => {});
+      renderLibrary();
+    } finally {
+      dangGuiCum = false;
+      nut.disabled = false;
+    }
+  }
+
+  // Dòng "cụm có sẵn" mang id ⇒ gán THẲNG vào id đó. Tra lại theo tên (bản
+  // trước) thì khi có hai cụm cùng tên, bấm cụm B mà video vào cụm A.
+  async function ganVaoCumCoSan(cumId) {
+    if (dangGuiCum || !state.cums.some((c) => c.id === cumId)) return;
+    dangGuiCum = true;
+    try {
+      const ids = [...state.selected];
+      baoDaGan(cumId, true, ids.length, await ganIdsVaoCum(cumId, ids));
+      boChonTatCa();
+      await loadCums();
+      document.getElementById("cum-popover").hidden = true;
+      renderLibrary();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast(`Không đưa được vào cụm: ${lyDoLoiLoai(err)}`);
+    } finally {
+      dangGuiCum = false;
+    }
+  }
+
+  async function doiKieuCum(cum) {
+    const kieu = window.prompt(`Kiểu mới cho “${cum.insight}” (insight gốc “${cum.insight_goc}” giữ nguyên):`, cum.kieu);
+    if (kieu === null || !khoaNhan(kieu)) return;
+    try {
+      await apiSend("PATCH", `/cum/${cum.id}`, { kieu });
+      await loadCums();
+      renderLibrary();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast(`Không đổi được kiểu: ${typeof err.ma === "string" ? err.ma : lyDoLoiLoai(err)}`);
+    }
+  }
+
+  async function xoaCum(cum) {
+    if (!window.confirm(`Xoá cụm “${cum.insight}”?\n\nVideo trong cụm về “Chưa vào cụm” — không video nào bị xoá.`)) return;
+    try {
+      await apiSend("DELETE", `/cum/${cum.id}`);
+      for (const v of state.videos) if (v.cum_id === cum.id) v.cum_id = null;
+      await loadCums();
+      sauKhiDoiBoLoc();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast(`Không xoá được cụm: ${lyDoLoiLoai(err)}`);
+    }
   }
 
   // Bằng `web/app.py::MAX_VIDEO_LOAI`. Test `test_tran_lo_loai_khop_backend`
@@ -1007,6 +1485,14 @@
 
     state.videos = videos;
     state.videosTotal = tong;
+    // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
+    // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
+    try {
+      await loadCums();
+    } catch (err) {
+      if (err instanceof PhienHetHan) throw err;
+      showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
+    }
     renderLibrary();
   }
 

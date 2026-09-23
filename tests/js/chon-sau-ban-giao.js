@@ -33,16 +33,21 @@ function chay({ popupBiChan }) {
   // không có nút; harness này không đo nút đó.
   const document = { querySelectorAll: () => the, getElementById: () => null };
   const window = {
-    open: () => { daGoi.open++; return popupBiChan ? null : { focus() {} }; },
+    open: (url) => { daGoi.open++; daGoi.url = url; return popupBiChan ? null : { focus() {} }; },
   };
   state.idTrang = [];  // `veNutChonTrang` đọc trường này
-  eval(grab("veNutChonTrang") + "\n" + grab("boChonTatCa") + "\n" + grab("moBoTuTim"));
+  eval(["veNutChonTrang", "boChonTatCa", "moBoTuTim", "itemBanGiao", "dungPayload",
+        "maHoaPayload", "urlBanGiao", "moTabCreativeDesk"].map(grab).join("\n"));
   moBoTuTim();
   return {
     conChon: state.selected.size,
     moTab: daGoi.open,
     theConTo: the.filter((t) => t.classList._co).length,
     veLaiThanh: daGoi.renderSelectionBar,
+    // Payload giải mã từ URL THẬT đã đưa cho `window.open` — bàn giao chọn tay
+    // KHÔNG được mang `nhan` (hợp đồng, quy tắc 2).
+    payload: daGoi.url ? JSON.parse(Buffer.from(
+      new URL(daGoi.url).searchParams.get("videodesk"), "base64url").toString("utf8")) : null,
   };
 }
 
