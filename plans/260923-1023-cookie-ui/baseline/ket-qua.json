@@ -1,0 +1,117 @@
+[
+  {
+    "duong": "A",
+    "ca": "0-chua-co-jar",
+    "mong": null,
+    "chip": "Chưa có",
+    "trang_thai": "Chưa dán cookie — lượt tải chạy ẩn danh",
+    "han": "—",
+    "van_tay": "—",
+    "loi": ""
+  },
+  {
+    "duong": "A",
+    "ca": "1-on-dung-duoc",
+    "mong": "dung_duoc",
+    "chip": "Đang dùng được",
+    "trang_thai": "Dùng được",
+    "han": "23/10/2026",
+    "van_tay": "627c468f",
+    "loi": ""
+  },
+  {
+    "duong": "B",
+    "ca": "1-on-dung-duoc",
+    "mong": "dung_duoc",
+    "jar_ton_tai_sau": true,
+    "chip": "Đang dùng được",
+    "trang_thai": "Dùng được",
+    "han": "23/10/2026",
+    "van_tay": "627c468f",
+    "loi": ""
+  },
+  {
+    "duong": "A",
+    "ca": "2-khong-doc-duoc",
+    "mong": "cookie_khong_doc_duoc",
+    "chip": "Cần dán lại",
+    "trang_thai": "Tệp không đọc được — xuất lại dạng JSON (không phải RTF).",
+    "han": "Không có hạn",
+    "van_tay": "e6c6a901",
+    "loi": ""
+  },
+  {
+    "duong": "B",
+    "ca": "2-khong-doc-duoc",
+    "mong": "cookie_khong_doc_duoc",
+    "jar_ton_tai_sau": false,
+    "chip": "Chưa có",
+    "trang_thai": "Chưa dán cookie — lượt tải chạy ẩn danh",
+    "han": "—",
+    "van_tay": "—",
+    "loi": "Tệp không đọc được — xuất lại dạng JSON (không phải RTF)."
+  },
+  {
+    "duong": "A",
+    "ca": "3-rong",
+    "mong": "cookie_rong",
+    "chip": "Cần dán lại",
+    "trang_thai": "Tệp không có cookie nào — xuất lại khi đang mở tiktok.com.",
+    "han": "Không có hạn",
+    "van_tay": "4f53cda1",
+    "loi": ""
+  },
+  {
+    "duong": "B",
+    "ca": "3-rong",
+    "mong": "cookie_rong",
+    "jar_ton_tai_sau": false,
+    "chip": "Chưa có",
+    "trang_thai": "Chưa dán cookie — lượt tải chạy ẩn danh",
+    "han": "—",
+    "van_tay": "—",
+    "loi": "Tệp không có cookie nào — xuất lại khi đang mở tiktok.com."
+  },
+  {
+    "duong": "A",
+    "ca": "4-chua-dang-nhap",
+    "mong": "cookie_chua_dang_nhap",
+    "chip": "Cần dán lại",
+    "trang_thai": "Cookie không có phiên đăng nhập — đăng nhập TikTok rồi xuất lại.",
+    "han": "Không có hạn",
+    "van_tay": "49faa9bd",
+    "loi": ""
+  },
+  {
+    "duong": "B",
+    "ca": "4-chua-dang-nhap",
+    "mong": "cookie_chua_dang_nhap",
+    "jar_ton_tai_sau": false,
+    "chip": "Chưa có",
+    "trang_thai": "Chưa dán cookie — lượt tải chạy ẩn danh",
+    "han": "—",
+    "van_tay": "—",
+    "loi": "Cookie không có phiên đăng nhập — đăng nhập TikTok rồi xuất lại."
+  },
+  {
+    "duong": "A",
+    "ca": "5-het-han",
+    "mong": "cookie_het_han",
+    "chip": "Cần dán lại",
+    "trang_thai": "Cookie đăng nhập đã hết hạn — đăng nhập lại rồi xuất lại.",
+    "han": "22/9/2026",
+    "van_tay": "b4b1cd30",
+    "loi": ""
+  },
+  {
+    "duong": "B",
+    "ca": "5-het-han",
+    "mong": "cookie_het_han",
+    "jar_ton_tai_sau": false,
+    "chip": "Chưa có",
+    "trang_thai": "Chưa dán cookie — lượt tải chạy ẩn danh",
+    "han": "—",
+    "van_tay": "—",
+    "loi": "Cookie đăng nhập đã hết hạn — đăng nhập lại rồi xuất lại."
+  }
+]

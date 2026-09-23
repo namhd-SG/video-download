@@ -148,13 +148,17 @@
       luu.disabled = true;
       try {
         veCookie(await apiSend("PUT", "/me/cookie", { json: o.value }));
-        o.value = "";           // không giữ cookie trong DOM lâu hơn mức cần
-        tenTep.textContent = "tệp xuất từ Cookie-Editor";
         await loadQuota();      // dán xong thì hết ẩn danh — số phải đổi theo
       } catch (err) {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
         loi.textContent = MA_COOKIE[err.ma] || ("Không lưu được cookie: " + err.message);
       } finally {
+        // Xoá ô ở MỌI nhánh, không chỉ nhánh thành công: bản trước chỉ xoá khi
+        // lưu được, nên cookie bị TỪ CHỐI — đúng lúc nó là cookie thật đầy đủ
+        // phiên đăng nhập — nằm nguyên trên màn hình. Cả bốn mã từ chối đều bảo
+        // người dùng xuất lại, nên giữ bản dán hỏng không giúp gì cho họ.
+        o.value = "";
+        tenTep.textContent = "tệp xuất từ Cookie-Editor";
         luu.disabled = false;
       }
     });
