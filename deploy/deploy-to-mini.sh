@@ -15,6 +15,14 @@
 # bất cứ thứ gì, và đếm label hàng xóm trước/sau.
 set -euo pipefail
 
+# Mã thoát riêng cho từng kết cục, để người gọi (và người đọc log) phân biệt
+# được "sai máy" với "có người đang tải" — hai ca đòi hai việc khác nhau.
+RC_SAI_MAY=1        # máy đích không phải mini
+RC_CAY_BAN=2        # cây chưa commit / chưa đẩy
+RC_DANG_TAI=3       # có job đang chạy hoặc đang chờ
+RC_NGHIEM_THU=4     # đẩy xong nhưng nghiệm thu trượt
+RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁC "đang bận"
+
 HOST="${VIDEODL_MINI_HOST:-nobi_auto@100.109.39.103}"
 # Tên máy đích sau khi chuẩn hoá. `hostname` thật trả về "Autos-Mac-mini.local"
 # — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn nhầm chính mình.
@@ -81,9 +89,15 @@ fi
 echo "   HEAD $SHA — sạch, đã có trên origin"
 
 # --- 2. Đếm hàng xóm TRƯỚC ---------------------------------------------------
-say "2. Đếm label astronex trước khi đụng"
-truoc="$(ssh "$HOST" "launchctl list | grep -c astronex || true")"
-echo "   trước: $truoc"
+# So DANH SÁCH TÊN, không so SỐ ĐẾM. Đếm không phân định được ca xấu nhất:
+# mất `com.astronex.videodl` mà mọc thêm một label khác thì tổng vẫn bằng nhau
+# và cổng dưới báo xanh. Luật này chốt ở commit a479522 nhưng chỉ sửa plan —
+# script vẫn đếm tới tận 22/09, và ba chuyến deploy hôm đó qua cổng bằng tay.
+say "2. Ghi TÊN label astronex trước khi đụng"
+ten_label() { ssh "$HOST" "launchctl list | awk 'NR>1 {print \$3}' | grep -i astronex | sort" || true; }
+truoc="$(ten_label)"
+echo "$truoc" | sed 's/^/   /'
+
 
 if [ "$THAT" -eq 0 ]; then
   say "THỬ KHÔ — dừng ở đây. Chạy lại với --yes để làm thật."
@@ -92,6 +106,54 @@ if [ "$THAT" -eq 0 ]; then
   rsync -a --dry-run --itemize-changes --delete "${EXCLUDES[@]}" \
         ./ "$HOST:~/$REMOTE_REPO/"
   exit 0
+fi
+
+# --- 2b. CỔNG: có ai đang tải không? -----------------------------------------
+# `kickstart -k` ở bước 4 giết tiến trình rồi dựng lại, nên một job đang chạy
+# chết giữa chừng.
+#
+# Cổng này KHÔNG phải để giữ DB đúng — repo đã lo: `JobWorker.start()` quét
+# `running` thành `interrupted` ở lượt khởi động kế tiếp (`web/queue.py`), và
+# `quet_jar_tam` dọn jar cookie tạm (`web/app.py`). Thứ nó bảo vệ là CÔNG CỦA
+# NGƯỜI DÙNG: job 10 ngày 22/09 chạy 44 phút và đã đọc 10 trang index. Cắt
+# ngang thì người tạo mất cả thời gian LẪN khẩu phần — `so_trang` ghi tăng dần
+# ngay khi tiêu, nên trần 800 trang/ngày đã trừ rồi; chạy lại là trừ lần nữa.
+#
+# Đứng TRƯỚC rsync, không phải giữa rsync và kickstart: chặn ở đây thì máy đích
+# không bị đụng một byte nào. Chặn sau rsync sẽ để lại trạng thái lệch — tệp MỚI
+# nằm trên đĩa trong khi tiến trình CŨ đang phục vụ, và `KeepAlive=true` nghĩa là
+# một lần crash bất kỳ sau đó sẽ dựng lên bản mới vào lúc không ai định.
+#
+# ⚠ Còn một khe không bịt: job được tạo TRONG lúc rsync chạy (vài giây) vẫn bị
+# bước 4 cắt. Chấp nhận — job đó mới chạy vài giây, mất gần như không gì, còn
+# đóng khe thì phải kiểm hai lần và vẫn không kín.
+#
+# Câu SELECT lấy từ `plans/260917-1445-plan-tong-de-dong-tool/plan.md`, mục
+# "30 giây trước Deploy".
+#
+# KHÔNG dùng `sqlite3 -readonly`: DB này chạy WAL, mở read-only trượt với
+# "unable to open database file (14)" vì nó cần ghi được `-shm`.
+# ⚠ `sqlite3 -readonly <db> 'SELECT 1'` thì LẠI CHẠY — `SELECT 1` không chạm
+# bảng nên không cần WAL. Dùng nó làm đối chứng là tự cấp chứng nhận.
+say "2b. Kiểm có job đang chạy không"
+dang_tai="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai NOT IN ('done','failed','interrupted')\"")"
+
+# Truy vấn trượt trả chuỗi RỖNG, và `[ "" != "0" ]` cũng đúng ⇒ cổng vẫn chặn.
+# Chặn là hướng an toàn, nhưng thông điệp khi đó nói "N job đang chạy" trong khi
+# sự thật là PHÉP ĐO HỎNG — một kết luận dụng cụ không có bằng chứng để nói.
+# Tách hẳn hai ca ra, đúng vế 1 của `guard-marker-and-claim-write-ordering`.
+case "$dang_tai" in
+  ''|*[!0-9]*)
+    echo "DỪNG: không đọc được số job đang chạy (nhận: '$dang_tai')." >&2
+    echo "      Đây là PHÉP ĐO HỎNG, không phải 'đang có người tải'." >&2
+    echo "      Kiểm ssh và đường dẫn jobs.db trên máy đích rồi chạy lại." >&2
+    exit "$RC_DO_HONG" ;;
+esac
+echo "   job đang chạy/chờ: $dang_tai"
+if [ "$dang_tai" != "0" ]; then
+  echo "DỪNG: $dang_tai job đang chạy hoặc đang chờ — khởi động lại sẽ cắt ngang." >&2
+  echo "      Chưa đụng gì tới máy đích. Đợi job xong rồi chạy lại script này." >&2
+  exit "$RC_DANG_TAI"
 fi
 
 # --- 3. Đẩy mã, giữ bản cũ để lui -------------------------------------------
@@ -140,9 +202,14 @@ echo "   app.js ${cc:-KHÔNG CÓ cache-control — bản cũ còn đang chạy?}
 bind="$(ssh "$HOST" "lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | grep -c '127.0.0.1' || true")"
 echo "   bind 127.0.0.1: $bind (phải ≥1 — không được nghe 0.0.0.0)"
 
-sau="$(ssh "$HOST" "launchctl list | grep -c astronex || true")"
-echo "   label astronex sau: $sau (trước: $truoc)"
-[ "$sau" -ge "$truoc" ] || { echo "MẤT label hàng xóm — kiểm ngay" >&2; exit 1; }
+sau="$(ten_label)"
+if [ "$sau" = "$truoc" ]; then
+  echo "   label astronex: danh sách TÊN không đổi"
+else
+  echo "   label astronex ĐỔI — kiểm ngay:" >&2
+  diff <(printf '%s\n' "$truoc") <(printf '%s\n' "$sau") >&2 || true
+  exit "$RC_NGHIEM_THU"
+fi
 
 px="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://promax.nobidigital.asia || true)"
 echo "   promax hàng xóm: HTTP $px (chết là do mình, phải kiểm)"
