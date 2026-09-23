@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mock — thẻ cookie theo nền tảng</title>
+<!-- Dùng THẲNG stylesheet thật của app: mock phải mang đúng màu/phông/khoảng của trang
+     thật, không phải một bảng màu tự chế. Chỉ thêm lớp cho thành phần MỚI, dựng bằng
+     chính các token --success/--danger/--warn… của app.css. -->
+<link rel="stylesheet" href="../../web/static/app.css" />
+<style>
+  body { padding: 24px 16px 60px; }
+  .gallery { max-width: 900px; margin: 0 auto; display: grid; gap: 28px; }
+  .ca-nhan { font: 600 12px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase;
+             color: var(--text-faint); margin: 0 0 8px; }
+
+  .nt-the { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+            box-shadow: var(--shadow); padding: 18px 20px; }
+  .nt-dau { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .nt-dau h2 { margin: 0; font: 600 17px/1.2 var(--display); }
+  .nt-logo { width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center;
+             background: var(--text); color: var(--surface); font: 700 13px var(--body); }
+
+  /* Khối trạng thái lớn: màu + tiêu đề + một câu. Đây là thứ đọc TRƯỚC. */
+  .tt { border-radius: var(--radius); padding: 14px 16px; display: flex; gap: 12px; align-items: flex-start;
+        border: 1px solid transparent; }
+  .tt-icon { font: 700 16px/1 var(--body); width: 28px; height: 28px; border-radius: 50%;
+             display: grid; place-items: center; flex: none; }
+  .tt h3 { margin: 0 0 3px; font: 600 15px/1.3 var(--body); }
+  .tt p { margin: 0; font-size: 13.5px; color: var(--text-muted); }
+  .tt-ok   { background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, transparent); }
+  .tt-ok .tt-icon { background: var(--success); color: #fff; }
+  .tt-loi  { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
+  .tt-loi .tt-icon { background: var(--danger); color: #fff; }
+  .tt-trong { background: var(--surface-alt); border-color: var(--border); }
+  .tt-trong .tt-icon { background: var(--border-strong); color: var(--surface); }
+
+  /* Lưới 4 ô. Ô Tài khoản đứng ĐẦU vì đó là câu user hỏi. */
+  .o4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 12px 0 16px; }
+  .o { border: 1px solid var(--border); border-radius: var(--radius); padding: 9px 11px; min-width: 0; }
+  .o dt { font-size: 11.5px; color: var(--text-faint); margin: 0 0 3px; }
+  .o dd { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+  .o dd small { display: block; color: var(--text-faint); font-size: 11.5px; margin-top: 2px; }
+  .o-ten dd { font-weight: 600; }
+  .o-cho dd { color: var(--text-muted); font-style: italic; font-weight: 400; }
+  .o-vang { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+  .o-vang dd { color: var(--warn); font-weight: 500; }
+  .o-do dd { color: var(--danger); font-weight: 600; }
+  .mono { font-family: var(--mono); }
+
+  .dan { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+  .cai-dat .dan textarea { min-height: 64px; }
+  .dan-nut.cookie-actions { flex-direction: column; margin: 0; }
+  /* Phản hồi dán nằm NGAY dưới nút vừa bấm, không ở cuối panel. */
+  .ph { margin-top: 10px; padding: 10px 12px; border-radius: var(--radius); font-size: 13.5px;
+        background: var(--danger-bg); color: var(--danger); border-left: 3px solid var(--danger); }
+  .ph b { display: block; margin-bottom: 2px; }
+  .ph span { color: var(--text-muted); }
+  .huong-dan { font-size: 12.5px; color: var(--text-faint); margin: 10px 0 0; }
+
+  .nt-mo { opacity: .55; }
+  .nt-mo .nt-logo { background: var(--border-strong); }
+
+  @media (max-width: 640px) {
+    .o4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dan { grid-template-columns: 1fr; }
+    .dan-nut.cookie-actions { flex-direction: row; }
+  }
+</style>
+</head>
+<body>
+<main class="gallery cai-dat">
+
+  <!-- 1 -->
+  <section>
+    <p class="ca-nhan">Ca 1 — chưa có cookie</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-trong">
+        <span class="tt-icon">–</span>
+        <div><h3>Chưa có cookie</h3>
+          <p>Lượt tải đang chạy ẩn danh và chia chung hạn mức với mọi người chưa dán.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-cho"><dt>Tài khoản</dt><dd>—</dd></div>
+        <div class="o"><dt>Hạn đến</dt><dd>—</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>—</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd>—</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán chuỗi JSON xuất từ Cookie-Editor… hoặc kéo tệp .json vào đây"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost">Chọn tệp…</button></div>
+      </div>
+      <p class="huong-dan">Cookie-Editor → mở tiktok.com khi <strong>đã đăng nhập</strong> → Export → Export as JSON.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <p class="ca-nhan">Ca 2 — vừa dán xong, chưa biết tên (quyết định C)</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-ok">
+        <span class="tt-icon">✓</span>
+        <div><h3>Đang dùng được</h3>
+          <p>Lượt tải của bạn chạy bằng cookie này, hạn mức tính riêng cho tài khoản của nó.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-cho"><dt>Tài khoản</dt><dd>Sẽ xác định sau lượt tải đầu
+          <small>lượt tải nhạc, tìm kiếm hoặc trang cá nhân — hashtag không dùng cookie</small></dd></div>
+        <div class="o"><dt>Hạn đến</dt><dd>23/10/2026</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>10:25 · 23/9</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd class="mono">627c468f</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán cookie mới để thay…"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost danger">Xoá</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <p class="ca-nhan">Ca 3 — đã biết tên</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-ok">
+        <span class="tt-icon">✓</span>
+        <div><h3>Đang dùng được — @ten.tai.khoan</h3>
+          <p>Lượt tải của bạn chạy dưới tài khoản này.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-ten"><dt>Tài khoản</dt><dd>@ten.tai.khoan
+          <small>xác định 10:41 · 23/9, từ lượt tải #11</small></dd></div>
+        <div class="o"><dt>Hạn đến</dt><dd>23/10/2026</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>10:25 · 23/9</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd class="mono">627c468f</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán cookie mới để thay…"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost danger">Xoá</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <p class="ca-nhan">Ca 4 — dán hỏng khi đang có cookie tốt (ô dán đã tự xoá — PR #6)</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-ok">
+        <span class="tt-icon">✓</span>
+        <div><h3>Đang dùng được — @ten.tai.khoan</h3>
+          <p>Lượt tải của bạn chạy dưới tài khoản này.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-ten"><dt>Tài khoản</dt><dd>@ten.tai.khoan<small>xác định 10:41 · 23/9</small></dd></div>
+        <div class="o"><dt>Hạn đến</dt><dd>23/10/2026</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>10:25 · 23/9</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd class="mono">627c468f</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán cookie mới để thay…"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost danger">Xoá</button></div>
+      </div>
+      <div class="ph" role="alert">
+        <b>Cookie vừa dán bị từ chối: không có phiên đăng nhập.</b>
+        Đăng nhập TikTok rồi xuất lại.
+        <span>Cookie cũ (@ten.tai.khoan) vẫn đang dùng — không có gì bị ghi đè.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <p class="ca-nhan">Ca 5 — cookie đang lưu đã hết hạn</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-loi">
+        <span class="tt-icon">!</span>
+        <div><h3>Cookie đã hết hạn ngày 22/9/2026</h3>
+          <p>Lượt tải đang chạy như ẩn danh. Đăng nhập lại TikTok rồi xuất cookie mới.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-ten"><dt>Tài khoản</dt><dd>@ten.tai.khoan<small>lần cuối xác định 18/9</small></dd></div>
+        <div class="o o-do"><dt>Hạn đến</dt><dd>22/9/2026 — đã qua</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>09:02 · 16/9</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd class="mono">b4b1cd30</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán cookie mới…"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost danger">Xoá</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <p class="ca-nhan">Ca 6 — dùng được nhưng không đọc được tên</p>
+    <div class="nt-the">
+      <div class="nt-dau"><span class="nt-logo">T</span><h2>TikTok</h2></div>
+      <div class="tt tt-ok">
+        <span class="tt-icon">✓</span>
+        <div><h3>Đang dùng được</h3>
+          <p>Lượt tải của bạn chạy bằng cookie này.</p></div>
+      </div>
+      <dl class="o4">
+        <div class="o o-vang"><dt>Tài khoản</dt><dd>Không đọc được tên
+          <small>lượt tải #12 đã chạy nhưng TikTok không trả tên — cookie vẫn dùng được</small></dd></div>
+        <div class="o"><dt>Hạn đến</dt><dd>Phiên không ghi hạn</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd>10:25 · 23/9</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd class="mono">49faa9bd</dd></div>
+      </dl>
+      <div class="dan">
+        <textarea placeholder="Dán cookie mới để thay…"></textarea>
+        <div class="dan-nut cookie-actions"><button type="button">Lưu cookie</button><button type="button" class="ghost danger">Xoá</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section>
+    <p class="ca-nhan">Ca 7 — nền tảng khác (bố cục chứa được; câu hỏi mở: có lên trang thật không)</p>
+    <div class="nt-the nt-mo">
+      <div class="nt-dau"><span class="nt-logo">I</span><h2>Instagram</h2><span class="chip chip-off">chưa hỗ trợ</span></div>
+      <p class="muted" style="margin:0">Cùng khuôn thẻ như TikTok khi nền tảng này được thêm.</p>
+    </div>
+  </section>
+
+</main>
+</body>
+</html>
