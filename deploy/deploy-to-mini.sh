@@ -119,9 +119,27 @@ echo "   HEAD $SHA — sạch, đã có trên origin"
 # và cổng dưới báo xanh. Luật này chốt ở commit a479522 nhưng chỉ sửa plan —
 # script vẫn đếm tới tận 22/09, và ba chuyến deploy hôm đó qua cổng bằng tay.
 say "2. Ghi TÊN label astronex trước khi đụng"
-ten_label() { ssh "$HOST" "launchctl list | awk 'NR>1 {print \$3}' | grep -i astronex | sort" || true; }
-truoc="$(ten_label)"
+# Lấy `launchctl list` THÔ rồi lọc ở máy dev. Bản trước lọc ở phía xa kèm
+# `|| true`, nên ssh chết ra danh sách RỖNG — và rỗng trước = rỗng sau thì cổng
+# dưới in "không đổi": xanh giả đúng lúc không đo được gì. Tách hai việc: ssh
+# trượt ⇒ hàm trả khác 0; không có label astronex nào ⇒ danh sách rỗng hợp lệ.
+ten_label() {
+  local tho
+  tho="$(ssh "$HOST" "launchctl list")" || return 1
+  printf '%s\n' "$tho" | awk 'NR>1 {print $3}' | grep -i astronex | sort || true
+}
+# Control cho chính phép đo: danh sách thật CHẮC CHẮN có label của mình (bước 4
+# sắp kickstart nó). Không thấy nó ⇒ hoặc đo sai máy/sai user, hoặc dịch vụ chưa
+# cài — cả hai đều không phải lúc để deploy.
+truoc="$(ten_label)" || {
+  echo "DỪNG: không đọc được launchctl trên $HOST — PHÉP ĐO HỎNG." >&2
+  exit "$RC_DO_HONG"
+}
 echo "$truoc" | sed 's/^/   /'
+if ! printf '%s\n' "$truoc" | grep -qx "$LABEL"; then
+  echo "DỪNG: danh sách label không có $LABEL — phép đo không thấy chính dịch vụ này." >&2
+  exit "$RC_DO_HONG"
+fi
 
 
 # --- 2b. CỔNG: có ai đang tải không? -----------------------------------------
@@ -286,7 +304,11 @@ echo "   app.js ${cc:-KHÔNG CÓ cache-control — bản cũ còn đang chạy?}
 bind="$(ssh "$HOST" "lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | grep -c '127.0.0.1' || true")"
 echo "   bind 127.0.0.1: $bind (phải ≥1 — không được nghe 0.0.0.0)"
 
-sau="$(ten_label)"
+sau="$(ten_label)" || {
+  echo "DỪNG: không đọc được launchctl sau deploy — PHÉP ĐO HỎNG, không phải 'không đổi'." >&2
+  echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+  exit "$RC_DO_HONG"
+}
 if [ "$sau" = "$truoc" ]; then
   echo "   label astronex: danh sách TÊN không đổi"
 else

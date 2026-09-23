@@ -30,7 +30,12 @@ case "$KICH_BAN" in
 esac
 case "$cmd" in
   hostname) echo "Autos-Mac-mini.local" ;;
-  *"launchctl list"*) printf 'PID\tStatus\tLabel\n1\t0\tcom.astronex.videodl\n' ;;
+  *"launchctl list"*)
+    case "$KICH_BAN" in
+      launchctl_chet) exit 255 ;;
+      thieu_label_minh) printf 'PID\tStatus\tLabel\n1\t0\tcom.astronex.promax\n' ;;
+      *) printf 'PID\tStatus\tLabel\n1\t0\tcom.astronex.videodl\n' ;;
+    esac ;;
   *sqlite3*)
     case "$KICH_BAN" in
       sqlite_loi) echo "Error: unable to open database file" >&2; exit 1 ;;
@@ -123,3 +128,18 @@ def test_rsync_truot_giua_chung_giu_log_va_in_duong_lui(clone, tmp_path):
     assert Path(duong.strip()).exists(), "log itemize phải còn để biết tệp nào đã lên"
     assert "kickstart" not in log.read_text(encoding="utf-8"), "không được tới bước 4"
     Path(duong.strip()).unlink()
+
+
+def test_ssh_chet_o_buoc_label_la_do_hong(clone):
+    """Bản trước: `ten_label … || true` ⇒ ssh chết ra danh sách rỗng, trước = sau =
+    rỗng ⇒ cổng label in "không đổi". Giờ không đọc được là mã 5."""
+    r = _chay(clone, "launchctl_chet")
+    assert r.returncode == 5, (r.returncode, r.stderr)
+    assert "không đọc được launchctl" in r.stderr
+
+
+def test_danh_sach_label_khong_co_chinh_minh_la_do_hong(clone):
+    """Control của phép đo: danh sách thật phải thấy `com.astronex.videodl`."""
+    r = _chay(clone, "thieu_label_minh")
+    assert r.returncode == 5, (r.returncode, r.stderr)
+    assert "không có com.astronex.videodl" in r.stderr
