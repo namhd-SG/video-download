@@ -9,6 +9,11 @@ quyết định 21/09 11:31 (`plans/260921-1112-videodl-3-van-de/brainstorm.md:2
 Lý do đổi: (1) đo 23/09 — cookie **có** mang offline một định danh số 19 chữ số (`multi_sids`) — điều 21/09 không ai biết.
 ⚠ 2 jar đo được là của **2 người dán** và ra 2 số khác nhau: CHƯA phân định *"2 tài khoản"* với *"số đổi theo phiên"*; (2) C **không** thêm request TikTok nào — đọc kè trang mà job vốn đã mở.
 
+**USER CHỐT 23/09 10:54** (AskUserQuestion, pane e45af0e2/ttys005, qua điều phối R): Q1 **chấp nhận giới hạn hashtag**, KHÔNG móc
+yt-dlp · Q2 **chấp nhận hiện tên** trên máy dùng chung · Q3 cho **cả hai** phép đo bằng tài khoản user. Câu UI Q1 user duyệt mang
+chữ sai *"hashtag không dùng cookie"* (chép từ mock trước V115); R sửa thành câu dưới trong phạm vi đã gật, đã báo user:
+*"sẽ xác định sau lượt tải nhạc, tìm kiếm hoặc trang cá nhân đầu tiên — lượt hashtag không đọc được tên"*.
+
 C = đọc `@username` từ HTML trang TikTok **trong lượt tải có cookie**, 0 request thêm, không trừ trần.
 Hệ quả phải hiện trên UI: **lúc dán chưa biết tên** ⇒ ô tài khoản ghi *"sẽ xác định sau lượt tải đầu"*, không trống, không đoán.
 
