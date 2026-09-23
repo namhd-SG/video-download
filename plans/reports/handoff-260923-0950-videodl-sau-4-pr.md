@@ -82,9 +82,28 @@ XANH**. Nay `ten_label()` trả danh sách sắp xếp, khác thì in `diff` r�
 
 ---
 
-## 3. ⛔ MẮT USER — CHƯA ĐO, không phải "đã đạt"
+## 3. MẮT USER — ĐÃ ĐO 3/3, còn ba vế treo
 
-User **chưa báo** tới 09:50 ngày 23/09. Bốn mục, chỉ họ trả được:
+**ĐẠT 3/3 lúc 09:58 ngày 23/09.** Nguyên văn user: *"okie đạt hết nhé"*.
+
+| mục | user thấy |
+|---|---|
+| thẻ job | job 10 hiện **"Bỏ qua 1 video đã có trong kho."**, nền trung tính, **giờ VN đúng** |
+| bàn giao bộ tự tìm | bấm xong **lựa chọn tự sạch** |
+| modal Creative Desk (#214) | `?videodesk=` biến mất khi mở · nút X gỡ từng dòng · gỡ hết thì khối biến mất · Huỷ/F5 ra trống |
+
+⇒ Khe cuối của cột `bo_qua` (route HTTP + pixel) nay **đóng bằng mắt người**, không phải bằng suy
+luận: con số đi trọn đường `scraper → queue → models → API → thẻ job`.
+
+**CÒN CHƯA ĐO — ba vế, đừng đọc "đạt hết" thành "xong hết":**
+1. **ca mass-skip** (`N` lớn) — job 10 chỉ trùng 1; xem cuối mục này;
+2. **nhánh CHẶN của cổng `2b`** (`rc=3`/`4`/`5`) chưa gặp ca thật trên đường sống;
+3. **ba trạng thái cookie** — user gật gộp cả lượt, **không hỏi riêng từng trạng thái**, nên đây là
+   *chưa phân định* chứ không phải *đã kiểm ba ca*.
+
+---
+
+*(Bốn mục dưới đây là đề bài lúc còn mở, giữ lại để đối chiếu.)* Bốn mục, chỉ họ trả được:
 
 1. thẻ job có hiện **"Bỏ qua N video đã có trong kho."** không;
 2. bấm "Tạo bộ tự tìm" xong lựa chọn có **tự sạch** không —
