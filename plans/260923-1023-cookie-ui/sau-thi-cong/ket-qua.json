@@ -1,0 +1,72 @@
+[
+  {
+    "ca": "1-chua-co",
+    "lop": "tt tt-trong",
+    "tieu_de": "Chưa có cookie",
+    "han": "—",
+    "phan_hoi": "",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "2-dung-duoc",
+    "lop": "tt tt-ok",
+    "tieu_de": "Đang dùng được",
+    "han": "23/10/2026",
+    "phan_hoi": "",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "3-phien-khong-han",
+    "lop": "tt tt-ok",
+    "tieu_de": "Đang dùng được",
+    "han": "Phiên không ghi hạn",
+    "phan_hoi": "",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "4-dan-hong-khi-dang-tot",
+    "lop": "tt tt-ok",
+    "tieu_de": "Đang dùng được",
+    "han": "23/10/2026",
+    "phan_hoi": "Cookie vừa dán bị từ chối.\nCookie không có phiên đăng nhập — đăng nhập TikTok rồi xuất lại.\nCookie cũ vẫn đang dùng — không có gì bị ghi đè.",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "5-het-han",
+    "lop": "tt tt-loi",
+    "tieu_de": "Cookie đã hết hạn ngày 22/9/2026",
+    "han": "22/9/2026 — đã qua",
+    "phan_hoi": "",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "6-jar-hong-dat-tay",
+    "lop": "tt tt-loi",
+    "tieu_de": "Cookie đang lưu không dùng được",
+    "han": "Không đọc được hạn",
+    "phan_hoi": "",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  },
+  {
+    "ca": "7-dan-hong-khi-chua-co",
+    "lop": "tt tt-trong",
+    "tieu_de": "Chưa có cookie",
+    "han": "—",
+    "phan_hoi": "Cookie vừa dán bị từ chối.\nTệp không đọc được — xuất lại dạng JSON (không phải RTF).\nChưa có cookie nào được lưu.",
+    "o_dan_trong": true,
+    "o_tai_khoan_hien": false,
+    "tran_ngang": false
+  }
+]
