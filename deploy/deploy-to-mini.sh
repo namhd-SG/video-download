@@ -57,6 +57,8 @@ THAT=0
 [ "${1:-}" = "--yes" ] && THAT=1
 
 cd "$(git rev-parse --show-toplevel)"
+# shellcheck source=deploy/verify-synced-files.sh
+. deploy/verify-synced-files.sh
 say() { printf '\n== %s\n' "$*"; }
 
 # --- 0. CỔNG: máy bên kia có đúng là mini công ty không? ---------------------
@@ -69,7 +71,7 @@ echo "   hostname bên kia: $remote_host  (chuẩn hoá: $norm)"
 if [ "$norm" != "$EXPECT_HOST" ]; then
   echo "DỪNG: máy đích không phải $EXPECT_HOST." >&2
   echo "      Nếu nó ra nam-mini-m4 thì bạn đang trỏ về chính máy dev." >&2
-  exit 1
+  exit "$RC_SAI_MAY"
 fi
 
 # --- 1. CỔNG: mã nguồn đã commit và đã đẩy chưa? -----------------------------
@@ -79,12 +81,12 @@ say "1. Kiểm cây mã nguồn"
 if [ -n "$(git status --porcelain)" ]; then
   echo "DỪNG: cây còn thay đổi chưa commit. Commit hoặc dọn trước." >&2
   git status --porcelain >&2
-  exit 1
+  exit "$RC_CAY_BAN"
 fi
 SHA="$(git rev-parse HEAD)"
 if [ -z "$(git branch -r --contains HEAD)" ]; then
   echo "DỪNG: commit $SHA chưa có trên origin. Đẩy trước đã." >&2
-  exit 1
+  exit "$RC_CAY_BAN"
 fi
 echo "   HEAD $SHA — sạch, đã có trên origin"
 
@@ -168,8 +170,12 @@ fi
 # và "đang chạy gì" thành câu không ai trả lời được.
 # assets/ffmpeg-static loại ra: file lớn, mini-setup.sh cấp riêng bằng scp.
 say "3. rsync (giữ bản lui ở ~/Projects/${BACKUP_DIR#../})"
-rsync -a --delete --backup --backup-dir="$BACKUP_DIR" "${EXCLUDES[@]}" \
-      ./ "$HOST:~/$REMOTE_REPO/"
+# `--itemize-changes` vào TỆP, không qua pipe: pipe trả mã của lệnh cuối, và
+# `set -e` sẽ không thấy rsync trượt. Danh sách này là thứ bước 5 nghiệm thu.
+RSYNC_LOG="$(mktemp -t videodl-rsync)"
+trap 'rm -f "$RSYNC_LOG"' EXIT
+rsync -a --delete --backup --backup-dir="$BACKUP_DIR" --itemize-changes "${EXCLUDES[@]}" \
+      ./ "$HOST:~/$REMOTE_REPO/" > "$RSYNC_LOG"
 echo "   xong"
 
 # --- 4. Khởi động lại ĐÚNG label của mình ------------------------------------
@@ -177,8 +183,8 @@ say "4. kickstart -k $LABEL"
 ssh "$HOST" "launchctl kickstart -k gui/\$(id -u)/$LABEL"
 
 # --- 5. Nghiệm thu ----------------------------------------------------------
-# Không hỏi "lệnh có chạy không" mà hỏi "thứ vừa đẩy có đang phục vụ không":
-# so sha256 của ba tệp tĩnh với bản ở máy dev.
+# Không hỏi "lệnh có chạy không" mà hỏi "thứ vừa đẩy có nằm trên đĩa và đang
+# phục vụ không": so sha256 mọi tệp rsync gửi, rồi ba tệp tĩnh qua HTTP.
 say "5. Nghiệm thu"
 sleep 4
 for i in 1 2 3 4 5 6 7 8 9 10; do
@@ -187,7 +193,19 @@ for i in 1 2 3 4 5 6 7 8 9 10; do
   sleep 2
 done
 echo "   healthz: HTTP $code"
-[ "$code" = "200" ] || { echo "DỪNG: healthz không lên. Lui bằng deploy/rollback-on-mini.sh $BACKUP_DIR" >&2; exit 1; }
+[ "$code" = "200" ] || { echo "DỪNG: healthz không lên. Lui bằng deploy/rollback-on-mini.sh $BACKUP_DIR" >&2; exit "$RC_NGHIEM_THU"; }
+
+# MỌI tệp rsync vừa gửi, không phải một danh sách tên cứng: deploy 23/09 chỉ
+# đổi settings.js, và vòng ba-tên-cứng bên dưới vẫn in "khớp" ba lần cho một
+# tệp nó không hề nhìn. Đây là so trên ĐĨA; vòng dưới so thứ đang PHỤC VỤ.
+# ⚠ Với tệp .py, "khớp trên đĩa" không chứng minh tiến trình đã nạp mã mới —
+# thứ đó chỉ healthz sau kickstart nói được, và nó nói rất ít.
+kiem_rc=0
+kiem_tep_da_dong_bo "$RSYNC_LOG" "$HOST" "$REMOTE_REPO" || kiem_rc=$?
+if [ "$kiem_rc" -ne 0 ]; then
+  echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+  exit "$kiem_rc"
+fi
 
 for f in index.html app.js app.css; do
   local_sha="$(shasum -a 256 "web/static/$f" | cut -d' ' -f1)"
@@ -197,7 +215,7 @@ for f in index.html app.js app.css; do
   else
     echo "   $f: LỆCH (dev=$local_sha mini=$remote_sha)" >&2
     echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
-    exit 1
+    exit "$RC_NGHIEM_THU"
   fi
 done
 
