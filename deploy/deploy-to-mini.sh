@@ -51,6 +51,23 @@ EXCLUDES=(
   --exclude='assets/ffmpeg-static'
   --exclude='deploy/run-service.sh'
   --exclude='__pycache__'
+  # Ghim TƯỜNG MINH, không trông vào `.gitignore` bên dưới — đổi tệp đó thì ba
+  # dòng này vẫn giữ:
+  # - `.claude/`: ghi chú nội bộ của agent. Trước 23/09 rsync đẩy nó lên máy
+  #   DÙNG CHUNG (`~` là 750, nhóm staff đọc được). Không thuộc về prod.
+  # - `.pytest_cache/`: rác của pytest trên máy dev.
+  # - `*.egg-info/`: mini CẦN `src/tiktok_music_downloader.egg-info` cho bản cài
+  #   editable trong venv. Bị loại trừ nghĩa là `--delete` KHÔNG BAO GIỜ chạm nó
+  #   ở phía nhận — đó là lý do chính của dòng này, không phải để bớt tệp gửi.
+  --exclude='.claude/'
+  --exclude='.pytest_cache/'
+  --exclude='*.egg-info/'
+  # Mọi thứ git bỏ qua cũng không thuộc về prod: cây "sạch" ở bước 1 là theo
+  # `git status`, mà `git status` không nhìn tệp ignore — thiếu dòng này thì rác
+  # ignore trên máy dev đi thẳng lên mini (đo 23/09: 25 tệp). Đo cùng ngày:
+  # `git ls-files -ci --exclude-standard` = 0 (không tệp tracked nào khớp mẫu
+  # ignore) và tập nguồn mới thiếu 0 tệp so với `git ls-files`.
+  --exclude-from='.gitignore'
 )
 
 THAT=0
