@@ -458,6 +458,15 @@ KHONG_CAN_KIEM_CHU = {
     "GET /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
     "PUT /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
     "POST /videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",
+    "GET /cum": "trả danh sách, tự lọc `chu` bên trong `models_cum.liet_ke_cum`",
+    "POST /cum": "tạo cho chính người đang gọi",
+    "PATCH /cum/{cum_id}": "`models_cum.doi_kieu` ràng `chu` NGAY trong câu SELECT/UPDATE; "
+                           "404 cho cụm người khác (tests/test_web_cum.py)",
+    "DELETE /cum/{cum_id}": "`models_cum.xoa_cum` ràng `chu` NGAY trong câu DELETE; 404",
+    "POST /cum/{cum_id}/video": "`models_cum.gan_video/go_video` ràng `chu` cho cụm VÀ "
+                                "lọc quyền sở hữu video trong SQL; 404",
+    "POST /cum/{cum_id}/lo/{thu}/da-mo": "`_cum_hoac_404` + `models_cum.ghi_lo_da_mo` "
+                                         "ràng `chu` trong INSERT … SELECT; 404",
     "DELETE /jobs/{job_id}": "`models.huy_job_dang_cho` ràng `nguoi_tao` NGAY "
                              "trong câu UPDATE, nên không cần cổng ngoài; "
                              "404 cho job người khác, giống GET",
