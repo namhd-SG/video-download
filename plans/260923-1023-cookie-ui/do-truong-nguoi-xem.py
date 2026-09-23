@@ -96,6 +96,11 @@ def main() -> None:
     if co.get("co_khoi") and an.get("co_khoi"):
         chi_co = sorted(set(co["duong_danh_tinh"]) - set(an["duong_danh_tinh"]))
         print("CHI_O_LUOT_CO_COOKIE:", json.dumps(chi_co, ensure_ascii=False))
+        if not chi_co:
+            # Rỗng KHÔNG có nghĩa "trang không nhúng người xem": danh sách tên trường ở
+            # `TEN_DANH_TINH` là do người viết liệt, không phải đo. So `khoa_scope` hai lượt.
+            print("CHUA KET LUAN: rỗng ≠ không có — TikTok có thể dùng tên trường khác danh sách;"
+                  " so khoa_scope của hai lượt ở trên")
     else:
         print("CHUA KET LUAN: một lượt không có khối __UNIVERSAL_DATA_FOR_REHYDRATION__")
 
