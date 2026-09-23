@@ -39,7 +39,8 @@ rồi lượt hai chỉ in boolean + độ dài. Không in giá trị, không co
   dạng băm, không phải id số).
 - **`multi_sids`** (54 ký tự): trên **cả 2 jar** khớp mẫu `<19 chữ số>:<hex>`, phần hex **trùng `sessionid`** (True ×2),
   số 19 chữ số **không** lặp lại ở cookie nào khác, **hai jar ra hai số khác nhau** (`False` cho "cùng id").
-- ⇒ ĐO ĐƯỢC: mỗi jar mang OFFLINE một **số định danh 19 chữ số gắn với phiên**, khác nhau giữa 2 tài khoản.
+- ⇒ ĐO ĐƯỢC: mỗi jar mang OFFLINE một **số định danh 19 chữ số gắn với phiên**, hai jar (của 2 người dán) ra 2 số khác nhau.
+  ⚠ SỬA 10:50: KHÔNG phân định được "2 tài khoản" với "số đổi theo phiên" — cần 1 tài khoản xuất 2 lần.
 - ⇒ SUY LUẬN (chưa đo): số đó là **user id TikTok**. Đổi số → `@username` **cần hỏi TikTok** (không làm, V105).
 
 ## CHƯA ĐO

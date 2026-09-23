@@ -6,8 +6,8 @@ Lane V `0460ddfc` · 23/09 · nền: `baseline/baseline.md` (đo 10:25) · mock:
 
 **USER CHỐT 23/09 10:33 — Q4 = C** (nguyên văn *"C đi"*), qua điều phối `577b340e` (pane điều phối). **Đảo có ý thức**
 quyết định 21/09 11:31 (`plans/260921-1112-videodl-3-van-de/brainstorm.md:221`, "bản OFFLINE, không hiện tên").
-Lý do đổi: (1) đo 23/09 — cookie **có** mang offline một định danh số 19 chữ số (`multi_sids`, khác nhau giữa 2 jar)
-— điều 21/09 không ai biết; (2) C **không** thêm request TikTok nào — đọc kè trang mà job vốn đã mở.
+Lý do đổi: (1) đo 23/09 — cookie **có** mang offline một định danh số 19 chữ số (`multi_sids`) — điều 21/09 không ai biết.
+⚠ 2 jar đo được là của **2 người dán** và ra 2 số khác nhau: CHƯA phân định *"2 tài khoản"* với *"số đổi theo phiên"*; (2) C **không** thêm request TikTok nào — đọc kè trang mà job vốn đã mở.
 
 C = đọc `@username` từ HTML trang TikTok **trong lượt tải có cookie**, 0 request thêm, không trừ trần.
 Hệ quả phải hiện trên UI: **lúc dán chưa biết tên** ⇒ ô tài khoản ghi *"sẽ xác định sau lượt tải đầu"*, không trống, không đoán.
@@ -32,11 +32,15 @@ trộn một chỗ: dán hỏng khi đang có jar tốt thì chỉ hiện dòng 
 
 ## 3. (a) Tài khoản nào — cơ chế C
 
-**Đo 23/09 (chỉ đếm):** trên mini 10 job = search 4 · music 3 · **hashtag 3**. Đường hashtag
-(`queue.py:240` → `enumerate_hashtag`) **không nhận cookie** ⇒ không có trang nào để đọc kè. Chỉ đường
-music/search/profile (`scraper.py:430-436`: `add_cookies` rồi `goto`) đi qua trình duyệt có cookie.
-⇒ Người **chỉ** chạy hashtag sẽ không bao giờ được xác định tên. UI phải nói thẳng: *"sẽ xác định sau lượt tải
-nhạc / tìm kiếm / trang cá nhân đầu tiên — lượt hashtag không dùng cookie"*.
+**Đo 23/09 (chỉ đếm):** trên mini 10 job = search 4 · music 3 · hashtag 3.
+⚠ **SỬA 10:50** — bản trước ghi *"hashtag không dùng cookie"*: **SAI** (điều phối R bắt). Cookie đi vào **cả hai** bước:
+- **Liệt kê:** chỉ music/search/profile mở trình duyệt có cookie (`scraper.py:430-436`). Hashtag liệt kê không cookie (`queue.py:240`).
+- **Tải:** MỌI job, kể cả hashtag: `queue.py:428 download_all(…, cookies_path)` → yt-dlp `cookiefile` (`downloader.py:70-73`)
+  → `extract_info` (`:150-151`). yt-dlp 2026.08.19 tự tải HTML trang video bằng cookie (`yt_dlp/extractor/tiktok.py:280`) và
+  đọc đúng khối `__UNIVERSAL_DATA_FOR_REHYDRATION__` (`:115-119`). Nhưng HTML **ở trong yt-dlp**; code mình chỉ nhận info dict,
+  mà `uploader` trong đó (`:663`) là **tác giả video**, không phải người xem — đúng bẫy *Hỏng 1*.
+⇒ Điểm đọc hôm nay chỉ có ở **bước liệt kê music/search/profile**. Muốn job hashtag cũng có tên thì phải móc vào nội bộ yt-dlp
+(bọc `_download_webpage_handle`), vẫn 0 request thêm nhưng **gãy theo mỗi bản yt-dlp** — đánh đổi độ bền, chưa chọn.
 
 Luồng: `goto` xong (đã có sẵn) ⇒ `page.evaluate` đọc khối JSON nhúng ⇒ lấy **đúng** trường người-đang-xem ⇒ ghi
 vào bảng danh tính, khoá theo jar ⇒ trang Cài đặt đọc bảng đó. Không đọc được ⇒ ghi trạng thái *"không đọc được
@@ -48,8 +52,8 @@ thêm request) — xin user qua điều phối trước khi thi công phần đ�
 tại trên trang video **không** đăng nhập.
 
 **ĐỀ XUẤT (không trong phạm vi user chọn, chờ duyệt):** dùng số 19 chữ số trong `multi_sids` làm **khoá nội bộ**
-(không hiển thị) thay vì vân tay jar. Lý do: xuất lại cookie **cùng tài khoản** đổi vân tay (nội dung khác) nhưng giữ
-số ⇒ tên đã xác định không bị mất mỗi lần dán lại; dán cookie **khác tài khoản** thì số đổi ⇒ tên cũ bị gỡ ngay,
+(không hiển thị) thay vì vân tay jar. Lý do (**GIẢ ĐỊNH, chưa đo** — điều phối R gật có điều kiện: đo 1 tài khoản xuất 2 lần trước khi ghi code): xuất lại cookie
+**cùng tài khoản** đổi vân tay (nội dung khác) nhưng giữ số ⇒ tên đã xác định không bị mất mỗi lần dán lại; dán cookie **khác tài khoản** thì số đổi ⇒ tên cũ bị gỡ ngay,
 không chờ job. Khoá theo vân tay thì cả hai ca đều về *"chưa xác định"*. Đọc offline, 0 request.
 
 ## 4. (b) Mô hình `platform`
@@ -86,7 +90,7 @@ Phản hồi dán: ngay dưới nút Lưu; từ chối ⇒ đỏ + cách chữa 
 người-xem; test bắt buộc có fixture trang profile mà **chủ trang ≠ người xem**, và đột biến đổi trường phải ĐỎ.
 **Hỏng 2 — TÊN CŨ SỐNG SAU KHI ĐỔI COOKIE.** Dán cookie tài khoản khác, ô vẫn ghi tên cũ tới job sau. Chặn: `PUT`
 gỡ danh tính khi khoá jar đổi (xem đề xuất khoá số ở §3). Test: dán jar B sau jar A ⇒ ô về *"sẽ xác định"*.
-**Hỏng 3 — KHÔNG BAO GIỜ ĐIỀN.** Người chỉ chạy hashtag, hoặc HTML không có trường. Chặn: trạng thái riêng, câu chữ
+**Hỏng 3 — KHÔNG BAO GIỜ ĐIỀN.** Người chỉ chạy hashtag (nếu chỉ đọc ở bước liệt kê — §3), hoặc HTML không có trường. Chặn: trạng thái riêng, câu chữ
 nói lý do; không để *"sẽ xác định"* treo mãi mà không giải thích.
 
 **Điểm mù:** (ii) chưa đo · đánh đổi 21/09 vế (2) *"kéo danh tính TikTok vào máy dùng chung"* **vẫn còn** với C
@@ -99,7 +103,8 @@ nói lý do; không để *"sẽ xác định"* treo mãi mà không giải thí
 2. Mô hình `nen_tang` + bảng danh tính (backend, chưa đọc TikTok). Có migration ⇒ sao lưu DB trước.
 3. Đo (ii) trên job thật của user ⇒ rồi mới viết phần đọc kè + test hỏng 1/2/3.
 
-## Câu hỏi mở
-1. Khoá danh tính theo số `multi_sids` (đề xuất §3) hay theo vân tay?
-2. Thẻ nền tảng "chưa hỗ trợ" có lên trang thật không?
-3. User đã thấy vế *"tên TikTok lưu trên máy dùng chung"* khi chọn C chưa?
+## Câu hỏi — điều phối R trả 10:47
+1. Khoá theo `multi_sids`: **GẬT có điều kiện** — đo 1 tài khoản xuất 2 lần giữ số trước khi ghi code; vân tay vẫn hiện.
+2. Thẻ "chưa hỗ trợ": **KHÔNG** lên trang thật ở PR này; giữ trong mock.
+3. Vế *"tên TikTok lưu trên máy dùng chung"*: user **chưa thấy** — R trình cùng vế hashtag.
+4. MỞ: đọc tên ở bước tải (móc yt-dlp, gãy theo phiên bản) hay chỉ ở bước liệt kê.
