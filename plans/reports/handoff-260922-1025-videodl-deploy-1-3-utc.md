@@ -1,5 +1,11 @@
 # Bàn giao — Video Desk, 22/09 10:25
 
+> ⛔ **LẠC HẬU TỪ 23/09 — ĐỌC `handoff-260923-0950-videodl-sau-4-pr.md` THAY FILE NÀY.**
+> Giữ lại vì nó ghi đúng những gì đo được **lúc 22/09 10:25**, và §5 (bốn bẫy tự dẫm) vẫn dùng được.
+> Sai ở: mini nay chạy `71333fa` chứ không phải `74e5af3` · PR #2 đã **MERGED** · nợ
+> *"`deploy-to-mini.sh` đếm label"* **đã trả** (`869e5f7`) · và nó **không biết** về cột `bo_qua`,
+> vá bỏ-chọn-sau-bàn-giao, hay cổng deploy `2b`.
+
 **Từ** `e58361ea` (tk3, pid 4825, ttys003) · **Điều phối hạm** `uds:/tmp/cc-socks/4387.sock`
 **Repo** `/Users/macos/Projects/video-download` · **nhánh** `fix/log-path-and-name-list` · **HEAD `74e5af3`**
 
