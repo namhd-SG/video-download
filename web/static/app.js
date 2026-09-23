@@ -244,6 +244,7 @@
       try { ma = (await res.json()).detail; } catch (e) { ma = null; }
       const err = new Error(`${method} ${path} -> ${res.status}`);
       err.ma = ma;
+      err.status = res.status;
       throw err;
     }
     return res.status === 204 ? null : res.json();
@@ -710,6 +711,21 @@
     boChonTatCa();
   }
 
+  // Bằng `web/app.py::MAX_VIDEO_LOAI`. Test `test_tran_lo_loai_khop_backend`
+  // đối chiếu hai số — đổi một bên mà quên bên kia là 422 quay lại.
+  const LOAI_TOI_DA_MOI_LUOT = 50;
+
+  // Câu cho NGƯỜI DÙNG khi một lô bỏ video trượt. Bản trước in thẳng
+  // "POST /videos/loai -> 422" — đúng với dev, vô nghĩa với người bấm. Mã vẫn đi
+  // kèm trong ngoặc để ai báo lỗi còn chép được.
+  function lyDoLoiLoai(err) {
+    const st = err && err.status;
+    if (st === 422) return `máy chủ từ chối yêu cầu (mã 422) — báo người phát triển`;
+    if (st >= 500) return `máy chủ đang lỗi (mã ${st}) — thử lại sau ít phút`;
+    if (st) return `không bỏ được (mã ${st})`;
+    return `mất kết nối tới máy chủ — kiểm mạng rồi bấm lại`;
+  }
+
   async function loaiDaChon() {
     const ids = [...state.selected];
     if (!ids.length) return;
@@ -722,21 +738,45 @@
       `Người khác không bị ảnh hưởng, và lượt quét sau của bạn sẽ không tải lại chúng.`);
     if (!ok) return;
 
-    try {
-      const res = await apiSend("POST", "/videos/loai", { video_ids: ids });
-      state.selected.clear();
-      await loadVideos();
-      renderSelectionBar();
-      // Báo đủ ba con số, không gộp thành một chữ "xong": Drive trượt mà im
-      // lặng thì người dùng tưởng đã dọn trong khi tệp còn nguyên.
-      const phan = [`đã bỏ ${res.da_loai.length}`];
-      if (res.drive_truot.length) phan.push(`${res.drive_truot.length} chưa bỏ được khỏi Drive — thử lại`);
-      if (res.khong_phai_cua_ban.length) phan.push(`${res.khong_phai_cua_ban.length} không phải của bạn`);
-      showToast(phan.join(" · "));
-    } catch (err) {
-      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-      showToast("Không bỏ được: " + err.message);
+    // Gửi theo LÔ ≤ `LOAI_TOI_DA_MOI_LUOT`, tuần tự. Backend chặn cứng 50 id một
+    // request (`web/app.py::MAX_VIDEO_LOAI` — mỗi id là một lượt gọi Drive đồng
+    // bộ), còn thư viện một người đã có 86 video: gửi nguyên lựa chọn thì >50 là
+    // 422 và KHÔNG video nào được bỏ (đo 23/09 10:45). Tuần tự chứ không song
+    // song: song song là đúng cái request dài mà trần kia sinh ra để chặn.
+    const tong = { da_loai: 0, drive_truot: 0, khong_phai_cua_ban: 0 };
+    let loi = null;
+    let loDaGui = 0;
+    const soLo = Math.ceil(ids.length / LOAI_TOI_DA_MOI_LUOT);
+    for (let i = 0; i < ids.length; i += LOAI_TOI_DA_MOI_LUOT) {
+      const lo = ids.slice(i, i + LOAI_TOI_DA_MOI_LUOT);
+      try {
+        const res = await apiSend("POST", "/videos/loai", { video_ids: lo });
+        tong.da_loai += res.da_loai.length;
+        tong.drive_truot += res.drive_truot.length;
+        tong.khong_phai_cua_ban += res.khong_phai_cua_ban.length;
+        // Gỡ khỏi lựa chọn ĐÚNG lô vừa xong — như bản một-lượt trước đây
+        // `clear()` sau khi API trả về. Lô chưa gửi vẫn nằm đó để bấm lại.
+        lo.forEach((id) => state.selected.delete(id));
+        loDaGui++;
+      } catch (err) {
+        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+        loi = err;
+        break;
+      }
     }
+
+    if (loDaGui > 0) await loadVideos();
+    renderSelectionBar();
+    // Báo đủ ba con số, không gộp thành một chữ "xong": Drive trượt mà im
+    // lặng thì người dùng tưởng đã dọn trong khi tệp còn nguyên.
+    const phan = [`đã bỏ ${tong.da_loai}`];
+    if (tong.drive_truot) phan.push(`${tong.drive_truot} chưa bỏ được khỏi Drive — thử lại`);
+    if (tong.khong_phai_cua_ban) phan.push(`${tong.khong_phai_cua_ban} không phải của bạn`);
+    if (loi) {
+      phan.push(`dừng ở lô ${loDaGui + 1}/${soLo}: ${lyDoLoiLoai(loi)}`,
+                `còn ${state.selected.size} video đang chọn — bấm lại để tiếp`);
+    }
+    showToast(phan.join(" · "));
   }
 
   document.getElementById("library-refresh").addEventListener("click", () => {
