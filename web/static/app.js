@@ -95,6 +95,9 @@
     jobs: [],
     videos: [],
     selected: new Set(),      // video_id đang được chọn trong thư viện
+    trang: 1,                 // trang thư viện đang xem, 1-based
+    soMoiTrang: 40,           // nạp lại từ localStorage lúc khởi động — xem docSoMoiTrang
+    idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
   };
@@ -414,6 +417,117 @@
   // ========================================================================
   // RENDER — lưới thẻ + trạng thái rỗng
   // ========================================================================
+  // ---- Phân trang thư viện (user 23/09: "phân ra theo trang 10/20/40/100").
+  // `loadVideos` đã nạp TRỌN thư viện (lô 500, trần 2000), bộ lọc chạy ở đây ⇒
+  // phân trang cắt trên danh sách ĐÃ LỌC, không cần tham số trang ở API.
+  const SO_MOI_TRANG = Object.freeze([10, 20, 40, 100]);
+  const SO_MOI_TRANG_MAC_DINH = 40;
+
+  // Hàm thuần — test gọi thẳng. `trang` 1-based; kẹp vào [1, soTrang] để một
+  // trang cũ (vd trang 3 khi bộ lọc chỉ còn 5 video) không ra lưới rỗng.
+  function catTrang(danhSach, trang, soMoiTrang) {
+    const soTrang = Math.max(1, Math.ceil(danhSach.length / soMoiTrang));
+    const t = Math.min(Math.max(1, trang), soTrang);
+    const dau = (t - 1) * soMoiTrang;
+    const muc = danhSach.slice(dau, dau + soMoiTrang);
+    return { trang: t, soTrang, dau, muc };
+  }
+
+  const KHOA_SO_MOI_TRANG = "videodl-per-page";
+  function docSoMoiTrang() {
+    try {
+      const n = Number(localStorage.getItem(KHOA_SO_MOI_TRANG));
+      return SO_MOI_TRANG.includes(n) ? n : SO_MOI_TRANG_MAC_DINH;
+    } catch (e) { return SO_MOI_TRANG_MAC_DINH; }  // private mode
+  }
+
+  // Dải nút trang THU GỌN: 1 … t-2..t+2 … cuối. Trần nạp 2000 ở 10/trang là
+  // 200 trang — in đủ 200 nút là thanh điều hướng dài hơn cả lưới.
+  function dayTrang(t, soTrang) {
+    const giu = new Set([1, soTrang]);
+    for (let i = t - 2; i <= t + 2; i++) if (i >= 1 && i <= soTrang) giu.add(i);
+    const ds = [...giu].sort((a, b) => a - b);
+    const ra = [];
+    ds.forEach((n, i) => { if (i && n - ds[i - 1] > 1) ra.push("…"); ra.push(n); });
+    return ra;
+  }
+
+  function veNutChonTrang() {
+    const nut = document.getElementById("chon-trang");
+    if (!nut) return;
+    const ids = state.idTrang;
+    const du = ids.length > 0 && ids.every((id) => state.selected.has(id));
+    nut.textContent = du ? "☑ Bỏ chọn trang này" : `☐ Chọn tất cả trang này (${ids.length})`;
+    nut.classList.toggle("on", du);
+  }
+
+  function vePhanTrang(ct, tongLoc) {
+    const toolbar = document.getElementById("lib-toolbar");
+    const pager = document.getElementById("lib-pager");
+    toolbar.hidden = pager.hidden = tongLoc === 0;
+    if (tongLoc === 0) return;
+    const nav = ct.soTrang === 1 ? "" :
+      `<button type="button" data-trang="${ct.trang - 1}" ${ct.trang === 1 ? "disabled" : ""}>‹ Trước</button>` +
+      dayTrang(ct.trang, ct.soTrang).map((n) => n === "…" ? `<span class="gian">…</span>` :
+        `<button type="button" data-trang="${n}" class="${n === ct.trang ? "on" : ""}"` +
+        `${n === ct.trang ? ' aria-current="page"' : ""}>${n}</button>`).join("") +
+      `<button type="button" data-trang="${ct.trang + 1}" ${ct.trang === ct.soTrang ? "disabled" : ""}>Sau ›</button>`;
+    document.querySelectorAll("[data-pager]").forEach((el) => { el.innerHTML = nav; });
+    document.getElementById("so-moi-trang").innerHTML = SO_MOI_TRANG.map((n) =>
+      `<button type="button" data-so="${n}" class="${n === state.soMoiTrang ? "on" : ""}">${n}</button>`).join("");
+    document.getElementById("lib-pager-dem").textContent =
+      `Hiện ${ct.dau + 1}–${ct.dau + ct.muc.length} / ${tongLoc} video`;
+    veNutChonTrang();
+  }
+
+  // Đổi trang / đổi số mỗi trang ⇒ XOÁ lựa chọn, nói ra bằng một dòng. "Chọn tất
+  // cả" = trang đang xem (user chốt 14:29), nên lựa chọn xuyên trang là nhập
+  // nhằng: người ta không thấy những thẻ đã chọn ở trang kia.
+  function boChonVi(lyDo) {
+    const bo = state.selected.size;
+    if (!bo) return;
+    boChonTatCa();
+    showToast(`Đã bỏ chọn ${bo} video vì ${lyDo} — “Chọn tất cả” chỉ áp cho trang đang xem.`);
+  }
+
+  function doiTrang(n) {
+    if (n === state.trang) return;
+    boChonVi("chuyển trang");
+    state.trang = n;
+    renderLibrary();
+    document.getElementById("library-count").scrollIntoView({ block: "start" });
+  }
+
+  function doiSoMoiTrang(n) {
+    if (n === state.soMoiTrang || !SO_MOI_TRANG.includes(n)) return;
+    boChonVi("đổi số video mỗi trang");
+    state.soMoiTrang = n;
+    state.trang = 1;
+    try { localStorage.setItem(KHOA_SO_MOI_TRANG, String(n)); } catch (e) { /* private mode */ }
+    renderLibrary();
+  }
+
+  function chonTrangNay() {
+    const ids = state.idTrang;
+    const du = ids.length > 0 && ids.every((id) => state.selected.has(id));
+    ids.forEach((id) => (du ? state.selected.delete(id) : state.selected.add(id)));
+    document.querySelectorAll("#card-grid .card").forEach((c) => {
+      const chon = state.selected.has(c.dataset.videoId);
+      c.classList.toggle("selected", chon);
+      c.setAttribute("aria-checked", String(chon));
+    });
+    renderSelectionBar();
+    veNutChonTrang();
+  }
+
+  // Đổi BỘ LỌC ⇒ về trang 1 nhưng GIỮ lựa chọn (điều phối chốt 14:50): bộ lọc vốn
+  // đã giữ lựa chọn trước khi có phân trang, không đổi hành vi đó ở đây.
+  function sauKhiDoiBoLoc() {
+    state.trang = 1;
+    renderFilterBar();
+    renderLibrary();
+  }
+
   function renderLibrary() {
     const grid = document.getElementById("card-grid");
     const emptyState = document.getElementById("empty-state");
@@ -424,6 +538,8 @@
       noMatch.hidden = true;
       grid.hidden = true;
       grid.innerHTML = "";
+      state.idTrang = [];
+      vePhanTrang(null, 0);
       document.getElementById("library-count").textContent = "";
       renderActiveFilters();
       return;
@@ -444,7 +560,11 @@
 
     noMatch.hidden = filtered.length > 0;
     grid.hidden = filtered.length === 0;
-    grid.innerHTML = filtered.map(renderCard).join("");
+    const ct = catTrang(filtered, state.trang, state.soMoiTrang);
+    state.trang = ct.trang;  // kẹp: bỏ video / đổi lọc có thể làm trang cũ vượt quá
+    state.idTrang = ct.muc.map((v) => v.video_id);
+    grid.innerHTML = ct.muc.map(renderCard).join("");
+    vePhanTrang(ct, filtered.length);
     wireThumbFallback();
     renderActiveFilters();
   }
@@ -571,29 +691,25 @@
     } else {
       selected.delete(box.value);
     }
-    renderFilterBar(); // cập nhật badge số lượng trên nút
-    renderLibrary();
+    sauKhiDoiBoLoc(); // cập nhật badge số lượng trên nút + về trang 1
   });
 
   document.getElementById("active-filters").addEventListener("click", (ev) => {
     if (ev.target.id === "clear-all-pill") {
       for (const g of FILTER_GROUPS) state.filters[g.id].clear();
-      renderFilterBar();
-      renderLibrary();
+      sauKhiDoiBoLoc();
       return;
     }
     const btn = ev.target.closest("[data-remove-group]");
     if (btn) {
       state.filters[btn.dataset.removeGroup].delete(btn.dataset.removeKey);
-      renderFilterBar();
-      renderLibrary();
+      sauKhiDoiBoLoc();
     }
   });
 
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
-    renderFilterBar();
-    renderLibrary();
+    sauKhiDoiBoLoc();
   });
 
   document.addEventListener("click", (ev) => {
@@ -616,6 +732,7 @@
       card.setAttribute("aria-checked", String(nowSelected));
     }
     renderSelectionBar();
+    veNutChonTrang();
   }
 
   document.getElementById("card-grid").addEventListener("click", (ev) => {
@@ -652,6 +769,7 @@
       c.setAttribute("aria-checked", "false");
     });
     renderSelectionBar();
+    veNutChonTrang();
   }
 
   // "Tạo bộ tự tìm" — bàn giao sang Creative Desk qua THANH ĐỊA CHỈ, không
@@ -779,6 +897,17 @@
     showToast(phan.join(" · "));
   }
 
+  state.soMoiTrang = docSoMoiTrang();
+  document.getElementById("chon-trang").addEventListener("click", chonTrangNay);
+  document.getElementById("so-moi-trang").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-so]");
+    if (b) doiSoMoiTrang(Number(b.dataset.so));
+  });
+  document.querySelectorAll("[data-pager]").forEach((nav) => nav.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-trang]");
+    if (b && !b.disabled) doiTrang(Number(b.dataset.trang));
+  }));
+
   document.getElementById("library-refresh").addEventListener("click", () => {
     loadVideos().catch((err) => showToast("Không tải lại được thư viện: " + err.message));
   });
@@ -856,6 +985,9 @@
   // dùng, và đó là kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện 2000/5000".
   const LIBRARY_PAGE = 500;
   const LIBRARY_MAX = 2000;
+  // ⚠ Phân trang ở `renderLibrary` KHÔNG kéo dữ liệu: nó cắt trên `state.videos`
+  // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
+  // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
   async function loadVideos() {
     // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định

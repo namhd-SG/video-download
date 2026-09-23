@@ -1903,3 +1903,32 @@ def test_tran_lo_loai_khop_backend():
     m = re.search(r"const LOAI_TOI_DA_MOI_LUOT = (\d+);", src)
     assert m, "không tìm thấy hằng lô trong app.js"
     assert int(m.group(1)) == app_mod.MAX_VIDEO_LOAI
+
+
+def test_cat_trang_va_day_nut_trang():
+    """`catTrang` + `dayTrang` THẬT trích từ app.js (harness `tests/js/cat-trang.js`).
+
+    86 video / 40 ⇒ 40/40/6 (đề bài 23/09) · trang vượt/âm bị KẸP, không ra lưới
+    rỗng · 100/trang ⇒ 1 trang · danh sách rỗng không nổ · dải nút THU GỌN: trần
+    nạp 2000 ở 10/trang = 200 trang, in đủ 200 nút là dài hơn cả lưới.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
+                    "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
+    harness = Path(__file__).parent / "js" / "cat-trang.js"
+    r = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    do = json.loads(r.stdout)
+    assert [do[k]["so"] for k in ("t1", "t2", "t3")] == [40, 40, 6]
+    assert do["t3"]["dauTien"] == "v80"
+    assert do["qua"]["trang"] == 3 and do["am"]["trang"] == 1, "trang ngoài khoảng phải kẹp"
+    assert do["mot"] == {"trang": 1, "soTrang": 1, "dau": 0, "so": 86, "dauTien": "v0"}
+    assert do["rong"]["soTrang"] == 1 and do["rong"]["so"] == 0
+    assert do["day_giua"] == [1, "…", 98, 99, 100, 101, 102, "…", 200]
+    assert do["day_dau"] == [1, 2, 3] and do["day_1"] == [1]

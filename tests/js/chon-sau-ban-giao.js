@@ -29,11 +29,14 @@ function chay({ popupBiChan }) {
   }));
   const showToast = (m) => daGoi.toast.push(m);
   const renderSelectionBar = () => { daGoi.renderSelectionBar++; };
-  const document = { querySelectorAll: () => the };
+  // `getElementById` → null: `veNutChonTrang` (phân trang, 23/09) tự thoát khi
+  // không có nút; harness này không đo nút đó.
+  const document = { querySelectorAll: () => the, getElementById: () => null };
   const window = {
     open: () => { daGoi.open++; return popupBiChan ? null : { focus() {} }; },
   };
-  eval(grab("boChonTatCa") + "\n" + grab("moBoTuTim"));
+  state.idTrang = [];  // `veNutChonTrang` đọc trường này
+  eval(grab("veNutChonTrang") + "\n" + grab("boChonTatCa") + "\n" + grab("moBoTuTim"));
   moBoTuTim();
   return {
     conChon: state.selected.size,
