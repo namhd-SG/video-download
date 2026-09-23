@@ -15,6 +15,8 @@ function phanTu() {
     innerHTML: "", dataset: {},
     classList: { add() {}, remove() {}, toggle() {} },
     setAttribute() {},
+    // `append` gộp chữ của con vào `textContent` — đủ cho phép đo "dòng lỗi nói gì".
+    append(...con) { this.textContent += con.map((c) => c.textContent).join(""); },
     addEventListener(ev, fn) { (nghe[ev] ||= []).push(fn); },
     querySelector: () => phanTu(),
     async bam(ev = "click") { for (const fn of nghe[ev] || []) await fn({ preventDefault() {} }); },
@@ -25,6 +27,8 @@ async function chay({ status, detail }) {
   const els = {};
   const document = {
     getElementById: (id) => (els[id] ||= phanTu()),
+    createElement: () => phanTu(),
+    createTextNode: (t) => ({ textContent: String(t) }),
     querySelector: () => phanTu(),
     documentElement: phanTu(),
   };
