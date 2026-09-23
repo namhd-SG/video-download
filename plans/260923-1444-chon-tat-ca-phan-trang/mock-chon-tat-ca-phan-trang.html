@@ -1,0 +1,1204 @@
+<!DOCTYPE html><html lang="vi"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Video Desk — TikTok Music Downloader</title>
+<!-- Ba khuôn chữ của mock đã duyệt. Google Fonts là host duy nhất được dùng ở
+     đây; mỗi khuôn đều khai fallback thật để trang không đổi dáng khi mạng
+     công ty chặn hoặc font chưa về. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&amp;family=Public+Sans:wght@400;500;600&amp;family=IBM+Plex+Mono:wght@400;500&amp;display=swap">
+<link rel="stylesheet" href="app.css">
+<style>
+.lib-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px;
+  flex-wrap:wrap; margin:10px 0 12px; }
+.lib-toolbar .chon-trang { border:1px solid var(--border-strong); background:var(--surface);
+  color:var(--text); border-radius:8px; padding:.4rem .8rem; font-size:.82rem; cursor:pointer; }
+.lib-toolbar .chon-trang.on { background:var(--accent-soft); border-color:var(--accent); }
+.per-page { display:flex; align-items:center; gap:6px; font-size:.8rem; color:var(--text-muted); }
+.per-page .seg { display:inline-flex; border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+.per-page .seg button { border:0; background:var(--surface); color:var(--text); padding:.35rem .6rem;
+  font:inherit; font-family:var(--mono); cursor:pointer; }
+.per-page .seg button + button { border-left:1px solid var(--border); }
+.per-page .seg button.on { background:var(--accent); color:var(--accent-ink); }
+.pager { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;
+  margin:16px 0 4px; font-size:.82rem; color:var(--text-muted); }
+.pager .trang { display:inline-flex; gap:4px; }
+.pager .trang button { min-width:34px; border:1px solid var(--border); background:var(--surface);
+  color:var(--text); border-radius:7px; padding:.3rem .55rem; font-family:var(--mono); cursor:pointer; }
+.pager .trang button.on { background:var(--accent); border-color:var(--accent); color:var(--accent-ink); }
+.pager .trang button:disabled { opacity:.45; cursor:default; }
+</style></head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk</div>
+    <nav class="topbar-nav">
+      <a href="/settings.html">⚙ Cài đặt</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
+  </header>
+
+  <!-- Phiên Access hết hạn. Hiện ở đầu trang và KHÔNG tự tắt: mọi lời gọi từ
+       lúc này đều trượt, nên một thông báo thoáng qua chỉ làm người dùng tưởng
+       trang vẫn sống. -->
+  <p id="session-expired" class="session-expired" role="alert" hidden="">
+    Phiên đăng nhập đã hết hạn — <a href="">tải lại trang</a> để đăng nhập lại.
+    Số liệu bên dưới là của lần cập nhật cuối, không còn mới.
+  </p>
+
+  <!-- ================= DẢI ĐIỀU KHIỂN (trên) ================= -->
+  <p id="cookie-banner" class="banner-an-danh">Chưa có cookie — lượt tải của bạn chạy <strong>ẩn danh</strong> và chia chung hạn mức với mọi người chưa dán. <a href="/settings.html">Dán cookie của bạn →</a></p>
+
+  <section class="control-strip" aria-label="Điều khiển tải">
+    <div class="panel">
+      <h2>Tạo lượt tải mới</h2>
+      <form id="job-form">
+        <input type="url" id="url" placeholder="URL TikTok (music / hashtag / @profile)" required="" style="">
+        <input type="number" id="so-luong" min="1" max="2000" value="20" required="" style="">
+        <button type="submit">Tạo lượt tải</button>
+      </form>
+      <p id="error" class="error-text" role="alert"></p>
+      <!-- Lịch sử đo, không phải một lời phán:
+             16/09 — 5 lượt `/search` với cookie thật: 0 video, cả 5 lần TikTok
+                     trả HTTP 200 với body RỖNG. Đối chứng cùng lúc, cùng cookie:
+                     music page 10 video, hashtag 3 video.
+             18/09 — 1 lượt `/search`: ra 1 video.
+           Một lần được sau năm lần trượt không đủ để nói "đã khỏi", cũng không
+           còn đủ để nói "chết". Câu chữ dưới đây nói ĐÚNG hai con số đó và để
+           người dùng tự quyết — bản cũ ghi "hiện không lấy được video" và nay
+           đã sai. -->
+      <p class="note-nguon">Nguồn <strong>tìm kiếm</strong> (<code>/search</code>)
+        <strong>chập chờn</strong>: 16/09 chạy 5 lượt ra 0 video, 18/09 chạy 1 lượt
+        ra 1 video. <strong>Hashtag</strong>, <strong>music</strong> và
+        <strong>@profile</strong> thì ổn định. <span class="note-ngay">đo 16 và 18/09</span></p>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Hàng đợi</h2>
+        <span id="queue-count" class="muted"></span>
+      </div>
+      <ul id="queue-list" class="queue-list"></ul>
+      <p id="queue-empty" class="empty-hint">Chưa có lượt tải nào — tạo một lượt ở khung bên trái.</p>
+    </div>
+  </section>
+
+  <!-- ================= THƯ VIỆN CREATIVE (dưới) ================= -->
+  <section aria-label="Thư viện creative">
+    <div class="library-head">
+      <h2>Thư viện creative</h2>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span id="library-count" class="muted">86 video</span>
+        <button id="library-refresh" class="refresh-btn" type="button">↻ Làm mới</button>
+      </div>
+    </div>
+
+    <div class="filter-bar" id="filter-bar">
+      <div class="filter-box" data-group="nguon">
+        <button type="button" class="filter-trigger" data-toggle="nguon" aria-expanded="false">
+          Nguồn
+          
+          <span class="caret">▾</span>
+        </button>
+        <div class="filter-panel" data-panel="nguon" hidden=""></div>
+      </div>
+      <div class="filter-box" data-group="dai">
+        <button type="button" class="filter-trigger" data-toggle="dai" aria-expanded="false">
+          Dài
+          
+          <span class="caret">▾</span>
+        </button>
+        <div class="filter-panel" data-panel="dai" hidden=""></div>
+      </div>
+      <div class="filter-box" data-group="thi_truong">
+        <button type="button" class="filter-trigger" data-toggle="thi_truong" aria-expanded="false">
+          Thị trường
+          
+          <span class="caret">▾</span>
+        </button>
+        <div class="filter-panel" data-panel="thi_truong" hidden=""></div>
+      </div>
+      <div class="filter-box" data-group="ngay_tai">
+        <button type="button" class="filter-trigger" data-toggle="ngay_tai" aria-expanded="false">
+          Ngày tải
+          
+          <span class="caret">▾</span>
+        </button>
+        <div class="filter-panel" data-panel="ngay_tai" hidden=""></div>
+      </div></div>
+    <div class="active-filters" id="active-filters" hidden=""></div>
+
+    <div id="empty-state" class="empty-state" hidden="">
+      <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="10" y="24" width="44" height="28" rx="3"></rect>
+        <path d="M10 32h44M22 24v-7a4 4 0 0 1 4-4h12a4 4 0 0 1 4 4v7"></path>
+      </svg>
+      <h3>Thư viện chưa có video nào</h3>
+      <p>Tạo một lượt tải ở khung bên trên — video tải xong và lên Drive sẽ tự xuất hiện tại đây.</p>
+    </div>
+
+    <div id="no-match-state" class="no-match-state" hidden="">
+      Không có video nào khớp bộ lọc hiện tại.
+      <div><button id="clear-filters-btn" class="refresh-btn" type="button">Xoá hết bộ lọc</button></div>
+    </div>
+
+    <div class="lib-toolbar"><button type="button" class="chon-trang on">☑ Bỏ chọn trang này</button><div class="per-page">Mỗi trang <span class="seg"><button type="button" class="">10</button><button type="button" class="">20</button><button type="button" class="on">40</button><button type="button" class="">100</button></span></div></div><div class="card-grid" id="card-grid">
+      <div class="card selected" data-video-id="7687000000" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:12</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 1 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>3k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000001" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:13</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 2 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>4k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000002" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:14</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 3 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>5k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000003" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:15</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 4 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>6k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000004" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:16</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 5 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>7k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000005" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:17</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 6 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>8k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000006" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:18</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 7 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>9k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000007" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:19</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 8 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>10k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000008" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:20</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 9 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>11k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000009" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:21</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 10 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>12k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000010" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:22</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 11 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>13k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000011" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:23</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 12 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>14k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000012" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:24</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 13 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>15k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000013" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:25</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 14 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>16k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000014" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:26</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 15 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>17k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000015" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:27</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 16 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>18k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000016" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:28</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 17 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>19k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000017" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:29</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 18 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>20k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000018" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:30</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 19 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>21k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000019" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:31</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 20 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>22k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000020" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:32</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 21 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>23k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000021" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:33</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 22 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>24k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000022" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:34</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 23 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>25k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000023" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:35</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 24 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>26k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000024" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:36</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 25 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>27k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000025" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:37</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 26 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>28k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000026" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:38</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 27 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>29k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000027" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:39</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 28 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>30k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000028" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:40</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 29 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>31k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000029" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:41</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 30 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>32k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000030" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:42</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 31 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>33k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000031" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:43</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 32 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>34k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000032" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:44</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 33 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>35k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000033" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:45</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 34 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>36k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000034" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:46</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 35 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>37k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000035" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:47</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 36 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>38k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000036" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:48</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 37 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>39k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000037" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:49</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 38 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>40k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000038" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:50</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 39 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>41k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card selected" data-video-id="7687000039" role="checkbox" aria-checked="true" tabindex="0">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:51</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 40 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>42k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000040" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:12</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 41 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>43k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000041" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:13</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 42 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>44k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000042" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:14</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 43 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>45k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000043" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:15</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 44 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>46k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000044" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:16</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 45 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>47k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000045" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:17</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 46 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>48k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000046" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:18</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 47 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>49k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000047" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:19</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 48 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>50k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000048" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:20</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 49 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>51k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000049" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:21</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 50 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>52k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000050" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:22</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 51 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>53k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000051" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:23</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 52 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>54k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000052" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:24</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 53 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>55k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000053" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:25</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 54 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>56k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000054" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:26</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 55 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>57k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000055" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:27</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 56 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>58k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000056" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:28</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 57 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>59k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000057" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:29</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 58 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>60k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000058" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:30</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 59 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>61k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000059" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:31</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 60 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>62k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000060" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:32</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 61 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>63k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000061" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:33</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 62 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>64k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000062" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:34</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 63 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>65k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000063" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:35</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 64 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>66k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000064" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:36</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 65 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>67k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000065" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:37</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 66 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>68k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000066" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:38</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 67 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>69k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000067" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:39</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 68 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>70k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000068" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:40</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 69 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>71k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000069" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb no-thumb">
+          
+          <span class="card-duration">0:41</span>
+        <span>Chưa cắt được ảnh</span></div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 70 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>72k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000070" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000070" alt="" loading="lazy">
+          <span class="card-duration">0:42</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 71 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>73k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000071" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000071" alt="" loading="lazy">
+          <span class="card-duration">0:43</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 72 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>74k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000072" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000072" alt="" loading="lazy">
+          <span class="card-duration">0:44</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 73 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>75k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000073" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000073" alt="" loading="lazy">
+          <span class="card-duration">0:45</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 74 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>76k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000074" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000074" alt="" loading="lazy">
+          <span class="card-duration">0:46</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 75 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>77k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000075" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000075" alt="" loading="lazy">
+          <span class="card-duration">0:47</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 76 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>78k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000076" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000076" alt="" loading="lazy">
+          <span class="card-duration">0:48</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 77 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>79k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000077" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000077" alt="" loading="lazy">
+          <span class="card-duration">0:49</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 78 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>80k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000078" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000078" alt="" loading="lazy">
+          <span class="card-duration">0:50</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 79 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>81k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000079" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000079" alt="" loading="lazy">
+          <span class="card-duration">0:51</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 80 #dance #trend</div>
+          <div class="card-meta">tac_gia_2 <span class="sep">·</span>VN <span class="sep">·</span>82k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000080" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000080" alt="" loading="lazy">
+          <span class="card-duration">0:12</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 81 #dance #trend</div>
+          <div class="card-meta">tac_gia_3 <span class="sep">·</span>VN <span class="sep">·</span>83k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000081" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000081" alt="" loading="lazy">
+          <span class="card-duration">0:13</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 82 #dance #trend</div>
+          <div class="card-meta">tac_gia_4 <span class="sep">·</span>VN <span class="sep">·</span>84k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000082" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000082" alt="" loading="lazy">
+          <span class="card-duration">0:14</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 83 #dance #trend</div>
+          <div class="card-meta">tac_gia_5 <span class="sep">·</span>VN <span class="sep">·</span>85k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000083" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000083" alt="" loading="lazy">
+          <span class="card-duration">0:15</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 84 #dance #trend</div>
+          <div class="card-meta">tac_gia_6 <span class="sep">·</span>VN <span class="sep">·</span>86k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000084" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000084" alt="" loading="lazy">
+          <span class="card-duration">0:16</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 85 #dance #trend</div>
+          <div class="card-meta">tac_gia_0 <span class="sep">·</span>VN <span class="sep">·</span>87k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div>
+      <div class="card" data-video-id="7687000085" role="checkbox" aria-checked="false" tabindex="0" style="display: none;">
+        <div class="card-thumb">
+          <img src="/thumbs/7687000085" alt="" loading="lazy">
+          <span class="card-duration">0:17</span>
+        </div>
+        <span class="card-check"></span>
+        <div class="card-body">
+          <div class="card-title">Video mẫu số 86 #dance #trend</div>
+          <div class="card-meta">tac_gia_1 <span class="sep">·</span>VN <span class="sep">·</span>88k lượt xem</div>
+          <a class="card-link" href="https://www.tiktok.com/" target="_blank" rel="noopener" data-video-link="">Xem gốc ↗</a>
+        </div>
+      </div></div><div class="pager"><span>Hiện 1–40 / 86 video</span><span class="trang"><button type="button" disabled="">‹ Trước</button><button type="button" class="on">1</button><button type="button" class="">2</button><button type="button" class="">3</button><button type="button">Sau ›</button></span></div>
+  </section>
+
+</div>
+
+<div class="selection-bar" id="selection-bar">
+  <span id="selection-count" class="muted">40 đã chọn</span>
+  <div class="selection-actions">
+    <!-- Chỉ ship nút CÓ đường đi thật. "Phân tích nội dung" vẫn chưa có mặt:
+         một nút bấm vào báo "chưa làm" là một nút hỏng, và người dùng đã
+         phàn nàn đúng chuyện đó.
+         "Tạo bộ tự tìm" mở Creative Desk trong tab mới, nơi người dùng ĐANG
+         đăng nhập, và bộ được tạo bằng phiên của chính họ. Video Desk không
+         giữ token của ai và không gọi API bên đó, nên không có bề mặt mạo
+         danh. -->
+    <button type="button" data-action="self-bundle">Tạo bộ tự tìm</button>
+    <button type="button" class="danger" data-action="loai">Xoá</button>
+    <button type="button" class="ghost" data-action="clear">Bỏ chọn</button>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden=""></div>
+
+<script src="cookie-status-text.js"></script>
+<script src="app.js"></script>
+
+
+</body></html>

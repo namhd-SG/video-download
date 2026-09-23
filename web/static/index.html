@@ -95,7 +95,20 @@
       <div><button id="clear-filters-btn" class="refresh-btn" type="button">Xoá hết bộ lọc</button></div>
     </div>
 
+    <!-- Phân trang (user 23/09). Nút chuyển trang hiện CẢ TRÊN lẫn dưới lưới: 40 thẻ
+         mà chỉ có nút ở đáy thì vẫn "kéo mỏi tay". -->
+    <div class="lib-toolbar" id="lib-toolbar" hidden>
+      <button type="button" class="chon-trang" id="chon-trang"></button>
+      <div class="lib-toolbar-phai">
+        <nav class="trang" data-pager aria-label="Chuyển trang"></nav>
+        <div class="per-page">Mỗi trang <span class="seg" id="so-moi-trang"></span></div>
+      </div>
+    </div>
     <div class="card-grid" id="card-grid"></div>
+    <div class="pager" id="lib-pager" hidden>
+      <span id="lib-pager-dem"></span>
+      <nav class="trang" data-pager aria-label="Chuyển trang"></nav>
+    </div>
   </section>
 
 </div>

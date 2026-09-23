@@ -629,3 +629,27 @@
   .dan { grid-template-columns: 1fr; }
   .dan-nut.cookie-actions { flex-direction: row; flex-wrap: wrap; }
 }
+
+/* ===== Thư viện — chọn cả trang + phân trang (mock plans/260923-1444-chon-tat-ca-phan-trang) ===== */
+.lib-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap; margin: 10px 0 12px; }
+.lib-toolbar[hidden], .pager[hidden] { display: none; }
+.lib-toolbar-phai { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.lib-toolbar .chon-trang { border: 1px solid var(--border-strong); background: var(--surface);
+  color: var(--text); border-radius: 8px; padding: .4rem .8rem; font-size: .82rem; cursor: pointer; }
+.lib-toolbar .chon-trang.on { background: var(--accent-soft); border-color: var(--accent); }
+.per-page { display: flex; align-items: center; gap: 6px; font-size: .8rem; color: var(--text-muted); }
+.per-page .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.per-page .seg button { border: 0; background: var(--surface); color: var(--text); padding: .35rem .6rem;
+  font: inherit; font-family: var(--mono); cursor: pointer; }
+.per-page .seg button + button { border-left: 1px solid var(--border); }
+.per-page .seg button.on { background: var(--accent); color: var(--accent-ink); }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  margin: 16px 0 4px; font-size: .82rem; color: var(--text-muted); }
+.trang { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.trang:empty { display: none; }
+.trang button { min-width: 34px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); border-radius: 7px; padding: .3rem .55rem; font-family: var(--mono); cursor: pointer; }
+.trang button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.trang button:disabled { opacity: .45; cursor: default; }
+.trang .gian { padding: 0 2px; color: var(--text-faint); }
