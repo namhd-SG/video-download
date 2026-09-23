@@ -301,11 +301,20 @@ for f in index.html app.js app.css; do
   fi
 done
 
-cc="$(ssh "$HOST" "curl -s -D - -o /dev/null --max-time 10 http://127.0.0.1:$PORT/app.js | grep -i '^cache-control' || true")"
-echo "   app.js ${cc:-KHÔNG CÓ cache-control — bản cũ còn đang chạy?}"
+# Hai dòng dưới là THÔNG TIN, không phải cổng — nhưng ssh chết ở đây từng làm
+# `set -e` thoát 255 im lặng NGAY SAU kickstart, không in đường lui. Đo hỏng thì
+# nói là đo hỏng, và đi tiếp tới cổng label.
+if cc="$(ssh "$HOST" "curl -s -D - -o /dev/null --max-time 10 http://127.0.0.1:$PORT/app.js | grep -i '^cache-control' || true")"; then
+  echo "   app.js ${cc:-KHÔNG CÓ cache-control — bản cũ còn đang chạy?}"
+else
+  echo "   app.js cache-control: không đọc được (ssh trượt) — CHƯA KẾT LUẬN" >&2
+fi
 
-bind="$(ssh "$HOST" "lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | grep -c '127.0.0.1' || true")"
-echo "   bind 127.0.0.1: $bind (phải ≥1 — không được nghe 0.0.0.0)"
+if bind="$(ssh "$HOST" "lsof -nP -iTCP:$PORT -sTCP:LISTEN 2>/dev/null | grep -c '127.0.0.1' || true")"; then
+  echo "   bind 127.0.0.1: $bind (phải ≥1 — không được nghe 0.0.0.0)"
+else
+  echo "   bind 127.0.0.1: không đọc được (ssh trượt) — CHƯA KẾT LUẬN" >&2
+fi
 
 sau="$(ten_label)" || {
   echo "DỪNG: không đọc được launchctl sau deploy — PHÉP ĐO HỎNG, không phải 'không đổi'." >&2
