@@ -1818,3 +1818,35 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     bi_chan = do["popup_bi_chan"]
     assert bi_chan["conChon"] == 3, \
         "popup bị chặn thì chưa bàn giao được — không được xoá lựa chọn"
+
+
+def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():
+    """Dán cookie hỏng ⇒ ô dán phải trống sau khi bấm Lưu, như nhánh thành công.
+
+    Bản trước chỉ xoá ô khi lưu ĐƯỢC. Cookie bị từ chối vẫn nằm nguyên trên
+    màn hình — với một bản xuất thật là nguyên giá trị phiên đăng nhập.
+    Chạy NGUYÊN `settings.js` qua node (harness `tests/js/o-dan-cookie-sau-khi-luu.js`).
+
+    Đối chứng: trên bản chưa vá harness ra `oDanConLai="[COOKIE-GIA]"` ở cả hai
+    nhánh lỗi, và `loi` khác rỗng chứng minh nhánh lỗi đã thật sự chạy.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy settings.js thật — không có thì test này "
+                    "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
+
+    harness = Path(__file__).parent / "js" / "o-dan-cookie-sau-khi-luu.js"
+    ket_qua = subprocess.run([node, str(harness), str(STATIC / "settings.js")],
+                             capture_output=True, text=True, timeout=30)
+    assert ket_qua.returncode == 0, ket_qua.stderr
+    do = json.loads(ket_qua.stdout)
+
+    for nhanh in ("bi_tu_choi", "loi_mang"):
+        assert do[nhanh]["loi"], f"{nhanh}: nhánh lỗi không chạy — phép đo rỗng"
+        assert do[nhanh]["oDanConLai"] == "", f"{nhanh}: cookie còn nằm trong ô dán"
+    assert do["bi_tu_choi"]["loi"] == "hết hạn", "mã từ chối phải hiện câu của nó"
+    assert do["thanh_cong"]["oDanConLai"] == "" and do["thanh_cong"]["loi"] == ""
