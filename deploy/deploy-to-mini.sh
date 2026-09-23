@@ -82,7 +82,13 @@ say() { printf '\n== %s\n' "$*"; }
 # Đây là cổng quan trọng nhất trong script. Không có nó, một alias trỏ sai là
 # đủ để rsync đè lên máy dev.
 say "0. Kiểm máy đích"
-remote_host="$(ssh -o ConnectTimeout=10 -o BatchMode=yes "$HOST" 'hostname' 2>&1 | tail -1)"
+# `|| …`: ssh chết (255) dưới `set -euo pipefail` sẽ thoát NGAY bằng 255, im
+# lặng — stderr đã bị `2>&1` nuốt vào biến. Không đọc được tên máy là PHÉP ĐO
+# HỎNG, không phải "sai máy".
+remote_host="$(ssh -o ConnectTimeout=10 -o BatchMode=yes "$HOST" 'hostname' 2>&1 | tail -1)" || {
+  echo "DỪNG: không ssh được tới $HOST để hỏi tên máy — PHÉP ĐO HỎNG (nhận: '$remote_host')." >&2
+  exit "$RC_DO_HONG"
+}
 norm="$(printf '%s' "$remote_host" | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')"
 echo "   hostname bên kia: $remote_host  (chuẩn hoá: $norm)"
 if [ "$norm" != "$EXPECT_HOST" ]; then
@@ -151,7 +157,10 @@ echo "$truoc" | sed 's/^/   /'
 # ⚠ `sqlite3 -readonly <db> 'SELECT 1'` thì LẠI CHẠY — `SELECT 1` không chạm
 # bảng nên không cần WAL. Dùng nó làm đối chứng là tự cấp chứng nhận.
 say "2b. Kiểm có job đang chạy không"
-dang_tai="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai NOT IN ('done','failed','interrupted')\"")"
+# `|| dang_tai=""`: lệnh xa trượt (ssh 255, sqlite 1) dưới `set -e` sẽ thoát
+# ngay bằng mã của NÓ — mã 1 trùng "sai máy" — và không bao giờ tới `case` dưới.
+# Ép về chuỗi rỗng để `case` nói đúng: phép đo hỏng.
+dang_tai="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai NOT IN ('done','failed','interrupted')\"")" || dang_tai=""
 
 # Truy vấn trượt trả chuỗi RỖNG, và `[ "" != "0" ]` cũng đúng ⇒ cổng vẫn chặn.
 # Chặn là hướng an toàn, nhưng thông điệp khi đó nói "N job đang chạy" trong khi
@@ -175,29 +184,53 @@ if [ "$THAT" -eq 0 ]; then
   say "THỬ KHÔ — dừng ở đây. Chạy lại với --yes để làm thật."
   echo "   sẽ rsync vào : $HOST:~/$REMOTE_REPO/"
   echo "   bản lui giữ ở: $HOST:~/Projects/${BACKUP_DIR#../}/"
-  rsync -a --dry-run --itemize-changes --delete "${EXCLUDES[@]}" \
-        ./ "$HOST:~/$REMOTE_REPO/"
+  # CÙNG cờ với lần thật ở bước 3, kể cả `--backup --backup-dir`: openrsync
+  # (máy dev lẫn mini, protocol 29) BỎ QUA `--delete` khi có `--backup-dir` —
+  # đo 23/09 trên mini. Thử khô thiếu hai cờ đó từng in `*deleting` cho đúng
+  # những tệp mà lần thật để nguyên, tức là diễn tập một đường không có thật.
+  rsync -a --dry-run --itemize-changes --delete --backup --backup-dir="$BACKUP_DIR" \
+        "${EXCLUDES[@]}" ./ "$HOST:~/$REMOTE_REPO/"
+  echo "   ⚠ rsync kèm --backup-dir KHÔNG xoá tệp ở đích: tệp đã xoá khỏi git vẫn nằm trên mini."
   exit 0
 fi
 
 # --- 3. Đẩy mã, giữ bản cũ để lui -------------------------------------------
 # --backup-dir giữ ĐÚNG những file bị thay/xoá, không phải cả cây: đĩa bên đó
 # chỉ còn ~11GB và 194GB là của account khác.
-# --delete để cây bên kia đúng bằng cây ở đây; không có nó thì file cũ nằm lại
-# và "đang chạy gì" thành câu không ai trả lời được.
+# ⚠ `--delete` KHÔNG có tác dụng ở đây: openrsync (protocol 29, cả máy dev lẫn
+# mini) bỏ qua nó khi có `--backup-dir` — đo 23/09: rsync thật lên thư mục scratch
+# trên mini, tệp thừa CÒN, rc=0, itemize không có `*deleting`. Bỏ `--backup-dir`
+# thì xoá được, nhưng `rollback-on-mini.sh` sống bằng chính thư mục đó. Hệ quả
+# đã đo cùng ngày: không tệp code nào mồ côi trên mini (mọi tệp lệch là tệp
+# git-ignore), nhưng tệp nào xoá khỏi git từ nay sẽ NẰM LẠI. Dọn xoá = việc riêng.
 # assets/ffmpeg-static loại ra: file lớn, mini-setup.sh cấp riêng bằng scp.
 say "3. rsync (giữ bản lui ở ~/Projects/${BACKUP_DIR#../})"
 # `--itemize-changes` vào TỆP, không qua pipe: pipe trả mã của lệnh cuối, và
 # `set -e` sẽ không thấy rsync trượt. Danh sách này là thứ bước 5 nghiệm thu.
 RSYNC_LOG="$(mktemp -t videodl-rsync)"
 trap 'rm -f "$RSYNC_LOG"' EXIT
+rsync_rc=0
 rsync -a --delete --backup --backup-dir="$BACKUP_DIR" --itemize-changes "${EXCLUDES[@]}" \
-      ./ "$HOST:~/$REMOTE_REPO/" > "$RSYNC_LOG"
+      ./ "$HOST:~/$REMOTE_REPO/" > "$RSYNC_LOG" || rsync_rc=$?
+if [ "$rsync_rc" -ne 0 ]; then
+  # Trượt GIỮA CHỪNG: cây trên mini nửa mới nửa cũ trong lúc tiến trình cũ còn
+  # phục vụ, và KeepAlive sẽ nạp bản lẫn lộn đó ở lần crash kế tiếp. Đây là lúc
+  # DUY NHẤT cần biết tệp nào đã lên ⇒ giữ log, không để trap xoá.
+  trap - EXIT
+  echo "DỪNG: rsync trượt (rc=$rsync_rc) — cây trên mini có thể nửa mới nửa cũ." >&2
+  echo "      Tệp đã gửi: $RSYNC_LOG" >&2
+  echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+  exit "$RC_NGHIEM_THU"
+fi
 echo "   xong"
 
 # --- 4. Khởi động lại ĐÚNG label của mình ------------------------------------
 say "4. kickstart -k $LABEL"
-ssh "$HOST" "launchctl kickstart -k gui/\$(id -u)/$LABEL"
+ssh "$HOST" "launchctl kickstart -k gui/\$(id -u)/$LABEL" || {
+  echo "DỪNG: kickstart trượt — mã mới đã nằm trên đĩa, tiến trình có thể vẫn là bản cũ." >&2
+  echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+  exit "$RC_NGHIEM_THU"
+}
 
 # --- 5. Nghiệm thu ----------------------------------------------------------
 # Không hỏi "lệnh có chạy không" mà hỏi "thứ vừa đẩy có nằm trên đĩa và đang
@@ -205,11 +238,18 @@ ssh "$HOST" "launchctl kickstart -k gui/\$(id -u)/$LABEL"
 say "5. Nghiệm thu"
 sleep 4
 for i in 1 2 3 4 5 6 7 8 9 10; do
-  code="$(ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$PORT/healthz || true")"
+  # `|| true` ở PHÍA XA chỉ đỡ curl; ssh chết (255) vẫn làm `set -e` thoát bằng
+  # 255, không in đường lui. Ép về rỗng để vòng thử lại và thông báo dưới chạy.
+  code="$(ssh "$HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$PORT/healthz || true")" || code=""
   [ "$code" = "200" ] && break
   sleep 2
 done
-echo "   healthz: HTTP $code"
+echo "   healthz: HTTP ${code:-(không đọc được)}"
+if [ -z "$code" ]; then
+  echo "DỪNG: 10 lượt không ssh được để hỏi healthz — PHÉP ĐO HỎNG, không phải 'không lên'." >&2
+  echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+  exit "$RC_DO_HONG"
+fi
 [ "$code" = "200" ] || { echo "DỪNG: healthz không lên. Lui bằng deploy/rollback-on-mini.sh $BACKUP_DIR" >&2; exit "$RC_NGHIEM_THU"; }
 
 # MỌI tệp rsync vừa gửi, không phải một danh sách tên cứng: deploy 23/09 chỉ
@@ -226,7 +266,11 @@ fi
 
 for f in index.html app.js app.css; do
   local_sha="$(shasum -a 256 "web/static/$f" | cut -d' ' -f1)"
-  remote_sha="$(ssh "$HOST" "curl -s --max-time 10 http://127.0.0.1:$PORT/$f | shasum -a 256 | cut -d' ' -f1")"
+  remote_sha="$(ssh "$HOST" "curl -s --max-time 10 http://127.0.0.1:$PORT/$f | shasum -a 256 | cut -d' ' -f1")" || {
+    echo "DỪNG: không đọc được $f đang phục vụ — PHÉP ĐO HỎNG." >&2
+    echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+    exit "$RC_DO_HONG"
+  }
   if [ "$local_sha" = "$remote_sha" ]; then
     echo "   $f: khớp"
   else

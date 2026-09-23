@@ -45,6 +45,12 @@ kiem_tep_da_dong_bo() {
       echo "DỪNG: không đọc được sha trên máy đích — PHÉP ĐO HỎNG, không phải lệch." >&2
       return 5
     }
+    # Rỗng hẳn: `<<< ""` vẫn sinh MỘT dòng, nên với đúng 1 tệp thì phép đếm dòng
+    # bên dưới khớp và ca này thành "LỆCH" (4) thay vì "đo hỏng" (5).
+    if [ -z "$tu_xa" ]; then
+      echo "DỪNG: đích không trả dòng nào cho ${#gui[@]} tệp — PHÉP ĐO HỎNG." >&2
+      return 5
+    fi
     local i=0 sha_xa sha_dev
     while IFS= read -r sha_xa; do
       f="${gui[$i]}"
@@ -68,13 +74,19 @@ kiem_tep_da_dong_bo() {
   # `${xoa[@]+…}`: bash 3.2 của macOS coi mảng RỖNG là "unbound" dưới `set -u`,
   # mà script deploy chạy `set -euo pipefail` — không có dòng này thì MỌI chuyến
   # không xoá tệp nào chết ngay sau rsync (đo 23/09: rc=1, "xoa[@]: unbound").
+  local r
   for f in ${xoa[@]+"${xoa[@]}"}; do
-    if ssh "$host" "test -e ~/$repo/$(printf '%q' "$f")"; then
-      echo "   CÒN   $f (rsync báo đã xoá)" >&2
-      lech=1
-    else
-      echo "   vắng  $f"
-    fi
+    # Ba kết cục, không phải hai: `test -e` trả 0 (còn) hoặc 1 (vắng), còn ssh
+    # chết trả 255. Gộp 255 vào "vắng" là xanh giả đúng lúc mạng rớt — bản đầu
+    # làm đúng thế, reviewer bắt 23/09.
+    r=0
+    ssh "$host" "test -e ~/$repo/$(printf '%q' "$f")" || r=$?
+    case "$r" in
+      0) echo "   CÒN   $f (rsync báo đã xoá)" >&2; lech=1 ;;
+      1) echo "   vắng  $f" ;;
+      *) echo "DỪNG: hỏi \"$f còn không\" mà ssh trả $r — PHÉP ĐO HỎNG." >&2
+         return 5 ;;
+    esac
   done
 
   [ "$lech" -eq 0 ] || return 4

@@ -59,11 +59,18 @@ def san(tmp_path: Path):
     _ghi(xa / REMOTE_REPO, TEP)  # đích khớp dev — ca lành
     bin_.mkdir()
     ssh = bin_ / "ssh"
-    # SSH_GIA_HONG=1 ⇒ ssh chết như mất mạng; SSH_GIA_CUT=1 ⇒ trả thiếu dòng.
+    # SSH_GIA_HONG=1 ⇒ ssh chết như mất mạng; SSH_GIA_CHET_TU=N ⇒ lượt 1..N-1
+    # chạy, từ lượt N chết; SSH_GIA_CUT=1 ⇒ trả thiếu dòng; SSH_GIA_RONG=1 ⇒ rc 0
+    # mà không in gì.
+    dem = tmp_path / "so-luot-ssh"
     ssh.write_text(
         '#!/usr/bin/env bash\n'
         'shift\n'
+        f'n=$(( $(cat "{dem}" 2>/dev/null || echo 0) + 1 )); echo "$n" > "{dem}"\n'
         '[ "${SSH_GIA_HONG:-}" = 1 ] && { echo "ssh: connect timed out" >&2; exit 255; }\n'
+        '[ -n "${SSH_GIA_CHET_TU:-}" ] && [ "$n" -ge "$SSH_GIA_CHET_TU" ] && '
+        '{ echo "ssh: connect timed out" >&2; exit 255; }\n'
+        '[ "${SSH_GIA_RONG:-}" = 1 ] && exit 0\n'
         f'cd "{xa}" || exit 255\n'
         f'if [ "${{SSH_GIA_CUT:-}}" = 1 ]; then HOME="{xa}" bash -c "$*" | head -1; '
         f'else HOME="{xa}" exec bash -c "$*"; fi\n',
@@ -131,6 +138,25 @@ def test_dich_tra_thieu_dong_la_phep_do_hong(san):
     assert "đích trả 1 dòng" in r.stderr
 
 
+def test_ssh_chet_o_vong_kiem_xoa_la_phep_do_hong(san):
+    """Lượt 1 (sha các tệp gửi) chạy; lượt 2 (tệp xoá còn không) ssh chết. Bản đầu
+    đọc 255 thành "vắng" ⇒ rc 0 xanh giả trong khi tệp vẫn nằm trên đích."""
+    (san["xa"] / "web/static/cu-bi-xoa.js").write_text("vẫn còn\n", encoding="utf-8")
+    r = _chay(san, SSH_GIA_CHET_TU="2")
+    assert r.returncode == 5, (r.stdout, r.stderr)
+    assert "PHÉP ĐO HỎNG" in r.stderr
+    assert "vắng  web/static/cu-bi-xoa.js" not in r.stdout
+
+
+def test_dich_tra_rong_cho_mot_tep_la_phep_do_hong(san):
+    """`<<< ""` sinh một dòng rỗng ⇒ với đúng 1 tệp, đếm dòng khớp và ca này
+    thành "LỆCH" (4). Đích không trả gì là phép đo hỏng (5)."""
+    san["log"].write_text("<f.st.... web/static/settings.js\n", encoding="utf-8")
+    r = _chay(san, SSH_GIA_RONG="1")
+    assert r.returncode == 5, (r.stdout, r.stderr)
+    assert "không trả dòng nào" in r.stderr
+
+
 def test_rsync_khong_gui_gi_thi_noi_ra_so_khong(san):
     san["log"].write_text(".d..t.... web/static/\n", encoding="utf-8")
     r = _chay(san)
@@ -138,11 +164,11 @@ def test_rsync_khong_gui_gi_thi_noi_ra_so_khong(san):
     assert "rsync đã gửi 0 tệp, xoá 0 tệp" in r.stdout
 
 
-def test_script_deploy_khong_con_exit_1_tran():
-    """Mỗi kết cục một mã. `exit 1` trần làm "cây bẩn" trùng mã với "sai máy"."""
+def test_script_deploy_goi_ham_nghiem_thu():
+    """Cấu trúc: bước 5 gọi hàm, và rsync thật ghi itemize cho hàm đọc. Mã thoát
+    thì đo bằng CHẠY script (`test_deploy_script_exit_codes.py`), không grep chữ —
+    grep `exit 1` không thấy được lối thoát ngầm của `set -e`."""
     nguon = (REPO / "deploy" / "deploy-to-mini.sh").read_text(encoding="utf-8")
-    dong = [d.strip() for d in nguon.splitlines() if not d.lstrip().startswith("#")]
-    assert not [d for d in dong if d.endswith("exit 1") or "exit 1;" in d]
     assert "kiem_tep_da_dong_bo" in nguon, "bước 5 phải gọi hàm nghiệm thu mọi tệp"
     assert "--itemize-changes" in nguon.split("# --- 3.")[1].split("# --- 4.")[0], \
         "rsync THẬT (bước 3) phải ghi itemize — không thì hàm nghiệm thu không có gì để đọc"
