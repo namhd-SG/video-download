@@ -51,37 +51,100 @@
   }
 
   // ---------------------------------------------------------------- cookie
-  function veCookie(tt) {
-    const chip = document.getElementById("cookie-chip");
-    const set = (id, text) => { document.getElementById(id).textContent = text; };
+  // Trạng thái đang vẽ — phản hồi dán cần biết "đang có cookie tốt không" để nói
+  // "cookie cũ vẫn đang dùng" thay vì để người dùng tưởng vừa mất nó.
+  let ttHienTai = null;
 
+  const ngay = (iso) => new Date(iso).toLocaleDateString("vi-VN");
+  const gio = (iso) => new Date(iso).toLocaleString("vi-VN");
+
+  // Một trạng thái = một khối màu + tiêu đề + một câu. Bốn mã hỏng từng dùng
+  // chung một chip "Cần dán lại"; giờ mỗi cái có tiêu đề riêng.
+  // Câu "hết hạn" nói việc THẬT xảy ra: `web/queue.py` DỪNG job khi jar hỏng
+  // (không chạy ẩn danh) — đo 23/09, mock ban đầu viết sai chỗ này.
+  function khoiTrangThai(tt) {
     if (!tt.co_jar) {
-      chip.textContent = "Chưa có";
-      chip.className = "chip chip-warn";
-      set("ck-trang-thai", "Chưa dán cookie — lượt tải chạy ẩn danh");
-      set("ck-han", "—");
-      set("ck-luc", "—");
-      set("ck-van-tay", "—");
-      return;
+      return ["tt-trong", "–", "Chưa có cookie",
+              "Lượt tải đang chạy ẩn danh và chia chung hạn mức với mọi người chưa dán."];
     }
-    const tot = tt.trang_thai === "dung_duoc";
-    chip.textContent = tot ? "Đang dùng được" : "Cần dán lại";
-    chip.className = "chip " + (tot ? "chip-ok" : "chip-warn");
-    set("ck-trang-thai", tot ? "Dùng được" : (MA_COOKIE[tt.trang_thai] || tt.trang_thai));
-    set("ck-han", tt.het_han ? new Date(tt.het_han).toLocaleDateString("vi-VN") : "Không có hạn");
-    set("ck-luc", tt.cap_nhat_luc ? new Date(tt.cap_nhat_luc).toLocaleString("vi-VN") : "—");
-    // `null` = không đọc được tệp. Hiện "—" chứ đừng hiện chuỗi rỗng: một ô
-    // trống trông như trang chưa nạp xong.
+    if (tt.trang_thai === "dung_duoc") {
+      const ten = tt.tai_khoan && tt.tai_khoan.ten;
+      return ["tt-ok", "✓", ten ? `Đang dùng được — @${ten}` : "Đang dùng được",
+              "Lượt tải của bạn chạy bằng cookie này, hạn mức tính riêng cho tài khoản của nó."];
+    }
+    if (tt.trang_thai === "cookie_het_han") {
+      return ["tt-loi", "!",
+              tt.het_han ? `Cookie đã hết hạn ngày ${ngay(tt.het_han)}` : "Cookie đã hết hạn",
+              "Lượt tải mới sẽ dừng ngay cho tới khi bạn dán cookie mới — đăng nhập lại TikTok rồi xuất lại."];
+    }
+    return ["tt-loi", "!", "Cookie đang lưu không dùng được",
+            MA_COOKIE[tt.trang_thai] || tt.trang_thai];
+  }
+
+  // "Hạn đến" từng hiện "Không có hạn" cho jar HỎNG — đọc như tốt mãi, thật ra
+  // là không đọc được hạn. `het_han` null có hai nghĩa; mã trạng thái phân định.
+  function oHan(tt) {
+    if (!tt.co_jar) return ["", "—"];
+    if (tt.het_han) {
+      return tt.trang_thai === "cookie_het_han"
+        ? ["o-do", `${ngay(tt.het_han)} — đã qua`] : ["", ngay(tt.het_han)];
+    }
+    if (tt.trang_thai === "dung_duoc") return ["", "Phiên không ghi hạn"];
+    if (tt.trang_thai === "cookie_khong_doc_duoc") return ["o-mo", "Không đọc được hạn"];
+    return ["o-mo", "—"];  // rỗng / chưa đăng nhập: không có cookie đăng nhập nào để có hạn
+  }
+
+  function veCookie(tt) {
+    ttHienTai = tt;
+    const set = (id, text) => { document.getElementById(id).textContent = text; };
+    const [lop, icon, tieuDe, cau] = khoiTrangThai(tt);
+    document.getElementById("ck-tt").className = "tt " + lop;
+    set("ck-tt-icon", icon);
+    set("ck-tt-tieu-de", tieuDe);
+    set("ck-tt-cau", cau);
+
+    const [lopHan, han] = oHan(tt);
+    document.getElementById("ck-o-han").className = "o" + (lopHan ? " " + lopHan : "");
+    set("ck-han", han);
+    set("ck-luc", tt.cap_nhat_luc ? gio(tt.cap_nhat_luc) : "—");
+    // `null` = không đọc được tệp. "—" chứ không rỗng: ô trống trông như chưa nạp.
     set("ck-van-tay", tt.van_tay || "—");
+    // Không có gì để xoá thì không bày nút xoá.
+    document.getElementById("cookie-xoa").hidden = !tt.co_jar;
+
+    // Ô Tài khoản chỉ hiện khi backend CÓ trả khoá `tai_khoan` — tức là khi có cơ
+    // chế đọc tên. Chưa có thì không hứa "sẽ xác định".
+    const oTk = document.getElementById("ck-o-tai-khoan");
+    oTk.hidden = !("tai_khoan" in tt);
+    if (!oTk.hidden) {
+      set("ck-tai-khoan", tt.tai_khoan && tt.tai_khoan.ten ? "@" + tt.tai_khoan.ten
+        : "Sẽ xác định — sau lượt tải nhạc, tìm kiếm hoặc trang cá nhân đầu tiên; lượt hashtag không đọc được tên");
+    }
+  }
+
+  function baoPhanHoi(tieuDe, chiTiet, phu) {
+    const el = document.getElementById("cookie-error");
+    el.textContent = "";
+    if (!tieuDe) { el.hidden = true; return; }
+    const b = document.createElement("b");
+    b.textContent = tieuDe;
+    el.append(b, document.createTextNode(chiTiet || ""));
+    if (phu) {
+      const sp = document.createElement("span");
+      sp.textContent = phu;
+      el.append(sp);
+    }
+    el.hidden = false;
   }
 
   async function loadCookie() {
     try {
       veCookie(await apiGet("/me/cookie"));
     } catch (err) {
-      const chip = document.getElementById("cookie-chip");
-      chip.textContent = "Không đọc được";
-      chip.className = "chip chip-warn";
+      document.getElementById("ck-tt").className = "tt tt-loi";
+      document.getElementById("ck-tt-icon").textContent = "!";
+      document.getElementById("ck-tt-tieu-de").textContent = "Không đọc được trạng thái cookie";
+      document.getElementById("ck-tt-cau").textContent = "Tải lại trang; vẫn lỗi thì báo người phát triển.";
       throw err;
     }
   }
@@ -115,7 +178,6 @@
   // --------------------------------------------------------------- sự kiện
   function noiCookie() {
     const o = document.getElementById("cookie-json");
-    const loi = document.getElementById("cookie-error");
     const luu = document.getElementById("cookie-luu");
     const file = document.getElementById("cookie-file");
     const tenTep = document.getElementById("cookie-ten-tep");
@@ -128,10 +190,10 @@
       const reader = new FileReader();
       reader.onload = () => {
         o.value = String(reader.result || "");
-        tenTep.textContent = f.name;
-        loi.textContent = "";
+        tenTep.textContent = "Tệp: " + f.name;
+        baoPhanHoi(null);
       };
-      reader.onerror = () => { loi.textContent = "Không đọc được tệp."; };
+      reader.onerror = () => { baoPhanHoi("Không đọc được tệp.", "", ""); };
       reader.readAsText(f);
     }
 
@@ -143,35 +205,48 @@
       drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("dang-keo"); }));
     drop.addEventListener("drop", (e) => nhanTep(e.dataTransfer?.files?.[0]));
 
+    // Cookie đang lưu sau một lần dán bị từ chối — `put_my_cookie` kiểm TRƯỚC khi
+    // ghi, nên jar cũ còn nguyên. Nói ra, vì chip "Chưa có"/khối đỏ ngay sau một
+    // lần bấm Lưu dễ đọc thành "vừa mất cookie".
+    function cauJarCu() {
+      if (!ttHienTai || !ttHienTai.co_jar) return "Chưa có cookie nào được lưu.";
+      if (ttHienTai.trang_thai === "dung_duoc") {
+        const ten = ttHienTai.tai_khoan && ttHienTai.tai_khoan.ten;
+        return `Cookie cũ${ten ? ` (@${ten})` : ""} vẫn đang dùng — không có gì bị ghi đè.`;
+      }
+      return "Cookie đang lưu giữ nguyên (nó cũng đang không dùng được).";
+    }
+
     luu.addEventListener("click", async () => {
-      loi.textContent = "";
+      baoPhanHoi(null);
       luu.disabled = true;
       try {
         veCookie(await apiSend("PUT", "/me/cookie", { json: o.value }));
         await loadQuota();      // dán xong thì hết ẩn danh — số phải đổi theo
       } catch (err) {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-        loi.textContent = MA_COOKIE[err.ma] || ("Không lưu được cookie: " + err.message);
+        if (MA_COOKIE[err.ma]) baoPhanHoi("Cookie vừa dán bị từ chối.", " " + MA_COOKIE[err.ma], cauJarCu());
+        else baoPhanHoi("Không lưu được cookie.", " " + err.message, cauJarCu());
       } finally {
         // Xoá ô ở MỌI nhánh, không chỉ nhánh thành công: bản trước chỉ xoá khi
         // lưu được, nên cookie bị TỪ CHỐI — đúng lúc nó là cookie thật đầy đủ
         // phiên đăng nhập — nằm nguyên trên màn hình. Cả bốn mã từ chối đều bảo
         // người dùng xuất lại, nên giữ bản dán hỏng không giúp gì cho họ.
         o.value = "";
-        tenTep.textContent = "tệp xuất từ Cookie-Editor";
+        tenTep.textContent = "";
         luu.disabled = false;
       }
     });
 
     document.getElementById("cookie-xoa").addEventListener("click", async () => {
       if (!window.confirm("Xoá cookie của bạn? Lượt tải sau sẽ chạy ẩn danh.")) return;
-      loi.textContent = "";
+      baoPhanHoi(null);
       try {
         await apiSend("DELETE", "/me/cookie");
         await Promise.all([loadCookie(), loadQuota()]);
       } catch (err) {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-        loi.textContent = "Không xoá được: " + err.message;
+        baoPhanHoi("Không xoá được.", " " + err.message, "");
       }
     });
   }
@@ -291,7 +366,6 @@
     .catch(() => { /* không biết mình là ai thì cứ coi như người thường */ });
   Promise.all([loadCookie(), loadQuota()]).catch((err) => {
     if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-    document.getElementById("cookie-error").textContent =
-      "Không tải được dữ liệu: " + err.message;
+    baoPhanHoi("Không tải được dữ liệu.", " " + err.message, "");
   });
 })();

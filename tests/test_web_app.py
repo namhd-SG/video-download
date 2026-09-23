@@ -1848,7 +1848,8 @@ def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():
     for nhanh in ("bi_tu_choi", "loi_mang"):
         assert do[nhanh]["loi"], f"{nhanh}: nhánh lỗi không chạy — phép đo rỗng"
         assert do[nhanh]["oDanConLai"] == "", f"{nhanh}: cookie còn nằm trong ô dán"
-    assert do["bi_tu_choi"]["loi"] == "hết hạn", "mã từ chối phải hiện câu của nó"
+    assert "hết hạn" in do["bi_tu_choi"]["loi"], "mã từ chối phải hiện câu của nó"
+    assert "bị từ chối" in do["bi_tu_choi"]["loi"]
     assert do["thanh_cong"]["oDanConLai"] == "" and do["thanh_cong"]["loi"] == ""
 
 

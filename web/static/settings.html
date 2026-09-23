@@ -30,56 +30,45 @@
 
   <section class="cai-dat" id="vung-cua-toi" aria-label="Cài đặt của tôi">
 
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Cookie TikTok của tôi</h2>
-        <span id="cookie-chip" class="chip">Đang kiểm…</span>
-      </div>
-      <p class="muted">Cookie quyết định lượt tải của bạn chạy dưới tài khoản TikTok nào.
-        Không dán thì vẫn tải được hashtag, nhưng chạy ẩn danh và
-        <strong>chia chung hạn mức</strong> với mọi người chưa dán.</p>
+    <!-- Một THẺ mỗi nền tảng. Hôm nay chỉ TikTok; Instagram/Facebook sau này dùng
+         đúng khuôn này (plans/260923-1023-cookie-ui/brainstorm.md §4). -->
+    <div class="panel nt-the" data-nen-tang="tiktok">
+      <div class="nt-dau"><span class="nt-logo" aria-hidden="true">T</span><h2>TikTok</h2></div>
 
-      <dl class="kv">
-        <dt>Trạng thái</dt><dd id="ck-trang-thai">—</dd>
-        <dt>Hạn đến</dt><dd id="ck-han">—</dd>
-        <dt>Cập nhật lần cuối</dt><dd id="ck-luc">—</dd>
-        <!-- Vân tay: tên tài khoản TikTok KHÔNG nằm trong cookie, nên trang này
-             không nói được "của ai". Cái nó nói được là "jar nào" — dán cookie
-             mới thì 8 ký tự này đổi, đó là cách kiểm bản thay đã ăn. -->
-        <dt>Vân tay jar</dt><dd id="ck-van-tay">—</dd>
+      <!-- Khối trạng thái: màu + tiêu đề + một câu. Đây là thứ người ta đọc TRƯỚC. -->
+      <div id="ck-tt" class="tt tt-trong" role="status">
+        <span id="ck-tt-icon" class="tt-icon" aria-hidden="true">…</span>
+        <div><h3 id="ck-tt-tieu-de">Đang kiểm…</h3><p id="ck-tt-cau"></p></div>
+      </div>
+
+      <dl class="o4">
+        <!-- Ô Tài khoản chỉ hiện khi backend trả `tai_khoan`: chưa có cơ chế đọc tên
+             thì không hứa "sẽ xác định". -->
+        <div class="o" id="ck-o-tai-khoan" hidden><dt>Tài khoản</dt><dd id="ck-tai-khoan"></dd></div>
+        <div class="o" id="ck-o-han"><dt>Hạn đến</dt><dd id="ck-han">—</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd id="ck-luc">—</dd></div>
+        <!-- Vân tay: dán cookie mới thì 8 ký tự này đổi — cách kiểm bản thay đã ăn. -->
+        <div class="o"><dt>Vân tay</dt><dd id="ck-van-tay" class="mono">—</dd></div>
       </dl>
 
-      <div class="cookie-grid">
-        <div>
-          <p class="lbl">Cách 1 — dán</p>
-          <textarea id="cookie-json" rows="7"
-                    placeholder="Dán chuỗi JSON xuất từ Cookie-Editor…"></textarea>
-        </div>
-        <div>
-          <p class="lbl">Cách 2 — chọn tệp</p>
-          <!-- Cùng một đường `PUT /me/cookie`: tệp được đọc Ở TRÌNH DUYỆT rồi
-               gửi như chuỗi. Không thêm endpoint upload, nên không có đường thứ
-               hai để quên kiểm tra. -->
-          <div class="drop" id="cookie-drop">
-            <strong>Kéo tệp .json vào đây</strong>
-            <span>hoặc</span>
-            <button type="button" id="cookie-chon-tep" class="ghost">Chọn tệp…</button>
-            <input type="file" id="cookie-file" accept=".json,application/json" hidden />
-            <span class="muted" id="cookie-ten-tep">tệp xuất từ Cookie-Editor</span>
-          </div>
+      <!-- Cùng một đường `PUT /me/cookie` cho dán, chọn tệp và kéo tệp: tệp được đọc
+           Ở TRÌNH DUYỆT rồi đổ vào ô dán. Không thêm endpoint, không có đường thứ hai
+           để quên kiểm tra. -->
+      <div class="dan" id="cookie-drop">
+        <textarea id="cookie-json" rows="4"
+                  placeholder="Dán chuỗi JSON xuất từ Cookie-Editor… hoặc kéo tệp .json vào đây"></textarea>
+        <div class="dan-nut cookie-actions">
+          <button type="button" id="cookie-luu">Lưu cookie</button>
+          <button type="button" id="cookie-chon-tep" class="ghost">Chọn tệp…</button>
+          <button type="button" id="cookie-xoa" class="ghost danger">Xoá</button>
         </div>
       </div>
-
-      <div class="cookie-actions">
-        <button type="button" id="cookie-luu">Lưu cookie</button>
-        <button type="button" id="cookie-xoa" class="ghost danger">Xoá cookie của tôi</button>
-      </div>
-      <p class="muted">Cài tiện ích <strong>Cookie-Editor</strong> → mở tiktok.com →
-        <em>Export → Export as JSON</em> → dán hoặc lưu tệp rồi chọn ở đây.</p>
-      <p id="cookie-error" class="error-text" role="alert"></p>
-
-      <p class="note-nguon">Cookie hỏng <strong>không ghi đè</strong> cookie đang chạy được —
-        hệ thống kiểm trước, hỏng thì báo lý do và giữ nguyên cái cũ.</p>
+      <input type="file" id="cookie-file" accept=".json,application/json" hidden />
+      <p class="muted nho" id="cookie-ten-tep"></p>
+      <!-- Phản hồi dán ngay dưới nút vừa bấm, không ở cuối thẻ. -->
+      <div id="cookie-error" class="ph" role="alert" hidden></div>
+      <p class="huong-dan">Cookie-Editor → mở tiktok.com khi <strong>đã đăng nhập</strong> →
+        Export → Export as JSON → dán hoặc chọn tệp.</p>
     </div>
 
     <div class="panel">
