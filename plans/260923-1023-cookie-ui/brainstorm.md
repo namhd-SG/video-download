@@ -83,7 +83,7 @@ Một khối **trạng thái lớn** (màu + tiêu đề + một câu), bên dư
 | chưa có | *Chưa có cookie — lượt tải đang chạy ẩn danh, chung hạn mức* | trung tính |
 | dùng được, chưa biết tên | *Đang dùng được* · Tài khoản: *sẽ xác định sau lượt tải đầu* | xanh |
 | dùng được, đã biết tên | *Đang dùng được* · Tài khoản: **@xxx** (xác định lúc …) | xanh |
-| hết hạn | *Cookie đã hết hạn ngày …* — đăng nhập lại rồi xuất lại | đỏ |
+| hết hạn | *Cookie đã hết hạn ngày …* — *lượt tải mới sẽ dừng ngay* (`queue.py:408-418` DỪNG job, KHÔNG chạy ẩn danh — sửa 23/09) | đỏ |
 | không đọc được tên | *Đang dùng được* · Tài khoản: *không đọc được tên từ TikTok* | xanh, ô tài khoản vàng |
 
 Phản hồi dán: ngay dưới nút Lưu; từ chối ⇒ đỏ + cách chữa + *"cookie cũ (@xxx) vẫn đang dùng"* nếu có jar.
