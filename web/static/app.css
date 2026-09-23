@@ -653,3 +653,85 @@
 .trang button.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .trang button:disabled { opacity: .45; cursor: default; }
 .trang .gian { padding: 0 2px; color: var(--text-faint); }
+
+/* ===== Cụm của tôi — thanh bên, đầu cụm, chip, "Đưa vào cụm" (mock plans/260923-1103-tai-theo-cum-sub-insight/mock-tai-theo-cum-v2.html) ===== */
+.lib-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 18px; align-items: start; }
+.cum-rail { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+  position: sticky; top: 14px; }
+.cum-rail h3 { margin: 2px 4px 8px; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--text-muted); font-family: var(--body); font-weight: 600; }
+.cum-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--text); font: inherit; font-size: .83rem; text-align: left; cursor: pointer; }
+.cum-row:hover { background: var(--surface-alt); }
+.cum-row.on { background: var(--accent-soft); font-weight: 600; }
+.cum-row .n { margin-left: auto; font-family: var(--mono); font-size: .74rem; color: var(--text-muted); }
+.cum-row.chua, .cum-row.chua .n { color: var(--warn); }
+.cum-ten { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cum-dot { width: 9px; height: 9px; border-radius: 3px; flex: none; display: inline-block; }
+.ins-head { margin: 10px 4px 2px; font-size: .74rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+.ins-head b { color: var(--text); font-weight: 600; }
+.ins-head .n { margin-left: auto; font-family: var(--mono); }
+.cum-sub { padding-left: 18px; }
+.rail-sep { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+.rail-add { width: 100%; margin-top: 6px; border: 1px dashed var(--border-strong); background: transparent;
+  color: var(--text-muted); border-radius: 7px; padding: .45rem; font-size: .8rem; cursor: pointer; }
+.rail-empty { font-size: .8rem; color: var(--text-muted); padding: 8px 6px; line-height: 1.45; }
+#cum-moi-form[hidden] { display: none; }
+#cum-moi-form .cum-form { margin-top: 8px; }
+
+.cum-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.cum-head[hidden] { display: none; }
+.cum-head .crumb { font-size: .8rem; color: var(--text-muted); }
+.cum-head h3 { margin: 0; font-size: 1rem; font-family: var(--display); }
+.cum-head .grow, .bo-row .grow { flex: 1; }
+.btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); border-radius: 8px;
+  padding: .5rem .9rem; font: inherit; font-size: .82rem; cursor: pointer; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: .5; cursor: default; }
+.tax-line { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; font-size: 12.5px; }
+.tax { border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; background: var(--surface-alt); }
+.tax b { font-weight: 600; }
+.tax.lock { border-style: dashed; }
+.handoff-note { flex-basis: 100%; font-size: .76rem; color: var(--text-muted); line-height: 1.45; }
+.sent-line { flex-basis: 100%; font-size: .76rem; color: var(--text-muted); background: var(--surface-alt);
+  border-radius: 6px; padding: 5px 8px; }
+.bo-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; width: 100%; }
+.bo-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 13px; }
+.bo-row .btn { white-space: nowrap; }
+.bo-row .muted { font-size: 12px; }
+
+.cum-chip { display: inline-flex; align-items: center; gap: 4px; font-size: .66rem; padding: .05rem .4rem;
+  border-radius: 999px; background: var(--surface-alt); border: 1px solid var(--border); color: var(--text-muted);
+  margin-top: 5px; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.cum-chip.none { border-style: dashed; color: var(--warn); }
+
+.pop-wrap { position: relative; display: inline-flex; }
+.popover { position: absolute; bottom: calc(100% + 8px); right: 0; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); width: 290px;
+  max-height: 70vh; overflow-y: auto; padding: 8px; z-index: 40; }
+.popover[hidden] { display: none; }
+.popover h4, .cum-form h4 { margin: 2px 4px 6px; font-size: .74rem; color: var(--text-muted); font-weight: 600; }
+/* Nút trong popover KHÔNG ăn kiểu `.selection-actions button` (nút to có viền). */
+.selection-actions .popover .cum-row { border: 0; background: transparent; padding: 6px 8px; font-size: .8rem; }
+.selection-actions .popover .cum-row:hover { background: var(--surface-alt); }
+.cum-form input { width: 100%; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); border-radius: 7px; padding: .4rem .5rem; font: inherit; font-size: .8rem; margin-top: 4px; }
+.cum-form label.lb { font-size: .68rem; color: var(--text-muted); display: block; margin-top: 6px; }
+.cum-form .ok { margin-top: 8px; width: 100%; }
+.preview-name { font-size: 12.5px; margin: 8px 0 2px; }
+.preview-name b { font-family: var(--mono); }
+.lock-field { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-muted); margin: 4px 0 4px; }
+
+@media (max-width: 760px) {
+  .lib-layout { grid-template-columns: minmax(0, 1fr); }
+  .cum-rail { position: static; display: flex; gap: 6px; overflow-x: auto; padding: 8px; }
+  .cum-rail h3, .rail-sep, .ins-head, .rail-add, .rail-empty, #cum-moi-form { display: none; }
+  .cum-row { flex: none; width: auto; border: 1px solid var(--border); white-space: nowrap; }
+  .cum-sub { padding-left: 8px; }
+  .cum-head .btn.primary { width: 100%; }
+  .pop-wrap { display: flex; flex-direction: column; width: 100%; }
+  .popover { position: static; width: auto; margin-bottom: 8px; max-height: 55vh; }
+}

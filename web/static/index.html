@@ -78,6 +78,12 @@
       </div>
     </div>
 
+    <!-- "Cụm của tôi" (23/09): thanh bên là một BỘ LỌC nữa của lưới, không phải
+         trang riêng — nên nó sống chung với phân trang và bốn hộp lọc. -->
+    <div class="lib-layout">
+    <aside class="cum-rail" id="cum-rail" aria-label="Cụm của tôi"></aside>
+    <div class="lib-main">
+    <div class="cum-head" id="cum-head" hidden></div>
     <div class="filter-bar" id="filter-bar"></div>
     <div class="active-filters" id="active-filters" hidden></div>
 
@@ -109,6 +115,8 @@
       <span id="lib-pager-dem"></span>
       <nav class="trang" data-pager aria-label="Chuyển trang"></nav>
     </div>
+    </div>
+    </div>
   </section>
 
 </div>
@@ -123,6 +131,10 @@
          đăng nhập, và bộ được tạo bằng phiên của chính họ. Video Desk không
          giữ token của ai và không gọi API bên đó, nên không có bề mặt mạo
          danh. -->
+    <span class="pop-wrap">
+      <div class="popover" id="cum-popover" hidden></div>
+      <button type="button" class="primary" data-action="cum">Đưa vào cụm ▾</button>
+    </span>
     <button type="button" data-action="self-bundle">Tạo bộ tự tìm</button>
     <button type="button" class="danger" data-action="loai">Xoá</button>
     <button type="button" class="ghost" data-action="clear">Bỏ chọn</button>
