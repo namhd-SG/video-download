@@ -125,22 +125,67 @@ def lay_cum(db_path: Path, cum_id: int, chu: str, chi_cua: str | None) -> dict |
     return None
 
 
-def tao_cum(db_path: Path, chu: str, usecase: str, insight_goc: str, kieu: str) -> int:
+class CumTrung(ValueError):
+    """Tên (usecase, insight con) đã thuộc một cụm khác của cùng người."""
+
+    def __init__(self, cum_id: int):
+        super().__init__(f"trùng tên với cụm có sẵn (id {cum_id})")
+        self.cum_id = cum_id
+
+
+def _khoa_ten(usecase: str, insight_con: str) -> tuple[str, str]:
+    """Khoá chống trùng: chuẩn hoá khoảng trắng + casefold. "Couple" và
+    "couple" là MỘT insight con — bên nhận so khớp term không phân biệt hoa
+    thường, nên hai cụm như vậy sẽ đổ vào cùng một insight bên kia."""
+    return chuan_hoa_chu(usecase).casefold(), chuan_hoa_chu(insight_con).casefold()
+
+
+def _cum_trung(conn, chu: str, usecase: str, insight_con: str,
+               tru_id: int | None = None) -> int | None:
+    khoa = _khoa_ten(usecase, insight_con)
+    for r in conn.execute("SELECT id, usecase, insight_goc, kieu FROM cum WHERE chu = ?",
+                          (chu,)).fetchall():
+        if r["id"] != tru_id and _khoa_ten(
+                r["usecase"], ten_insight_con(r["insight_goc"], r["kieu"])) == khoa:
+            return int(r["id"])
+    return None
+
+
+# Chống trùng bằng kiểm-trong-transaction, KHÔNG bằng UNIQUE index: khoá là
+# `casefold()` của tên GHÉP (insight gốc + kiểu), thứ SQLite `lower()` không làm
+# đúng với chữ ngoài ASCII (tiếng Việt), và một cột khoá phái sinh là một bản
+# sao của sự thật phải giữ đồng bộ mỗi lần đổi kiểu. `BEGIN IMMEDIATE` giữ khoá
+# ghi TRƯỚC câu SELECT, nên hai lượt tạo chồng nhau (bấm đôi) chạy nối tiếp và
+# lượt sau thấy cụm lượt trước vừa ghi. Không đụng dữ liệu có sẵn ⇒ `init_db`
+# không cần gì thêm.
+def tao_cum(db_path: Path, chu: str, usecase: str, insight_goc: str,
+            kieu: str) -> tuple[int, bool]:
+    """Tạo cụm, hoặc TRẢ LẠI cụm có sẵn trùng tên. Trả `(id, da_co)`."""
     u, g, k = kiem_nhan(usecase, insight_goc, kieu)
     with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        co_san = _cum_trung(conn, chu, u, ten_insight_con(g, k))
+        if co_san is not None:
+            return co_san, True
         cur = conn.execute(
             "INSERT INTO cum (chu, usecase, insight_goc, kieu, tao_luc) VALUES (?, ?, ?, ?, ?)",
             (chu, u, g, k, _now()))
-        return int(cur.lastrowid)
+        return int(cur.lastrowid), False
 
 
 def doi_kieu(db_path: Path, cum_id: int, chu: str, kieu: str) -> bool:
-    """Đổi kiểu của cụm `chu`. False ⇒ không phải cụm của người này."""
+    """Đổi kiểu của cụm `chu`. False ⇒ không phải cụm của người này.
+    Tên mới trùng một cụm KHÁC của người này ⇒ `CumTrung`."""
     with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
         row = _cum_cua_toi(conn, cum_id, chu)
         if row is None:
             return False
         _, _, k = kiem_nhan(row["usecase"], row["insight_goc"], kieu)
+        trung = _cum_trung(conn, chu, row["usecase"], ten_insight_con(row["insight_goc"], k),
+                           tru_id=cum_id)
+        if trung is not None:
+            raise CumTrung(trung)
         cur = conn.execute("UPDATE cum SET kieu = ? WHERE id = ? AND chu = ?",
                            (k, cum_id, chu))
         return cur.rowcount == 1

@@ -702,11 +702,14 @@ def liet_ke_cum(nguoi_tao: str = Depends(require_user)) -> dict:
 @app.post("/cum")
 def tao_cum(body: TaoCumRequest, nguoi_tao: str = Depends(require_user)) -> dict:
     try:
-        cum_id = models_cum.tao_cum(DB_PATH, nguoi_tao, body.usecase,
-                                    body.insight_goc, body.kieu)
+        cum_id, da_co = models_cum.tao_cum(DB_PATH, nguoi_tao, body.usecase,
+                                           body.insight_goc, body.kieu)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _cum_hoac_404(cum_id, nguoi_tao)
+    # Trùng (usecase, insight con) với cụm có sẵn ⇒ TRẢ LẠI cụm đó (200,
+    # `da_co: true`), không tạo cụm thứ hai: bấm đôi hay gõ lại cùng tên đều
+    # rơi về đúng một cụm, và người gọi vẫn nhận được id để gán video tiếp.
+    return {**_cum_hoac_404(cum_id, nguoi_tao), "da_co": da_co}
 
 
 @app.patch("/cum/{cum_id}")
@@ -714,6 +717,10 @@ def doi_kieu_cum(cum_id: int, body: DoiKieuRequest,
                  nguoi_tao: str = Depends(require_user)) -> dict:
     try:
         da_doi = models_cum.doi_kieu(DB_PATH, cum_id, nguoi_tao, body.kieu)
+    except models_cum.CumTrung as exc:
+        # Đổi kiểu thì KHÔNG gộp ngầm hai cụm — video của cả hai đang ở đâu là
+        # quyết định của người dùng. 409 kèm id cụm đang giữ tên đó.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not da_doi:

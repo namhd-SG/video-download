@@ -108,6 +108,18 @@ def test_dua_vao_cum_trung_ten_thi_dung_lai_cum_co_san():
     assert d["dua_moi"]["goi"] == ["POST /cum", "POST /cum/99/video"]   # control: khác kiểu ⇒ tạo
 
 
+def test_gan_vao_cum_co_san_theo_id_dong_duoc_bam_khong_tra_theo_ten():
+    d = _node("cum-ban-giao.js")
+    assert d["gan_co_san_13"] == {"goi": ["POST /cum/13/video"], "cum_id_video": 13}, \
+        "hai cụm cùng tên: bấm cụm 13 thì video phải vào 13, không phải cụm trùng đầu tiên"
+
+
+def test_khong_cat_duoc_opener_thi_van_tra_tab_va_canh_bao():
+    d = _node("cum-ban-giao.js")["opener_nem"]
+    assert d["traTab"] is True, "tab đã mở — không được đổi giá trị trả về"
+    assert len(d["canhBao"]) == 1 and "opener CÒN nguyên" in d["canhBao"][0]
+
+
 # --- trình duyệt thật -------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -295,3 +307,41 @@ def test_xoa_cum_dua_video_ve_chua_vao_cum(page):
     page.wait_for_function("document.getElementById('cum-head').hidden")
     assert _cum_api(page) == []
     assert page.locator("#cum-rail [data-cum-loc='chua'] .n").inner_text() == str(TONG)
+
+
+def test_bam_doi_nut_tao_cum_chi_ra_mot_cum(page):
+    """Hai cú bấm liền nhau trong cùng một nhịp — ca review PR #13. Đếm cả số
+    POST /cum: server cũng chống trùng, nên chỉ đếm cụm thì không phân định
+    được lớp khoá nút phía trang."""
+    tao = []
+    page.on("request", lambda r: tao.append(r.url) if r.method == "POST"
+            and r.url.endswith("/cum") else None)
+    _chon(page, 2)
+    page.click('[data-action="cum"]')
+    f = page.locator("#cum-popover .cum-form")
+    f.locator('[data-cum-o="goc"]').fill("Badaboum")
+    f.locator('[data-cum-o="usecase"]').fill("Dance")
+    f.locator('[data-cum-o="kieu"]').fill("couple")
+    with page.expect_response(lambda r: "/video" in r.url and r.request.method == "POST"):
+        page.evaluate("""() => { const b = document.querySelector('#cum-popover button[type=submit]');
+                                  b.click(); b.click(); }""")
+    page.wait_for_function("document.getElementById('cum-head') && !document.getElementById('cum-head').hidden")
+    page.wait_for_timeout(300)
+    assert len(tao) == 1, f"bấm đôi phải ra đúng MỘT POST /cum, thấy {len(tao)}"
+    assert len(_cum_api(page)) == 1
+
+
+def test_chon_tay_tao_bo_tu_tim_mo_tab_that_khong_nhan_va_bo_chon(page):
+    """Đường đã để lọt hồi quy của PR #4: stub `window.open` bỏ qua đối số
+    `features` nên xanh giả với cờ "noopener" (trình duyệt thật trả null). Ở đây
+    `window.open` là THẬT; chỉ Creative Desk bị chặn ở tầng mạng."""
+    _chon(page, 2)
+    with page.context.expect_page() as tab_moi:
+        page.click('[data-action="self-bundle"]')
+    p = _giai_ma(tab_moi.value.url)
+    assert p["v"] == 1 and len(p["items"]) == 2
+    assert "nhan" not in p, "bàn giao chọn tay KHÔNG mang nhan (hợp đồng, quy tắc 2)"
+    page.wait_for_function("document.getElementById('selection-bar').hidden")
+    assert page.locator("#card-grid .card.selected").count() == 0
+    toast = page.locator("#toast")
+    assert toast.is_hidden() or "chặn" not in toast.inner_text(), toast.inner_text()

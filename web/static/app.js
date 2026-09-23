@@ -934,7 +934,16 @@
   // không" phía sau sẽ đọc thành "bị chặn". Cắt `opener` bằng tay thay cho cờ.
   function moTabCreativeDesk(url) {
     const tab = window.open(url, "_blank");
-    if (tab) { try { tab.opener = null; } catch (e) { /* tab khác origin */ } }
+    if (tab) {
+      try {
+        tab.opener = null;
+      } catch (e) {
+        // Nhánh này chạy ⇒ opener KHÔNG bị cắt: tab Creative Desk vẫn với tới
+        // được trang này qua `window.opener`. Tab đã mở và bàn giao vẫn đi,
+        // nên vẫn trả `tab` — nhưng nói ra, đừng nuốt im.
+        console.warn("Không cắt được window.opener của tab Creative Desk — tab vẫn mở, opener CÒN nguyên:", e);
+      }
+    }
     return tab;
   }
 
@@ -955,10 +964,13 @@
 
   // Cụm có sẵn trùng (usecase, insight gốc, kiểu) theo `khoaNhan`, hoặc null.
   // "Couple" và "couple" là MỘT cụm — tạo hai là tạo hai insight trùng bên kia.
+  // Cùng khoá với server (`models_cum._khoa_ten`): usecase + insight CON — thứ
+  // Creative Desk nhìn thấy. Đây chỉ là gợi ý sớm cho ô xem trước; server mới
+  // là bên quyết (POST /cum trả lại cụm có sẵn khi trùng).
   function timCumTrung(dsCum, usecase, goc, kieu) {
-    const k = [khoaNhan(usecase), khoaNhan(goc), khoaNhan(kieu)].join("\u0000");
+    const k = [khoaNhan(usecase), khoaNhan(xemTruocTen(goc, kieu))].join("\u0000");
     return dsCum.find((c) =>
-      [khoaNhan(c.usecase), khoaNhan(c.insight_goc), khoaNhan(c.kieu)].join("\u0000") === k) || null;
+      [khoaNhan(c.usecase), khoaNhan(c.insight)].join("\u0000") === k) || null;
   }
 
   // CHỈ để xem trước tên trong ô "cụm mới" — cụm chưa tồn tại nên chưa có
@@ -1141,18 +1153,20 @@
     }
   }
 
-  // Tạo (hoặc DÙNG LẠI cụm trùng tên) rồi đưa `ids` vào. Trả id cụm, hoặc null.
-  async function duaVaoCum(nhap, ids) {
+  // Id cụm mang tên `nhap`: cụm có sẵn trùng tên, hoặc cụm vừa tạo. Server tự
+  // trả lại cụm có sẵn khi trùng (`da_co`), nên kể cả khi `state.cums` cũ hơn
+  // server (tab khác vừa tạo) cũng không sinh cụm thứ hai.
+  async function layHoacTaoCum(nhap) {
     const trung = timCumTrung(state.cums, nhap.usecase, nhap.goc, nhap.kieu);
-    let cumId;
-    if (trung) {
-      cumId = trung.id;
-    } else {
-      const moi = await apiSend("POST", "/cum",
-        { usecase: nhap.usecase, insight_goc: nhap.goc, kieu: nhap.kieu });
-      cumId = moi.id;
-      state.cums.push(moi);
-    }
+    if (trung) return { cumId: trung.id, daCo: true };
+    const moi = await apiSend("POST", "/cum",
+      { usecase: nhap.usecase, insight_goc: nhap.goc, kieu: nhap.kieu });
+    if (!state.cums.some((c) => c.id === moi.id)) state.cums.push(moi);
+    return { cumId: moi.id, daCo: Boolean(moi.da_co) };
+  }
+
+  // Gán `ids` vào ĐÚNG cụm `cumId` — không tra lại theo tên. Trả `{da, boQua}`.
+  async function ganIdsVaoCum(cumId, ids) {
     let da = 0, boQua = 0;
     for (let i = 0; i < ids.length; i += GAN_CUM_TOI_DA) {
       const lo = ids.slice(i, i + GAN_CUM_TOI_DA);
@@ -1162,13 +1176,29 @@
       da += res.so_video;
       boQua += res.bo_qua.length;
     }
+    return { da, boQua };
+  }
+
+  function baoDaGan(cumId, daCo, soId, kq) {
     const ten = (state.cums.find((c) => c.id === cumId) || {}).insight || "";
-    const phan = [trung ? `Dùng lại cụm có sẵn “${ten}”` : `Đã tạo cụm “${ten}”`];
-    if (ids.length) phan.push(`đưa ${da} video vào`);
-    if (boQua) phan.push(`${boQua} video không đưa được (không thuộc thư viện của bạn)`);
+    const phan = [daCo ? `Dùng lại cụm có sẵn “${ten}”` : `Đã tạo cụm “${ten}”`];
+    if (soId) phan.push(`đưa ${kq.da} video vào`);
+    if (kq.boQua) phan.push(`${kq.boQua} video không đưa được (không thuộc thư viện của bạn)`);
     showToast(phan.join(" · "));
+  }
+
+  // Tạo (hoặc DÙNG LẠI cụm trùng tên) rồi đưa `ids` vào. Trả id cụm.
+  async function duaVaoCum(nhap, ids) {
+    const { cumId, daCo } = await layHoacTaoCum(nhap);
+    const kq = await ganIdsVaoCum(cumId, ids);
+    baoDaGan(cumId, daCo, ids.length, kq);
     return cumId;
   }
+
+  // Một lượt gửi cụm tại một thời điểm, cho CẢ form lẫn các dòng "cụm có sẵn".
+  // Bấm đôi mà không có cờ này thì hai lượt cùng đọc `state.cums` cũ và cùng
+  // POST — đúng ca để lại hai cụm trùng tên (review PR #13).
+  let dangGuiCum = false;
 
   // Bằng `web/app.py::MAX_VIDEO_CUM`.
   const GAN_CUM_TOI_DA = 1000;
@@ -1209,6 +1239,10 @@
       return;
     }
     const ids = form.dataset.noi === "thanh" ? [...state.selected] : [];
+    if (dangGuiCum) return;
+    dangGuiCum = true;
+    const nut = form.querySelector("button[type=submit]");
+    nut.disabled = true;
     try {
       const cumId = await duaVaoCum(nhap, ids);
       if (ids.length) boChonTatCa();
@@ -1221,14 +1255,20 @@
       showToast(`Không đưa được vào cụm: ${typeof err.ma === "string" ? err.ma : lyDoLoiLoai(err)}`);
       await loadCums().catch(() => {});
       renderLibrary();
+    } finally {
+      dangGuiCum = false;
+      nut.disabled = false;
     }
   }
 
+  // Dòng "cụm có sẵn" mang id ⇒ gán THẲNG vào id đó. Tra lại theo tên (bản
+  // trước) thì khi có hai cụm cùng tên, bấm cụm B mà video vào cụm A.
   async function ganVaoCumCoSan(cumId) {
-    const cum = state.cums.find((c) => c.id === cumId);
-    if (!cum) return;
+    if (dangGuiCum || !state.cums.some((c) => c.id === cumId)) return;
+    dangGuiCum = true;
     try {
-      await duaVaoCum({ usecase: cum.usecase, goc: cum.insight_goc, kieu: cum.kieu }, [...state.selected]);
+      const ids = [...state.selected];
+      baoDaGan(cumId, true, ids.length, await ganIdsVaoCum(cumId, ids));
       boChonTatCa();
       await loadCums();
       document.getElementById("cum-popover").hidden = true;
@@ -1236,6 +1276,8 @@
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
       showToast(`Không đưa được vào cụm: ${lyDoLoiLoai(err)}`);
+    } finally {
+      dangGuiCum = false;
     }
   }
 

@@ -290,3 +290,89 @@ def test_cluster_routes_require_a_verified_user(path, method):
               if getattr(r, "path", None) == path and method in getattr(r, "methods", set())]
     assert routes, f"không tìm thấy route {method} {path}"
     assert any(d.call is require_user for d in routes[0].dependant.dependencies)
+
+
+# --- chống trùng tên cụm ở server --------------------------------------------
+
+def _dem_cum(db) -> int:
+    with sqlite3.connect(db) as conn:
+        return conn.execute("SELECT COUNT(*) FROM cum").fetchone()[0]
+
+
+def test_creating_the_same_name_again_returns_the_existing_cluster(kho):
+    a = _tao(usecase="Dance", insight_goc="Badaboum", kieu="couple")
+    lai = _tao(usecase="  DANCE ", insight_goc="badaboum", kieu="  Couple")
+    assert lai["id"] == a["id"] and lai["da_co"] is True and a["da_co"] is False
+    assert _dem_cum(kho) == 1
+
+
+def test_same_insight_con_from_a_different_split_is_the_same_cluster(kho):
+    """Khoá là insight CON — thứ bên Creative Desk nhìn thấy — không phải cặp
+    (gốc, kiểu): "Badaboum" + "couple nhảy" và "Badaboum couple" + "nhảy" ra
+    cùng một tên bên kia."""
+    a = _tao(insight_goc="Badaboum", kieu="couple nhảy")
+    assert _tao(insight_goc="Badaboum couple", kieu="nhảy")["id"] == a["id"]
+    assert _dem_cum(kho) == 1
+
+
+def test_same_name_under_another_usecase_or_person_is_a_new_cluster(kho):
+    """Control: chống trùng không được nuốt cụm hợp lệ."""
+    _tao(usecase="Dance")
+    assert _tao(usecase="Portrait")["da_co"] is False
+    assert _tao(nguoi=HO, usecase="Dance")["da_co"] is False
+    assert _dem_cum(kho) == 3
+
+
+def test_creating_concurrently_still_yields_one_cluster(kho, monkeypatch):
+    """Hai lượt tạo chồng nhau (bấm đôi tới server) ⇒ đúng một cụm.
+
+    Ép khe race thay vì trông vào may: sau câu SELECT tìm trùng, mỗi luồng chờ
+    ở một barrier 2 bên. Không có khoá ghi trước SELECT thì CẢ HAI cùng qua
+    SELECT (chưa thấy gì), gặp nhau ở barrier rồi cùng INSERT ⇒ 2 cụm. Có
+    `BEGIN IMMEDIATE` thì luồng sau kẹt ở BEGIN, barrier hết giờ, luồng trước
+    ghi xong rồi luồng sau mới SELECT và thấy cụm vừa ghi.
+    """
+    import threading
+    cho = threading.Barrier(2, timeout=1.0)
+    goc = models_cum._cum_trung
+
+    def cham(*a, **kw):
+        kq = goc(*a, **kw)
+        try:
+            cho.wait()
+        except threading.BrokenBarrierError:
+            pass
+        return kq
+
+    monkeypatch.setattr(models_cum, "_cum_trung", cham)
+    ra, loi = [], []
+
+    def tao():
+        try:
+            ra.append(models_cum.tao_cum(kho, TOI, "Dance", "Badaboum", "couple")[0])
+        except Exception as exc:  # noqa: BLE001 — ghi lại để khẳng định bên dưới
+            loi.append(exc)
+
+    luong = [threading.Thread(target=tao) for _ in range(2)]
+    for t in luong:
+        t.start()
+    for t in luong:
+        t.join()
+    assert not loi
+    assert len(set(ra)) == 1 and _dem_cum(kho) == 1
+
+
+def test_renaming_into_an_existing_name_is_409(kho):
+    a = _tao(kieu="couple")["id"]
+    b = _tao(kieu="Cartoon")["id"]
+    with pytest.raises(HTTPException) as e:
+        app_mod.doi_kieu_cum(b, app_mod.DoiKieuRequest(kieu=" COUPLE "), nguoi_tao=TOI)
+    assert e.value.status_code == 409 and f"id {a}" in e.value.detail
+    kieu = {c["id"]: c["kieu"] for c in app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"]}
+    assert kieu == {a: "couple", b: "Cartoon"}
+
+
+def test_renaming_a_cluster_to_its_own_name_in_other_case_is_allowed(kho):
+    a = _tao(kieu="couple")["id"]
+    assert app_mod.doi_kieu_cum(a, app_mod.DoiKieuRequest(kieu="Couple"),
+                                nguoi_tao=TOI)["kieu"] == "Couple"

@@ -26,6 +26,9 @@ class PhienHetHan extends Error {}
 // `insight` CỐ Ý khác `insight_goc + " " + kieu`: nếu payload lấy tên từ chuỗi
 // JS tự ghép thay vì từ dữ liệu cụm, test sẽ thấy "Badaboum couple" thay vì
 // "INSIGHT-TU-SERVER".
+// Cụm có `insight` ĐÚNG như server ghép — dùng cho các ca so trùng tên.
+const CUM_TEN = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "couple",
+                  insight: "Badaboum couple", lo_mo: [] };
 const CUM = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "couple",
               insight: "INSIGHT-TU-SERVER", lo_mo: [] };
 
@@ -66,9 +69,43 @@ async function chayDuaVao(nhap, cums) {
                                   kieu: body.kieu, insight: "moi", lo_mo: [] };
     return { so_video: body.video_ids.length, bo_qua: [] };
   };
-  eval(["duaVaoCum", "timCumTrung", "khoaNhan"].map(grab).join("\n"));
+  eval(["duaVaoCum", "layHoacTaoCum", "ganIdsVaoCum", "baoDaGan", "timCumTrung", "khoaNhan",
+        "xemTruocTen"].map(grab).join("\n"));
   const cumId = await duaVaoCum(nhap, ["v1", "v2"]);
   return { cumId, goi, cum_id_video: state.videos.map((v) => v.cum_id) };
+}
+
+// Hai cụm CÙNG tên (dữ liệu cũ / tab khác): bấm dòng cụm 13 ⇒ phải gán vào 13,
+// không phải cụm trùng tên đầu tiên (12).
+async function chayGanCoSan(cumId) {
+  const goi = [];
+  const state = {
+    cums: [{ ...CUM_TEN, id: 12 }, { ...CUM_TEN, id: 13 }],
+    selected: new Set(["v1"]), videos: [{ video_id: "v1", cum_id: null }],
+  };
+  const showToast = () => {};
+  const apiSend = async (method, path, body) => { goi.push(`${method} ${path}`);
+                                                  return { so_video: body.video_ids.length, bo_qua: [] }; };
+  const boChonTatCa = () => state.selected.clear();
+  const loadCums = async () => {};
+  const renderLibrary = () => {};
+  const document = { getElementById: () => ({ hidden: false }) };
+  let dangGuiCum = false;
+  eval(["ganVaoCumCoSan", "ganIdsVaoCum", "baoDaGan", "timCumTrung", "khoaNhan",
+        "xemTruocTen", "lyDoLoiLoai"].map(grab).join("\n"));
+  await ganVaoCumCoSan(cumId);
+  return { goi, cum_id_video: state.videos[0].cum_id };
+}
+
+// `tab.opener = null` ném lỗi ⇒ vẫn trả tab (tab ĐÃ mở), và phải cảnh báo.
+function chayOpenerNem() {
+  const canhBao = [];
+  const console = { warn: (...a) => canhBao.push(a.map(String).join(" ")) };
+  const tab = {};
+  Object.defineProperty(tab, "opener", { set() { throw new Error("SecurityError"); } });
+  const window = { open: () => tab };
+  eval(grab("moTabCreativeDesk"));
+  return { traTab: moTabCreativeDesk("https://x") === tab, canhBao };
 }
 
 (async () => {
@@ -77,16 +114,18 @@ async function chayDuaVao(nhap, cums) {
   const out = {
     HANDOFF_MAX, GAN_CUM_TOI_DA,
     lo_64: dai(64), lo_30: dai(30), lo_31: dai(31), lo_0: dai(0),
-    trung_hoa_thuong: timCumTrung([CUM], "  dance ", "BADABOUM", " Couple  ")?.id ?? null,
-    trung_khac_kieu: timCumTrung([CUM], "Dance", "Badaboum", "cartoon")?.id ?? null,
+    trung_hoa_thuong: timCumTrung([CUM_TEN], "  dance ", "BADABOUM", " Couple  ")?.id ?? null,
+    trung_khac_kieu: timCumTrung([CUM_TEN], "Dance", "Badaboum", "cartoon")?.id ?? null,
     xem_truoc: xemTruocTen("  Badaboum ", "  couple  "),
     // Cụm 64 video: lô 2/3 và lô 3/3.
     lo2: await chay({ soVideo: 64, thu: 2, popupBiChan: false }),
     lo3: await chay({ soVideo: 64, thu: 3, popupBiChan: false }),
     mot_lo: await chay({ soVideo: 12, thu: 1, popupBiChan: false }),
     bi_chan: await chay({ soVideo: 12, thu: 1, popupBiChan: true }),
-    dua_trung: await chayDuaVao({ usecase: " dance", goc: "badaboum ", kieu: "COUPLE" }, [CUM]),
-    dua_moi: await chayDuaVao({ usecase: "Dance", goc: "Badaboum", kieu: "nhóm" }, [CUM]),
+    dua_trung: await chayDuaVao({ usecase: " dance", goc: "badaboum ", kieu: "COUPLE" }, [CUM_TEN]),
+    dua_moi: await chayDuaVao({ usecase: "Dance", goc: "Badaboum", kieu: "nhóm" }, [CUM_TEN]),
+    gan_co_san_13: await chayGanCoSan(13),
+    opener_nem: chayOpenerNem(),
   };
   process.stdout.write(JSON.stringify(out));
 })().catch((e) => { console.error(e); process.exit(1); });
