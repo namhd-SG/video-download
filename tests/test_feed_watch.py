@@ -253,8 +253,9 @@ def test_feed_rong_duoc_dem_la_rong():
 
 
 def test_feed_co_du_lieu_duoc_dem_la_co_du_lieu():
-    assert _tk(FakeResponse(SEARCH_API, content_length="4096")) == {"co_du_lieu": 1}
-    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", body=b"{}")) == {"co_du_lieu": 1}
+    # `bytes` = độ dài đo được của thân có dữ liệu (dòng log `[ham-phien]` in nó).
+    assert _tk(FakeResponse(SEARCH_API, content_length="4096")) == {"co_du_lieu": 1, "bytes": 4096}
+    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", body=b"{}")) == {"co_du_lieu": 1, "bytes": 2}
 
 
 def test_than_khong_doc_duoc_khong_vao_o_nao():
