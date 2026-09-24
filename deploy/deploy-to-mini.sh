@@ -22,6 +22,7 @@ RC_CAY_BAN=2        # cây chưa commit / chưa đẩy
 RC_DANG_TAI=3       # có job đang chạy hoặc đang chờ
 RC_NGHIEM_THU=4     # đẩy xong nhưng nghiệm thu trượt
 RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁC "đang bận"
+RC_MOC=6            # mã mới đã chạy + nghiệm thu qua, nhưng KHÔNG ghi được mốc .deployed-sha
 
 HOST="${VIDEODL_MINI_HOST:-nobi_auto@100.109.39.103}"
 # Tên máy đích sau khi chuẩn hoá. `hostname` thật trả về "Autos-Mac-mini.local"
@@ -62,6 +63,10 @@ EXCLUDES=(
   --exclude='.claude/'
   --exclude='.pytest_cache/'
   --exclude='*.egg-info/'
+  # Mốc "commit đang chạy trên mini" — chỉ sống ở đích, do bước cuối ghi (xem
+  # `deploy/prune-git-deleted-files.sh`). Không loại ra thì nó thành mồ côi.
+  --exclude='/.deployed-sha'
+  --exclude='/.deployed-sha.tmp'
   # Mọi thứ git bỏ qua cũng không thuộc về prod: cây "sạch" ở bước 1 là theo
   # `git status`, mà `git status` không nhìn tệp ignore — thiếu dòng này thì rác
   # ignore trên máy dev đi thẳng lên mini (đo 23/09: 25 tệp). Đo cùng ngày:
@@ -76,7 +81,27 @@ THAT=0
 cd "$(git rev-parse --show-toplevel)"
 # shellcheck source=deploy/verify-synced-files.sh
 . deploy/verify-synced-files.sh
+# shellcheck source=deploy/prune-git-deleted-files.sh
+. deploy/prune-git-deleted-files.sh
 say() { printf '\n== %s\n' "$*"; }
+
+# Đọc mốc lần deploy trước và gỡ tệp đã xoá khỏi git. Dùng CHUNG cho thử khô
+# (THAT=0: chỉ liệt) và lần thật (THAT=1: gỡ + đo lại) để thử khô diễn tập đúng
+# đường thật. Trả mã của `don_tep_xoa_theo_git`, hoặc 6 khi mini chưa có mốc.
+don_tep_xoa() {
+  local moc r=0
+  moc="$(doc_moc_da_deploy "$HOST" "$REMOTE_REPO")" || r=$?
+  case "$r" in
+    0) echo "   mốc lần deploy trước: $moc" ;;
+    6) echo "   ⚠ mini CHƯA CÓ mốc .deployed-sha — không biết tệp nào đã xoá khỏi git từ lần trước." >&2
+       echo "     Lượt này KHÔNG gỡ gì (CHƯA PHÂN ĐỊNH, không phải '0 tệp'); cuối chuyến sẽ ghi mốc." >&2
+       return 6 ;;
+    *) echo "   ⚠ không đọc được mốc .deployed-sha trên mini — PHÉP ĐO HỎNG, không gỡ gì." >&2
+       return 5 ;;
+  esac
+  don_tep_xoa_theo_git "$moc" "$SHA" "$HOST:~/$REMOTE_REPO/" "$HOST" "$REMOTE_REPO" \
+                       "$BACKUP_DIR" "$THAT" "${EXCLUDES[@]}"
+}
 
 # --- 0. CỔNG: máy bên kia có đúng là mini công ty không? ---------------------
 # Đây là cổng quan trọng nhất trong script. Không có nó, một alias trỏ sai là
@@ -208,7 +233,8 @@ if [ "$THAT" -eq 0 ]; then
   # những tệp mà lần thật để nguyên, tức là diễn tập một đường không có thật.
   rsync -a --dry-run --itemize-changes --delete --backup --backup-dir="$BACKUP_DIR" \
         "${EXCLUDES[@]}" ./ "$HOST:~/$REMOTE_REPO/"
-  echo "   ⚠ rsync kèm --backup-dir KHÔNG xoá tệp ở đích: tệp đã xoá khỏi git vẫn nằm trên mini."
+  echo "   ⚠ rsync kèm --backup-dir KHÔNG xoá tệp ở đích — bước 3b lần thật gỡ tệp đã xoá khỏi git:"
+  don_tep_xoa || true
   exit 0
 fi
 
@@ -220,7 +246,7 @@ fi
 # trên mini, tệp thừa CÒN, rc=0, itemize không có `*deleting`. Bỏ `--backup-dir`
 # thì xoá được, nhưng `rollback-on-mini.sh` sống bằng chính thư mục đó. Hệ quả
 # đã đo cùng ngày: không tệp code nào mồ côi trên mini (mọi tệp lệch là tệp
-# git-ignore), nhưng tệp nào xoá khỏi git từ nay sẽ NẰM LẠI. Dọn xoá = việc riêng.
+# git-ignore), nhưng tệp nào xoá khỏi git sẽ NẰM LẠI ⇒ bước 3b gỡ chúng.
 # assets/ffmpeg-static loại ra: file lớn, mini-setup.sh cấp riêng bằng scp.
 say "3. rsync (giữ bản lui ở ~/Projects/${BACKUP_DIR#../})"
 # `--itemize-changes` vào TỆP, không qua pipe: pipe trả mã của lệnh cuối, và
@@ -241,8 +267,23 @@ if [ "$rsync_rc" -ne 0 ]; then
   exit "$RC_NGHIEM_THU"
 fi
 echo "   xong"
-# Cảnh báo, không chặn: bước 3 cấu tạo không thể xoá (xem comment trên), nên
-# "xoá 0 tệp" ở bước 5 không có nghĩa đích sạch. Lượt này nói đích có gì thừa.
+
+# --- 3b. Gỡ tệp đã xoá khỏi git ---------------------------------------------
+# Trước kickstart: tiến trình mới không được thấy tệp đã xoá khỏi git (một
+# module .py cũ còn nằm đó vẫn import được). Gỡ trượt ⇒ DỪNG trước kickstart —
+# tiến trình cũ vẫn phục vụ, mã mới đã trên đĩa, đường lui như bước 3 trượt.
+say "3b. Gỡ tệp đã xoá khỏi git kể từ lần deploy trước"
+don_rc=0
+don_tep_xoa || don_rc=$?
+case "$don_rc" in
+  0|6) ;;  # 6 = chưa có mốc: đã cảnh báo, chuyến này ghi mốc ở cuối
+  *) echo "DỪNG: bước gỡ tệp xoá trả $don_rc — chưa kickstart, tiến trình cũ vẫn chạy." >&2
+     echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+     [ "$don_rc" -eq 5 ] && exit "$RC_DO_HONG"
+     exit "$RC_NGHIEM_THU" ;;
+esac
+# Cảnh báo, không chặn: mồ côi còn lại là thứ git CHƯA TỪNG biết (hoặc xoá
+# trước khi có mốc) — không phải việc của máy. Lượt này nói đích còn gì thừa.
 liet_mo_coi "$HOST:~/$REMOTE_REPO/" "${EXCLUDES[@]}" || true
 
 # --- 4. Khởi động lại ĐÚNG label của mình ------------------------------------
@@ -331,6 +372,15 @@ fi
 
 px="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://promax.nobidigital.asia || true)"
 echo "   promax hàng xóm: HTTP $px (chết là do mình, phải kiểm)"
+
+# Mốc ghi SAU mọi cổng nghiệm thu: nó khẳng định "mini đang chạy $SHA", và lần
+# deploy sau tính tệp cần gỡ từ nó. Ghi sớm hơn thì một chuyến trượt giữa chừng
+# vẫn để lại mốc nói điều chưa đo.
+if ! ghi_moc_da_deploy "$HOST" "$REMOTE_REPO" "$SHA"; then
+  echo "DỪNG: mã mới đã chạy và nghiệm thu qua, nhưng KHÔNG ghi/đọc lại được .deployed-sha." >&2
+  echo "      Lần deploy sau sẽ dùng mốc cũ (hoặc không có mốc) — tệp xoá tính rộng hơn, không sai." >&2
+  exit "$RC_MOC"
+fi
 
 say "XONG — $SHA đang chạy trên $EXPECT_HOST"
 echo "   Lui: bash deploy/rollback-on-mini.sh $BACKUP_DIR"

@@ -19,7 +19,8 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-SCRIPTS = ("deploy/deploy-to-mini.sh", "deploy/verify-synced-files.sh")
+SCRIPTS = ("deploy/deploy-to-mini.sh", "deploy/verify-synced-files.sh",
+           "deploy/prune-git-deleted-files.sh")
 
 # ssh giả: đối số cuối là lệnh xa. `KICH_BAN` chọn cách nó hỏng.
 SSH_GIA = r'''#!/usr/bin/env bash
@@ -47,6 +48,12 @@ case "$cmd" in
       ban) echo 2 ;;
       *) echo 0 ;;
     esac ;;
+  # Mốc `.deployed-sha`: chạy THẬT trong một home giả riêng từng test (MOC_HOME),
+  # để ghi-rồi-đọc-lại là phép đo thật chứ không phải ssh giả tự khai.
+  *deployed-sha*)
+    [ "$KICH_BAN" = moc_ghi_hong ] && case "$cmd" in *".tmp"*) exit 1 ;; esac
+    [ "$KICH_BAN" = moc_la ] && case "$cmd" in *"then cat"*) echo 1111111111111111111111111111111111111111; exit 0 ;; esac
+    h="${MOC_HOME:-$HOME}"; mkdir -p "$h/Projects/video-download"; HOME="$h" bash -c "$cmd" ;;
   *"/healthz"*) echo "${HEALTHZ_GIA:-200}" ;;
   *"curl -s -D -"*) [ "$KICH_BAN" = cc_chet ] && exit 255; echo "cache-control: no-cache" ;;
   *lsof*) [ "$KICH_BAN" = cc_chet ] && exit 255; echo 1 ;;
@@ -72,6 +79,7 @@ def clone(tmp_path_factory):
         shutil.copy(REPO / s, ban / s)
     g = lambda *a: subprocess.run(["git", "-C", str(ban), *a], check=True,  # noqa: E731
                                    capture_output=True, text=True, env=env)
+    g("add", *SCRIPTS)  # tệp lib MỚI chưa tracked — `commit -a` không nhặt nó
     g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-am", "script đang sửa",
       "--allow-empty")
     g("update-ref", "refs/remotes/origin/kiem-thu", "HEAD")
@@ -180,6 +188,7 @@ def test_danh_sach_label_khong_co_chinh_minh_la_do_hong(clone):
 
 def _yes(clone, tmp_path, kich_ban="lanh", **env):
     log = tmp_path / "ssh.log"
+    env.setdefault("MOC_HOME", str(tmp_path / "home-mini"))
     r = _chay(clone, kich_ban, "--yes", ssh_log=log, RSYNC_GIA="thanh_cong", **env)
     return r, log.read_text(encoding="utf-8")
 
@@ -217,3 +226,41 @@ def test_doc_cache_control_truot_khong_thoat_im_lang(clone, tmp_path):
     assert r.returncode == 0, (r.returncode, r.stderr)
     assert "cache-control: không đọc được" in r.stderr
     assert "bind 127.0.0.1: không đọc được" in r.stderr
+
+
+# ---- Bước 3b + mốc `.deployed-sha` (gỡ tệp đã xoá khỏi git).
+
+def test_lan_dau_chua_co_moc_van_xong_va_ghi_moc_dung_head(clone, tmp_path):
+    """Mini chưa từng có mốc ⇒ 3b nói CHƯA PHÂN ĐỊNH (không gỡ gì, không chặn),
+    và cuối chuyến mốc = HEAD — đọc lại từ đĩa, không tin lời script."""
+    r, _ = _yes(clone, tmp_path)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    assert "CHƯA CÓ mốc .deployed-sha" in r.stderr
+    head = subprocess.run(["git", "-C", str(clone[0]), "rev-parse", "HEAD"],
+                          capture_output=True, text=True, check=True).stdout.strip()
+    moc = tmp_path / "home-mini" / "Projects/video-download/.deployed-sha"
+    assert moc.read_text(encoding="utf-8").strip() == head
+
+
+def test_moc_la_khong_co_trong_repo_thi_dung_truoc_kickstart(clone, tmp_path):
+    """Mốc trỏ commit máy dev không có ⇒ không tính được tệp xoá ⇒ DỪNG, mã 5,
+    và KHÔNG kickstart (tiến trình cũ vẫn phục vụ)."""
+    r, log = _yes(clone, tmp_path, "moc_la")
+    assert r.returncode == 5, (r.returncode, r.stderr)
+    assert "không có trong repo máy dev" in r.stderr
+    assert "launchctl kickstart" not in log
+
+
+def test_ghi_moc_truot_la_6_khong_phai_xong(clone, tmp_path):
+    r, log = _yes(clone, tmp_path, "moc_ghi_hong")
+    assert r.returncode == 6, (r.returncode, r.stderr)
+    assert "KHÔNG ghi/đọc lại được .deployed-sha" in r.stderr
+    assert "== XONG" not in r.stdout
+    assert "launchctl kickstart" in log, "mốc chỉ ghi SAU nghiệm thu"
+
+
+def test_moc_ghi_sau_moi_cong_nghiem_thu(clone, tmp_path):
+    """healthz trượt ⇒ không được có mốc: mốc khẳng định "mini chạy HEAD"."""
+    r, _ = _yes(clone, tmp_path, HEALTHZ_GIA="000")
+    assert r.returncode == 4
+    assert not (tmp_path / "home-mini" / "Projects/video-download/.deployed-sha").exists()
