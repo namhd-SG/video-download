@@ -93,6 +93,55 @@ def test_moc_da_mo_chi_ghi_sau_khi_tab_mo_that():
     assert chan["lo_mo"] == []
 
 
+def test_loi_payload_dong_tab_trong_va_bao_ly_do_khong_nuot_im():
+    """Fetch payload trượt vì lý do KHÔNG PHẢI hết phiên (vd 400 "lô ngoài
+    khoảng" — một tab khác vừa đổi số video của cụm) ⇒ tab trống đã mở (mở
+    TRƯỚC khi biết payload) phải bị ĐÓNG lại, và lý do phải lên toast — không
+    được để lỗi rơi mất không dấu vết."""
+    d = _node("cum-ban-giao.js")
+    loi = d["loi_payload"]
+    assert loi["kq"] == "loi"
+    assert loi["nhatKy"] == ["open", "close"], \
+        "tab trống phải mở rồi ĐÓNG lại, và KHÔNG được gọi da-mo cho một payload chưa từng có"
+    assert any("lô phải trong khoảng 1..1" in t for t in loi["toast"]), \
+        "lý do lỗi thật (không phải câu chặn-popup chung chung) phải lên toast"
+    assert loi["payload"] is None
+
+
+def test_het_phien_giua_luc_mo_dong_tab_va_khong_ghi_da_mo():
+    """Review lượt 2: hết phiên đúng lúc fetch payload từng trả "mo" (đọc như
+    "đã mở xong"), khiến `moHetLoCum` mở-đóng lặp một tab trống cho MỌI lô
+    còn lại. Giờ phải trả một giá trị RIÊNG, đóng tab, và KHÔNG ghi "đã mở"."""
+    d = _node("cum-ban-giao.js")
+    hp = d["het_phien"]
+    assert hp["kq"] not in ("mo", "chan"), "hết phiên không được đọc như đã mở thành công"
+    assert hp["nhatKy"] == ["open", "close"], "tab trống phải mở rồi ĐÓNG lại"
+    assert hp["baoPhien"] is True
+    assert hp["lo_mo"] == []
+
+
+def test_mo_het_lo_dung_ngay_khi_het_phien_khong_mo_lai_lo_ke():
+    """`moHetLoCum` trên cụm 3 lô, mọi fetch đều hết phiên — phải dừng NGAY
+    ở lô đầu (1 lần "open"), không mở-đóng lặp cho 2 lô còn lại."""
+    d = _node("cum-ban-giao.js")
+    kq = d["mo_het_het_phien"]
+    assert kq["soLanOpen"] == 1, \
+        "hết phiên ở lô đầu phải DỪNG vòng lặp, không mở tab cho các lô còn lại"
+    assert kq["soLanBaoHetPhien"] == 1
+
+
+def test_tab_bi_dong_truoc_khi_dieu_huong_khong_ghi_da_mo():
+    """Người dùng tự tay đóng tab trống trong lúc đang chờ payload — không
+    được điều hướng một tab đã đóng, và không được ghi "đã mở" cho nó."""
+    d = _node("cum-ban-giao.js")
+    dong = d["tab_dong_truoc_dieu_huong"]
+    assert dong["kq"] == "dong"
+    assert not any(k.startswith("POST") for k in dong["nhatKy"]), \
+        "tab người dùng đã đóng không được ghi POST .../da-mo"
+    assert dong["payload"] is None, "không điều hướng một tab đã đóng"
+    assert dong["lo_mo"] == []
+
+
 def test_ban_giao_chon_tay_khong_co_nhan():
     d = _node("chon-sau-ban-giao.js")
     t = d["ack"]["tin"]
@@ -112,6 +161,24 @@ def test_gan_vao_cum_co_san_theo_id_dong_duoc_bam_khong_tra_theo_ten():
     d = _node("cum-ban-giao.js")
     assert d["gan_co_san_13"] == {"goi": ["POST /cum/13/video"], "cum_id_video": 13}, \
         "hai cụm cùng tên: bấm cụm 13 thì video phải vào 13, không phải cụm trùng đầu tiên"
+
+
+def test_mo_lo_cum_mo_tab_dong_bo_truoc_khi_await_fetch_payload():
+    """Review lượt 2: tính chất quyết định cho Safari là "`window.open`
+    chạy đồng bộ TRONG lượt xử lý click, TRƯỚC bất kỳ `await` nào" — trước
+    đây không test nào pin được điều này (harness cũ không log fetch payload
+    vào `nhatKy` để so thứ tự). Ở đây fetch TREO VĨNH VIỄN và ta đọc trạng
+    thái ngay sau khi gọi `moLoCum` mà KHÔNG await nó."""
+    d = _node("mo-dong-bo-va-catch.js")
+    assert d["fetchTreo"]["daMoNgayLapTuc"] is True
+
+
+def test_click_handler_cum_head_bat_buoc_co_catch_khong_de_lot_unhandled_rejection():
+    """Người gọi `moLoCum`/`moHetLoCum` (handler click `#cum-head`) PHẢI có
+    `.catch` — thiếu nó, một lỗi không lường trước rơi thành unhandled
+    rejection câm, không ai thấy, không toast nào hiện ra."""
+    d = _node("mo-dong-bo-va-catch.js")
+    assert d["catchBatBuoc"]["batDuocUnhandled"] is False
 
 
 def test_khong_cat_duoc_opener_thi_van_tra_tab_va_canh_bao():
@@ -224,6 +291,9 @@ def test_tao_cum_dua_3_video_vao_va_ban_giao_mo_tab_dung_nhan(page):
     with page.context.expect_page() as tab_moi:
         with page.expect_response(lambda r: "/da-mo" in r.url):
             page.click("#cum-head [data-mo-lo='1']")
+    # Tab mở TRỐNG trước rồi mới được điền địa chỉ SAU khi payload về — đợi
+    # nó điều hướng xong trước khi đọc `.url`, đừng đọc lúc còn "about:blank".
+    tab_moi.value.wait_for_load_state()
     p = _giai_ma(tab_moi.value.url)
     cum = _cum_api(page)[0]
     assert p["nhan"] == {"usecase": "Dance", "insight": "Badaboum couple", "template": "Goc",
@@ -242,7 +312,14 @@ def test_popup_bi_chan_thi_khong_ghi_moc(page):
     page.on("request", lambda r: goi.append(r.url) if "/da-mo" in r.url else None)
     page.evaluate("window.open = () => null")
     page.click("#cum-head [data-mo-lo='1']")
-    page.wait_for_function("!document.getElementById('toast').hidden")
+    # `moLoCum` giờ mở tab TRỐNG ĐỒNG BỘ (`window.open` NGAY trong lượt xử lý
+    # click, TRƯỚC bất kỳ `await` nào) rồi mới `await` payload — nên chặn
+    # popup được biết NGAY, không cần đợi hết một vòng fetch nữa (khác bản cũ
+    # từng bị bắt lỗi: `window.open` chạy SAU `await`).
+    # Vẫn chờ ĐÚNG NỘI DUNG toast thay vì chỉ `!hidden` cho chắc — toast "Đã
+    # tạo cụm…" của bước trước có thể còn hiện, `hidden` đã là `false` từ
+    # trước, khiến điều kiện `!hidden` khớp NGAY với chữ CŨ.
+    page.wait_for_function("document.getElementById('toast').innerText.includes('chặn tab')")
     assert "chặn tab" in page.inner_text("#toast")
     page.wait_for_timeout(300)
     assert goi == []
@@ -260,6 +337,7 @@ def test_cum_hon_30_tach_lo_va_moi_lo_mot_moc(page):
     with page.context.expect_page() as tab_moi:
         with page.expect_response(lambda r: "/lo/2/da-mo" in r.url):
             page.click("#cum-head .bo-row[data-lo='2'] [data-mo-lo]")
+    tab_moi.value.wait_for_load_state()   # tab mở trống trước, xem ghi chú ở test phía trên
     p = _giai_ma(tab_moi.value.url)
     assert p["nhan"]["lo"] == {"thu": 2, "tong": 3} and len(p["items"]) == 30
     page.wait_for_function("document.querySelector(\"#cum-head .bo-row[data-lo='2']\").innerText.includes('đã mở')")

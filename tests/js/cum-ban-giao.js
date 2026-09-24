@@ -32,9 +32,11 @@ const CUM_TEN = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "coup
 const CUM = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "couple",
               insight: "INSIGHT-TU-SERVER", lo_mo: [] };
 
-function chay({ soVideo, thu, popupBiChan, cum = CUM }) {
+function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
+                hetPhien = false, dongTabTruocDieuHuong = false }) {
   const nhatKy = [];
   const toast = [];
+  let baoPhien = false;
   const state = {
     cums: [JSON.parse(JSON.stringify(cum))],
     videos: Array.from({ length: soVideo }, (_, i) => ({
@@ -42,17 +44,65 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM }) {
     })),
   };
   const showToast = (m) => toast.push(m);
-  const baoPhienHetHan = () => {};
+  const baoPhienHetHan = () => { baoPhien = true; };
   const renderCumHead = () => nhatKy.push("ve");
-  const window = { open: (url) => { nhatKy.push("open"); nhatKy.url = url;
-                                    return popupBiChan ? null : { opener: 1 }; } };
+  // `window.open` giờ mở "about:blank" TRƯỚC bất kỳ `await` nào, rồi địa
+  // chỉ THẬT được điền sau bằng `tab.location = …` (`dieuHuongTab`) — tab giả
+  // ở đây phải có một thuộc tính `location` GHI ĐƯỢC để bắt đúng giá trị CUỐI
+  // CÙNG được điền, không phải đọc lại tham số của `window.open` (luôn là
+  // "about:blank" bây giờ). `closed` GHI ĐƯỢC để mô phỏng người dùng tự tay
+  // đóng tab trống trong lúc đang chờ payload về.
+  let diaChiCuoi = null;
+  const window = {
+    open: () => {
+      nhatKy.push("open");
+      if (popupBiChan) return null;
+      const tab = { closed: false, close: () => { nhatKy.push("close"); tab.closed = true; } };
+      Object.defineProperty(tab, "location", {
+        get: () => diaChiCuoi, set: (u) => { diaChiCuoi = u; },
+      });
+      return tab;
+    },
+  };
   const apiSend = async (method, path) => { nhatKy.push(`${method} ${path}`);
                                             return { mo_luc: "2026-09-23T10:42:00+00:00" }; };
-  eval(["moLoCum", "chiaLo", "videoCuaCum", "itemBanGiao", "dungPayload", "nhanTuCum",
-        "maHoaPayload", "urlBanGiao", "moTabCreativeDesk"].map(grab).join("\n"));
+  class PhienHetHan extends Error {}
+  // Giả lập `GET /cum/{id}/lo/{thu}/payload` — cắt lô ĐÚNG thứ tự
+  // `videoCuaCum`+`chiaLo` (video cũ nhất trước) rồi lọc `drive_file_id`,
+  // cùng khuôn `web/models_chia.py::xay_payload_lo`. KHÔNG ghi vào `nhatKy`:
+  // trước khi payload chuyển sang dựng ở server, không có lời gọi mạng nào ở
+  // bước này, và các test dưới đây so `nhatKy` với danh sách CHỈ gồm
+  // "open"/"POST .../da-mo"/"close".
+  const apiGet = async (path) => {
+    if (hetPhien) throw new PhienHetHan();
+    if (loiPayload) throw loiPayload;
+    // Người dùng đóng tab NGAY TRƯỚC KHI payload về (fetch thành công, nhưng
+    // đã trễ) — mô phỏng bằng cách gắn cờ trên chính tab đang mở, đúng lúc
+    // apiGet sắp resolve, TRƯỚC khi `moLoCum` kịp kiểm `tab.closed`.
+    if (dongTabTruocDieuHuong) tabHienTai.closed = true;
+    const m = path.match(/^\/cum\/(\d+)\/lo\/(\d+)\/payload$/);
+    if (!m) throw new Error(`apiGet không mong đợi trong harness: ${path}`);
+    const cacLo = chiaLo(
+      state.videos.filter((v) => v.cum_id === Number(m[1])).slice().reverse(), HANDOFF_MAX);
+    const muc = cacLo[Number(m[2]) - 1] || [];
+    return {
+      v: 1,
+      items: muc.filter((v) => v.drive_file_id).map(itemBanGiao),
+      nhan: { usecase: cum.usecase, insight: cum.insight, template: "Goc", cum_id: cum.id,
+             lo: { thu: Number(m[2]), tong: cacLo.length } },
+    };
+  };
+  eval(["moLoCum", "chiaLo", "videoCuaCum", "itemBanGiao", "dungPayload",
+        "maHoaPayload", "urlBanGiao", "moTabTrong", "dieuHuongTab",
+        "moTabCreativeDesk"].map(grab).join("\n"));
+  // `moTabTrong` (grab ở trên) gọi `window.open` — bọc lại để giữ tham chiếu
+  // tab MỚI NHẤT cho `apiGet` ở trên đọc (chỉ cần cho `dongTabTruocDieuHuong`).
+  let tabHienTai = null;
+  const moTabTrongGoc = moTabTrong;
+  moTabTrong = () => { tabHienTai = moTabTrongGoc(); return tabHienTai; };
   return moLoCum(cum.id, thu).then((kq) => ({
-    kq, nhatKy: [...nhatKy], toast,
-    payload: nhatKy.url ? giaiMa(nhatKy.url) : null,
+    kq, nhatKy: [...nhatKy], toast, baoPhien,
+    payload: diaChiCuoi ? giaiMa(diaChiCuoi) : null,
     lo_mo: state.cums[0].lo_mo,
   }));
 }
@@ -108,6 +158,41 @@ function chayOpenerNem() {
   return { traTab: moTabCreativeDesk("https://x") === tab, canhBao };
 }
 
+// `moHetLoCum` phải DỪNG ở lô ĐẦU gặp hết phiên, không mở-đóng lặp cho MỌI lô
+// còn lại (review lượt 2: `moLoCum` từng trả "mo" cho ca hết phiên, khiến
+// `moHetLoCum` đọc thành "đi tiếp"). Cụm 64 video ⇒ 3 lô (30/30/4); mọi
+// `apiGet` đều ném hết phiên NGAY — nếu vòng lặp không dừng, "open" sẽ xuất
+// hiện 3 lần thay vì 1.
+async function chayMoHetLoCumHetPhienGiuaChung() {
+  const nhatKy = [];
+  const cum = { ...CUM, id: 20 };
+  const state = {
+    cums: [JSON.parse(JSON.stringify(cum))],
+    videos: Array.from({ length: 64 }, (_, i) => ({
+      video_id: `v${i}`, drive_file_id: `d${i}`, title: `t${i}`, url: `u${i}`, cum_id: cum.id,
+    })),
+  };
+  const showToast = (m) => nhatKy.push(`toast:${m}`);
+  const baoPhienHetHan = () => nhatKy.push("het_phien_bao");
+  const renderCumHead = () => {};
+  class PhienHetHan extends Error {}
+  const window = {
+    open: () => {
+      nhatKy.push("open");
+      const tab = { closed: false, close: () => { nhatKy.push("close"); tab.closed = true; } };
+      Object.defineProperty(tab, "location", { get: () => null, set: () => {} });
+      return tab;
+    },
+  };
+  const apiGet = async () => { throw new PhienHetHan(); };
+  const apiSend = async () => ({ mo_luc: "2026-09-23T10:42:00+00:00" });
+  eval(["moLoCum", "moHetLoCum", "chiaLo", "videoCuaCum", "itemBanGiao", "dungPayload",
+        "maHoaPayload", "urlBanGiao", "moTabTrong", "dieuHuongTab"].map(grab).join("\n"));
+  await moHetLoCum(cum.id);
+  return { soLanOpen: nhatKy.filter((x) => x === "open").length,
+          soLanBaoHetPhien: nhatKy.filter((x) => x === "het_phien_bao").length, nhatKy };
+}
+
 (async () => {
   eval(["chiaLo", "khoaNhan", "timCumTrung", "xemTruocTen"].map(grab).join("\n"));
   const dai = (n) => chiaLo(Array.from({ length: n }, (_, i) => i), HANDOFF_MAX).map((l) => l.length);
@@ -122,6 +207,19 @@ function chayOpenerNem() {
     lo3: await chay({ soVideo: 64, thu: 3, popupBiChan: false }),
     mot_lo: await chay({ soVideo: 12, thu: 1, popupBiChan: false }),
     bi_chan: await chay({ soVideo: 12, thu: 1, popupBiChan: true }),
+    // Fetch payload trượt vì lý do KHÔNG PHẢI hết phiên (vd 400 "lô ngoài
+    // khoảng" — một tab khác vừa đổi số video của cụm) ⇒ đóng tab trống đã
+    // mở, báo lý do, KHÔNG âm thầm nuốt lỗi.
+    loi_payload: await chay({ soVideo: 12, thu: 1, popupBiChan: false,
+                              loiPayload: new Error("lô phải trong khoảng 1..1") }),
+    // Hết phiên ngay lúc fetch payload — tab trống phải bị ĐÓNG, "đã mở"
+    // KHÔNG được ghi, và giá trị trả về phải KHÁC "mo".
+    het_phien: await chay({ soVideo: 12, thu: 1, popupBiChan: false, hetPhien: true }),
+    // Người dùng tự đóng tab trống trong lúc đang chờ payload — không được
+    // điều hướng một tab đã đóng, không được ghi "đã mở".
+    tab_dong_truoc_dieu_huong: await chay({ soVideo: 12, thu: 1, popupBiChan: false,
+                                            dongTabTruocDieuHuong: true }),
+    mo_het_het_phien: await chayMoHetLoCumHetPhienGiuaChung(),
     dua_trung: await chayDuaVao({ usecase: " dance", goc: "badaboum ", kieu: "COUPLE" }, [CUM_TEN]),
     dua_moi: await chayDuaVao({ usecase: "Dance", goc: "Badaboum", kieu: "nhóm" }, [CUM_TEN]),
     gan_co_san_13: await chayGanCoSan(13),

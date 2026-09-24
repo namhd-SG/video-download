@@ -470,6 +470,14 @@ KHONG_CAN_KIEM_CHU = {
     "DELETE /jobs/{job_id}": "`models.huy_job_dang_cho` ràng `nguoi_tao` NGAY "
                              "trong câu UPDATE, nên không cần cổng ngoài; "
                              "404 cho job người khác, giống GET",
+    "GET /cum/{cum_id}/lo/{thu}/payload": "`_cum_hoac_404` + `models_chia.xay_payload_lo` "
+                                          "ràng `chu` trong SELECT; 404 (tests/test_web_chia.py)",
+    "GET /chia/{job_id}": "`models_chia.lay_chia_theo_job` ràng `chu` NGAY trong SELECT; "
+                          "404 cho lượt của người khác",
+    "POST /chia/{chia_lan_id}/thao-tac": "`models_chia.ap_thao_tac` ràng `chu` qua "
+                                         "`_lan_cua_toi` trước khi đổi gì; 404",
+    "POST /chia/{chia_lan_id}/duyet": "`models_chia.duyet_kieu`/`duyet_het` ràng `chu` "
+                                      "qua `_lan_cua_toi` trước khi đổi gì; 404",
 }
 
 
