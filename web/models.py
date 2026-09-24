@@ -244,8 +244,12 @@ def init_db(db_path: Path) -> None:
         # loại là việc riêng: "không ảnh hưởng gì đến chung cả, vì đó là bộ của
         # tôi". Một cờ chung sẽ biến phán xét của một người thành lệnh chặn cho
         # cả team.
+        # `description`/`track`/`artist`: caption đầy đủ + nhạc từ yt-dlp, lưu
+        # lúc tải để chia kiểu sau — lúc tải là lần DUY NHẤT có sẵn miễn phí.
         for column, decl in (("music_id", "TEXT"), ("drive_file_id", "TEXT"),
-                             ("da_loai_luc", "TEXT"), ("loai_boi", "TEXT")):
+                             ("da_loai_luc", "TEXT"), ("loai_boi", "TEXT"),
+                             ("description", "TEXT"), ("track", "TEXT"),
+                             ("artist", "TEXT")):
             _add_column_if_missing(conn, "videos", column, decl)
         # `CREATE TABLE IF NOT EXISTS` above does nothing for a `jobs.db`
         # that already existed before `drive_folder_link` was added — this
@@ -680,7 +684,8 @@ def record_video(db_path: Path, job_id: int, video_id: str, url: str,
                   region: str | None = None, duration: int | None = None,
                   play_count: int | None = None, music_id: str | None = None,
                   drive_file_id: str | None = None,
-                  tao_luc: str | None = None) -> None:
+                  tao_luc: str | None = None, description: str | None = None,
+                  track: str | None = None, artist: str | None = None) -> None:
     """Index one video that is now on Drive. First sighting wins.
 
     Called only after the upload reported success, so a row here means "this
@@ -698,11 +703,11 @@ def record_video(db_path: Path, job_id: int, video_id: str, url: str,
         conn.execute(
             "INSERT INTO videos "
             "(video_id, job_id, url, title, author, region, duration, play_count, "
-            " music_id, drive_file_id, tao_luc) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            " music_id, drive_file_id, tao_luc, description, track, artist) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(video_id) DO NOTHING",
             (video_id, job_id, url, title, author, region, duration, play_count,
-             music_id, drive_file_id, tao_luc or _now()),
+             music_id, drive_file_id, tao_luc or _now(), description, track, artist),
         )
 
 

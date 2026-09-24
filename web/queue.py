@@ -308,7 +308,34 @@ def _bo_sung_metadata(ref: VideoRef, info: dict | None) -> VideoRef:
         thay["duration"] = _so(info.get("duration"))
     if ref.play_count is None:
         thay["play_count"] = _so(info.get("view_count"))
+    # Ba ô dưới chỉ yt-dlp có (không nguồn liệt kê nào trả), nên luôn lấy từ
+    # `info`. `description` là caption ĐẦY ĐỦ — `title` của trang liệt kê bị
+    # cắt ~70 ký tự (đo 24/09: 72 vs 1402 ký tự cho cùng một video).
+    thay["description"] = _cat_tran(info.get("description"), DESCRIPTION_TOI_DA)
+    thay["track"] = _cat_tran(info.get("track"), NHAC_TOI_DA)
+    thay["artist"] = _cat_tran(info.get("artist"), NHAC_TOI_DA)
     return replace(ref, **{k: v for k, v in thay.items() if v is not None})
+
+
+# Trần độ dài khi LƯU, không phải khi hiển thị. 4000 = trần caption TikTok
+# (chưa tra lại tại nguồn TikTok; lớn nhất đo được ở lượt thật 24/09 là 1402).
+# Vượt trần thì cắt và ghi log — một caption dài bất thường là thứ nên thấy,
+# không phải thứ nên nuốt.
+DESCRIPTION_TOI_DA = 4000
+NHAC_TOI_DA = 200
+
+
+def _cat_tran(gia_tri, toi_da: int) -> str | None:
+    """Chuỗi đã `strip`, cắt ở `toi_da` ký tự; rỗng/không phải chuỗi ⇒ None."""
+    if not isinstance(gia_tri, str):
+        return None
+    s = gia_tri.strip()
+    if not s:
+        return None
+    if len(s) > toi_da:
+        log.info("metadata dài %d ký tự, cắt còn %d", len(s), toi_da)
+        return s[:toi_da]
+    return s
 
 
 class _JobProgress:
