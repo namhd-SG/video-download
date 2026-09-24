@@ -21,6 +21,7 @@ PROFILE_URL = "https://www.tiktok.com/@fdcvhuy"
 MUSIC_URL = "https://www.tiktok.com/music/She-Drives-Me-Crazy-6700000000000000000"
 API = "https://www.tiktok.com"
 VIDEO_HREFS = [f"https://www.tiktok.com/@u/video/74{i:017d}" for i in range(3)]
+STRAY_HREF = "https://www.tiktok.com/@x/video/7582462896177827079"  # video lạc thấy trên prod
 
 
 class _Req:
@@ -69,11 +70,15 @@ class FakePage:
     """Each `goto` fires the next scripted visit; links render iff that visit
     delivered a feed body (the page renders only what the feed sent)."""
 
-    def __init__(self, visits: list[list[_Resp]]) -> None:
+    def __init__(self, visits: list[list[_Resp]], *, stray_first_visit: bool = False,
+                 timeout_on_goto: int | None = None) -> None:
         self.visits = visits
         self.handler = None
         self.gotos: list[str] = []
         self._links: list[str] = []
+        # Prod 21–24/09: trang rỗng vẫn hiện MỘT link `/video/` lạc.
+        self._stray = stray_first_visit
+        self._timeout_on = timeout_on_goto
 
     def on(self, event: str, handler) -> None:
         assert event == "response"
@@ -81,11 +86,18 @@ class FakePage:
 
     def goto(self, url: str, **_kw) -> None:
         self.gotos.append(url)
+        if self._timeout_on == len(self.gotos):
+            raise PWTimeout("Timeout 30000ms exceeded.")
         visit = self.visits[len(self.gotos) - 1] if len(self.gotos) <= len(self.visits) else []
         for resp in visit:
             self.handler(resp)
         has_body = any(scraper._feed_marker(r.url) and r._body for r in visit)
-        self._links = VIDEO_HREFS if has_body else []
+        if has_body:
+            self._links = VIDEO_HREFS
+        elif self._stray and len(self.gotos) == 1:
+            self._links = [STRAY_HREF]
+        else:
+            self._links = []
 
     def wait_for_selector(self, _sel: str, timeout: int) -> None:
         if not self._links:
@@ -95,8 +107,8 @@ class FakePage:
         return list(self._links)
 
 
-def _open(url: str, visits: list[list[_Resp]]) -> tuple[FakePage, dict[str, int]]:
-    page, feed_luot = FakePage(visits), {}
+def _open(url: str, visits: list[list[_Resp]], **page_kw) -> tuple[FakePage, dict[str, int]]:
+    page, feed_luot = FakePage(visits, **page_kw), {}
     _watch_feed_api(page, None, feed_luot)
     _mo_trang_co_ham_phien(page, url, feed_luot)
     return page, feed_luot
@@ -114,6 +126,37 @@ def test_search_empty_first_visit_is_reopened_once_and_gets_links(caplog):
     lines = [r.getMessage() for r in caplog.records if "[ham-phien]" in r.getMessage()]
     assert lines == ["[ham-phien] lan=2 feed=search bytes=207477 links=3"]
     assert not [r for r in caplog.records if "no video links rendered" in r.getMessage()]
+
+
+def test_one_stray_link_on_an_empty_page_does_not_suppress_the_reopen():
+    # Prod 21–24/09: 0-byte feed rồi `collected 1` — link lạc không được chặn lượt hâm.
+    page, feed_luot = _open(SEARCH_URL, [
+        _empty_first_visit("/api/search/general/full/"),
+        _full_second_visit("/api/search/general/full/"),
+    ], stray_first_visit=True)
+    assert len(page.gotos) == 2
+    assert page.eval_on_selector_all("", "") == VIDEO_HREFS
+    assert feed_luot["co_du_lieu"] == 1
+
+
+def test_reopen_timeout_keeps_the_first_visit_result_instead_of_failing(caplog):
+    with caplog.at_level(logging.INFO, logger="ttmd"):
+        page, _ = _open(SEARCH_URL, [_empty_first_visit("/api/search/general/full/")],
+                        stray_first_visit=True, timeout_on_goto=2)
+    assert len(page.gotos) == 2
+    assert page.eval_on_selector_all("", "") == [STRAY_HREF]
+    msgs = [r.getMessage() for r in caplog.records]
+    assert any("goto timed out" in m for m in msgs)
+    assert "[ham-phien] lan=2 feed=search bytes=0 links=-1" in msgs
+
+
+def test_page_that_retried_on_its_own_is_not_reopened():
+    # Headful thật (R7 ca B): lượt đầu 0 byte, trang tự gọi lại và có dữ liệu ⇒ không mở lại.
+    page, _ = _open(SEARCH_URL, [
+        _empty_first_visit("/api/search/general/full/")
+        + [_Resp("/api/search/general/full/", encoding="gzip", body=b"x" * 1000)],
+    ])
+    assert page.gotos == [SEARCH_URL]
 
 
 def test_profile_empty_first_visit_is_reopened_once():

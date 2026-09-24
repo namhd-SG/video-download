@@ -471,27 +471,36 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
     0 → 12 link. Chưa phân lập được lượt đầu rỗng là do CDP hay do một tín hiệu
     tự động hoá khác; cách vá này không phụ thuộc câu trả lời đó.
 
-    Chỉ mở lại khi feed ĐÃ về mà rỗng (0 byte, hoặc thân không đọc được) VÀ
-    chưa có feed nào có dữ liệu VÀ chưa có link. Feed chưa hề về thì không mở lại. Trần một lần, không vòng lặp. Lượt mở
-    lại tiêu thêm một request feed, và `dem_trang` đếm nó như mọi lượt khác.
+    Quyết định mở lại theo SỐ ĐO FEED, không theo DOM: mở lại khi feed ĐÃ về mà
+    rỗng (0 byte, hoặc thân không đọc được) VÀ chưa có feed nào có dữ liệu. Có
+    link hay không KHÔNG quyết: trang search/profile rỗng trên mini vẫn hiện MỘT
+    link `/video/` lạc (5/5 job rỗng 21–24/09: cảnh báo 0 byte rồi `collected 1`),
+    nên cổng theo link sẽ bỏ qua đúng ca cần vá. Feed chưa hề về thì không mở lại.
+    Trần một lần, không vòng lặp. Lượt mở lại tiêu thêm một request feed, và
+    `dem_trang` đếm nó như mọi lượt khác.
     """
     page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-    if _cho_link(page):
-        return
+    co_link = _cho_link(page)
     feed = _loai_feed_can_ham(url)
     da_thay_feed_rong = (feed_luot.get("rong", 0) > 0
                          or feed_luot.get("khong_doc_duoc", 0) > 0)
     if (feed is not None and da_thay_feed_rong
             and feed_luot.get("co_du_lieu", 0) == 0):
         byte_truoc = feed_luot.get("bytes", 0)
-        page.goto(url, wait_until="domcontentloaded", timeout=30_000)
-        co_link = _cho_link(page)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            co_link = _cho_link(page)
+            so_link = len(_collect_links(page)) if co_link else 0
+        except PWTimeout as exc:
+            # Lượt mở lại quá giờ: giữ kết quả như chưa vá (lượt chạy tiếp với
+            # những gì lượt đầu có), đừng biến một job "0 video" thành "failed".
+            log.warning("[ham-phien] lan=2 feed=%s goto timed out: %s", feed, exc)
+            so_link = -1
         # Một dòng đếm được để đo tần suất trên mini: grep "[ham-phien]".
         log.info("[ham-phien] lan=2 feed=%s bytes=%d links=%d", feed,
-                 feed_luot.get("bytes", 0) - byte_truoc,
-                 len(_collect_links(page)) if co_link else 0)
-        if co_link:
-            return
+                 feed_luot.get("bytes", 0) - byte_truoc, so_link)
+    if co_link:
+        return
     # Neutral wording on purpose: the 0-byte feed warning above (if any)
     # already names the real cause; cookies/headful are only worth trying
     # when the server DID send items.
