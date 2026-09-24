@@ -29,16 +29,20 @@ class _Req:
 
 class _Resp:
     def __init__(self, path: str, *, content_length: str | None = None,
-                 encoding: str | None = None, body: bytes = b"") -> None:
+                 encoding: str | None = None, body: bytes = b"",
+                 unreadable: bool = False) -> None:
         self.url = API + path + "?msToken=x"
         self.status = 200
         self.request = _Req()
         self._cl, self._ce, self._body = content_length, encoding, body
+        self._unreadable = unreadable
 
     def header_value(self, name: str) -> str | None:
         return {"content-length": self._cl, "content-encoding": self._ce}.get(name)
 
     def body(self) -> bytes:
+        if self._unreadable:
+            raise RuntimeError("Protocol error: No data found for resource with given identifier")
         return self._body
 
 
@@ -146,6 +150,18 @@ def test_music_page_is_never_reopened_even_when_its_feed_is_empty():
 def test_music_page_with_data_on_first_visit_opens_once():
     page, _ = _open(MUSIC_URL, [_full_second_visit("/api/music/item_list/")])
     assert page.gotos == [MUSIC_URL]
+
+
+def test_empty_first_feed_whose_body_cannot_be_read_still_reopens():
+    # Feed rỗng tới dạng nén không Content-Length ⇒ Chromium "No data found":
+    # watcher không vào ô rong nhưng vẫn phải mở lại, không thì job lại ra 0 video.
+    first = [r for r in _empty_first_visit("/api/search/general/full/")
+             if "general/full" not in r.url]
+    first.insert(1, _Resp("/api/search/general/full/", encoding="gzip", unreadable=True))
+    page, feed_luot = _open(SEARCH_URL, [first, _full_second_visit("/api/search/general/full/")])
+    assert len(page.gotos) == 2
+    assert feed_luot.get("rong", 0) == 0 and feed_luot["khong_doc_duoc"] == 1
+    assert feed_luot["co_du_lieu"] == 1
 
 
 def test_no_reopen_when_emptiness_was_not_measured():

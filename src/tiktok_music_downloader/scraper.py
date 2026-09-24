@@ -282,6 +282,10 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
                         "tell which.",
                         marker, resp.status, exc,
                     )
+                    # Ô RIÊNG, không vào `rong`/`co_du_lieu` (không phân định
+                    # được). Chỉ lượt hâm phiên đọc nó: không link + không feed
+                    # có dữ liệu + feed không đọc được thân thì vẫn đáng mở lại.
+                    _dem("khong_doc_duoc")
                 else:
                     # Measured on a SUCCESSFUL /music/ run: a feed response
                     # landing during ctx.close() raises "Target page, context
@@ -467,15 +471,17 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
     0 → 12 link. Chưa phân lập được lượt đầu rỗng là do CDP hay do một tín hiệu
     tự động hoá khác; cách vá này không phụ thuộc câu trả lời đó.
 
-    Chỉ mở lại khi đo được feed rỗng VÀ chưa có feed nào có dữ liệu VÀ chưa có
-    link: không đo được thì không đoán. Trần một lần, không vòng lặp. Lượt mở
+    Chỉ mở lại khi feed ĐÃ về mà rỗng (0 byte, hoặc thân không đọc được) VÀ
+    chưa có feed nào có dữ liệu VÀ chưa có link. Feed chưa hề về thì không mở lại. Trần một lần, không vòng lặp. Lượt mở
     lại tiêu thêm một request feed, và `dem_trang` đếm nó như mọi lượt khác.
     """
     page.goto(url, wait_until="domcontentloaded", timeout=30_000)
     if _cho_link(page):
         return
     feed = _loai_feed_can_ham(url)
-    if (feed is not None and feed_luot.get("rong", 0) > 0
+    da_thay_feed_rong = (feed_luot.get("rong", 0) > 0
+                         or feed_luot.get("khong_doc_duoc", 0) > 0)
+    if (feed is not None and da_thay_feed_rong
             and feed_luot.get("co_du_lieu", 0) == 0):
         byte_truoc = feed_luot.get("bytes", 0)
         page.goto(url, wait_until="domcontentloaded", timeout=30_000)

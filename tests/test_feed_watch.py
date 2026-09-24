@@ -260,7 +260,8 @@ def test_feed_co_du_lieu_duoc_dem_la_co_du_lieu():
 
 def test_than_khong_doc_duoc_khong_vao_o_nao():
     """Không phân định được thì không đếm — đếm là đoán."""
-    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", raises=True)) == {}
+    # Ô riêng `khong_doc_duoc` chỉ để lượt hâm phiên đọc; `rong`/`co_du_lieu` vẫn không đụng.
+    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", raises=True)) == {"khong_doc_duoc": 1}
 
 
 # ---------------------------------------------------------------------------
