@@ -228,3 +228,35 @@ def test_khong_truyen_dem_trang_thi_khong_no():
     page = FakePage()
     _watch_feed_api(page)
     page.handler(FakeResponse(MUSIC_API, content_length="4096"))
+
+
+# ---------------------------------------------------------------------------
+# `thong_ke`: đếm feed RỖNG vs CÓ DỮ LIỆU, để lượt tải khỏi khai "đã có hết"
+# khi TikTok thật ra trả 0 byte (ca thật 24/09, job 11-12).
+# ---------------------------------------------------------------------------
+
+def _tk(resp: FakeResponse) -> dict:
+    page = FakePage()
+    tk: dict = {}
+    _watch_feed_api(page, None, tk)
+    page.handler(resp)
+    return tk
+
+
+SEARCH_API = "https://www.tiktok.com/api/search/general/full/?msToken=x"
+
+
+def test_feed_rong_duoc_dem_la_rong():
+    """ĐỘT BIẾN: bỏ `_dem("rong")` ở nhánh Content-Length: 0 ⇒ ĐỎ."""
+    assert _tk(FakeResponse(SEARCH_API, content_length="0")) == {"rong": 1}
+    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", body=b"")) == {"rong": 1}
+
+
+def test_feed_co_du_lieu_duoc_dem_la_co_du_lieu():
+    assert _tk(FakeResponse(SEARCH_API, content_length="4096")) == {"co_du_lieu": 1}
+    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", body=b"{}")) == {"co_du_lieu": 1}
+
+
+def test_than_khong_doc_duoc_khong_vao_o_nao():
+    """Không phân định được thì không đếm — đếm là đoán."""
+    assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", raises=True)) == {}
