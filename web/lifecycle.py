@@ -521,6 +521,64 @@ def _bo_tep_do_dang(out: Path, video_id: str) -> None:
         log.warning("thumbnail %s: không xoá được tệp dở (%s)", video_id, type(exc).__name__)
 
 
+# Khung PHỤ ngoài poster giây 1, cắt ở 50 % và 90 % thời lượng. Vì sao: giây 1
+# hay là intro, thẻ chữ hay viền đen (đo 24/09 trên 59 poster lượt thật: 12 thẻ
+# chữ, 30 có viền letterbox), còn mp4 bị xoá ngay sau khi lên Drive — không cắt
+# LÚC NÀY thì không bao giờ cắt được nữa, trừ khi tải lại. Cùng cỡ/định dạng với
+# poster (webp, rộng THUMB_WIDTH) để một bộ phân tích đọc cả ba như nhau.
+# Nằm ở thư mục con để `/thumbs/{id}.webp` và mọi thứ đọc thư mục cha không
+# thấy chúng.
+KHUNG_PHU_PHAN_TRAM = (50, 90)
+
+
+def khung_phu_path_for(db_path: Path, video_id: str, phan_tram: int) -> Path:
+    """`thumbs/khung/<id>-<phần trăm>.webp` — tính ra, không lưu, như poster."""
+    return thumbs_dir_for(db_path) / "khung" / f"{video_id}-{phan_tram}.webp"
+
+
+def _cut_extra_frames_quietly(path: Path, db_path: Path, video_id: str,
+                              duration: int | None) -> int:
+    """Cắt các khung phụ. Trả SỐ khung đã cắt được (0..len(KHUNG_PHU_PHAN_TRAM)).
+
+    Never raises — cùng lý do với `_cut_thumbnail_quietly`: người gọi chạy
+    `path.unlink()` ngay sau, một ngoại lệ lọt ra sẽ để mp4 nằm lại trên đĩa
+    không ai tìm thấy. Trả số đếm chứ không trả bool: "cắt được 1/2" là thứ
+    người đọc log cần phân biệt với "2/2" và "0/2".
+    """
+    try:
+        if not duration or duration <= 0:
+            log.warning("khung phụ %s: không có thời lượng — bỏ qua 0/%d",
+                        video_id, len(KHUNG_PHU_PHAN_TRAM))
+            return 0
+        ffmpeg_bin = find_ffmpeg()
+        if not ffmpeg_bin:
+            log.warning("khung phụ %s: không tìm thấy ffmpeg — bỏ qua", video_id)
+            return 0
+        da_cat = 0
+        for pt in KHUNG_PHU_PHAN_TRAM:
+            out = khung_phu_path_for(db_path, video_id, pt)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            result = subprocess.run(
+                [ffmpeg_bin, "-y", "-loglevel", "error",
+                 "-ss", f"{duration * pt / 100:.2f}", "-i", str(path),
+                 "-frames:v", "1", "-vf", f"scale={THUMB_WIDTH}:-2", str(out)],
+                capture_output=True, text=True, timeout=THUMB_TIMEOUT_SECONDS,
+            )
+            if result.returncode == 0 and out.exists() and out.stat().st_size > 0:
+                da_cat += 1
+            else:
+                log.warning("khung phụ %s @%d%%: ffmpeg rc=%s — chưa kết luận nguyên nhân",
+                            video_id, pt, result.returncode)
+                _bo_tep_do_dang(out, video_id)
+        if da_cat < len(KHUNG_PHU_PHAN_TRAM):
+            log.warning("khung phụ %s: cắt được %d/%d", video_id, da_cat,
+                        len(KHUNG_PHU_PHAN_TRAM))
+        return da_cat
+    except Exception as exc:  # noqa: BLE001 — see docstring; unlink must be reached
+        log.warning("khung phụ %s: lỗi ngoài dự kiến (%s)", video_id, type(exc).__name__)
+        return 0
+
+
 def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef,
                            drive_file_id: str | None = None) -> bool:
     """Index the video for the library grid. Never raises, same reason as above.
@@ -535,6 +593,7 @@ def _record_video_quietly(db_path: Path, job_id: int, ref: VideoRef,
             title=ref.title, author=ref.author, region=ref.region,
             duration=ref.duration, play_count=ref.play_count,
             music_id=ref.music_id, drive_file_id=drive_file_id,
+            description=ref.description, track=ref.track, artist=ref.artist,
         )
         return True
     except Exception as exc:  # noqa: BLE001
@@ -650,6 +709,7 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
         # leave the mp4 behind with no row to find it by.
         if db_path is not None:
             _cut_thumbnail_quietly(path, db_path, ref.video_id)
+            _cut_extra_frames_quietly(path, db_path, ref.video_id, ref.duration)
             # `result.file_id` is this video's own Drive id — `result.drive_id`
             # is the Shared Drive's, identical for every file, and mixing them
             # up would make every card link to the same place.

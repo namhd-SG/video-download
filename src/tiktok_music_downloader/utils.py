@@ -93,6 +93,13 @@ class VideoRef:
     # sources that actually enumerate well here, and TikTok trends cluster by
     # sound. Like the rest, it rides along free in the index response.
     music_id: str | None = None
+    # Filled from yt-dlp's `extract_info` after the download, never by an
+    # enumerator. `title` from the listing is a snippet cut at ~70 characters;
+    # `description` is the full caption. Kept for grouping videos into styles
+    # after a download — the only moment it is free, since nothing re-reads it.
+    description: str | None = None
+    track: str | None = None
+    artist: str | None = None
 
     @property
     def filename(self) -> str:
