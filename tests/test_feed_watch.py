@@ -260,3 +260,70 @@ def test_feed_co_du_lieu_duoc_dem_la_co_du_lieu():
 def test_than_khong_doc_duoc_khong_vao_o_nao():
     """Không phân định được thì không đếm — đếm là đoán."""
     assert _tk(FakeResponse(SEARCH_API, content_encoding="gzip", raises=True)) == {}
+
+
+# ---------------------------------------------------------------------------
+# Chuỗi request THẬT của trang (log debug, ẩn danh, máy dev, 24/09 16:0x).
+# Test cũ dựng MỘT phản hồi feed tưởng tượng nên không thấy `preview` — và bản
+# vá "feed_rong" xanh test mà không bao giờ bật trên prod (job 13, 14).
+# ---------------------------------------------------------------------------
+
+T = "https://www.tiktok.com"
+TRANG_SEARCH_THAT = [
+    FakeResponse(f"{T}/tiktok/ppf/api/eligibility/v2", content_length="120"),
+    FakeResponse(f"{T}/api/search/general/full/?keyword=x", content_length="0"),
+    FakeResponse(f"{T}/api/search/suggest/guide/?keyword=x", content_length="900"),
+    FakeResponse(f"{T}/api/prefetch/explore/item_list/?x=1", content_length="5000"),
+    FakeResponse(f"{T}/api/search/general/preview/?keyword=x", content_length="2048"),
+]
+TRANG_PROFILE_THAT = [
+    FakeResponse(f"{T}/api/post/item_list/?secUid=x", content_length="0"),
+    FakeResponse(f"{T}/api/story/item_list/?x", content_length="300"),
+    FakeResponse(f"{T}/api/repost/item_list/?x", content_length="300"),
+    FakeResponse(f"{T}/api/prefetch/explore/item_list/?x", content_length="5000"),
+]
+
+
+def _chay_trang(chuoi) -> dict:
+    page = FakePage()
+    tk: dict = {}
+    _watch_feed_api(page, None, tk)
+    for r in chuoi:
+        page.handler(r)
+    return tk
+
+
+def test_trang_search_that_chi_dem_endpoint_ket_qua():
+    """ĐỘT BIẾN: đưa mẫu về chuỗi con `/api/search/general` ⇒ `preview` vào đếm
+    `co_du_lieu` ⇒ ĐỎ."""
+    assert _chay_trang(TRANG_SEARCH_THAT) == {"rong": 1}
+
+
+def test_trang_profile_that_dem_post_item_list():
+    """ĐỘT BIẾN: bỏ `/api/post/item_list` khỏi mẫu ⇒ {} ⇒ ĐỎ.
+    story/repost/prefetch KHÔNG phải kết quả của trang profile."""
+    assert _chay_trang(TRANG_PROFILE_THAT) == {"rong": 1}
+
+
+def test_ca_that_job_13_ra_feed_rong_qua_multipass(monkeypatch):
+    """Đường THẬT từ bộ theo dõi tới lý do dừng: trang search trả `full` 0 byte,
+    `preview` có dữ liệu, gom 1 video lạc đã có (7582462896177827079 — cùng một
+    id ở cả 4 job hỏng 24/09) ⇒ phải là `feed_rong`, không `already_owned`."""
+    from tiktok_music_downloader import scraper
+    from tiktok_music_downloader.utils import VideoRef
+
+    def gia(url, thong_ke_feed=None, dem_trang=None, **kw):
+        page = FakePage()
+        scraper._watch_feed_api(page, dem_trang, thong_ke_feed)
+        for r in TRANG_SEARCH_THAT:
+            page.handler(r)
+        return [VideoRef(video_id="7582462896177827079",
+                         url="https://www.tiktok.com/@x/video/7582462896177827079")]
+
+    monkeypatch.setattr(scraper, "scrape_music_page", gia)
+    ly_do = []
+    ra = scraper.scrape_music_page_multi(
+        "https://www.tiktok.com/search?q=x", passes=1, max_videos=10,
+        already_have=lambda ids: set(ids), on_stop=ly_do.append)
+    assert ra == []
+    assert ly_do == ["feed_rong"]
