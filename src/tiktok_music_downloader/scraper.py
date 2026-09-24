@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Callable, Iterable
 
+from urllib.parse import urlsplit
+
 from playwright.sync_api import (
     Browser,
     BrowserContext,
@@ -144,11 +146,29 @@ def _collect_links(page: Page) -> set[VideoRef]:
 # while the page renders nothing at all. We watch for exactly that shape and
 # log it where it happens, so a zero-video scrape reports which side dropped
 # the data instead of sending the user off to re-export cookies.
+#
+# Khớp ĐƯỜNG DẪN CHÍNH XÁC (bỏ query, bỏ `/` cuối), KHÔNG khớp chuỗi con. Bản
+# cũ dùng `"/api/search/general" in url` và khớp luôn `/api/search/general/
+# preview/` — endpoint GỢI Ý, luôn có dữ liệu — cạnh `/api/search/general/full/`
+# là endpoint KẾT QUẢ. Đo 24/09 trên trang search thật (ẩn danh, máy dev):
+# `full` 0 byte, `preview` có byte ⇒ bộ đếm ra {rong: 1, co_du_lieu: 1} và mọi
+# lượt search rỗng bị khai "đã có hết". Chuỗi endpoint mỗi trang gọi, cùng đo:
+#   search : search/general/full · search/suggest/guide · search/general/preview
+#   profile: post/item_list · story/item_list · repost/item_list · prefetch/explore/item_list
+#   music  : music/item_list
+# Chỉ endpoint KẾT QUẢ của trang được đưa vào đây.
 _FEED_API_MARKERS = (
     "/api/challenge/item_list",   # hashtag page  (/tag/<slug>)
-    "/api/search/general",        # search page   (/search?q=...)
+    "/api/search/general/full",   # search page   (/search?q=...) — KHÔNG phải /preview
     "/api/music/item_list",       # music page    (/music/...)
+    "/api/post/item_list",        # profile page  (/@user) — KHÔNG phải story/repost
 )
+
+
+def _feed_marker(url: str) -> str | None:
+    """Endpoint kết quả mà `url` trỏ tới, so ĐƯỜNG DẪN CHÍNH XÁC; None nếu không."""
+    duong = urlsplit(url).path.rstrip("/")
+    return next((m for m in _FEED_API_MARKERS if duong == m), None)
 
 
 def _warn_empty_feed(marker: str, status: int, how: str) -> None:
@@ -202,7 +222,7 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
             if "/api/" in resp.url:
                 log.debug("api response %s -> %d", resp.url.split("?")[0], resp.status)
 
-            marker = next((m for m in _FEED_API_MARKERS if m in resp.url), None)
+            marker = _feed_marker(resp.url)
             if marker is None:
                 return
 
