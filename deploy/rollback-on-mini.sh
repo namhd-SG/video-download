@@ -10,7 +10,9 @@
 # `--backup-dir` của rsync chỉ giữ những file bị THAY. (Về lý thuyết nó giữ cả
 # file bị XOÁ — nhưng openrsync bỏ qua `--delete` khi có `--backup-dir`, đo
 # 23/09 trên mini, nên deploy KHÔNG xoá gì và bản lui không bao giờ chứa file bị
-# xoá. Xem comment bước 3 của deploy-to-mini.sh.) File mà lần
+# xoá. Xem comment bước 3 của deploy-to-mini.sh.) Tệp đã xoá khỏi git mà bước 3b
+# gỡ khỏi mini thì được `mv` VÀO chính thư mục bản lui, nên lui là chúng quay về.
+# File mà lần
 # deploy đó THÊM MỚI thì không nằm trong bản lui, nên sau khi lui chúng vẫn còn
 # trên đĩa. Thường vô hại (không ai trỏ tới chúng nữa), nhưng nếu cần sạch
 # tuyệt đối thì deploy lại từ commit cũ, đừng dựa vào script này.
@@ -43,6 +45,11 @@ echo "   ~/Projects/$BACKUP_NAME — $so_file file"
 
 say "2. Chép ngược đè lên repo"
 ssh "$HOST" "cp -R ~/Projects/$BACKUP_NAME/. ~/$REMOTE_REPO/"
+# Mốc `.deployed-sha` đang nói commit của bản VỪA BỊ LUI — sau cp nó sai. Script
+# này không biết commit cũ là gì, nên gỡ mốc thay vì để nó khẳng định điều sai:
+# lần deploy sau sẽ báo "chưa có mốc" và không gỡ gì, thay vì gỡ theo mốc sai.
+ssh "$HOST" "rm -f ~/$REMOTE_REPO/.deployed-sha"
+echo "   đã gỡ mốc .deployed-sha (bản lui không mang commit)"
 
 say "3. kickstart -k $LABEL"
 ssh "$HOST" "launchctl kickstart -k gui/\$(id -u)/$LABEL"
