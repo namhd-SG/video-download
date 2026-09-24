@@ -266,3 +266,10 @@ STOP_HET_VONG = "het_vong"
 # đậm thêm dấu vết. Phân biệt với `source_empty`: ở đó nguồn chưa bao giờ trả
 # gì, ở đây nó đang trả rồi ngừng.
 STOP_NGHI_BI_CHAN = "nghi_bi_chan"
+# Feed của TikTok (search/music) trả HTTP 200 thân 0 BYTE ở MỌI phản hồi đo
+# được trong lượt tải, và không gom được video mới nào. Khác `already_owned`
+# (nguồn còn đưa, mình có hết) và `source_empty` (không gom được gì): ở đây có
+# thể gom được một video lẻ không đến từ feed. Nguyên nhân CHƯA KẾT LUẬN
+# (cookie cũ? chặn phía search?) nên câu chữ chỉ khuyên hai việc rẻ: thử lại,
+# dán lại cookie.
+STOP_FEED_RONG = "feed_rong"

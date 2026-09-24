@@ -22,6 +22,7 @@ from tiktok_music_downloader.utils import (
     STOP_HET_THOI_GIAN,
     STOP_HET_VONG,
     STOP_NGHI_BI_CHAN,
+    STOP_FEED_RONG,
     STOP_SOURCE_EMPTY,
     STOP_STALLED,
     STEALTH_INIT_JS,
@@ -158,7 +159,8 @@ def _warn_empty_feed(marker: str, status: int, how: str) -> None:
     )
 
 
-def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None) -> None:
+def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
+                    thong_ke: dict[str, int] | None = None) -> None:
     """Log feed endpoints that answer with no body, and say when we can't tell.
 
     `dem_trang` is called once per feed response that actually carried a
@@ -181,7 +183,15 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None) -> 
     The endpoint list is a snapshot of observed traffic, so absence of a
     warning is NOT proof the feeds were healthy; every `/api/` response is
     debug-logged so an unlisted feed endpoint shows up under --verbose.
+
+    `thong_ke` (nếu truyền) đếm `rong` = phản hồi feed ĐO ĐƯỢC là 0 byte và
+    `co_du_lieu` = phản hồi feed đo được là CÓ byte. Ca "không đọc được thân"
+    không vào ô nào: nó không phân định được, và đếm nó là đoán. Người gọi dùng
+    hai số này để khỏi khai "thư viện đã có hết" khi TikTok thật ra trả RỖNG.
     """
+    def _dem(o: str) -> None:
+        if thong_ke is not None:
+            thong_ke[o] = thong_ke.get(o, 0) + 1
 
     def on_response(resp: Response) -> None:
         # Nothing may escape this listener. Playwright stores an escaped
@@ -217,10 +227,12 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None) -> 
             if declared == "0":
                 # Encoding-independent: zero octets decode to nothing.
                 _warn_empty_feed(marker, resp.status, "Content-Length: 0")
+                _dem("rong")
                 return
             if declared is not None and declared.isdigit() and encoding in ("", "identity"):
                 # Uncompressed, so the declared length IS the decoded length —
                 # a non-zero value settles it without moving the payload.
+                _dem("co_du_lieu")
                 return
             # Either chunked (no length) or compressed, where Content-Length is
             # the COMPRESSED size: gzip of an empty body is still 20 bytes, so
@@ -228,6 +240,9 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None) -> 
             try:
                 if len(resp.body()) == 0:
                     _warn_empty_feed(marker, resp.status, "body read")
+                    _dem("rong")
+                else:
+                    _dem("co_du_lieu")
             except Exception as exc:  # noqa: BLE001
                 if "No data found for resource" in str(exc):
                     # Chromium keeps no retrievable body for a zero-length
@@ -402,6 +417,7 @@ def scrape_music_page(
     proxy: str | None = None,
     profile_dir: str | None = None,
     dem_trang: Callable[[], None] | None = None,
+    thong_ke_feed: dict[str, int] | None = None,
 ) -> list[VideoRef]:
     """Open music page, scroll, return up-to-max unique VideoRefs (newest-first as rendered).
 
@@ -431,7 +447,7 @@ def scrape_music_page(
             ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
-        _watch_feed_api(page, dem_trang)
+        _watch_feed_api(page, dem_trang, thong_ke_feed)
         try:
             page.goto(music_url, wait_until="domcontentloaded", timeout=30_000)
             try:
@@ -527,6 +543,9 @@ def scrape_music_page_multi(
     # `i + 1` cho câu log cuối sẽ báo dư một lượt chưa từng xảy ra. Một dòng
     # log khai nhiều hơn thứ nó đo được là thứ người sau sẽ trích như số đo.
     da_cao = 0
+    # Cộng dồn MỌI lượt: câu hỏi là "TikTok có từng trả feed có dữ liệu trong
+    # lượt tải này không", không phải "lượt cuối ra sao".
+    thong_ke_feed: dict[str, int] = {"rong": 0, "co_du_lieu": 0}
 
     def _con_lai() -> float | None:
         if max_seconds is None:
@@ -576,7 +595,8 @@ def scrape_music_page_multi(
         # 40 cái đã có bị bỏ lại ngay ở lượt 3 thay vì lượt 5.
         con_thieu = max_videos - len(moi)
         muc_tieu_tho = max(max_videos, (len(da_thay) + con_thieu) * 2)
-        batch = scrape_music_page(music_url, max_videos=muc_tieu_tho, **kwargs)
+        batch = scrape_music_page(music_url, max_videos=muc_tieu_tho,
+                                  thong_ke_feed=thong_ke_feed, **kwargs)
         if not batch:
             # Lượt ĐẦU ra 0 = nguồn chưa bao giờ đưa gì (link sai/hết hạn).
             # Lượt SAU ra 0 = nó đang đưa rồi ngừng ⇒ nghi bị chặn mềm. Hai ca
@@ -652,7 +672,18 @@ def scrape_music_page_multi(
     # phải "hết giờ" — nó là "thư viện đã có hết những gì nguồn đưa". Hai ca
     # bảo người dùng hai việc ngược nhau: một cái bảo ĐỔI NGUỒN (chạy lại chắc
     # chắn vô ích), một cái bảo CHẠY LẠI (có thể ra thêm).
-    if ly_do in (STOP_HET_THOI_GIAN, STOP_HET_VONG, STOP_STALLED) and not moi and bo_qua:
+    #
+    # NGOẠI LỆ đặt TRƯỚC phép nâng cấp đó: feed đo được là RỖNG ở mọi phản hồi
+    # (≥1 rỗng, 0 có dữ liệu) thì "đã có hết" là khai SAI — video lẻ gom được
+    # không đến từ feed (đo 24/09, job 11-12: search thân 0 byte, gom 1 URL, URL
+    # đó đã có ⇒ giao diện báo "đã tải rồi" cho một link search MỚI). Không đo
+    # được feed nào (0/0) thì không đoán, giữ nguyên nhánh cũ.
+    if (not moi and thong_ke_feed["rong"] > 0 and thong_ke_feed["co_du_lieu"] == 0
+            and ly_do != STOP_COMPLETE):
+        log.warning("feed trả rỗng: %d phản hồi 0 byte, 0 phản hồi có dữ liệu — "
+                    "không phải 'đã có hết'", thong_ke_feed["rong"])
+        ly_do = STOP_FEED_RONG
+    elif ly_do in (STOP_HET_THOI_GIAN, STOP_HET_VONG, STOP_STALLED) and not moi and bo_qua:
         ly_do = STOP_ALREADY_OWNED
 
     if on_stop is not None and ly_do != STOP_COMPLETE:

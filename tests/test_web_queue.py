@@ -400,7 +400,8 @@ def test_scraper_call_always_passes_profile_dir_none(monkeypatch):
     captured = {}
 
     def fake_scrape_music_page(url, max_videos=None, cookies_path=None, proxy=None,
-                                profile_dir="__NOT_PASSED__", dem_trang=None):
+                                profile_dir="__NOT_PASSED__", dem_trang=None,
+                                thong_ke_feed=None):
         captured["profile_dir"] = profile_dir
         return []
 
@@ -1309,6 +1310,68 @@ def test_search_phan_biet_nguon_rong_voi_da_co_het(monkeypatch, tmp_path):
     """
     _, ly_do = _bat_ly_do(monkeypatch, refs=[], da_co=[], tmp_path=tmp_path)
     assert ly_do == "source_empty"
+
+
+def _bat_ly_do_feed(monkeypatch, tmp_path, refs, da_co, rong, co_du_lieu, xin=10):
+    """Như `_bat_ly_do` nhưng scraper giả khai số phản hồi feed rỗng/có dữ liệu —
+    đúng thứ `_watch_feed_api` điền vào `thong_ke_feed` trên trình duyệt thật."""
+    from web import models
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/search?q=x", xin, "ai@do.vn")
+    for vid in da_co:
+        models.record_video(db, job_id, vid, f"https://x/{vid}")
+
+    def gia(url, thong_ke_feed=None, **kw):
+        if thong_ke_feed is not None:
+            thong_ke_feed["rong"] = thong_ke_feed.get("rong", 0) + rong
+            thong_ke_feed["co_du_lieu"] = thong_ke_feed.get("co_du_lieu", 0) + co_du_lieu
+        return [_fake_ref(v) for v in refs]
+
+    gia_lap_scraper(monkeypatch, gia)
+    giu = queue_mod._fetch_refs("https://www.tiktok.com/search?q=x", max_videos=xin,
+                                cookies_path=None, db_path=db, job_id=job_id)
+    return giu, models.get_job(db, job_id)["ly_do_dung"]
+
+
+def test_feed_rong_khong_duoc_khai_la_da_co_het(monkeypatch, tmp_path):
+    """Ca thật 24/09 (job 11-12): search trả 0 byte, gom 1 video lẻ, video đó
+    đã có ⇒ trước bản vá: `already_owned` ("đã tải rồi") cho một link MỚI.
+    ĐỘT BIẾN: bỏ nhánh `STOP_FEED_RONG` trong `scrape_music_page_multi` ⇒ ĐỎ."""
+    giu, ly_do = _bat_ly_do_feed(monkeypatch, tmp_path, refs=["v1"], da_co=["v1"],
+                                 rong=1, co_du_lieu=0)
+    assert giu == []
+    assert ly_do == "feed_rong"
+
+
+def test_feed_co_du_lieu_thi_da_co_het_van_la_da_co_het(monkeypatch, tmp_path):
+    """CA DƯƠNG: feed trả dữ liệu thật mà mình có hết ⇒ giữ `already_owned`.
+    Không có ca này thì bản vá "luôn trả feed_rong" vẫn xanh test trên."""
+    _, ly_do = _bat_ly_do_feed(monkeypatch, tmp_path, refs=["v1"], da_co=["v1"],
+                               rong=0, co_du_lieu=1)
+    assert ly_do == "already_owned"
+
+
+def test_mot_phan_hoi_co_du_lieu_la_du_de_khong_khai_rong(monkeypatch, tmp_path):
+    """Rỗng một lần, có dữ liệu một lần ⇒ TikTok CÓ trả ⇒ không phải feed_rong."""
+    _, ly_do = _bat_ly_do_feed(monkeypatch, tmp_path, refs=["v1"], da_co=["v1"],
+                               rong=1, co_du_lieu=1)
+    assert ly_do == "already_owned"
+
+
+def test_khong_do_duoc_feed_thi_khong_doan(monkeypatch, tmp_path):
+    """0/0: endpoint không nằm trong danh sách theo dõi ⇒ giữ nhánh cũ."""
+    _, ly_do = _bat_ly_do_feed(monkeypatch, tmp_path, refs=["v1"], da_co=["v1"],
+                               rong=0, co_du_lieu=0)
+    assert ly_do == "already_owned"
+
+
+def test_feed_rong_nhung_co_video_moi_thi_khong_dung_vi_rong(monkeypatch, tmp_path):
+    """Video mới tới được tay thì không khai 'TikTok trả rỗng'."""
+    giu, ly_do = _bat_ly_do_feed(monkeypatch, tmp_path, refs=["v1", "v2"], da_co=["v1"],
+                                 rong=1, co_du_lieu=0, xin=1)
+    assert [r.video_id for r in giu] == ["v2"]
+    assert ly_do != "feed_rong"
 
 
 def test_lay_du_so_da_xin_thi_khong_mang_ly_do_dung(monkeypatch, tmp_path):
