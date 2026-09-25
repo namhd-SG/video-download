@@ -29,6 +29,8 @@ from tiktok_music_downloader.utils import (
     STOP_STALLED,
     STEALTH_INIT_JS,
     VideoRef,
+    is_profile_page,
+    is_search_page,
     parse_video_url,
     random_user_agent,
 )
@@ -209,9 +211,13 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
     không vào ô nào: nó không phân định được, và đếm nó là đoán. Người gọi dùng
     hai số này để khỏi khai "thư viện đã có hết" khi TikTok thật ra trả RỖNG.
     """
-    def _dem(o: str) -> None:
+    def _dem(o: str, so_byte: int | None = None) -> None:
         if thong_ke is not None:
             thong_ke[o] = thong_ke.get(o, 0) + 1
+            # `bytes`: tổng byte các phản hồi feed CÓ dữ liệu đo được độ dài —
+            # để dòng log `[ham-phien]` in số, không in "xong".
+            if so_byte is not None:
+                thong_ke["bytes"] = thong_ke.get("bytes", 0) + so_byte
 
     def on_response(resp: Response) -> None:
         # Nothing may escape this listener. Playwright stores an escaped
@@ -252,17 +258,18 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
             if declared is not None and declared.isdigit() and encoding in ("", "identity"):
                 # Uncompressed, so the declared length IS the decoded length —
                 # a non-zero value settles it without moving the payload.
-                _dem("co_du_lieu")
+                _dem("co_du_lieu", int(declared))
                 return
             # Either chunked (no length) or compressed, where Content-Length is
             # the COMPRESSED size: gzip of an empty body is still 20 bytes, so
             # the header cannot answer the question. Read the body.
             try:
-                if len(resp.body()) == 0:
+                so_byte = len(resp.body())
+                if so_byte == 0:
                     _warn_empty_feed(marker, resp.status, "body read")
                     _dem("rong")
                 else:
-                    _dem("co_du_lieu")
+                    _dem("co_du_lieu", so_byte)
             except Exception as exc:  # noqa: BLE001
                 if "No data found for resource" in str(exc):
                     # Chromium keeps no retrievable body for a zero-length
@@ -275,6 +282,10 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
                         "tell which.",
                         marker, resp.status, exc,
                     )
+                    # Ô RIÊNG, không vào `rong`/`co_du_lieu` (không phân định
+                    # được). Chỉ lượt hâm phiên đọc nó: không link + không feed
+                    # có dữ liệu + feed không đọc được thân thì vẫn đáng mở lại.
+                    _dem("khong_doc_duoc")
                 else:
                     # Measured on a SUCCESSFUL /music/ run: a feed response
                     # landing during ctx.close() raises "Target page, context
@@ -427,6 +438,79 @@ def _open_context(
     return browser, ctx
 
 
+def _loai_feed_can_ham(url: str) -> str | None:
+    """Loại trang được phép hâm phiên: `search`, `profile`; None cho mọi trang khác.
+
+    Music KHÔNG có trong đây: đo 24-25/09, feed music trả dữ liệu ngay lượt
+    đầu (20/20 link thật), nên mở lại chỉ tốn thêm một request vào hạn mức ngày.
+    """
+    if is_search_page(url):
+        return "search"
+    if is_profile_page(url):
+        return "profile"
+    return None
+
+
+def _cho_link(page: Page) -> bool:
+    """Chờ link video hiện ra tối đa 15s; True nếu có."""
+    try:
+        page.wait_for_selector(_VIDEO_LINK_SELECTOR, timeout=15_000)
+        return True
+    except PWTimeout:
+        return False
+
+
+def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> None:
+    """Mở `url`; với search/profile, mở lại ĐÚNG MỘT lần nếu lượt đầu bị trả rỗng.
+
+    Đo 25/09 (`~/agy-ws/exchange/search-rong-R7-data/`, cùng IP, không cookie):
+    trong một context tự động hoá, lượt gọi feed ĐẦU TIÊN luôn trả HTTP 200 với
+    thân 0 byte. Headful thì chính trang tự gọi lại và lượt hai có dữ liệu;
+    headless (đường prod) thì trang không gọi lại, nên cả job ra 0 video. Mở lại
+    trang trong CÙNG context thì lượt sau có dữ liệu: máy dev 0 → 24 link, mini
+    0 → 12 link. Chưa phân lập được lượt đầu rỗng là do CDP hay do một tín hiệu
+    tự động hoá khác; cách vá này không phụ thuộc câu trả lời đó.
+
+    Quyết định mở lại theo SỐ ĐO FEED, không theo DOM: mở lại khi feed ĐÃ về mà
+    rỗng (0 byte, hoặc thân không đọc được) VÀ chưa có feed nào có dữ liệu. Có
+    link hay không KHÔNG quyết: trang search/profile rỗng trên mini vẫn hiện MỘT
+    link `/video/` lạc (5/5 job rỗng 21–24/09: cảnh báo 0 byte rồi `collected 1`),
+    nên cổng theo link sẽ bỏ qua đúng ca cần vá. Feed chưa hề về thì không mở lại.
+    Trần một lần, không vòng lặp. Lượt mở lại tiêu thêm một request feed, và
+    `dem_trang` đếm nó như mọi lượt khác.
+    """
+    page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+    co_link = _cho_link(page)
+    feed = _loai_feed_can_ham(url)
+    da_thay_feed_rong = (feed_luot.get("rong", 0) > 0
+                         or feed_luot.get("khong_doc_duoc", 0) > 0)
+    if (feed is not None and da_thay_feed_rong
+            and feed_luot.get("co_du_lieu", 0) == 0):
+        byte_truoc = feed_luot.get("bytes", 0)
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=30_000)
+            co_link = _cho_link(page)
+            so_link = len(_collect_links(page)) if co_link else 0
+        except PWTimeout as exc:
+            # Lượt mở lại quá giờ: giữ kết quả như chưa vá (lượt chạy tiếp với
+            # những gì lượt đầu có), đừng biến một job "0 video" thành "failed".
+            log.warning("[ham-phien] lan=2 feed=%s goto timed out: %s", feed, exc)
+            so_link = -1
+        # Một dòng đếm được để đo tần suất trên mini: grep "[ham-phien]".
+        log.info("[ham-phien] lan=2 feed=%s bytes=%d links=%d", feed,
+                 feed_luot.get("bytes", 0) - byte_truoc, so_link)
+    if co_link:
+        return
+    # Neutral wording on purpose: the 0-byte feed warning above (if any)
+    # already names the real cause; cookies/headful are only worth trying
+    # when the server DID send items.
+    log.warning(
+        "no video links rendered after 15s — if a '0-byte body' "
+        "warning appeared above, the server sent no items; "
+        "otherwise try --headful or --cookies"
+    )
+
+
 def scrape_music_page(
     music_url: str,
     max_videos: int = 200,
@@ -467,26 +551,20 @@ def scrape_music_page(
             ctx.add_cookies(_load_cookies(Path(cookies_path)))
 
         page = ctx.new_page()
-        _watch_feed_api(page, dem_trang, thong_ke_feed)
+        # Bộ đếm RIÊNG của lượt này: lượt hâm cần biết lượt NÀY đã rỗng chưa,
+        # không phải cộng dồn của người gọi. Cộng vào `thong_ke_feed` ở finally.
+        feed_luot: dict[str, int] = {}
+        _watch_feed_api(page, dem_trang, feed_luot)
         try:
-            page.goto(music_url, wait_until="domcontentloaded", timeout=30_000)
-            try:
-                page.wait_for_selector(_VIDEO_LINK_SELECTOR, timeout=15_000)
-            except PWTimeout:
-                # Neutral wording on purpose: the 0-byte feed warning above
-                # (if any) already names the real cause; cookies/headful are
-                # only worth trying when the server DID send items.
-                log.warning(
-                    "no video links rendered after 15s — if a '0-byte body' "
-                    "warning appeared above, the server sent no items; "
-                    "otherwise try --headful or --cookies"
-                )
-
+            _mo_trang_co_ham_phien(page, music_url, feed_luot)
             refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
         finally:
             ctx.close()
             if browser is not None:
                 browser.close()
+            if thong_ke_feed is not None:
+                for o in ("rong", "co_du_lieu"):
+                    thong_ke_feed[o] = thong_ke_feed.get(o, 0) + feed_luot.get(o, 0)
 
     ordered = sorted(refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
     log.info("collected %d unique video URLs", len(ordered))
