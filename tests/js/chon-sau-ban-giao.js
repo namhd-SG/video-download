@@ -12,7 +12,7 @@ const grab = (n) => {
   }
 };
 
-// cachTra: "ack" | "tu_choi" | "im" | "sai_origin" | "sai_id" | null (popup bị chặn)
+// cachTra: "ack" | "tu_choi" | "im" | "sai_origin" | "sai_id" | "dong" (user đóng tab) | null (popup bị chặn)
 async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0, idSo = 0 }) {
   const CREATIVE_DESK_URL = "https://automation.example";
   const CREATIVE_DESK_ORIGIN = "https://automation.example";
@@ -51,6 +51,7 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
         closed: false,
         postMessage(tin, dich) {
           daGoi.gui.push({ dich, tin });
+          if (cachTra === "dong") { this.closed = true; return; }
           if (cachTra === "im" || daGoi.gui.length < ackSauLuot || daGoi.daAck) return;
           daGoi.daAck = true;
           const origin = cachTra === "sai_origin" ? "https://ke-gian.example" : CREATIVE_DESK_ORIGIN;
@@ -110,6 +111,7 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     link_hong: await chay({ cachTra: "ack", soVideo: 10, linhHong: 3 }),
     toan_hong: await chay({ cachTra: "ack", soVideo: 2, linhHong: 2 }),
     id_so: await chay({ cachTra: "ack", soVideo: 5, idSo: 2 }),
+    dong_tab: await chay({ cachTra: "dong" }),
     qua_tran: await chay({ cachTra: "ack", soVideo: 501 }),
     bam_dup: await chay({ cachTra: "ack", ackSauLuot: 3, bamDup: true }),
     gui_lai: await chay({ cachTra: "im", lanHaiAck: true }),

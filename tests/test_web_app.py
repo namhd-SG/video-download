@@ -1668,6 +1668,7 @@ def test_video_desk_khong_goi_api_creative_desk():
     for dong in js.splitlines():
         if "fetch(" in dong or "XMLHttpRequest" in dong or "EventSource(" in dong:
             assert "CREATIVE_DESK_URL" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
+            assert "CREATIVE_DESK_ORIGIN" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
             assert "automation.nobidigital.asia" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
 
 
@@ -1844,6 +1845,14 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     assert do["toan_hong"]["moTab"] == 0 and do["toan_hong"]["conChon"] == 2
     assert "thiếu link gốc hợp lệ" in do["toan_hong"]["toast"]
     assert do["id_so"]["tin"]["soItem"] == 3, "Drive id dạng số qua được regex sau String() nhưng bên nhận bỏ"
+    dong = do["dong_tab"]
+    assert dong["conChon"] == 3 and "đã đóng" in dong["toast"], "tab đóng trước ack ⇒ giữ lựa chọn, báo rõ"
+    assert dong["soLanGui"] == 1, "tab đã đóng thì dừng gửi ngay, không chờ hết hạn"
+    assert dong["nutSau"]["disabled"] is False, "mọi đường thoát phải mở lại nút"
+    for ca in ("tu_choi", "im"):
+        assert do[ca]["nutSau"]["disabled"] is False, f"{ca}: nút phải mở lại sau khi dừng chờ"
+    assert "4 video chưa lên Drive" in do["nhieu"]["toast"].split(" | ")[-1], \
+        "số bị bỏ phải nằm trong thông báo CUỐI, không bị đè"
     assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
     assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
     assert do["gui_lai"]["moTab"] == 2 and do["gui_lai"]["lanHai"]["idMoi"] is True, \

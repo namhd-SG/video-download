@@ -18,11 +18,12 @@
   // (meta-ads `frontend/src/lib/videodesk-postmessage.ts`).
   const CREATIVE_DESK_ORIGIN = new URL(CREATIVE_DESK_URL).origin;
   const MAX_PM_ITEMS = 500;
-  // Gửi lặp tới khi có ack: tab mới có thể đang ở trang đăng nhập Cloudflare
-  // Access — tin gửi lúc đó bị trình duyệt BỎ (targetOrigin không khớp), nên
-  // một lần gửi là không đủ. 180 s đủ cho một lần đăng nhập lại.
+  // Gửi lặp tới khi có ack: tab mới cần vài giây để tải và gắn bộ nghe, tin gửi
+  // trước đó rơi mất. Creative Desk KHÔNG đứng sau Cloudflare Access; cổng của nó
+  // là trang `/login` của app, và sau khi đăng nhập tab không quay lại trang này
+  // — chờ lâu hơn không cứu được ca đó, chỉ khoá nút lâu hơn. 30 s đủ cho tải trang.
   const PM_CHU_KY_MS = 500;
-  const PM_HAN_MS = 180000;
+  const PM_HAN_MS = 30000;
 
   const STATUS_LABEL = {
     pending: "Đang chờ", running: "Đang chạy", done: "Xong",
@@ -941,19 +942,21 @@
     // lần trước: Creative Desk chuyển người chưa đăng nhập sang `/login` và KHÔNG
     // giữ URL quay lại (`creative-order/layout.tsx` `router.replace("/login")`),
     // nên sau khi đăng nhập tab cũ không còn tham số đó và không bao giờ nghe tin.
+    // id sinh TRƯỚC khi mở tab: `crypto.randomUUID` chỉ có ở ngữ cảnh an toàn,
+    // ném lỗi sau khi đã mở tab là để lại một tab mồ côi không ai gửi tin tới.
+    const id = crypto.randomUUID();
     const tab = moTabCreativeDesk(`${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk_pm=1`);
     if (!tab) {
       showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại. " +
                 "Lựa chọn của bạn vẫn còn.");
       return;
     }
-    const id = crypto.randomUUID();
-    if (chuaLenDrive.length || khongHopLe) {
-      showToast([
-        chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
-        khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
-      ].filter(Boolean).join(", ") + " nên không gửi kèm.");
-    }
+    // Số bị bỏ đi KÈM mọi thông báo kết quả — toast riêng sẽ bị toast sau đè mất.
+    const boLai = [
+      chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+      khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
+    ].filter(Boolean).join(", ");
+    const ghiChuBoLai = boLai ? ` (${boLai} nên không gửi kèm.)` : "";
 
     datNutBanGiao(true);
     state.dangBanGiao = true;
@@ -973,12 +976,12 @@
       // Chỉ bỏ chọn đúng những video ĐÃ gửi: video chưa lên Drive / thiếu link
       // vẫn giữ tick để người dùng thấy chúng chưa đi đâu cả.
       boChonCacVideo(guiDuoc.map((v) => v.video_id));
-      showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.`);
+      showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.${ghiChuBoLai}`);
       return;
     }
     showToast({
       tu_choi: `Creative Desk không nhận được danh sách${kq.lyDo ? ` (${kq.lyDo})` : ""}. Lựa chọn vẫn còn.`,
-      het_han: "Creative Desk chưa xác nhận sau 3 phút. Nếu tab đó bắt đăng nhập: đăng nhập " +
+      het_han: "Creative Desk chưa xác nhận sau 30 giây. Nếu tab đó bắt đăng nhập: đăng nhập " +
                "xong, đóng tab đó rồi bấm “Tạo bộ tự tìm” lần nữa. Lựa chọn vẫn còn.",
       tab_dong: "Tab Creative Desk đã đóng trước khi nhận — bấm lại để mở tab mới. Lựa chọn vẫn còn.",
     }[kq.ket]);
