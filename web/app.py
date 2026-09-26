@@ -246,8 +246,8 @@ class CreateJobRequest(BaseModel):
 
     url: str
     so_luong: int = Field(gt=0, le=MAX_SO_LUONG, description="Số video tối đa muốn tải")
-    # Tuỳ chọn (Phase 05): bỏ trống lúc tạo thì hỏi lại lúc chia (phase 3 màn
-    # nháp). Không đặt `max_length` ở đây — sai độ dài phải trả 400 kèm câu rõ
+    # Tuỳ chọn: bỏ trống lúc tạo thì hỏi lại lúc chia (màn nháp duyệt kiểu).
+    # Không đặt `max_length` ở đây — sai độ dài phải trả 400 kèm câu rõ
     # (`_chuan_hoa_truong_tuy_chon`), không phải 422 của FastAPI.
     usecase: str | None = None
     insight_goc: str | None = None

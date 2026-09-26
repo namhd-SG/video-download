@@ -128,7 +128,7 @@ def test_body_cannot_set_nguoi_tao(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Phase 05: `usecase`/`insight_goc` tuỳ chọn lúc tạo job (POST /jobs).
+# `usecase`/`insight_goc` tuỳ chọn lúc tạo job (POST /jobs).
 # ---------------------------------------------------------------------------
 
 def _payload_voi_insight(usecase: str | None = None, insight_goc: str | None = None):

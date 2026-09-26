@@ -40,10 +40,10 @@
       <form id="job-form">
         <input type="url" id="url" placeholder="URL TikTok (music / hashtag / @profile)" required />
         <input type="number" id="so-luong" min="1" max="2000" value="20" required />
-        <!-- Tuỳ chọn (Phase 05): bỏ trống thì hỏi lại lúc duyệt màn nháp
-             (phase 3). `maxlength` khớp trần server (`USECASE_TOI_DA`/
-             `INSIGHT_CON_TOI_DA` ở web/models_cum.py) — chặn ở giao diện
-             không thay cho kiểm ở server, chỉ đỡ một vòng round-trip 400. -->
+        <!-- Tuỳ chọn: bỏ trống thì hỏi lại lúc duyệt màn nháp. `maxlength`
+             khớp trần server (`USECASE_TOI_DA`/`INSIGHT_CON_TOI_DA` ở
+             web/models_cum.py) — chặn ở giao diện không thay cho kiểm ở
+             server, chỉ đỡ một vòng round-trip 400. -->
         <input type="text" id="usecase" placeholder="Usecase (tuỳ chọn)" maxlength="80" />
         <input type="text" id="insight-goc" placeholder="Insight gốc (tuỳ chọn)" maxlength="120" />
         <button type="submit">Tạo lượt tải</button>
