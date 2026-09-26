@@ -140,8 +140,12 @@ def _khoa_ten(usecase: str, insight_con: str) -> tuple[str, str]:
     return chuan_hoa_chu(usecase).casefold(), chuan_hoa_chu(insight_con).casefold()
 
 
-def _cum_trung(conn, chu: str, usecase: str, insight_con: str,
-               tru_id: int | None = None) -> int | None:
+def cum_trung(conn, chu: str, usecase: str, insight_con: str,
+              tru_id: int | None = None) -> int | None:
+    """So trùng (usecase, insight con) trên mọi cụm THẬT của `chu` — CÔNG KHAI
+    để `models_chia._giai_quyet_kieu` gọi thẳng hàm
+    này thay vì có một bản riêng có thể trôi theo thời gian (chống-trôi, xem
+    docstring đầu `models_chia.py`)."""
     khoa = _khoa_ten(usecase, insight_con)
     for r in conn.execute("SELECT id, usecase, insight_goc, kieu FROM cum WHERE chu = ?",
                           (chu,)).fetchall():
@@ -164,7 +168,7 @@ def tao_cum(db_path: Path, chu: str, usecase: str, insight_goc: str,
     u, g, k = kiem_nhan(usecase, insight_goc, kieu)
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        co_san = _cum_trung(conn, chu, u, ten_insight_con(g, k))
+        co_san = cum_trung(conn, chu, u, ten_insight_con(g, k))
         if co_san is not None:
             return co_san, True
         cur = conn.execute(
@@ -182,8 +186,8 @@ def doi_kieu(db_path: Path, cum_id: int, chu: str, kieu: str) -> bool:
         if row is None:
             return False
         _, _, k = kiem_nhan(row["usecase"], row["insight_goc"], kieu)
-        trung = _cum_trung(conn, chu, row["usecase"], ten_insight_con(row["insight_goc"], k),
-                           tru_id=cum_id)
+        trung = cum_trung(conn, chu, row["usecase"], ten_insight_con(row["insight_goc"], k),
+                          tru_id=cum_id)
         if trung is not None:
             raise CumTrung(trung)
         cur = conn.execute("UPDATE cum SET kieu = ? WHERE id = ? AND chu = ?",

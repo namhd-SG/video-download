@@ -865,10 +865,22 @@
     if (lo) {
       moLoCum(cum.id, Number(lo.dataset.moLo)).then((kq) => {
         if (kq === "chan") showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại.");
+      }).catch((err) => {
+        // Không được để lỗi rơi thành unhandled rejection câm — mọi nhánh lỗi
+        // mong đợi đã tự báo toast BÊN TRONG `moLoCum`; nhánh này chỉ còn bắt
+        // cái GÌ ĐÓ không lường trước.
+        if (err instanceof PhienHetHan) baoPhienHetHan();
+        else showToast(`Lỗi không lường trước khi mở Creative Desk: ${err.message || err}`);
       });
       return;
     }
-    if (ev.target.closest("[data-mo-het]")) { moHetLoCum(cum.id); return; }
+    if (ev.target.closest("[data-mo-het]")) {
+      moHetLoCum(cum.id).catch((err) => {
+        if (err instanceof PhienHetHan) baoPhienHetHan();
+        else showToast(`Lỗi không lường trước khi mở Creative Desk: ${err.message || err}`);
+      });
+      return;
+    }
     if (ev.target.closest("[data-doi-kieu]")) { doiKieuCum(cum); return; }
     if (ev.target.closest("[data-xoa-cum]")) xoaCum(cum);
   });
@@ -1025,9 +1037,13 @@
   }
 
   // ========================================================================
-  // BÀN GIAO — mã hoá payload `?videodesk=` (hợp đồng `nhan`,
-  // plans/260923-1558-tai-theo-cum/hop-dong-nhan.md). Dùng chung cho nút chọn
-  // tay và nút lô của cụm, để hai đường không bao giờ mã hoá khác nhau.
+  // BÀN GIAO sang Creative Desk (hợp đồng `nhan`,
+  // plans/260923-1558-tai-theo-cum/hop-dong-nhan.md). Hai đường KHÔNG dùng
+  // chung hàm dựng item: nút chọn tay (`moBoTuTim`) tự dựng item bằng
+  // `itemBanGiao` + lọc `itemHopLeBenNhan` rồi gửi qua `postMessage`; nút lô
+  // của cụm (`moLoCum`) nhận payload DỰNG SẴN ở server
+  // (`GET /cum/{id}/lo/{thu}/payload`, `models_chia.xay_payload_lo`, cùng
+  // luật lọc) rồi chỉ mã hoá vào URL bằng `maHoaPayload`/`urlBanGiao`.
   // ========================================================================
   function itemBanGiao(v) {
     return { f: v.drive_file_id, n: v.title || v.video_id, u: v.url };
@@ -1044,18 +1060,13 @@
   }
 
   // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
+  // Không đường nào trong trang còn gọi hàm này (payload của cụm dựng ở
+  // server): chỉ các harness `tests/js/*.js` trích nó ra để dựng payload đối
+  // chứng — giữ vì các test đó phụ thuộc vào nó.
   function dungPayload(items, nhan) {
     const p = { v: 1, items };
     if (nhan) p.nhan = nhan;
     return p;
-  }
-
-  // Nhãn gửi kèm một lô của cụm. `insight` lấy NGUYÊN từ dữ liệu cụm server trả
-  // (`web/models_cum.py::ten_insight_con`) — JS không tự ghép tên, để hiển thị
-  // và payload không thể lệch nhau một dấu cách.
-  function nhanTuCum(cum, thu, tong) {
-    return { usecase: cum.usecase, insight: cum.insight, template: "Goc",
-             cum_id: cum.id, lo: { thu, tong } };
   }
 
   // base64url: payload đi trong URL nên `+` `/` `=` đều phải biến mất.
@@ -1070,13 +1081,20 @@
     return `${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk=${maHoaPayload(p)}`;
   }
 
-  // Mở tab Creative Desk và trả tab, hoặc `null` khi trình duyệt chặn popup.
+  // Mở tab TRỐNG ngay (đồng bộ, trong CHÍNH lượt xử lý click) và trả tab, hoặc
+  // `null` khi trình duyệt chặn popup.
+  //
+  // TÁCH mở-tab khỏi điền-địa-chỉ. `window.open` phải chạy trước bất kỳ
+  // `await` nào — Chromium chỉ giữ "user activation" khoảng 5s sau cú bấm, và
+  // Safari còn khắt khe hơn (chặn NGAY một `window.open` chạy sau `await`, kể
+  // cả trong 5s). Mở "về sau mới biết URL" thì phải mở TRỐNG trước, gán địa
+  // chỉ sau — `dieuHuongTab` làm phần sau.
   //
   // KHÔNG truyền "noopener" vào `window.open`: với cờ đó trình duyệt LUÔN trả
   // `null` dù tab đã mở (đo trên Chromium 23/09) — mọi phép kiểm "tab có mở
   // không" phía sau sẽ đọc thành "bị chặn". Cắt `opener` bằng tay thay cho cờ.
-  function moTabCreativeDesk(url) {
-    const tab = window.open(url, "_blank");
+  function moTabTrong() {
+    const tab = window.open("about:blank", "_blank");
     if (tab) {
       try {
         tab.opener = null;
@@ -1084,6 +1102,32 @@
         // Nhánh này chạy ⇒ opener KHÔNG bị cắt: tab Creative Desk vẫn với tới
         // được trang này qua `window.opener`. Tab đã mở và bàn giao vẫn đi,
         // nên vẫn trả `tab` — nhưng nói ra, đừng nuốt im.
+        console.warn("Không cắt được window.opener của tab Creative Desk — tab vẫn mở, opener CÒN nguyên:", e);
+      }
+    }
+    return tab;
+  }
+
+  // Điền địa chỉ THẬT vào một tab đã mở trống (`moTabTrong`) — phần "sau khi
+  // đã biết URL", tách khỏi phần "mở tab" ở trên.
+  function dieuHuongTab(tab, url) {
+    tab.location = url;
+  }
+
+  // Mở tab Creative Desk NGAY VỚI url đã biết (đường chọn tay, `moBoTuTim` —
+  // đồng bộ hoàn toàn, không có `await` nào giữa cú bấm và đây). CỐ Ý mở
+  // THẲNG bằng url thật thay vì `moTabTrong` + `dieuHuongTab`: đặt
+  // `tab.location =` NGAY sau `window.open("about:blank",…)` không đồng bộ
+  // với chính commit điều hướng của trình duyệt — `Page.url` phía Playwright
+  // (và một số trình duyệt) có thể vẫn đọc ra "about:blank" nếu đọc quá sớm.
+  // Đường này không có khoảng chờ nào để tách hai bước ra, nên mở thẳng một
+  // lần là vừa an toàn vừa đơn giản hơn.
+  function moTabCreativeDesk(url) {
+    const tab = window.open(url, "_blank");
+    if (tab) {
+      try {
+        tab.opener = null;
+      } catch (e) {
         console.warn("Không cắt được window.opener của tab Creative Desk — tab vẫn mở, opener CÒN nguyên:", e);
       }
     }
@@ -1249,31 +1293,66 @@
     }
   }
 
-  // Mở MỘT lô của cụm. Trả "mo" | "chan" | "rong".
+  // Mở MỘT lô của cụm. Trả "mo" | "chan" | "rong" | "loi".
   //
-  // Thứ tự là cả điểm của hàm: mốc "đã mở" chỉ ghi SAU khi `window.open` trả
-  // một tab thật. Ghi trước thì popup bị chặn vẫn để lại "đã mở lúc …" cho một
-  // việc chưa xảy ra — và người dùng bỏ qua đúng lô chưa bao giờ sang bên kia.
+  // Mở tab TRỐNG trước (`moTabTrong`, đồng bộ trong lượt xử lý click), RỒI
+  // mới `await` payload — chặn popup được biết NGAY tại cú bấm, không phải
+  // sau một vòng fetch (trước đây `window.open` chạy SAU `await`, nên "chan"
+  // chỉ đúng khi fetch đủ chậm để hết "user activation"). Mốc "đã mở" vẫn chỉ
+  // ghi SAU khi tab đã mở thật VÀ đã điền đúng địa chỉ — không đổi ý đó, chỉ
+  // đổi THỜI ĐIỂM biết được popup có bị chặn hay không.
+  //
+  // `items`/`nhan` KHÔNG còn tự ghép ở đây — server dựng trọn payload
+  // (`GET /cum/{id}/lo/{thu}/payload`), JS chỉ mã hoá + điền vào tab đã mở.
+  // `muc.length` (đếm LOCAL, từ `state.videos` đã nạp) chỉ dùng để báo "N
+  // video chưa lên Drive", KHÔNG đi vào payload gửi Creative Desk.
+  //
+  // Fetch trượt (kể cả lỗi KHÔNG PHẢI hết phiên, vd 400 "lô ngoài khoảng" khi
+  // một tab khác vừa đổi số video của cụm) ⇒ ĐÓNG tab trống lại (đừng để lại
+  // một tab "about:blank" mồ côi) và báo lý do — im lặng nuốt lỗi là đúng lỗ
+  // đã sửa ở đây.
   async function moLoCum(cumId, thu) {
     const cum = state.cums.find((c) => c.id === cumId);
     if (!cum) return "rong";
-    const lo = chiaLo(videoCuaCum(cumId), HANDOFF_MAX);
-    const muc = lo[thu - 1];
-    const items = (muc || []).filter((v) => v.drive_file_id).map(itemBanGiao);
-    if (!items.length) {
-      showToast("Video của bộ này chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+    const muc = chiaLo(videoCuaCum(cumId), HANDOFF_MAX)[thu - 1];
+    if (!muc || !muc.length) return "rong";
+    const tab = moTabTrong();
+    if (!tab) return "chan";
+    let payload;
+    try {
+      payload = await apiGet(`/cum/${cumId}/lo/${thu}/payload`);
+    } catch (err) {
+      tab.close();
+      // Hết phiên KHÔNG được đọc như "đã mở xong" (trả "mo" như MỌI lỗi
+      // khác trước đây): `moHetLoCum` đọc "mo" thành tín hiệu ĐI TIẾP, nên
+      // hết phiên ở lô đầu từng kéo theo mở-rồi-đóng một tab trống CHO MỌI
+      // lô còn lại, trong khi người dùng đã bị đăng xuất và không lô nào
+      // trong số đó có cơ hội thành công. Trả một giá trị RIÊNG để vòng lặp
+      // "Mở tất cả" DỪNG ngay ở lô đầu tiên gặp hết phiên.
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+      showToast(`Không mở được Creative Desk cho bộ này: ${err.message || err}`);
+      return "loi";
+    }
+    // Người dùng có thể đã tự tay đóng tab TRỐNG trong lúc đang chờ payload
+    // về — điều hướng (`dieuHuongTab`) một tab đã đóng không ném lỗi nào
+    // (trình duyệt lặng lẽ bỏ qua), nên không có gì báo hiệu tự nhiên; và
+    // ghi "đã mở Creative Desk" (`POST .../da-mo`) cho một tab người dùng
+    // vừa đóng là NÓI DỐI — kiểm `tab.closed` NGAY trước khi điều hướng.
+    if (tab.closed) return "dong";
+    if (!payload.items.length) {
+      tab.close();
+      showToast("Video của bộ này chưa lên Drive hoặc thiếu link gốc hợp lệ — chưa có gì để gửi sang Creative Desk.");
       return "rong";
     }
-    if (items.length < muc.length) {
-      showToast(`${muc.length - items.length} video chưa lên Drive nên không gửi kèm.`);
+    if (payload.items.length < muc.length) {
+      showToast(`${muc.length - payload.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
     }
-    const tab = moTabCreativeDesk(urlBanGiao(dungPayload(items, nhanTuCum(cum, thu, lo.length))));
-    if (!tab) return "chan";
+    dieuHuongTab(tab, urlBanGiao(payload));
     try {
       const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`);
       cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu).concat([{ thu, mo_luc: res.mo_luc }]);
     } catch (err) {
-      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "mo"; }
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
       showToast("Đã mở Creative Desk nhưng không ghi được mốc “đã mở” — bấm lại nếu cần.");
     }
     renderCumHead();
@@ -1292,6 +1371,11 @@
           : `Đã mở ${thu - 1}/${tong} bộ. Trình duyệt chặn tab tiếp theo — bấm “Mở Creative Desk” ở từng bộ bên dưới.`);
         return;
       }
+      // "rong"/"loi" đã tự báo toast, "het_phien" đã tự bật màn hình hết
+      // phiên — TẤT CẢ, bên trong `moLoCum`. "dong" (người dùng tự đóng tab
+      // trống) không cần báo gì thêm. Dừng vòng lặp ở đây cho mọi giá trị
+      // khác "mo" — đừng mở thêm tab trống cho lô kế tiếp trong lúc phiên
+      // hoặc dữ liệu đã có vấn đề.
       if (kq !== "mo") return;
     }
   }

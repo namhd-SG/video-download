@@ -15,6 +15,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -25,6 +26,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
+from web import models_chia
 from web import models_cum
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
@@ -772,6 +774,109 @@ def ghi_lo_da_mo(cum_id: int, thu: int,
     if mo_luc is None:
         raise HTTPException(status_code=404, detail="cụm không tồn tại")
     return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc}
+
+
+@app.get("/cum/{cum_id}/lo/{thu}/payload")
+def payload_lo_cum(cum_id: int, thu: int,
+                   nguoi_tao: str = Depends(require_user)) -> dict:
+    """`{v, items, nhan}` dựng Ở SERVER cho một lô của cụm THẬT — `nhan`
+    (thứ mang tên kiểu sang taxonomy Creative Desk) không còn do CLIENT ghép.
+    `app.js` chỉ mã hoá base64 kết quả này rồi `window.open`, không tự tính gì.
+    """
+    cum = _cum_hoac_404(cum_id, nguoi_tao)
+    if not (1 <= thu <= cum["so_lo"]):
+        raise HTTPException(status_code=400,
+                            detail=f"lô phải trong khoảng 1..{cum['so_lo']}")
+    return models_chia.xay_payload_lo(DB_PATH, cum, nguoi_tao, _pham_vi(nguoi_tao), thu)
+
+
+# ---------------------------------------------------------------------------
+# Tự chia cụm theo lượt (nháp) — mọi route: `Depends(require_user)`, quyền sở
+# hữu lọc TRONG SQL (`web/models_chia.py`). Lượt của người khác trả 404, cùng
+# câu chữ với lượt không tồn tại (như cụm ở trên).
+# ---------------------------------------------------------------------------
+
+# Id của một hàng SQLite: INTEGER 64-bit có dấu, rowid luôn ≥1. Không chặn ở
+# đây thì một số lớn hơn (JSON cho phép) tới tận câu SQL và `sqlite3` ném
+# `OverflowError` ⇒ 500; chặn ở tầng request ⇒ 422 như mọi lỗi hình dạng khác.
+IdSqlite = Annotated[int, Field(ge=1, le=2 ** 63 - 1)]
+
+
+class ThaoTacChiaRequest(BaseModel):
+    loai: str
+    cum_nhap_id: IdSqlite | None = None
+    tu_cum_nhap_id: IdSqlite | None = None
+    den_cum_nhap_id: IdSqlite | None = None
+    video_ids: list[str] | None = None
+    nhom: str | None = None
+    kieu: str | None = None
+    usecase: str | None = None
+    insight_goc: str | None = None
+
+
+class DuyetChiaRequest(BaseModel):
+    # `None` ⇒ duyệt HẾT phần còn lại của lượt; số ⇒ duyệt đúng MỘT kiểu.
+    cum_nhap_id: IdSqlite | None = None
+    # Tuỳ chọn — usecase/insight gửi kèm lúc duyệt: có ⇒ ghi như một
+    # `doi_insight` TRONG CÙNG transaction duyệt rồi dùng; không có ⇒ đọc từ
+    # `chia_lan`.
+    usecase: str | None = None
+    insight_goc: str | None = None
+    # Id các cụm có sẵn người dùng đã XÁC NHẬN muốn gộp vào.
+    xac_nhan_gop: list[IdSqlite] = []
+
+
+@app.get("/chia/{job_id}")
+def lay_chia_cua_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
+    """Nháp mới nhất của lượt tải `job_id`. Admin XEM được nháp của người
+    khác — sửa/duyệt vẫn khoá theo chủ thật ở `/thao-tac` và `/duyet`."""
+    chia = models_chia.lay_chia_theo_job(DB_PATH, job_id, nguoi_tao, _la_admin(nguoi_tao))
+    if chia is None:
+        raise HTTPException(status_code=404, detail="chưa có lượt chia cho job này")
+    return chia
+
+
+@app.post("/chia/{chia_lan_id}/thao-tac")
+def thao_tac_chia(chia_lan_id: int, body: ThaoTacChiaRequest,
+                  nguoi_tao: str = Depends(require_user)) -> dict:
+    """Một thao tác sửa nháp, ghi nhật ký CÙNG transaction."""
+    tham_so = {k: v for k, v in body.model_dump(exclude={"loai"}).items() if v is not None}
+    try:
+        ket = models_chia.ap_thao_tac(DB_PATH, chia_lan_id, nguoi_tao, body.loai, **tham_so)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if ket is None:
+        raise HTTPException(status_code=404, detail="lượt chia không tồn tại")
+    if ket.get("tu_choi"):
+        # `hoan_tac` "không còn gì để lùi" là một trạng thái BÌNH THƯỜNG người
+        # dùng có thể chạm tới bằng cách bấm hoài (400: yêu cầu này không hợp
+        # lệ ở TRẠNG THÁI hiện tại, không phải xung đột với ai khác). Mọi
+        # `tu_choi` khác ("đích không tồn tại/không thuộc lượt") giữ 409 —
+        # hành vi đã pin bằng test trước đó, không đổi ở đây.
+        raise HTTPException(status_code=400 if body.loai == "hoan_tac" else 409,
+                            detail=ket["tu_choi"])
+    return ket
+
+
+@app.post("/chia/{chia_lan_id}/duyet")
+def duyet_chia(chia_lan_id: int, body: DuyetChiaRequest,
+              nguoi_tao: str = Depends(require_user)) -> dict:
+    """Duyệt một kiểu (`cum_nhap_id` có giá trị) hoặc tất cả còn lại
+    (`cum_nhap_id` bỏ trống) — lối DUY NHẤT từ nháp sang cụm THẬT."""
+    chi_cua = _pham_vi(nguoi_tao)
+    try:
+        if body.cum_nhap_id is None:
+            ket = models_chia.duyet_het(DB_PATH, chia_lan_id, nguoi_tao, chi_cua,
+                                        body.usecase, body.insight_goc, body.xac_nhan_gop)
+        else:
+            ket = models_chia.duyet_kieu(DB_PATH, chia_lan_id, body.cum_nhap_id, nguoi_tao,
+                                         chi_cua, body.usecase, body.insight_goc,
+                                         body.xac_nhan_gop)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if ket is None:
+        raise HTTPException(status_code=404, detail="lượt chia không tồn tại")
+    return ket
 
 
 @app.get("/thumbs/{video_id}")

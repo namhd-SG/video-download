@@ -193,6 +193,109 @@ _CUM_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_video_cum_cum ON video_cum(cum_id)",
 )
 
+# ---------------------------------------------------------------------------
+# Tự chia cụm THEO LƯỢT — nháp sống ở đây, tách hẳn khỏi `cum`/`video_cum` ở
+# trên. `cum`/`video_cum` là taxonomy THẬT (đi sang Creative Desk); các bảng
+# dưới đây là bàn nháp trước khi user duyệt. Đường DUY NHẤT nối hai phía là
+# `models_chia.duyet_kieu`/`duyet_het` — không route nào khác được phép ghi
+# thẳng vào `cum`/`video_cum` từ dữ liệu nháp.
+# ---------------------------------------------------------------------------
+
+# Một lượt CHIA cho một JOB của một NGƯỜI. `trang_thai` đi qua
+# cho_hinh → de_xuat → da_duyet (hoặc huy bất cứ lúc nào trước da_duyet).
+# `usecase`/`insight_goc` khởi tạo từ `jobs` lúc tạo lượt (đọc từ `jobs` lúc
+# tạo job) và ĐỔI được lúc chia (thao tác `doi_insight`) — cache riêng ở đây để
+# lượt chia THỨ HAI của cùng job (nếu có) không phụ thuộc lượt đầu còn sống.
+# `phien_ban_prompt` NOT NULL: nhãn vision (`video_dac_diem`) cache theo phiên
+# bản prompt, và một lượt chia phải biết nó sinh từ phiên bản nào để biết có
+# cần chạy lại tầng hình hay dùng cache.
+_CHIA_LAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS chia_lan (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL REFERENCES jobs(id),
+    chu TEXT NOT NULL,
+    trang_thai TEXT NOT NULL DEFAULT 'cho_hinh',
+    truc TEXT,
+    usecase TEXT,
+    insight_goc TEXT,
+    phien_ban_prompt TEXT NOT NULL,
+    tao_luc TEXT NOT NULL,
+    duyet_luc TEXT
+)
+"""
+
+# Một đề xuất nhóm→kiểu bên trong một lượt chia. `thu_tu` giữ thứ tự hiển thị
+# tầng hình đề xuất (không phải id) — id đổi khi gộp/tách, thứ tự đề xuất thì
+# không nên đổi theo.
+_CUM_NHAP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS cum_nhap (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chia_lan_id INTEGER NOT NULL REFERENCES chia_lan(id) ON DELETE CASCADE,
+    nhom TEXT NOT NULL,
+    kieu TEXT NOT NULL,
+    thu_tu INTEGER NOT NULL DEFAULT 0
+)
+"""
+
+# PRIMARY KEY (video_id, chia_lan_id) LÀ luật "một video một chỗ trong một
+# lượt": video xuất hiện lần hai trong cùng lượt là GHI ĐÈ chỗ cũ, không thêm
+# hàng thứ hai — cùng khuôn với `video_cum` ("một video một cụm mỗi người").
+# `cum_nhap_id` NULL ⟺ `lan` là "huong_dan" hoặc "nghi" (không có nhóm/kiểu).
+# `ON DELETE SET NULL`: xoá một `cum_nhap` (gộp/xoá kiểu) không được kéo theo
+# xoá luôn video khỏi lượt — chúng phải còn thấy được, chỉ mất chỗ đứng kiểu.
+_VIDEO_CUM_NHAP_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_cum_nhap (
+    video_id TEXT NOT NULL,
+    chia_lan_id INTEGER NOT NULL REFERENCES chia_lan(id) ON DELETE CASCADE,
+    cum_nhap_id INTEGER REFERENCES cum_nhap(id) ON DELETE SET NULL,
+    lan TEXT NOT NULL DEFAULT 'kieu',
+    PRIMARY KEY (video_id, chia_lan_id)
+)
+"""
+
+# Nhãn vision, cache theo (video, phiên bản prompt) — KHÔNG theo lượt chia:
+# hai lượt chia của cùng video dưới cùng phiên bản prompt phải đọc lại đúng
+# một nhãn, không chạy vision hai lần vì tốn tiền agy.
+_VIDEO_DAC_DIEM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_dac_diem (
+    video_id TEXT NOT NULL,
+    phien_ban_prompt TEXT NOT NULL,
+    nhan_json TEXT NOT NULL,
+    tao_luc TEXT NOT NULL,
+    PRIMARY KEY (video_id, phien_ban_prompt)
+)
+"""
+
+# Nhật ký MỌI thao tác sửa từ lượt đầu (nghiệm thu bằng cách so số dòng ở đây
+# với số video phải gán tay nếu chia tay). Chỉ THÊM dòng, không xoá; nội dung
+# một dòng (`loai`, `so_video`, `chi_tiet_json`, `luc`, `the_he`) không bao
+# giờ bị sửa — UPDATE DUY NHẤT là `models_chia._op_hoan_tac` đặt `da_lui = 1`
+# cho dòng vừa được hoàn tác (cột thêm sau, xem `init_db`).
+# `loai` là tập ĐÓNG, kiểm ở tầng Python (`models_chia.LOAI_THAO_TAC`) chứ
+# không phải CHECK constraint: SQLite CHECK không kèm được thông báo tiếng
+# Việt rõ ràng như `ValueError`, và tập này còn có thể cần thêm giá trị về
+# sau — sửa hằng số Python rẻ hơn một migration ALTER TABLE.
+_THAO_TAC_DUYET_SCHEMA = """
+CREATE TABLE IF NOT EXISTS thao_tac_duyet (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chia_lan_id INTEGER NOT NULL REFERENCES chia_lan(id) ON DELETE CASCADE,
+    chu TEXT NOT NULL,
+    loai TEXT NOT NULL,
+    so_video INTEGER NOT NULL DEFAULT 0,
+    chi_tiet_json TEXT,
+    luc TEXT NOT NULL
+)
+"""
+
+_CHIA_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_chia_lan_job ON chia_lan(job_id)",
+    "CREATE INDEX IF NOT EXISTS idx_chia_lan_chu ON chia_lan(chu)",
+    "CREATE INDEX IF NOT EXISTS idx_cum_nhap_lan ON cum_nhap(chia_lan_id)",
+    "CREATE INDEX IF NOT EXISTS idx_video_cum_nhap_lan ON video_cum_nhap(chia_lan_id)",
+    "CREATE INDEX IF NOT EXISTS idx_video_cum_nhap_cum ON video_cum_nhap(cum_nhap_id)",
+    "CREATE INDEX IF NOT EXISTS idx_thao_tac_duyet_lan ON thao_tac_duyet(chia_lan_id)",
+)
+
 
 def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
     """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
@@ -236,6 +339,40 @@ def init_db(db_path: Path) -> None:
         conn.execute(_CUM_LO_MO_SCHEMA)
         for statement in _CUM_INDEX:
             conn.execute(statement)
+        conn.execute(_CHIA_LAN_SCHEMA)
+        conn.execute(_CUM_NHAP_SCHEMA)
+        conn.execute(_VIDEO_CUM_NHAP_SCHEMA)
+        conn.execute(_VIDEO_DAC_DIEM_SCHEMA)
+        conn.execute(_THAO_TAC_DUYET_SCHEMA)
+        for statement in _CHIA_INDEX:
+            conn.execute(statement)
+        # `the_he` (thế hệ): bump mỗi lần `ghi_de_xuat` GHI ĐÈ nháp — `hoan_tac`
+        # chỉ được lùi thao tác cùng thế hệ với nháp HIỆN TẠI, không được lùi
+        # xuyên qua một đề xuất đã bị thay thế (nháp cũ hồi sinh dữ liệu đã bị
+        # `ghi_de_xuat` sau đó xoá).
+        _add_column_if_missing(conn, "chia_lan", "the_he", "INTEGER NOT NULL DEFAULT 0")
+        # `the_he` trên chính dòng nhật ký: ghi lại thế hệ TẠI LÚC thao tác xảy
+        # ra, để `hoan_tac` so được với thế hệ hiện tại của `chia_lan`.
+        # `da_lui`: đánh dấu một dòng nhật ký ĐÃ bị `hoan_tac` xử lý — không có
+        # cột này, `hoan_tac` luôn chọn lại đúng MỘT dòng mới nhất và áp lại nó
+        # mãi mãi: undo không phải một NGĂN XẾP, undo lần hai lặp lại đúng thao
+        # tác của lần đầu ⇒ IntegrityError/500 hoặc phục hồi sai.
+        _add_column_if_missing(conn, "thao_tac_duyet", "the_he", "INTEGER NOT NULL DEFAULT 0")
+        _add_column_if_missing(conn, "thao_tac_duyet", "da_lui", "INTEGER NOT NULL DEFAULT 0")
+        # `ten_cum`: tên hiển thị của một kiểu (kèm luật chèn nhóm khi trùng
+        # tên với một kiểu khác trong CÙNG lượt) CHỐT một lần lúc
+        # `ghi_de_xuat`; sau đó CHỈ `doi_ten` tính lại (hàng bị đổi + hàng va
+        # chạm với nó), `hoan_tac` trả lại đúng giá trị cũ, còn duyệt/gộp/xoá
+        # chỉ đọc — tính lại trên tập hàng còn sống làm tên trôi theo thứ tự
+        # thao tác (xem `models_chia._chot_ten_moi_kieu`). NULL cho hàng cũ
+        # trước khi cột này tồn tại; `models_chia` tự có lưới an toàn (đọc
+        # `kieu` trần) cho ca đó.
+        _add_column_if_missing(conn, "cum_nhap", "ten_cum", "TEXT")
+        # `usecase`/`insight_goc` hỏi lúc tạo job; `doi_insight` ghi NGƯỢC
+        # vào đây mỗi khi sửa lúc chia, để "chia lại" đọc được giá trị mới
+        # nhất mà không phải gõ lại.
+        _add_column_if_missing(conn, "jobs", "usecase", "TEXT")
+        _add_column_if_missing(conn, "jobs", "insight_goc", "TEXT")
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an
         # already-created table needs them added. Same ad hoc migration the
         # jobs table uses above; duplicate-column means it is already done.

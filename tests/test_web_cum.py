@@ -334,7 +334,7 @@ def test_creating_concurrently_still_yields_one_cluster(kho, monkeypatch):
     """
     import threading
     cho = threading.Barrier(2, timeout=1.0)
-    goc = models_cum._cum_trung
+    goc = models_cum.cum_trung
 
     def cham(*a, **kw):
         kq = goc(*a, **kw)
@@ -344,7 +344,7 @@ def test_creating_concurrently_still_yields_one_cluster(kho, monkeypatch):
             pass
         return kq
 
-    monkeypatch.setattr(models_cum, "_cum_trung", cham)
+    monkeypatch.setattr(models_cum, "cum_trung", cham)
     ra, loi = [], []
 
     def tao():
