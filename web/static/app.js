@@ -1037,9 +1037,13 @@
   }
 
   // ========================================================================
-  // BÀN GIAO — mã hoá payload `?videodesk=` (hợp đồng `nhan`,
-  // plans/260923-1558-tai-theo-cum/hop-dong-nhan.md). Dùng chung cho nút chọn
-  // tay và nút lô của cụm, để hai đường không bao giờ mã hoá khác nhau.
+  // BÀN GIAO sang Creative Desk (hợp đồng `nhan`,
+  // plans/260923-1558-tai-theo-cum/hop-dong-nhan.md). Hai đường KHÔNG dùng
+  // chung hàm dựng item: nút chọn tay (`moBoTuTim`) tự dựng item bằng
+  // `itemBanGiao` + lọc `itemHopLeBenNhan` rồi gửi qua `postMessage`; nút lô
+  // của cụm (`moLoCum`) nhận payload DỰNG SẴN ở server
+  // (`GET /cum/{id}/lo/{thu}/payload`, `models_chia.xay_payload_lo`, cùng
+  // luật lọc) rồi chỉ mã hoá vào URL bằng `maHoaPayload`/`urlBanGiao`.
   // ========================================================================
   function itemBanGiao(v) {
     return { f: v.drive_file_id, n: v.title || v.video_id, u: v.url };
@@ -1056,6 +1060,9 @@
   }
 
   // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
+  // Không đường nào trong trang còn gọi hàm này (payload của cụm dựng ở
+  // server): chỉ các harness `tests/js/*.js` trích nó ra để dựng payload đối
+  // chứng — giữ vì các test đó phụ thuộc vào nó.
   function dungPayload(items, nhan) {
     const p = { v: 1, items };
     if (nhan) p.nhan = nhan;

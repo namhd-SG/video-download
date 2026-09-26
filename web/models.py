@@ -267,8 +267,10 @@ CREATE TABLE IF NOT EXISTS video_dac_diem (
 """
 
 # Nhật ký MỌI thao tác sửa từ lượt đầu (nghiệm thu bằng cách so số dòng ở đây
-# với số video phải gán tay nếu chia tay). Append-only, không có UPDATE nào
-# trong toàn bộ module — một dòng ghi rồi là một sự việc đã xảy ra, mãi mãi.
+# với số video phải gán tay nếu chia tay). Chỉ THÊM dòng, không xoá; nội dung
+# một dòng (`loai`, `so_video`, `chi_tiet_json`, `luc`, `the_he`) không bao
+# giờ bị sửa — UPDATE DUY NHẤT là `models_chia._op_hoan_tac` đặt `da_lui = 1`
+# cho dòng vừa được hoàn tác (cột thêm sau, xem `init_db`).
 # `loai` là tập ĐÓNG, kiểm ở tầng Python (`models_chia.LOAI_THAO_TAC`) chứ
 # không phải CHECK constraint: SQLite CHECK không kèm được thông báo tiếng
 # Việt rõ ràng như `ValueError`, và tập này còn có thể cần thêm giá trị về
