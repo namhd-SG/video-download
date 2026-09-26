@@ -1668,6 +1668,7 @@ def test_video_desk_khong_goi_api_creative_desk():
     for dong in js.splitlines():
         if "fetch(" in dong or "XMLHttpRequest" in dong or "EventSource(" in dong:
             assert "CREATIVE_DESK_URL" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
+            assert "CREATIVE_DESK_ORIGIN" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
             assert "automation.nobidigital.asia" not in dong, f"gọi API sang Creative Desk: {dong.strip()}"
 
 
@@ -1794,8 +1795,9 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     `app.js` thật rồi GỌI hàm đó với `window.open` giả. Assert bằng chuỗi sẽ
     xanh cho một lời gọi `clear()` nằm sai nhánh.
 
-    Hai ca, và ca thứ hai mới là ca khó:
-      · tab mở được   ⇒ bỏ chọn, gỡ dấu trên thẻ, vẽ lại thanh
+    Từ 26/09 chọn tay đi qua postMessage; điểm bỏ chọn dời từ "tab mở được"
+    sang "Creative Desk ack ok:true". Hai ca gốc vẫn giữ:
+      · có ack        ⇒ bỏ chọn, gỡ dấu trên thẻ, vẽ lại thanh
       · popup bị chặn ⇒ GIỮ nguyên lựa chọn — chưa có gì được bàn giao, xoá ở
         đó là bắt người dùng chọn lại vì một việc CHƯA xảy ra. Cùng khuôn với
         `loaiDaChon`, nó chỉ `clear()` sau khi API thành công.
@@ -1818,15 +1820,44 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     assert ket_qua.returncode == 0, ket_qua.stderr
     do = json.loads(ket_qua.stdout)
 
-    binh_thuong = do["binh_thuong"]
-    assert binh_thuong["moTab"] == 1, "phải mở tab bàn giao"
-    assert binh_thuong["conChon"] == 0, "bàn giao xong mà lựa chọn còn nguyên"
-    assert binh_thuong["theConTo"] == 0, "thẻ còn tô trong khi state đã trống"
-    assert binh_thuong["veLaiThanh"] == 1, "thanh chọn phải được vẽ lại"
+    # 26/09: chọn tay gửi qua postMessage — bỏ chọn CHỈ khi Creative Desk ack `ok:true`.
+    ack = do["ack"]
+    assert ack["moTab"] == 1, "phải mở tab bàn giao"
+    assert ack["url"].endswith("/creative-order/self-bundles?videodesk_pm=1")
+    assert ack["dich"] == "https://automation.example", "targetOrigin phải cố định, không phải '*'"
+    assert ack["tin"] == {"type": "videodesk-handoff", "v": 2, "coId": True, "soItem": 3, "coNhan": False}
+    assert ack["conChon"] == 0 and ack["theConTo"] == 0 and ack["veLaiThanh"] == 1
+    assert ack["nutKhiCho"]["disabled"] is True and ack["nutSau"]["disabled"] is False
 
-    bi_chan = do["popup_bi_chan"]
-    assert bi_chan["conChon"] == 3, \
+    for ca in ("tu_choi", "im", "sai_origin", "sai_id"):
+        assert do[ca]["conChon"] == 3, f"{ca}: chưa có ack ok:true thì KHÔNG được xoá lựa chọn"
+    assert do["im"]["soLanGui"] > 2, "không ack thì phải gửi lặp (tab có thể đang đăng nhập)"
+
+    assert do["popup_bi_chan"]["conChon"] == 3 and do["popup_bi_chan"]["soLanGui"] == 0, \
         "popup bị chặn thì chưa bàn giao được — không được xoá lựa chọn"
+    assert do["nhieu"]["tin"]["soItem"] == 86, "90 chọn, 4 chưa lên Drive ⇒ gửi 86, không trần 30"
+    assert "4 video chưa lên Drive" in do["nhieu"]["toast"]
+    assert do["nhieu"]["conChon"] == 4, "video chưa lên Drive chưa được gửi ⇒ phải còn tick"
+    # Bên nhận bỏ CẢ LÔ khi một item sai luật (không ack ⇒ treo tới hết hạn),
+    # nên bên gửi phải tự lọc item sai trước khi gửi.
+    assert do["link_hong"]["tin"]["soItem"] == 7 and do["link_hong"]["conChon"] == 3
+    assert "3 video thiếu link gốc hợp lệ" in do["link_hong"]["toast"]
+    assert do["toan_hong"]["moTab"] == 0 and do["toan_hong"]["conChon"] == 2
+    assert "thiếu link gốc hợp lệ" in do["toan_hong"]["toast"]
+    assert do["id_so"]["tin"]["soItem"] == 3, "Drive id dạng số qua được regex sau String() nhưng bên nhận bỏ"
+    dong = do["dong_tab"]
+    assert dong["conChon"] == 3 and "đã đóng" in dong["toast"], "tab đóng trước ack ⇒ giữ lựa chọn, báo rõ"
+    assert dong["soLanGui"] == 1, "tab đã đóng thì dừng gửi ngay, không chờ hết hạn"
+    assert dong["nutSau"]["disabled"] is False, "mọi đường thoát phải mở lại nút"
+    for ca in ("tu_choi", "im"):
+        assert do[ca]["nutSau"]["disabled"] is False, f"{ca}: nút phải mở lại sau khi dừng chờ"
+    assert "4 video chưa lên Drive" in do["nhieu"]["toast"].split(" | ")[-1], \
+        "số bị bỏ phải nằm trong thông báo CUỐI, không bị đè"
+    assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
+    assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
+    assert do["gui_lai"]["moTab"] == 2 and do["gui_lai"]["lanHai"]["idMoi"] is True, \
+        "bấm lại sau khi hết hạn phải mở TAB MỚI (tab cũ có thể đã mất ?videodesk_pm=1 sau /login)"
+    assert do["gui_lai"]["conChon"] == 0
 
 
 def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():

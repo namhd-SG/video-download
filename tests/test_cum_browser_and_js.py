@@ -95,9 +95,9 @@ def test_moc_da_mo_chi_ghi_sau_khi_tab_mo_that():
 
 def test_ban_giao_chon_tay_khong_co_nhan():
     d = _node("chon-sau-ban-giao.js")
-    p = d["binh_thuong"]["payload"]
-    assert p["v"] == 1 and len(p["items"]) == 3
-    assert "nhan" not in p
+    t = d["ack"]["tin"]
+    assert t["v"] == 2 and t["soItem"] == 3
+    assert t["coNhan"] is False
 
 
 def test_dua_vao_cum_trung_ten_thi_dung_lai_cum_co_san():
@@ -171,7 +171,7 @@ def page(may_chu):
         job = models.create_job(db, "https://www.tiktok.com/tag/dance", TONG, NGUOI)
         for i in range(TONG):
             models.record_video(db, job_id=job, video_id=f"76870{i:05d}", url=f"https://t/{i}",
-                                title=f"Video {i + 1}", drive_file_id=f"drv{i}",
+                                title=f"Video {i + 1}", drive_file_id=f"drive_file_{i:05d}",  # id Drive thật ≥10 ký tự
                                 tao_luc=f"2026-09-23T00:{i // 60:02d}:{i % 60:02d}+00:00")
     pw_api = pytest.importorskip("playwright.sync_api")
     with pw_api.sync_playwright() as pw:
@@ -334,14 +334,28 @@ def test_bam_doi_nut_tao_cum_chi_ra_mot_cum(page):
 def test_chon_tay_tao_bo_tu_tim_mo_tab_that_khong_nhan_va_bo_chon(page):
     """Đường đã để lọt hồi quy của PR #4: stub `window.open` bỏ qua đối số
     `features` nên xanh giả với cờ "noopener" (trình duyệt thật trả null). Ở đây
-    `window.open` là THẬT; chỉ Creative Desk bị chặn ở tầng mạng."""
+    `window.open` và `postMessage` là THẬT; Creative Desk là trang giả ở đúng
+    origin `automation.*`, nghe tin rồi ack như bên nhận thật."""
+    nhan = []
+    page.context.route("https://automation.nobidigital.asia/**", lambda r: r.fulfill(
+        content_type="text/html", body="""<html><script>
+          addEventListener('message', (e) => {
+            if (!e.data || e.data.type !== 'videodesk-handoff') return;
+            document.title = JSON.stringify({origin: e.origin, v: e.data.v, n: e.data.items.length,
+                                             nhan: 'nhan' in e.data});
+            e.source.postMessage({type: 'videodesk-ack', id: e.data.id, ok: true}, e.origin);
+          });
+        </script>creative desk giả</html>"""))
     _chon(page, 2)
     with page.context.expect_page() as tab_moi:
         page.click('[data-action="self-bundle"]')
-    p = _giai_ma(tab_moi.value.url)
-    assert p["v"] == 1 and len(p["items"]) == 2
-    assert "nhan" not in p, "bàn giao chọn tay KHÔNG mang nhan (hợp đồng, quy tắc 2)"
-    page.wait_for_function("document.getElementById('selection-bar').hidden")
+    tab = tab_moi.value
+    assert tab.url.endswith("/creative-order/self-bundles?videodesk_pm=1")
+    page.wait_for_function("document.getElementById('selection-bar').hidden", timeout=10000)
+    nhan.append(json.loads(tab.title()))
+    assert nhan[0]["v"] == 2 and nhan[0]["n"] == 2
+    assert nhan[0]["nhan"] is False, "bàn giao chọn tay KHÔNG mang nhan (hợp đồng, quy tắc 2)"
     assert page.locator("#card-grid .card.selected").count() == 0
     toast = page.locator("#toast")
     assert toast.is_hidden() or "chặn" not in toast.inner_text(), toast.inner_text()
+

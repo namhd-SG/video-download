@@ -12,6 +12,18 @@
   // payload đi trong query string, và trình duyệt/proxy bắt đầu cắt quanh 8KB.
   // 30 item giữ URL dưới ~6KB kể cả khi tiêu đề dài và có dấu.
   const HANDOFF_MAX = 30;
+  // Chọn tay đi đường KHÁC: `postMessage` sang tab Creative Desk, không qua URL
+  // ⇒ không vướng trần 8KB, Creative Desk tự chia thành nhiều bộ. Trần dưới đây
+  // chỉ là phanh an toàn, khớp `MAX_PM_ITEMS` phía nhận
+  // (meta-ads `frontend/src/lib/videodesk-postmessage.ts`).
+  const CREATIVE_DESK_ORIGIN = new URL(CREATIVE_DESK_URL).origin;
+  const MAX_PM_ITEMS = 500;
+  // Gửi lặp tới khi có ack: tab mới cần vài giây để tải và gắn bộ nghe, tin gửi
+  // trước đó rơi mất. Creative Desk KHÔNG đứng sau Cloudflare Access; cổng của nó
+  // là trang `/login` của app, và sau khi đăng nhập tab không quay lại trang này
+  // — chờ lâu hơn không cứu được ca đó, chỉ khoá nút lâu hơn. 30 s đủ cho tải trang.
+  const PM_CHU_KY_MS = 500;
+  const PM_HAN_MS = 30000;
 
   const STATUS_LABEL = {
     pending: "Đang chờ", running: "Đang chạy", done: "Xong",
@@ -101,6 +113,7 @@
     jobs: [],
     videos: [],
     selected: new Set(),      // video_id đang được chọn trong thư viện
+    dangBanGiao: false,       // đang chờ Creative Desk ack — khoá nút "Tạo bộ tự tìm"
     trang: 1,                 // trang thư viện đang xem, 1-based
     soMoiTrang: 40,           // nạp lại từ localStorage lúc khởi động — xem docSoMoiTrang
     idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
@@ -860,6 +873,18 @@
     if (ev.target.closest("[data-xoa-cum]")) xoaCum(cum);
   });
 
+  // Bỏ chọn một nhóm video, giữ nguyên phần còn lại của lựa chọn.
+  function boChonCacVideo(ids) {
+    ids.forEach((id) => state.selected.delete(id));
+    document.querySelectorAll("#card-grid .card").forEach((c) => {
+      const chon = state.selected.has(c.dataset.videoId);
+      c.classList.toggle("selected", chon);
+      c.setAttribute("aria-checked", String(chon));
+    });
+    renderSelectionBar();
+    veNutChonTrang();
+  }
+
   // Bỏ chọn tất cả: xoá state VÀ gỡ dấu trên thẻ. Hai vế phải đi cùng nhau —
   // `loaiDaChon` thoát được vế thứ hai chỉ vì nó `loadVideos()` dựng lại toàn
   // bộ lưới ngay sau đó. Đường nào KHÔNG nạp lại lưới mà chỉ xoá state sẽ để
@@ -885,42 +910,118 @@
   // một việc vốn chỉ là copy file. Đưa TRÌNH DUYỆT sang đó thì người dùng
   // mang sẵn phiên của chính họ, và bộ được tạo đứng tên đúng người mà bên
   // này không cầm gì cả.
-  function moBoTuTim() {
+  //
+  // Chọn tay (26/09): gửi danh sách qua `postMessage` thay vì query string, để
+  // chọn bao nhiêu cũng được và Creative Desk tự chia bộ. Đường của CỤM vẫn đi
+  // qua URL (`moLoCum`) — hợp đồng `nhan` không đổi.
+  async function moBoTuTim() {
+    if (state.dangBanGiao) return;  // bấm đúp khi đang chờ ack ⇒ bỏ qua
     const daChon = state.videos.filter((v) => state.selected.has(v.video_id));
-    // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ qua chúng và nói ra số
-    // bị bỏ — im lặng gửi thiếu là cách người dùng mất video mà không biết.
+    // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ chúng TRƯỚC khi gửi và
+    // nói ra số bị bỏ — để số video mỗi bộ bên kia đếm trên đúng thứ sẽ copy.
     const chuaLenDrive = daChon.filter((v) => !v.drive_file_id);
-    const items = daChon.filter((v) => v.drive_file_id).map(itemBanGiao);
+    const coDrive = daChon.filter((v) => v.drive_file_id);
+    // Bên nhận bỏ CẢ LÔ, không ack, khi chỉ một item sai luật — người dùng sẽ
+    // chờ trọn hạn ack. Lọc trước theo đúng luật đó và nói ra số bị bỏ.
+    const guiDuoc = coDrive.filter(itemHopLeBenNhan);
+    const khongHopLe = coDrive.length - guiDuoc.length;
+    const items = guiDuoc.map(itemBanGiao);
 
     if (!items.length) {
-      showToast("Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+      showToast("Chưa có gì để gửi sang Creative Desk: " + [
+        chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+        khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
+      ].filter(Boolean).join(", ") + ".");
       return;
     }
-    if (items.length > HANDOFF_MAX) {
-      showToast(`Chọn tối đa ${HANDOFF_MAX} video cho một bộ.`);
+    if (items.length > MAX_PM_ITEMS) {
+      showToast(`Chọn tối đa ${MAX_PM_ITEMS} video cho một lần tạo bộ.`);
       return;
     }
-    if (chuaLenDrive.length) {
-      showToast(`${chuaLenDrive.length} video chưa lên Drive nên không gửi kèm.`);
-    }
 
-    // Chọn tay ⇒ KHÔNG có `nhan` (hợp đồng, quy tắc 2): bên nhận làm như cũ.
-    const tab = moTabCreativeDesk(urlBanGiao(dungPayload(items, null)));
-
-    // Bỏ chọn sau khi đã bàn giao, KHÔNG phải trước. Bàn giao xong mà lựa chọn
-    // còn nguyên thì lần bấm kế tiếp mở thêm một tab với ĐÚNG danh sách cũ —
-    // người dùng đọc thành "bộ cũ không gỡ được".
-    //
-    // Chỉ bỏ khi tab thật sự mở. `window.open` trả `null` khi trình duyệt chặn
-    // popup, và lúc đó chưa có gì được bàn giao cả: xoá lựa chọn ở đó là bắt
-    // người dùng chọn lại từ đầu vì một việc CHƯA xảy ra. Đây cũng là khuôn của
-    // `loaiDaChon` bên dưới — nó chỉ `clear()` sau khi lời gọi API thành công.
+    // Mỗi lần bấm là MỘT tab mới với `?videodesk_pm=1`. Không gửi lại vào tab của
+    // lần trước: Creative Desk chuyển người chưa đăng nhập sang `/login` và KHÔNG
+    // giữ URL quay lại (`creative-order/layout.tsx` `router.replace("/login")`),
+    // nên sau khi đăng nhập tab cũ không còn tham số đó và không bao giờ nghe tin.
+    // id sinh TRƯỚC khi mở tab: `crypto.randomUUID` chỉ có ở ngữ cảnh an toàn,
+    // ném lỗi sau khi đã mở tab là để lại một tab mồ côi không ai gửi tin tới.
+    const id = crypto.randomUUID();
+    const tab = moTabCreativeDesk(`${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk_pm=1`);
     if (!tab) {
       showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại. " +
                 "Lựa chọn của bạn vẫn còn.");
       return;
     }
-    boChonTatCa();
+    // Số bị bỏ đi KÈM mọi thông báo kết quả — toast riêng sẽ bị toast sau đè mất.
+    const boLai = [
+      chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+      khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
+    ].filter(Boolean).join(", ");
+    const ghiChuBoLai = boLai ? ` (${boLai} nên không gửi kèm.)` : "";
+
+    datNutBanGiao(true);
+    state.dangBanGiao = true;
+    let kq;
+    try {
+      kq = await guiBanGiaoPm(tab, { type: "videodesk-handoff", v: 2, id, items },
+                              PM_HAN_MS, PM_CHU_KY_MS);
+    } finally {
+      state.dangBanGiao = false;
+      datNutBanGiao(false);
+    }
+
+    // Bỏ chọn CHỈ khi bên kia xác nhận đã nhận VÀ đã lưu (`ok: true`). Trước đó
+    // chưa có gì được bàn giao cả — xoá lựa chọn là bắt người dùng chọn lại vì
+    // một việc CHƯA xảy ra.
+    if (kq.ket === "ack") {
+      // Chỉ bỏ chọn đúng những video ĐÃ gửi: video chưa lên Drive / thiếu link
+      // vẫn giữ tick để người dùng thấy chúng chưa đi đâu cả.
+      boChonCacVideo(guiDuoc.map((v) => v.video_id));
+      showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.${ghiChuBoLai}`);
+      return;
+    }
+    showToast({
+      tu_choi: `Creative Desk không nhận được danh sách${kq.lyDo ? ` (${kq.lyDo})` : ""}. Lựa chọn vẫn còn.`,
+      het_han: "Creative Desk chưa xác nhận sau 30 giây. Nếu tab đó bắt đăng nhập: đăng nhập " +
+               "xong, đóng tab đó rồi bấm “Tạo bộ tự tìm” lần nữa. Lựa chọn vẫn còn.",
+      tab_dong: "Tab Creative Desk đã đóng trước khi nhận — bấm lại để mở tab mới. Lựa chọn vẫn còn.",
+    }[kq.ket]);
+  }
+
+  function datNutBanGiao(dangGui) {
+    const nut = document.querySelector('[data-action="self-bundle"]');
+    if (!nut) return;
+    nut.disabled = dangGui;
+    nut.textContent = dangGui ? "Đang gửi sang Creative Desk…" : "Tạo bộ tự tìm";
+  }
+
+  // Gửi `tin` sang `tab` mỗi `chuKyMs` tới khi có ack đúng `id` từ đúng origin
+  // Creative Desk, tab đóng, hoặc hết `hanMs`. Trả {ket: "ack"|"tu_choi"|
+  // "het_han"|"tab_dong", lyDo?}. targetOrigin CỐ ĐỊNH: trang lạ lọt vào tab
+  // (chuyển hướng, gõ tay) không đọc được danh sách.
+  function guiBanGiaoPm(tab, tin, hanMs, chuKyMs) {
+    return new Promise((xong) => {
+      let hetLuc = null, nhip = null;
+      const ket = (r) => {
+        clearInterval(nhip);
+        clearTimeout(hetLuc);
+        window.removeEventListener("message", nghe);
+        xong(r);
+      };
+      function nghe(ev) {
+        const d = ev.data;
+        if (ev.origin !== CREATIVE_DESK_ORIGIN || !d || d.type !== "videodesk-ack" || d.id !== tin.id) return;
+        ket(d.ok === true ? { ket: "ack" } : { ket: "tu_choi", lyDo: typeof d.reason === "string" ? d.reason : "" });
+      }
+      const gui = () => {
+        if (tab.closed) { ket({ ket: "tab_dong" }); return; }
+        try { tab.postMessage(tin, CREATIVE_DESK_ORIGIN); } catch (e) { /* tab đang chuyển trang — lượt sau gửi lại */ }
+      };
+      window.addEventListener("message", nghe);
+      hetLuc = setTimeout(() => ket({ ket: "het_han" }), hanMs);
+      nhip = setInterval(gui, chuKyMs);
+      gui();
+    });
   }
 
   // ========================================================================
@@ -930,6 +1031,16 @@
   // ========================================================================
   function itemBanGiao(v) {
     return { f: v.drive_file_id, n: v.title || v.video_id, u: v.url };
+  }
+
+  // Cùng luật với bên nhận (meta-ads `frontend/src/lib/videodesk-handoff.ts`
+  // `parseVideodeskHandoffItem`): Drive id `[A-Za-z0-9_-]{10,128}`, link gốc
+  // http(s). Tên không cần kiểm — bên nhận tự cắt ở 200 ký tự.
+  function itemHopLeBenNhan(v) {
+    // Kiểm KIỂU trước: bên nhận đòi đúng chuỗi, không ép kiểu — một id dạng số
+    // qua được regex sau `String()` nhưng vẫn bị bên nhận bỏ.
+    return typeof v.drive_file_id === "string" && /^[A-Za-z0-9_-]{10,128}$/.test(v.drive_file_id) &&
+           typeof v.url === "string" && /^https?:\/\//i.test(v.url);
   }
 
   // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
