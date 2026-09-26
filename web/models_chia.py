@@ -24,6 +24,7 @@ theo thời gian.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from web import models_cum
@@ -992,6 +993,21 @@ def ap_thao_tac(db_path: Path, chia_lan_id: int, chu: str, loai: str,
 # Payload `nhan` dựng Ở SERVER cho một lô của một cụm THẬT.
 # ---------------------------------------------------------------------------
 
+# Luật item của BÊN NHẬN — meta-ads `frontend/src/lib/videodesk-handoff.ts`
+# (`DRIVE_FILE_ID_RE`, `HTTP_URL_RE`; `parseHandoffItems` bỏ CẢ LÔ, không
+# ack, khi chỉ một item sai). Cùng luật đường chọn tay áp ở client
+# (`app.js::itemHopLeBenNhan`). `fullmatch`/`match` thay cho `^…$` của JS:
+# `$` của Python còn khớp trước một ký tự xuống dòng cuối chuỗi.
+_DRIVE_FILE_ID_BEN_NHAN = re.compile(r"[A-Za-z0-9_-]{10,128}")
+_LINK_GOC_BEN_NHAN = re.compile(r"https?://", re.IGNORECASE)
+
+
+def _item_hop_le_ben_nhan(drive_file_id, url) -> bool:
+    """Bên nhận đòi đúng CHUỖI (không ép kiểu) khớp hai luật trên."""
+    return (isinstance(drive_file_id, str) and _DRIVE_FILE_ID_BEN_NHAN.fullmatch(drive_file_id)
+            is not None and isinstance(url, str) and _LINK_GOC_BEN_NHAN.match(url) is not None)
+
+
 def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
                    thu: int) -> dict:
     """Dựng `{v, items, nhan}` cho lô `thu` của cụm THẬT `cum` — hợp đồng
@@ -1013,6 +1029,10 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     trước, cắt block `LO_TOI_DA`, RỒI mới lọc video chưa lên Drive) — lọc
     Drive trước khi cắt sẽ làm ranh giới lô trôi so với những gì người dùng
     đã thấy trên UI trước khi bấm.
+
+    Item nào sai luật bên nhận (`_item_hop_le_ben_nhan`: chưa lên Drive, Drive
+    id sai hình dạng, link gốc không phải http(s)) bị BỎ khỏi lô — một item
+    sai làm bên nhận bỏ cả lô.
     """
     with _connect(db_path) as conn:
         rows = conn.execute(
@@ -1026,7 +1046,7 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     toan_bo = [dict(r) for r in rows]
     lo = toan_bo[(thu - 1) * models_cum.LO_TOI_DA: thu * models_cum.LO_TOI_DA]
     items = [{"f": v["drive_file_id"], "n": v["title"] or v["video_id"], "u": v["url"]}
-             for v in lo if v["drive_file_id"]]
+             for v in lo if _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
     nhan = {"usecase": cum["usecase"], "insight": cum["insight"], "template": "Goc",
             "cum_id": cum["id"], "lo": {"thu": thu, "tong": cum["so_lo"]}}
     return {"v": 1, "items": items, "nhan": nhan}

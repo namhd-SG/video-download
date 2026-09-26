@@ -1341,11 +1341,11 @@
     if (tab.closed) return "dong";
     if (!payload.items.length) {
       tab.close();
-      showToast("Video của bộ này chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+      showToast("Video của bộ này chưa lên Drive hoặc thiếu link gốc hợp lệ — chưa có gì để gửi sang Creative Desk.");
       return "rong";
     }
     if (payload.items.length < muc.length) {
-      showToast(`${muc.length - payload.items.length} video chưa lên Drive nên không gửi kèm.`);
+      showToast(`${muc.length - payload.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
     }
     dieuHuongTab(tab, urlBanGiao(payload));
     try {

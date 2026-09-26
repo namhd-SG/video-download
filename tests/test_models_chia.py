@@ -526,10 +526,24 @@ def test_duyet_that_bai_sau_khi_ghi_nhat_ky_thi_khong_de_lai_dong_nao(kho, monke
 
 
 # --- payload dựng ở server ---------------------------------------------------
+#
+# Drive id và link gốc trong các test dưới đây có HÌNH DẠNG THẬT (id Drive
+# `[A-Za-z0-9_-]{10,128}`, link `https://…`): payload lọc theo đúng luật của
+# bên nhận, nên id giả kiểu "d1" / link "u1" sẽ bị bỏ.
+
+def _drive(vid: str) -> str:
+    return f"1Drive_{vid}_AbCdEfGhIjKl"
+
+
+def _dat_link_that(db) -> None:
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET url = 'https://www.tiktok.com/@a/video/' || video_id")
+
 
 def test_xay_payload_lo_chi_gom_video_co_drive_va_dung_thu_tu(kho):
     db, job = kho
-    for vid, drive in (("1", "d1"), ("2", None), ("3", "d3")):
+    _dat_link_that(db)
+    for vid, drive in (("1", _drive("1")), ("2", None), ("3", _drive("3"))):
         with sqlite3.connect(db) as conn:
             conn.execute("UPDATE videos SET drive_file_id = ?, tao_luc = ? WHERE video_id = ?",
                         (drive, f"2026-09-2{vid}T00:00:00+00:00", vid))
@@ -538,7 +552,8 @@ def test_xay_payload_lo_chi_gom_video_co_drive_va_dung_thu_tu(kho):
     cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
     payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
     assert payload["v"] == 1
-    assert [i["f"] for i in payload["items"]] == ["d1", "d3"], "video không có drive_file_id bị bỏ"
+    assert [i["f"] for i in payload["items"]] == [_drive("1"), _drive("3")], \
+        "video không có drive_file_id bị bỏ"
     assert payload["nhan"] == {"usecase": "Dance", "insight": "Badaboum couple",
                                "template": "Goc", "cum_id": cum_id, "lo": {"thu": 1, "tong": 1}}
 
@@ -548,14 +563,15 @@ def test_xay_payload_lo_bo_video_da_loai_sau_khi_vao_cum(kho):
     được sang Creative Desk — cùng bộ lọc mà `lay_cum` đếm, để lô gửi đi khớp
     số video người dùng thấy."""
     db, job = kho
+    _dat_link_that(db)
     with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE videos SET drive_file_id = 'd' || video_id")
+        conn.execute("UPDATE videos SET drive_file_id = '1Drive_' || video_id || '_AbCdEfGhIjKl'")
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
     models_cum.gan_video(db, cum_id, TOI, TOI, ["1", "2", "3"])
     models.danh_dau_da_loai(db, "2", TOI)
     cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
     payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
-    assert [i["f"] for i in payload["items"]] == ["d1", "d3"]
+    assert [i["f"] for i in payload["items"]] == [_drive("1"), _drive("3")]
 
 
 def test_xay_payload_lo_chi_gom_video_trong_pham_vi_chi_cua(kho):
@@ -565,13 +581,33 @@ def test_xay_payload_lo_chi_gom_video_trong_pham_vi_chi_cua(kho):
     db, job = kho
     job_ho = models.create_job(db, "https://www.tiktok.com/tag/b", 1, HO)
     models.record_video(db, job_id=job_ho, video_id="h1", url="uh1")
+    _dat_link_that(db)
     with sqlite3.connect(db) as conn:
-        conn.execute("UPDATE videos SET drive_file_id = 'd' || video_id")
+        conn.execute("UPDATE videos SET drive_file_id = '1Drive_' || video_id || '_AbCdEfGhIjKl'")
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
     models_cum.gan_video(db, cum_id, TOI, None, ["1", "h1"])
     cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
     payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
-    assert [i["f"] for i in payload["items"]] == ["d1"]
+    assert [i["f"] for i in payload["items"]] == [_drive("1")]
+
+
+def test_xay_payload_lo_bo_item_sai_luat_ben_nhan(kho):
+    """Bên nhận (Creative Desk) bỏ CẢ LÔ, không ack, nếu chỉ một item có Drive
+    id sai hình dạng hoặc link gốc không phải http(s). Payload phải bỏ đúng
+    những item đó (giống lọc của đường chọn tay) để phần còn lại vẫn qua."""
+    db, job = kho
+    _dat_link_that(db)
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET drive_file_id = '1Drive_' || video_id || '_AbCdEfGhIjKl'")
+        conn.execute("UPDATE videos SET url = 'u2' WHERE video_id = '2'")          # link không http(s)
+        conn.execute("UPDATE videos SET drive_file_id = 'd3ab' WHERE video_id = '3'")   # id 4 ký tự
+        conn.execute("UPDATE videos SET drive_file_id = 'x y/../zzzzzzzz' WHERE video_id = '4'")
+        conn.execute("UPDATE videos SET url = 'HTTP://www.tiktok.com/@a/video/5' WHERE video_id = '5'")
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["1", "2", "3", "4", "5"])
+    cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
+    payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
+    assert sorted(i["f"] for i in payload["items"]) == [_drive("1"), _drive("5")]
 
 
 # --- hoan_tac là NGĂN XẾP -----------------------------------------------

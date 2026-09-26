@@ -59,7 +59,7 @@ Trả về:
 ## `GET /chia/{job_id}` · `GET /cum/{cum_id}/lo/{thu}/payload`
 
 - `/chia/{job_id}`: nháp mới nhất cho job đó. Người thường: CHỈ nháp của chính mình. **Admin XEM được nháp của người khác** (M2) — sửa/duyệt vẫn khoá theo chủ thật ở `/thao-tac` và `/duyet` (admin gọi hai route đó cho lượt không phải của mình ⇒ 404, y hệt người thường). Không có ⇒ 404 (UI hiện "Chưa chia cụm" + lệnh máy dev). Trả thêm `bi_bo: [video_id...]` (M4) — video còn kẹt ở làn "kieu" nhưng `cum_nhap_id` đã mất (kiểu chứa nó vừa được duyệt, còn chính nó bị lọc bỏ lúc đó); trước đây rơi mất khỏi kết quả, không có cách nào UI biết mà hiện.
-- `/cum/{id}/lo/{thu}/payload`: `{v: 1, items, nhan}` theo `plans/260923-1558-tai-theo-cum/hop-dong-nhan.md`. CHỈ cụm thật; id nháp ⇒ 404.
+- `/cum/{id}/lo/{thu}/payload`: `{v: 1, items, nhan}` theo `plans/260923-1558-tai-theo-cum/hop-dong-nhan.md`. CHỈ cụm thật; id nháp ⇒ 404. `items` chỉ gồm video khớp luật item của bên nhận (meta-ads `frontend/src/lib/videodesk-handoff.ts`: Drive id `[A-Za-z0-9_-]{10,128}`, link gốc `http(s)://`) — bên nhận bỏ CẢ LÔ nếu một item sai, nên video chưa lên Drive / id sai / link sai bị bỏ khỏi lô ở server (`models_chia._item_hop_le_ben_nhan`).
 
 ## Ai tạo được một lượt chia (M2)
 

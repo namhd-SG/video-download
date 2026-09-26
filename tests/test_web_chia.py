@@ -28,6 +28,10 @@ _JS_HARNESS = _REPO / "tests" / "js" / "payload-ban-giao-cu.js"
 _OLD_APP_JS_SHA = "97c6f3b"   # commit ngay TRƯỚC khi payload chuyển sang dựng ở server — bản JS cũ tự ghép `nhan`
 
 
+def _drive(vid: str) -> str:
+    return f"1Drive_{vid}_AbCdEfGhIjKl"
+
+
 @pytest.fixture
 def kho(tmp_path, monkeypatch):
     monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
@@ -37,8 +41,11 @@ def kho(tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod, "DB_PATH", db)
     job = models.create_job(db, "https://www.tiktok.com/tag/a", 6, TOI)
     for i, vid in enumerate(("1", "2", "3", "4", "5", "6")):
-        models.record_video(db, job_id=job, video_id=vid, url=f"u{vid}",
-                            title=f"Video {vid}", drive_file_id=f"d{vid}")
+        # Link gốc và Drive id có HÌNH DẠNG THẬT: payload lọc theo luật bên
+        # nhận (`models_chia._item_hop_le_ben_nhan`), id giả kiểu "d1" bị bỏ.
+        models.record_video(db, job_id=job, video_id=vid,
+                            url=f"https://www.tiktok.com/@a/video/{vid}",
+                            title=f"Video {vid}", drive_file_id=_drive(vid))
     return db, job
 
 
@@ -306,7 +313,7 @@ def test_payload_route_video_khong_len_drive_bi_bo(kho):
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
     models_cum.gan_video(db, cum_id, TOI, TOI, ["1", "99"])
     out = app_mod.payload_lo_cum(cum_id, 1, nguoi_tao=TOI)
-    assert [i["f"] for i in out["items"]] == ["d1"]
+    assert [i["f"] for i in out["items"]] == [_drive("1")]
 
 
 # --- cửa ngoài ----------------------------------------------------------------
@@ -398,7 +405,7 @@ def test_payload_server_khop_byte_voi_ban_js_cu_tren_cung_cum(kho):
         vid = f"v{i}"
         models.record_video(
             db, job_id=job, video_id=vid, url=f"https://t/{vid}", title=f"Tiêu đề {i}",
-            drive_file_id=(f"drv{i}" if i % 5 else None),   # rải vài video chưa lên Drive
+            drive_file_id=(_drive(vid) if i % 5 else None),   # rải vài video chưa lên Drive
             tao_luc=(datetime(2026, 9, 24, tzinfo=timezone.utc) + timedelta(seconds=i)).isoformat())
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
     models_cum.gan_video(db, cum_id, TOI, TOI, [f"v{i}" for i in range(34)])
