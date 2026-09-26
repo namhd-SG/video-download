@@ -43,8 +43,12 @@
         <!-- Tuỳ chọn: bỏ trống thì hỏi lại lúc duyệt màn nháp. `maxlength`
              khớp trần server (`USECASE_TOI_DA`/`INSIGHT_CON_TOI_DA` ở
              web/models_cum.py) — chặn ở giao diện không thay cho kiểm ở
-             server, chỉ đỡ một vòng round-trip 400. -->
+             server, chỉ đỡ một vòng round-trip 400. Nhãn gắn `for` để không
+             ai gõ nhầm ô — hai placeholder trông giống nhau khi ô kia đã có
+             chữ. -->
+        <label for="usecase" class="lb">Usecase</label>
         <input type="text" id="usecase" placeholder="Usecase (tuỳ chọn)" maxlength="80" />
+        <label for="insight-goc" class="lb">Insight gốc</label>
         <input type="text" id="insight-goc" placeholder="Insight gốc (tuỳ chọn)" maxlength="120" />
         <button type="submit">Tạo lượt tải</button>
       </form>
