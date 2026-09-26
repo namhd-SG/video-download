@@ -19,7 +19,7 @@ const hang = (src.match(/const LOAI_TOI_DA_MOI_LUOT = \d+;/) || [""])[0];
 
 async function chay({ soId, loLoi = null }) {
   class PhienHetHan extends Error {}
-  const state = { selected: new Set(Array.from({ length: soId }, (_, i) => `v${i}`)) };
+  const state = { selected: new Set(Array.from({ length: soId }, (_, i) => `v${i}`)), idTrang: [] };
   const goi = [];
   const toast = [];
   let lanNap = 0;
@@ -35,7 +35,7 @@ async function chay({ soId, loLoi = null }) {
   const showToast = (m) => toast.push(m);
   const baoPhienHetHan = () => {};
   const window = { confirm: () => true };
-  eval(hang + "\n" + grab("lyDoLoiLoai") + "\n" + grab("loaiDaChon").replace(/^function/, "async function") + "\nvar __f = loaiDaChon;");
+  eval(hang + "\n" + grab("lyDoLoiLoai") + "\n" + grab("demNgoaiTrang") + "\n" + grab("dongNgoaiTrang") + "\n" + grab("loaiDaChon").replace(/^function/, "async function") + "\nvar __f = loaiDaChon;");
   await __f();
   return { goi, conChon: state.selected.size, toast: toast.join(" | "), lanNap };
 }

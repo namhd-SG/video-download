@@ -429,7 +429,11 @@
     padding: 10px 20px; display: flex; justify-content: space-between; align-items: center;
     gap: 12px; flex-wrap: wrap; z-index: 30;
   }
-  .selection-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* Số "không hiện ở trang này" đứng SÁT "N đã chọn": thanh là space-between, nên
+     đẩy phần nút sang phải bằng margin thay vì để span này trôi ra giữa. */
+  #selection-ngoai { margin-left: -6px; }
+  #selection-ngoai:empty { display: none; }
+  .selection-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
   .selection-actions button {
     border: 1px solid var(--border); background: var(--surface-alt); color: var(--text);
     border-radius: 8px; padding: .5rem .9rem; font-size: .82rem; cursor: pointer;

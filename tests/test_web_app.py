@@ -1941,3 +1941,30 @@ def test_cat_trang_va_day_nut_trang():
     assert do["rong"]["soTrang"] == 1 and do["rong"]["so"] == 0
     assert do["day_giua"] == [1, "…", 98, 99, 100, 101, 102, "…", 200]
     assert do["day_dau"] == [1, 2, 3] and do["day_1"] == [1]
+
+
+def test_giu_chon_xuyen_trang_ham_thuan():
+    """Hàm THẬT trích từ app.js (harness `tests/js/giu-chon-xuyen-trang.js`).
+
+    User 26/09: thêm 30/trang; chuyển trang / đổi số mỗi trang GIỮ lựa chọn. Cái giá
+    "không thấy thẻ đã chọn ở trang kia" trả bằng con số: đếm id đã chọn KHÔNG thuộc
+    trang đang xem, hiện trên thanh chọn và chèn vào hộp xác nhận thao tác hàng loạt.
+    """
+    import json
+    import shutil
+    import subprocess
+
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
+                    "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
+    harness = Path(__file__).parent / "js" / "giu-chon-xuyen-trang.js"
+    r = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    do = json.loads(r.stdout)
+    assert do["so_moi_trang"] == [10, 20, 30, 40, 100]
+    assert (do["ngoai_0"], do["ngoai_2"], do["ngoai_rong"]) == (0, 2, 0)
+    assert do["nhan_0"] == "" and do["nhan_2"] == "· 2 không hiện ở trang này"
+    assert do["dong_0"] == ""
+    assert "2 video không hiện ở trang này" in do["dong_2"]
