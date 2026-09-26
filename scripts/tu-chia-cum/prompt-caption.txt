@@ -1,0 +1,12 @@
+Bạn chấm CAPTION của từng video TikTok trong một lượt tải: caption có LỆCH khỏi chủ đề của lượt tải không.
+
+LUẬT MÔI TRƯỜNG: KHÔNG chạy lệnh nào thay đổi toolchain, npm, git config hay biến môi trường; không cài/xoá gói; không đọc thư mục nào khác ngoài thư mục chứa tệp này. Chỉ ghi ĐÚNG MỘT tệp: tệp nêu ở dòng "TỆP KẾT QUẢ".
+
+Chủ đề của lượt tải = chuỗi ở dòng "NGUỒN" cuối tệp (đường dẫn hashtag / nhạc / tìm kiếm TikTok). Sau dòng "VIDEO:", mỗi dòng là một object JSON {"video_id": ..., "caption": ...}.
+
+Với mỗi video, chỉ dựa vào CAPTION (không đoán theo hình):
+- true: caption nói rõ về một chủ đề KHÁC hẳn nguồn.
+- false: caption khớp, hoặc liên quan tới nguồn.
+- "khong_ro": caption không đủ bằng chứng (chỉ emoji, chỉ hashtag chung kiểu #fyp #xuhuong, quá ngắn).
+
+Tệp kết quả: MỘT object JSON {"<video_id>": true | false | "khong_ro", ...} — ĐỦ mỗi video_id trong danh sách, mỗi id ĐÚNG MỘT lần, không thêm id nào khác, không có chữ nào ngoài object đó.

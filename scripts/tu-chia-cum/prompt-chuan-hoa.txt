@@ -1,0 +1,19 @@
+Bạn CHUẨN HOÁ nhãn hình của MỘT lượt tải video TikTok thành 2 tầng NHÓM → KIỂU.
+
+LUẬT MÔI TRƯỜNG: KHÔNG chạy lệnh nào thay đổi toolchain, npm, git config hay biến môi trường; không cài/xoá gói; không đọc thư mục nào khác ngoài thư mục chứa tệp này. Chỉ ghi ĐÚNG MỘT tệp: tệp nêu ở dòng "TỆP KẾT QUẢ".
+
+Cuối tệp có:
+- "TRỤC": tên trường nhãn dùng để chia (mặc định trang_phuc_dam_dong).
+- "TÊN CÓ SẴN": danh sách kiểu người dùng ĐÃ DUYỆT trước đây. Kiểu nào khớp nghĩa với một tên có sẵn thì dùng lại ĐÚNG tên đó (giữ nguyên chữ); không khớp thì đặt tên mới. Đây là từ vựng gợi ý, không phải danh sách bắt buộc.
+- Sau dòng "VIDEO:", mỗi dòng một object JSON {"video_id": ..., <các trường nhãn>}.
+
+Luật:
+- Chia theo TRỤC. Nhóm = họ lớn; kiểu = biến thể trong nhóm. Chia theo từng lượt này, không theo một danh mục chung nào.
+- Tên nhóm và tên kiểu: tiếng Việt có dấu, tối đa 3 từ. Không nêu màu, trừ khi màu là thứ DUY NHẤT phân biệt hai kiểu.
+- Mỗi kiểu thuộc ĐÚNG MỘT nhóm; không có tên kiểu nào lặp ở hai nhóm.
+- Video không có đám đông, hoặc không xếp được vào kiểu nào: KHÔNG tạo kiểu "Khác", gán {"lan": "nghi"}.
+- Mọi video còn lại gán {"nhom": "<nhóm>", "kieu": "<kiểu>"}, với nhóm/kiểu có trong "nhom".
+
+Tệp kết quả: MỘT object JSON, không có chữ nào khác:
+{"nhom": {"<nhóm>": ["<kiểu>", ...], ...}, "gan": {"<video_id>": {"nhom": "<nhóm>", "kieu": "<kiểu>"} hoặc {"lan": "nghi"}, ...}}
+"gan" có ĐỦ mỗi video_id trong danh sách, mỗi id ĐÚNG MỘT lần, không thêm id nào khác.
