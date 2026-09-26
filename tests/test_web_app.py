@@ -1794,8 +1794,9 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     `app.js` thật rồi GỌI hàm đó với `window.open` giả. Assert bằng chuỗi sẽ
     xanh cho một lời gọi `clear()` nằm sai nhánh.
 
-    Hai ca, và ca thứ hai mới là ca khó:
-      · tab mở được   ⇒ bỏ chọn, gỡ dấu trên thẻ, vẽ lại thanh
+    Từ 26/09 chọn tay đi qua postMessage; điểm bỏ chọn dời từ "tab mở được"
+    sang "Creative Desk ack ok:true". Hai ca gốc vẫn giữ:
+      · có ack        ⇒ bỏ chọn, gỡ dấu trên thẻ, vẽ lại thanh
       · popup bị chặn ⇒ GIỮ nguyên lựa chọn — chưa có gì được bàn giao, xoá ở
         đó là bắt người dùng chọn lại vì một việc CHƯA xảy ra. Cùng khuôn với
         `loaiDaChon`, nó chỉ `clear()` sau khi API thành công.
@@ -1818,15 +1819,29 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     assert ket_qua.returncode == 0, ket_qua.stderr
     do = json.loads(ket_qua.stdout)
 
-    binh_thuong = do["binh_thuong"]
-    assert binh_thuong["moTab"] == 1, "phải mở tab bàn giao"
-    assert binh_thuong["conChon"] == 0, "bàn giao xong mà lựa chọn còn nguyên"
-    assert binh_thuong["theConTo"] == 0, "thẻ còn tô trong khi state đã trống"
-    assert binh_thuong["veLaiThanh"] == 1, "thanh chọn phải được vẽ lại"
+    # 26/09: chọn tay gửi qua postMessage — bỏ chọn CHỈ khi Creative Desk ack `ok:true`.
+    ack = do["ack"]
+    assert ack["moTab"] == 1, "phải mở tab bàn giao"
+    assert ack["url"].endswith("/creative-order/self-bundles?videodesk_pm=1")
+    assert ack["dich"] == "https://automation.example", "targetOrigin phải cố định, không phải '*'"
+    assert ack["tin"] == {"type": "videodesk-handoff", "v": 2, "coId": True, "soItem": 3, "coNhan": False}
+    assert ack["conChon"] == 0 and ack["theConTo"] == 0 and ack["veLaiThanh"] == 1
+    assert ack["nutKhiCho"]["disabled"] is True and ack["nutSau"]["disabled"] is False
 
-    bi_chan = do["popup_bi_chan"]
-    assert bi_chan["conChon"] == 3, \
+    for ca in ("tu_choi", "im", "sai_origin", "sai_id"):
+        assert do[ca]["conChon"] == 3, f"{ca}: chưa có ack ok:true thì KHÔNG được xoá lựa chọn"
+        assert do[ca]["conDo"] is True, f"{ca}: phải nhớ tab + id để gửi lại"
+    assert do["im"]["soLanGui"] > 2, "không ack thì phải gửi lặp (tab có thể đang đăng nhập)"
+
+    assert do["popup_bi_chan"]["conChon"] == 3 and do["popup_bi_chan"]["soLanGui"] == 0, \
         "popup bị chặn thì chưa bàn giao được — không được xoá lựa chọn"
+    assert do["nhieu"]["tin"]["soItem"] == 86, "90 chọn, 4 chưa lên Drive ⇒ gửi 86, không trần 30"
+    assert "4 video chưa lên Drive" in do["nhieu"]["toast"]
+    assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
+    assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
+    assert do["gui_lai"]["moTab"] == 1 and do["gui_lai"]["lanHai"]["cungId"] is True, \
+        "gửi lại phải vào ĐÚNG tab cũ với ĐÚNG id (bên nhận khử trùng theo id)"
+    assert do["gui_lai"]["conChon"] == 0
 
 
 def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():
