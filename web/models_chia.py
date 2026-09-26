@@ -302,12 +302,16 @@ def _giai_va_cham_ten(hang, ten: dict[int, str],
 
     Trần vòng lặp: mỗi vòng chạy tiếp chỉ khi đã đổi ít nhất một hàng từ tên
     chưa ghép sang tên ghép, và hàng đã ghép không đổi nữa ⇒ tối đa
-    `len(hang) + 1` vòng. Va chạm CÒN LẠI khi mọi hàng dính vào đã ghép nhóm
-    không còn cách tách bằng luật này ⇒ giữ nguyên, và lúc duyệt các hàng đó
-    tự gộp vào MỘT cụm (không hỏi). Hai ca: biến thể hoa/thường của cùng một
-    kiểu trong cùng nhóm ("Vest"/"couple" và "Vest"/"Couple" — đúng là một
-    kiểu); và hai kiểu khác nhau mà tên ghép trùng nhau ("A"/"B couple" và
-    "A B"/"couple" cùng ra "A B couple").
+    `len(hang) + 1` vòng.
+
+    Va chạm CÒN LẠI khi mọi hàng dính vào đã ghép nhóm (luật ghép nhóm hết
+    cách tách) chia hai ca — xem `_them_hau_to_so`:
+      - CÙNG một kiểu (cùng `nhom` VÀ cùng `kieu` theo `_khoa_ten`, vd
+        "Vest"/"couple" và "Vest"/"Couple"): giữ nguyên, lúc duyệt tự gộp
+        vào MỘT cụm (không hỏi) — đúng là một kiểu.
+      - kiểu KHÁC nhau mà tên ghép trùng nhau ("A"/"B couple" và "A
+        B"/"couple" cùng ra "A B couple"): không được âm thầm gộp ⇒ thêm hậu
+        tố số.
 
     `nhom_dau`: các nhóm id xét va chạm TRƯỚC vòng lặp — `doi_ten` dùng để áp
     luật "trùng kiểu thô" giữa hàng vừa đổi và các hàng cùng kiểu với nó,
@@ -335,7 +339,49 @@ def _giai_va_cham_ten(hang, ten: dict[int, str],
             if len(ids) > 1 and ghep_nhom(ids):
                 doi = True
         if not doi:
+            break
+    _them_hau_to_so(hang, ten)
+
+
+def _them_hau_to_so(hang, ten: dict[int, str]) -> None:
+    """Tách va chạm còn lại giữa các kiểu KHÁC nhau bằng hậu tố số, SỬA TẠI
+    CHỖ `ten`. Trong mỗi nhóm trùng tên cuối, kiểu đứng đầu (theo `thu_tu`,
+    `id`) giữ tên; mỗi kiểu khác nhận `"<tên> N"` với N nhỏ nhất (từ 2) mà
+    tên đó CHƯA có trong lượt — kể cả một kiểu có sẵn tên như thế (vd kiểu
+    đơn "A B couple 2"). Các hàng cùng một kiểu (biến thể hoa/thường cùng
+    nhóm) nhận CÙNG hậu tố, vẫn tự gộp lúc duyệt.
+
+    Trần: mỗi vòng tách hẳn một nhóm trùng (tên mới luôn chưa ai dùng) ⇒
+    tối đa `len(hang) + 1` vòng; trong `len(hang) + 1` ứng viên N luôn có một
+    tên trống. Vượt trần ⇒ `ValueError` (không bao giờ gộp thay).
+    """
+    danh_tinh = {r["id"]: (_khoa_ten(r["nhom"]), _khoa_ten(r["kieu"])) for r in hang}
+    thu_tu = {r["id"]: (r["thu_tu"], r["id"]) for r in hang}
+    tran = len(hang) + 1
+    for _ in range(tran):
+        theo_khoa: dict[str, list[int]] = {}
+        for i, t in ten.items():
+            theo_khoa.setdefault(_khoa_ten(t), []).append(i)
+        nhom_trung = next((ids for ids in theo_khoa.values()
+                           if len({danh_tinh[i] for i in ids}) > 1), None)
+        if nhom_trung is None:
             return
+        cac_kieu: list[tuple] = []
+        for i in sorted(nhom_trung, key=thu_tu.__getitem__):
+            if danh_tinh[i] not in cac_kieu:
+                cac_kieu.append(danh_tinh[i])
+        goc = ten[min(nhom_trung, key=thu_tu.__getitem__)]
+        da_dung = set(theo_khoa)
+        for kieu in cac_kieu[1:]:
+            moi = next((f"{goc} {n}" for n in range(2, tran + 2)
+                        if _khoa_ten(f"{goc} {n}") not in da_dung), None)
+            if moi is None:
+                raise ValueError(f"không tách được tên cụm trùng '{goc}' bằng hậu tố số")
+            da_dung.add(_khoa_ten(moi))
+            for i in nhom_trung:
+                if danh_tinh[i] == kieu:
+                    ten[i] = moi
+    raise ValueError("không tách được các tên cụm trùng trong lượt bằng hậu tố số")
 
 
 def _ten_ghep(r) -> str:
@@ -355,7 +401,7 @@ def _chot_ten_moi_kieu(conn, chia_lan_id: int) -> None:
     tác (ca đo được: duyệt riêng "Vest couple" rồi đổi tên một kiểu không
     liên quan làm "Đồng phục couple" thành "couple" trần).
     """
-    hang = conn.execute("SELECT id, nhom, kieu FROM cum_nhap WHERE chia_lan_id = ?",
+    hang = conn.execute("SELECT id, nhom, kieu, thu_tu FROM cum_nhap WHERE chia_lan_id = ?",
                         (chia_lan_id,)).fetchall()
     ten = {r["id"]: models_cum.chuan_hoa_chu(r["kieu"]) for r in hang}
     _giai_va_cham_ten(hang, ten)
@@ -372,8 +418,9 @@ def _chot_ten_sau_doi_ten(conn, chia_lan_id: int, cum_nhap_id: int) -> dict[str,
     Trả `{str(cum_nhap_id): ten_cum_truoc}` của MỌI hàng vừa bị ghi — lưu vào
     nhật ký để `hoan_tac` trả lại ĐÚNG tên cũ thay vì tính lại.
     """
-    hang = conn.execute("SELECT id, nhom, kieu, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
-                        (chia_lan_id,)).fetchall()
+    hang = conn.execute(
+        "SELECT id, nhom, kieu, thu_tu, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
+        (chia_lan_id,)).fetchall()
     doi = next(r for r in hang if r["id"] == cum_nhap_id)
     ten = {r["id"]: r["ten_cum"] or models_cum.chuan_hoa_chu(r["kieu"]) for r in hang}
     ten[cum_nhap_id] = models_cum.chuan_hoa_chu(doi["kieu"])
