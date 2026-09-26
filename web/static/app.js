@@ -113,7 +113,6 @@
     videos: [],
     selected: new Set(),      // video_id đang được chọn trong thư viện
     dangBanGiao: false,       // đang chờ Creative Desk ack — khoá nút "Tạo bộ tự tìm"
-    banGiaoDo: null,          // {khoa, tab, id} của lần gửi chưa được ack — để gửi lại đúng id
     trang: 1,                 // trang thư viện đang xem, 1-based
     soMoiTrang: 40,           // nạp lại từ localStorage lúc khởi động — xem docSoMoiTrang
     idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
@@ -919,23 +918,17 @@
       return;
     }
 
-    // Lần trước hết hạn mà tab Creative Desk vẫn mở và lựa chọn không đổi ⇒ GỬI
-    // LẠI vào đúng tab đó với đúng `id` (bên nhận khử trùng theo id), không mở
-    // thêm tab. Người dùng chỉ cần bấm lại nút này sau khi đăng nhập xong.
-    const khoa = items.map((it) => it.f).join(",");
-    const cu = state.banGiaoDo;
-    let tab, id;
-    if (cu && cu.khoa === khoa && cu.tab && !cu.tab.closed) {
-      ({ tab, id } = cu);
-    } else {
-      tab = moTabCreativeDesk(`${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk_pm=1`);
-      if (!tab) {
-        showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại. " +
-                  "Lựa chọn của bạn vẫn còn.");
-        return;
-      }
-      id = crypto.randomUUID();
+    // Mỗi lần bấm là MỘT tab mới với `?videodesk_pm=1`. Không gửi lại vào tab của
+    // lần trước: Creative Desk chuyển người chưa đăng nhập sang `/login` và KHÔNG
+    // giữ URL quay lại (`creative-order/layout.tsx` `router.replace("/login")`),
+    // nên sau khi đăng nhập tab cũ không còn tham số đó và không bao giờ nghe tin.
+    const tab = moTabCreativeDesk(`${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk_pm=1`);
+    if (!tab) {
+      showToast("Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại. " +
+                "Lựa chọn của bạn vẫn còn.");
+      return;
     }
+    const id = crypto.randomUUID();
     if (chuaLenDrive.length) {
       showToast(`${chuaLenDrive.length} video chưa lên Drive nên không gửi kèm.`);
     }
@@ -955,16 +948,14 @@
     // chưa có gì được bàn giao cả — xoá lựa chọn là bắt người dùng chọn lại vì
     // một việc CHƯA xảy ra.
     if (kq.ket === "ack") {
-      state.banGiaoDo = null;
       boChonTatCa();
       showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.`);
       return;
     }
-    state.banGiaoDo = kq.ket === "tab_dong" ? null : { khoa, tab, id };
     showToast({
       tu_choi: `Creative Desk không nhận được danh sách${kq.lyDo ? ` (${kq.lyDo})` : ""}. Lựa chọn vẫn còn.`,
-      het_han: "Creative Desk chưa xác nhận sau 3 phút — đăng nhập xong ở tab đó rồi bấm " +
-               "“Tạo bộ tự tìm” lần nữa để gửi lại. Lựa chọn vẫn còn.",
+      het_han: "Creative Desk chưa xác nhận sau 3 phút. Nếu tab đó bắt đăng nhập: đăng nhập " +
+               "xong, đóng tab đó rồi bấm “Tạo bộ tự tìm” lần nữa. Lựa chọn vẫn còn.",
       tab_dong: "Tab Creative Desk đã đóng trước khi nhận — bấm lại để mở tab mới. Lựa chọn vẫn còn.",
     }[kq.ket]);
   }

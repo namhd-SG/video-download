@@ -24,7 +24,7 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     selected: new Set(ids),
     videos: ids.map((id, i) => ({ video_id: id, drive_file_id: i < chuaDrive ? null : "d" + id,
                                   title: "t" + id, url: "u" + id })),
-    idTrang: [], dangBanGiao: false, banGiaoDo: null,
+    idTrang: [], dangBanGiao: false,
   };
   const daGoi = { renderSelectionBar: 0, open: 0, toast: [], gui: [], url: null };
   const the = state.videos.map(() => ({
@@ -64,14 +64,14 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
   const nutKhiCho = { disabled: nut.disabled, text: nut.textContent };
   if (bamDup) await __f();          // lần 2 trong lúc lần 1 đang chờ ack
   await p1;
-  // Gửi lại: lần 1 hết hạn (tab vẫn mở), đổi sang chế độ ack rồi bấm lần 2 ⇒
-  // phải gửi vào ĐÚNG tab cũ với ĐÚNG id, không mở tab mới.
+  // Bấm lại sau khi hết hạn ⇒ MỞ TAB MỚI (tab cũ có thể đã bị chuyển sang
+  // /login và mất `?videodesk_pm=1`), với id mới.
   if (lanHaiAck) {
     const idLan1 = daGoi.gui[0].tin.id;
     cachTra = "ack"; daGoi.daAck = false;
     const truoc = daGoi.gui.length;
     await __f();
-    daGoi.lanHai = { cungId: daGoi.gui.slice(truoc).every((g) => g.tin.id === idLan1),
+    daGoi.lanHai = { idMoi: daGoi.gui.slice(truoc).every((g) => g.tin.id !== idLan1),
                      soGuiThem: daGoi.gui.length - truoc };
   }
   const tin = daGoi.gui[0] ? daGoi.gui[0].tin : null;
@@ -86,7 +86,6 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     tin: tin && { type: tin.type, v: tin.v, coId: typeof tin.id === "string" && tin.id.length >= 8,
                   soItem: tin.items.length, coNhan: "nhan" in tin },
     nutKhiCho, nutSau: { disabled: nut.disabled, text: nut.textContent },
-    conDo: state.banGiaoDo !== null,
     toast: daGoi.toast.join(" | "),
     lanHai: daGoi.lanHai || null,
   };

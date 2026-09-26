@@ -1830,7 +1830,6 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
 
     for ca in ("tu_choi", "im", "sai_origin", "sai_id"):
         assert do[ca]["conChon"] == 3, f"{ca}: chưa có ack ok:true thì KHÔNG được xoá lựa chọn"
-        assert do[ca]["conDo"] is True, f"{ca}: phải nhớ tab + id để gửi lại"
     assert do["im"]["soLanGui"] > 2, "không ack thì phải gửi lặp (tab có thể đang đăng nhập)"
 
     assert do["popup_bi_chan"]["conChon"] == 3 and do["popup_bi_chan"]["soLanGui"] == 0, \
@@ -1839,8 +1838,8 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     assert "4 video chưa lên Drive" in do["nhieu"]["toast"]
     assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
     assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
-    assert do["gui_lai"]["moTab"] == 1 and do["gui_lai"]["lanHai"]["cungId"] is True, \
-        "gửi lại phải vào ĐÚNG tab cũ với ĐÚNG id (bên nhận khử trùng theo id)"
+    assert do["gui_lai"]["moTab"] == 2 and do["gui_lai"]["lanHai"]["idMoi"] is True, \
+        "bấm lại sau khi hết hạn phải mở TAB MỚI (tab cũ có thể đã mất ?videodesk_pm=1 sau /login)"
     assert do["gui_lai"]["conChon"] == 0
 
 
