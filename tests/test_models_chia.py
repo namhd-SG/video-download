@@ -1256,3 +1256,18 @@ def test_hoan_tac_doi_ten_tra_lai_dung_ten_cu_cua_hang_doi_va_hang_va_cham(kho):
 
     models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == truoc
+
+
+def test_duyet_kieu_id_khong_thuoc_luot_khong_ghi_doi_insight(kho):
+    """`duyet_kieu` với `cum_nhap_id` không thuộc lượt trả `None` (404) và
+    KHÔNG được để lại gì — kể cả `doi_insight` đi kèm trong body: kiểm id
+    TRƯỚC khi ghi usecase/insight vào `chia_lan`/`jobs`/nhật ký."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    assert models_chia.duyet_kieu(db, lan_id, 987654, TOI, TOI, "Motion", "Strom") is None
+    assert _thao_tac(db, lan_id) == []
+    with sqlite3.connect(db) as conn:
+        assert conn.execute("SELECT usecase, insight_goc FROM jobs WHERE id = ?",
+                            (job,)).fetchone() == (None, None)
+        assert conn.execute("SELECT usecase, insight_goc FROM chia_lan WHERE id = ?",
+                            (lan_id,)).fetchone() == (None, None)

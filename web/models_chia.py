@@ -543,7 +543,8 @@ def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
               insight_goc: str | None = None,
               xac_nhan_gop: list[int] | None = None) -> dict | None:
     """Duyệt MỘT kiểu nháp thành cụm thật (hoặc gộp vào cụm có sẵn) — lối DUY
-    NHẤT từ nháp sang `cum`. `None` ⇒ lượt không phải của `chu`.
+    NHẤT từ nháp sang `cum`. `None` ⇒ lượt không phải của `chu`, hoặc
+    `cum_nhap_id` không thuộc lượt (không ghi gì, kể cả `doi_insight`).
 
     `usecase`/`insight_goc` bỏ trống ⇒ dùng giá trị đã lưu ở `chia_lan`.
     """
@@ -554,6 +555,12 @@ def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
         if lan is None:
             return None
         _kiem_trang_thai_de_xuat(lan)
+        # Kiểm id TRƯỚC `_ap_doi_insight_neu_co`: trả `None` (404) sau khi đã
+        # ghi `doi_insight` thì transaction vẫn COMMIT phần đó — một yêu cầu
+        # bị từ chối không được để lại dấu nào.
+        if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
+                        (cum_nhap_id, chia_lan_id)).fetchone() is None:
+            return None
         u, g = _ap_doi_insight_neu_co(conn, chia_lan_id, chu, lan, usecase, insight_goc)
         _kiem_insight_khong_trong(u, g)
         ket = _giai_quyet_kieu(conn, chia_lan_id, cum_nhap_id, chu, chi_cua, u, g, xac_nhan, {})
