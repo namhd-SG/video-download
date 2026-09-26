@@ -434,10 +434,11 @@
   // ========================================================================
   // RENDER — lưới thẻ + trạng thái rỗng
   // ========================================================================
-  // ---- Phân trang thư viện (user 23/09: "phân ra theo trang 10/20/40/100").
+  // ---- Phân trang thư viện (user 23/09: "phân ra theo trang 10/20/40/100";
+  // 26/09 thêm 30: "thêm phần 30 video/page").
   // `loadVideos` đã nạp TRỌN thư viện (lô 500, trần 2000), bộ lọc chạy ở đây ⇒
   // phân trang cắt trên danh sách ĐÃ LỌC, không cần tham số trang ở API.
-  const SO_MOI_TRANG = Object.freeze([10, 20, 40, 100]);
+  const SO_MOI_TRANG = Object.freeze([10, 20, 30, 40, 100]);
   const SO_MOI_TRANG_MAC_DINH = 40;
 
   // Hàm thuần — test gọi thẳng. `trang` 1-based; kẹp vào [1, soTrang] để một
@@ -497,19 +498,34 @@
     veNutChonTrang();
   }
 
-  // Đổi trang / đổi số mỗi trang ⇒ XOÁ lựa chọn, nói ra bằng một dòng. "Chọn tất
-  // cả" = trang đang xem (user chốt 14:29), nên lựa chọn xuyên trang là nhập
-  // nhằng: người ta không thấy những thẻ đã chọn ở trang kia.
-  function boChonVi(lyDo) {
-    const bo = state.selected.size;
-    if (!bo) return;
-    boChonTatCa();
-    showToast(`Đã bỏ chọn ${bo} video vì ${lyDo} — “Chọn tất cả” chỉ áp cho trang đang xem.`);
+  // Đổi trang / đổi số mỗi trang GIỮ lựa chọn (user 26/09: "khi tôi chọn tôi mở
+  // qua trang mới không bị mất chọn"; đổi số/trang: "giữ"). Bản 23/09 xoá lựa chọn
+  // vì người ta không thấy thẻ đã chọn ở trang kia — cái giá đó giờ trả bằng
+  // CON SỐ: thanh chọn nói bao nhiêu video nằm ở trang khác, và thao tác hàng
+  // loạt nhắc lại con số đó trước khi chạy. "Chọn tất cả" vẫn chỉ là trang đang xem.
+  //
+  // Hàm thuần — test gọi thẳng.
+  function demNgoaiTrang(selected, idTrang) {
+    const trang = new Set(idTrang);
+    let n = 0;
+    for (const id of selected) if (!trang.has(id)) n++;
+    return n;
+  }
+
+  function nhanNgoaiTrang(soNgoai) {
+    return soNgoai > 0 ? `· ${soNgoai} ở trang khác` : "";
+  }
+
+  // Dòng chèn vào hộp xác nhận của thao tác hàng loạt; rỗng khi mọi video đã
+  // chọn đang nằm trên màn hình.
+  function dongNgoaiTrang(soNgoai) {
+    return soNgoai > 0
+      ? `\n\nTrong đó ${soNgoai} video ở trang khác (bạn không thấy trên màn hình).`
+      : "";
   }
 
   function doiTrang(n) {
     if (n === state.trang) return;
-    boChonVi("chuyển trang");
     state.trang = n;
     renderLibrary();
     document.getElementById("library-count").scrollIntoView({ block: "start" });
@@ -517,7 +533,6 @@
 
   function doiSoMoiTrang(n) {
     if (n === state.soMoiTrang || !SO_MOI_TRANG.includes(n)) return;
-    boChonVi("đổi số video mỗi trang");
     state.soMoiTrang = n;
     state.trang = 1;
     try { localStorage.setItem(KHOA_SO_MOI_TRANG, String(n)); } catch (e) { /* private mode */ }
@@ -556,6 +571,7 @@
       grid.hidden = true;
       grid.innerHTML = "";
       state.idTrang = [];
+      renderSelectionBar();
       vePhanTrang(null, 0);
       renderCumRail();
       renderCumHead();
@@ -582,6 +598,7 @@
     const ct = catTrang(filtered, state.trang, state.soMoiTrang);
     state.trang = ct.trang;  // kẹp: bỏ video / đổi lọc có thể làm trang cũ vượt quá
     state.idTrang = ct.muc.map((v) => v.video_id);
+    renderSelectionBar();  // "· N ở trang khác" đổi theo trang đang xem
     grid.innerHTML = ct.muc.map(renderCard).join("");
     vePhanTrang(ct, filtered.length);
     wireThumbFallback();
@@ -640,6 +657,8 @@
     bar.hidden = state.selected.size === 0;
     if (bar.hidden) { const pop = document.getElementById("cum-popover"); if (pop) pop.hidden = true; }
     document.getElementById("selection-count").textContent = `${state.selected.size} đã chọn`;
+    const ngoai = document.getElementById("selection-ngoai");
+    if (ngoai) ngoai.textContent = nhanNgoaiTrang(demNgoaiTrang(state.selected, state.idTrang));
   }
 
   let toastTimer = null;
@@ -786,6 +805,10 @@
     if (action === "self-bundle") moBoTuTim();
     if (action === "cum") {
       const pop = document.getElementById("cum-popover");
+      // Mở hộp gán cụm khi có video đã chọn ở trang khác ⇒ hỏi trước, nêu số.
+      const ngoai = demNgoaiTrang(state.selected, state.idTrang);
+      if (pop.hidden && ngoai > 0 && !window.confirm(
+        `Đưa ${state.selected.size} video vào cụm?${dongNgoaiTrang(ngoai)}`)) return;
       pop.hidden = !pop.hidden;
       renderPopoverCum();
     }
@@ -1335,7 +1358,8 @@
     // Drive). Nói rõ nó KHÔNG đụng người khác — đó là thứ người bấm cần biết
     // để bấm mà không phải đoán.
     const ok = window.confirm(
-      `Bỏ ${ids.length} video khỏi thư viện của bạn?\n\n` +
+      `Bỏ ${ids.length} video khỏi thư viện của bạn?` +
+      `${dongNgoaiTrang(demNgoaiTrang(state.selected, state.idTrang))}\n\n` +
       `Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày). ` +
       `Người khác không bị ảnh hưởng, và lượt quét sau của bạn sẽ không tải lại chúng.`);
     if (!ok) return;

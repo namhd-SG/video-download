@@ -125,11 +125,51 @@ def test_chon_tat_ca_chi_lay_trang_dang_xem(page):
     assert _chon(page) == 0 and page.is_hidden("#selection-bar")
 
 
-def test_doi_trang_xoa_lua_chon_va_bao(page):
+def test_doi_trang_giu_lua_chon_va_dem_ngoai_trang(page):
+    """User 26/09: "mở qua trang mới không bị mất chọn" (đảo quyết định 23/09)."""
     page.click("#chon-trang")
     _bam_trang(page, 2)
-    assert _chon(page) == 0 and page.is_hidden("#selection-bar")
-    assert "Đã bỏ chọn 40 video vì chuyển trang" in page.inner_text("#toast")
+    assert page.is_visible("#selection-bar")
+    assert _so_da_chon(page) == "40 đã chọn"
+    assert _chon(page) == 0, "trang 2 chưa chọn thẻ nào"
+    assert page.inner_text("#selection-ngoai") == "· 40 ở trang khác"
+    assert "Đã bỏ chọn" not in page.inner_text("#toast")
+    _bam_trang(page, 1)
+    assert _chon(page) == 40 and page.inner_text("#selection-ngoai") == ""
+
+
+def test_doi_so_moi_trang_giu_lua_chon(page):
+    """User 26/09 10:35 — đổi số/trang: "giữ"."""
+    page.click("#chon-trang")
+    page.click("#so-moi-trang [data-so='30']")
+    assert _the(page) == 30
+    assert _so_da_chon(page) == "40 đã chọn"
+    assert _chon(page) == 30
+    assert page.inner_text("#selection-ngoai") == "· 10 ở trang khác"
+    page.evaluate("localStorage.removeItem('videodl-per-page')")
+
+
+def test_xoa_khi_co_video_o_trang_khac_hoi_kem_so(page):
+    """Thao tác hàng loạt trên video KHÔNG thấy ⇒ hộp xác nhận phải nêu số đó."""
+    page.click("#chon-trang")
+    _bam_trang(page, 2)
+    page.locator("#card-grid .card").first.click()
+    cau = []
+    page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
+    page.click("#selection-bar [data-action='loai']")
+    assert cau and cau[0].startswith("Bỏ 41 video")
+    assert "40 video ở trang khác" in cau[0]
+    assert _so_da_chon(page) == "41 đã chọn", "bấm Huỷ thì không đụng lựa chọn"
+
+
+def test_dua_vao_cum_khi_co_video_o_trang_khac_hoi_truoc(page):
+    page.click("#chon-trang")
+    _bam_trang(page, 2)
+    cau = []
+    page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
+    page.click("#selection-bar [data-action='cum']")
+    assert cau and "40 video ở trang khác" in cau[0]
+    assert page.is_hidden("#cum-popover"), "Huỷ ⇒ không mở hộp gán cụm"
 
 
 def test_100_moi_trang_ra_1_trang_va_an_nut(page):
