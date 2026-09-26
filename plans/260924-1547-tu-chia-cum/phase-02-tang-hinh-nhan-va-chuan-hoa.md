@@ -55,3 +55,34 @@ mini: models_chia.ghi_de_xuat ──► chia_lan(de_xuat) + cum_nhap + video_cum
 - agy quota/503 (đã gặp 24/09) ⇒ rơi tầng theo luật; vế chuẩn hoá rơi dưới flash-high thì ghi nhãn tầng vào `phien_ban_prompt`.
 - Ảnh rời máy sang Google: chỉ video TikTok công khai (ranh giới R1). Job nào nguồn không phải TikTok công khai ⇒ script từ chối.
 - ssh chết giữa chừng ⇒ ghi nháp là một transaction trên mini, không nửa vời.
+
+## Bổ sung trước thi công (26/09 22:2x, lane V) — chờ vòng agy `tuchiacum-p2-plan`
+
+Plan tự chia cụm dừng ở vòng agy `tu-chia-cum-kehoach-R11-TREO` (KHÔNG phải agy KHÉP); ĐP phân xử (a) 24/09 16:33 (`~/agy-ws/DECISIONS.md:3450`), điều kiện: 3 vá R10 thành 3 test đích — 2/3 thuộc phase này (mục B dưới).
+
+### A. Hiện trạng đo trên mini (26/09 22:2x, chỉ đọc)
+
+| job | video còn (chưa loại) | có khung 50/90 | có poster | có usecase |
+|---|---|---|---|---|
+| 10 | 59 | **0** | 59 | không |
+| 15 | 20 | 20 | 20 | không |
+| 16 | 175 | 175 | 175 | không |
+| 17 | 20 | 20 | 20 | không |
+| 4,5,6,8,9 | 0 (đã loại hết) | — | — | — |
+
+- Khung 50/90 chỉ có từ #15 (24/09) ⇒ job 10 CHỈ có poster. Dữ liệu R7/R8 (fixture dương của bước 1) cũng đo trên 59 poster job 10, schema R7 thiếu `so_khung`/`boi_canh`.
+- `video_dac_diem` = `(video_id, phien_ban_prompt, nhan_json, tao_luc)`, PK `(video_id, phien_ban_prompt)`; không có cột riêng cho cờ caption.
+- `web/nhap_cum_cli.py`, `scripts/phan-tich-hinh.sh`: chưa có.
+
+### B. Hai test đích từ vá R10 (bắt buộc)
+
+1. **Caption qua TỆP:** hàm dựng lệnh agy nhận caption của N video, ghi vào tệp prompt trong scratch, trả argv; test khẳng định KHÔNG chuỗi caption nào (kể cả caption dài 2 000 ký tự) xuất hiện trong argv, và tệp prompt chứa đủ N caption. Đột biến đưa caption vào argv ⇒ ĐỎ.
+2. **Cờ caption cache theo `(video_id, phien_ban_prompt)`:** chạy chuẩn hoá hai lần trên cùng lượt (lần 2 đổi trục/chia lại) với agy giả đếm lượt gọi ⇒ lần 2 gọi agy chấm caption **0** lần. Đề xuất lưu cờ caption thành HÀNG RIÊNG trong `video_dac_diem` với `phien_ban_prompt = "caption:<phiên bản prompt caption>"` (không migration) — tách khỏi phiên bản prompt NHÃN, để đổi prompt nhãn/chuẩn hoá không làm mất cache caption. Đột biến dùng chung phiên bản với prompt nhãn ⇒ ĐỎ.
+
+### C. Đề xuất đổi so với bản 24/09 (cần agy phán; D12 là của ĐP)
+
+1. **Nghiệm thu chạy thật:** job 10 CHỈ bằng poster (`so_khung=1`, so với R8 mù cùng dữ liệu) **và** job 17 (20 video, 3 khung) cho đường nhiều khung. KHÔNG chạy job 16 (175 video) ở lượt đầu (quota agy + ảnh rời máy nhiều).
+2. **Chế độ mặc định (D12):** vẫn "mọi lượt chưa có nháp", NHƯNG không `--yes` thì chỉ THỬ KHÔ: in danh sách lượt, số video, số lượt gọi agy ước tính rồi dừng. Lý do: với dữ liệu hiện tại "mọi lượt" = 4 job / 274 video.
+3. **Khung thiếu:** `so_khung` = số ảnh có thật (1–3); video không có ảnh nào ⇒ KHÔNG gán nhãn, in ra, kiểm "đủ N id" coi là trượt (không lặng lẽ rơi).
+4. **Lọc video vào lượt chia:** bỏ video `da_loai_luc IS NOT NULL` ngay trong script (không đẩy ảnh video đã loại sang agy) — `ghi_de_xuat::loc` vẫn bỏ video đã ở cụm thật (D14). Khi plan dọn video (`~/plans/260926-2110-video-desk-don-video-da-vao-bo/plan.md` §8.2b) lên, plan đó thêm lọc `drive_don_luc` vào CẢ script lẫn `ghi_de_xuat::loc` kèm đột biến — phase này để sẵn một hàm lọc duy nhất để chỗ thêm là một dòng.
+5. **Ảnh rời máy (R1):** script từ chối job có nguồn không phải TikTok công khai — kiểm `jobs.url` khớp `https://www.tiktok.com/`; 17/17 job hiện tại khớp tiền tố đó (đo 22:3x, `url LIKE "https://www.tiktok.com/%"`).
