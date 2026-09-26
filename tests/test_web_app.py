@@ -1843,6 +1843,7 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
     assert "3 video thiếu link gốc hợp lệ" in do["link_hong"]["toast"]
     assert do["toan_hong"]["moTab"] == 0 and do["toan_hong"]["conChon"] == 2
     assert "thiếu link gốc hợp lệ" in do["toan_hong"]["toast"]
+    assert do["id_so"]["tin"]["soItem"] == 3, "Drive id dạng số qua được regex sau String() nhưng bên nhận bỏ"
     assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
     assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
     assert do["gui_lai"]["moTab"] == 2 and do["gui_lai"]["lanHai"]["idMoi"] is True, \

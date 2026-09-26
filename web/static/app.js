@@ -1033,8 +1033,10 @@
   // `parseVideodeskHandoffItem`): Drive id `[A-Za-z0-9_-]{10,128}`, link gốc
   // http(s). Tên không cần kiểm — bên nhận tự cắt ở 200 ký tự.
   function itemHopLeBenNhan(v) {
-    return /^[A-Za-z0-9_-]{10,128}$/.test(String(v.drive_file_id || "")) &&
-           /^https?:\/\//i.test(String(v.url || ""));
+    // Kiểm KIỂU trước: bên nhận đòi đúng chuỗi, không ép kiểu — một id dạng số
+    // qua được regex sau `String()` nhưng vẫn bị bên nhận bỏ.
+    return typeof v.drive_file_id === "string" && /^[A-Za-z0-9_-]{10,128}$/.test(v.drive_file_id) &&
+           typeof v.url === "string" && /^https?:\/\//i.test(v.url);
   }
 
   // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
