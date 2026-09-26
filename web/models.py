@@ -358,13 +358,13 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "thao_tac_duyet", "the_he", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "thao_tac_duyet", "da_lui", "INTEGER NOT NULL DEFAULT 0")
         # `ten_cum`: tên hiển thị của một kiểu (kèm luật chèn nhóm khi trùng
-        # tên với một kiểu khác trong CÙNG lượt) CHỐT một lần ngay khi cấu
-        # trúc nháp được ghi (`ghi_de_xuat`/`doi_ten`/`gop`/`xoa_kieu`), thay
-        # vì tự tính lại mỗi lần duyệt — tính lại lúc duyệt làm tên trôi theo
-        # THỨ TỰ duyệt (duyệt từng kiểu một xoá dần các hàng đang "trùng",
-        # nên cùng một kiểu ra hai tên khác nhau tuỳ nó được duyệt trước hay
-        # sau). NULL cho hàng cũ trước khi cột này tồn tại; `models_chia` tự
-        # có lưới an toàn (đọc `kieu` trần) cho ca đó.
+        # tên với một kiểu khác trong CÙNG lượt) CHỐT một lần lúc
+        # `ghi_de_xuat`; sau đó CHỈ `doi_ten` tính lại (hàng bị đổi + hàng va
+        # chạm với nó), `hoan_tac` trả lại đúng giá trị cũ, còn duyệt/gộp/xoá
+        # chỉ đọc — tính lại trên tập hàng còn sống làm tên trôi theo thứ tự
+        # thao tác (xem `models_chia._chot_ten_moi_kieu`). NULL cho hàng cũ
+        # trước khi cột này tồn tại; `models_chia` tự có lưới an toàn (đọc
+        # `kieu` trần) cho ca đó.
         _add_column_if_missing(conn, "cum_nhap", "ten_cum", "TEXT")
         # `usecase`/`insight_goc` hỏi lúc tạo job; `doi_insight` ghi NGƯỢC
         # vào đây mỗi khi sửa lúc chia, để "chia lại" đọc được giá trị mới

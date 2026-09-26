@@ -163,8 +163,8 @@ def ghi_de_xuat(db_path: Path, chia_lan_id: int, chu: str, nhoms: list[dict],
         conn.execute(
             "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1 WHERE id = ?",
             (chia_lan_id,))
-        # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_cap_nhat_ten_cum`.
-        _cap_nhat_ten_cum(conn, chia_lan_id)
+        # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_chot_ten_moi_kieu`.
+        _chot_ten_moi_kieu(conn, chia_lan_id)
     return {"da_o_cum": sorted(da_o_cum)}
 
 
@@ -180,9 +180,12 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
             return None
         nhoms: dict[int, dict] = {}
         for r in conn.execute(
-                "SELECT id, nhom, kieu, thu_tu FROM cum_nhap WHERE chia_lan_id = ? "
+                "SELECT id, nhom, kieu, ten_cum, thu_tu FROM cum_nhap WHERE chia_lan_id = ? "
                 "ORDER BY thu_tu, id", (chia_lan_id,)).fetchall():
+            # `ten_cum` = đúng tên lúc duyệt sẽ dùng (cùng lưới an toàn
+            # `ten_cum or kieu` của `_giai_quyet_kieu`).
             nhoms[r["id"]] = {"cum_nhap_id": r["id"], "nhom": r["nhom"], "kieu": r["kieu"],
+                              "ten_cum": r["ten_cum"] or r["kieu"],
                               "thu_tu": r["thu_tu"], "video_ids": []}
         huong_dan: list[str] = []
         nghi: list[str] = []
@@ -284,8 +287,8 @@ def _kieu_trung_ten(conn, chia_lan_id: int) -> set[int]:
     trong CÙNG lượt gọi (câu hỏi "gộp vào cụm có sẵn" lẽ ra chỉ để bắt trùng
     với cụm cũ THẬT, không phải bắt trùng giữa hai kiểu anh em).
 
-    CHỈ gọi từ `_cap_nhat_ten_cum` — xem đó để biết vì sao quyết định này
-    không còn được tính lại ngay lúc duyệt.
+    CHỈ gọi từ `_chot_ten_moi_kieu` — xem `_chot_ten_moi_kieu` để biết vì sao
+    tên không được tính lại lúc duyệt.
     """
     dem: dict[str, list[int]] = {}
     for r in conn.execute("SELECT id, kieu FROM cum_nhap WHERE chia_lan_id = ?",
@@ -295,27 +298,52 @@ def _kieu_trung_ten(conn, chia_lan_id: int) -> set[int]:
     return {cid for ids in dem.values() if len(ids) > 1 for cid in ids}
 
 
-def _cap_nhat_ten_cum(conn, chia_lan_id: int) -> None:
-    """Tính lại VÀ LƯU `ten_cum` (tên hiển thị dùng lúc duyệt — kèm luật
-    chèn nhóm khi trùng, `_kieu_trung_ten`) cho MỌI kiểu còn sống của lượt.
+def _ten_ghep(r) -> str:
+    return models_cum.chuan_hoa_chu(f"{r['nhom']} {r['kieu']}")
 
-    Gọi ngay sau bất kỳ thao tác nào đổi TẬP `(nhom, kieu)` của lượt
-    (`ghi_de_xuat`, `doi_ten`, `gop`, `xoa_kieu`, và hoàn tác ba thao tác đó)
-    — CHỐT một lần tại điểm ghi, thay vì để `duyet_kieu`/`duyet_het` tự tính
-    lại. Trước đây tính lại NGAY LÚC DUYỆT làm tên trôi theo THỨ TỰ duyệt:
-    duyệt từng kiểu một qua nhiều lần gọi riêng lẻ xoá dần các hàng
-    `cum_nhap`, nên tập "đang trùng" nhìn từ một lần gọi SAU luôn hẹp hơn lần
-    gọi TRƯỚC — cùng một kiểu ra hai tên khác nhau tuỳ nó được duyệt trước
-    hay sau (ca đo được: duyệt một cặp trùng tên từng-cái-một qua `duyet_kieu`
-    cho ra "Vest couple" rồi "couple" trần, thay vì "Vest couple"/"Đồng phục
-    couple" ổn định như `duyet_het` xử cả cặp trong MỘT lần gọi).
+
+def _chot_ten_moi_kieu(conn, chia_lan_id: int) -> None:
+    """Tính VÀ LƯU `ten_cum` (tên dùng lúc duyệt — kèm luật chèn nhóm khi
+    trùng, `_kieu_trung_ten`) cho MỌI kiểu của lượt. CHỈ gọi từ `ghi_de_xuat`.
+
+    Sau lúc đó tên của một kiểu CHỈ đổi khi `doi_ten` đụng tới nó (xem
+    `_chot_ten_sau_doi_ten`); duyệt, gộp, xoá, chuyển KHÔNG tính lại tên kiểu
+    nào, và `hoan_tac` trả lại đúng tên cũ đã lưu trong nhật ký. Tính lại cả
+    lượt trên tập hàng CÒN SỐNG làm tên trôi: một lần duyệt/gộp/xoá làm mất
+    "anh em" trùng tên của một kiểu, và lần tính lại sau đó gỡ tiền tố nhóm
+    của kiểu còn lại — cùng một kiểu ra hai tên khác nhau tuỳ thứ tự thao
+    tác (ca đo được: duyệt riêng "Vest couple" rồi đổi tên một kiểu không
+    liên quan làm "Đồng phục couple" thành "couple" trần).
     """
     trung = _kieu_trung_ten(conn, chia_lan_id)
     for r in conn.execute("SELECT id, nhom, kieu FROM cum_nhap WHERE chia_lan_id = ?",
                           (chia_lan_id,)).fetchall():
-        ten = (models_cum.chuan_hoa_chu(f"{r['nhom']} {r['kieu']}") if r["id"] in trung
-               else models_cum.chuan_hoa_chu(r["kieu"]))
+        ten = _ten_ghep(r) if r["id"] in trung else models_cum.chuan_hoa_chu(r["kieu"])
         conn.execute("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?", (ten, r["id"]))
+
+
+def _chot_ten_sau_doi_ten(conn, chia_lan_id: int, cum_nhap_id: int) -> dict[str, str | None]:
+    """Tính lại `ten_cum` CHỈ cho hàng vừa `doi_ten` và các hàng trùng kiểu
+    với nó (cùng luật chèn nhóm của `_kieu_trung_ten`, áp trên tập con đó);
+    mọi hàng khác giữ nguyên tên đã chốt.
+
+    Trả `{str(cum_nhap_id): ten_cum_truoc}` của MỌI hàng vừa bị ghi — lưu vào
+    nhật ký để `hoan_tac` trả lại ĐÚNG tên cũ thay vì tính lại.
+    """
+    hang = conn.execute("SELECT id, nhom, kieu, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
+                        (chia_lan_id,)).fetchall()
+    doi = next(r for r in hang if r["id"] == cum_nhap_id)
+    khoa = models_cum.chuan_hoa_chu(doi["kieu"]).casefold()
+    anh_em = [r for r in hang if r["id"] != cum_nhap_id
+              and models_cum.chuan_hoa_chu(r["kieu"]).casefold() == khoa]
+    moi = {doi["id"]: _ten_ghep(doi) if anh_em else models_cum.chuan_hoa_chu(doi["kieu"])}
+    moi.update({r["id"]: _ten_ghep(r) for r in anh_em})
+    truoc: dict[str, str | None] = {}
+    for r in hang:
+        if r["id"] in moi and (r["id"] == cum_nhap_id or moi[r["id"]] != r["ten_cum"]):
+            truoc[str(r["id"])] = r["ten_cum"]
+            conn.execute("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?", (moi[r["id"]], r["id"]))
+    return truoc
 
 
 def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
@@ -324,8 +352,9 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
     """Lõi "duyệt một kiểu", dùng chung bởi `duyet_kieu` (một nhóm) và
     `duyet_het` (vòng lặp mọi nhóm còn lại) TRÊN CÙNG một kết nối/transaction.
 
-    Tên hiển thị dùng ở đây là `cum_nhap.ten_cum` — đã CHỐT một lần lúc ghi
-    (`_cap_nhat_ten_cum`), KHÔNG tính lại ở đây (xem lý do tại đó).
+    Tên hiển thị dùng ở đây là `cum_nhap.ten_cum` — đã CHỐT lúc ghi
+    (`_chot_ten_moi_kieu`/`_chot_ten_sau_doi_ten`), KHÔNG tính lại ở đây
+    (xem lý do tại `_chot_ten_moi_kieu`).
 
     `da_tao_trong_luot`: `{(usecase.casefold, insight_con.casefold): cum_id}`
     của MỌI cụm đã tạo/dùng TRONG CHÍNH lượt gọi `duyet_het` này (rỗng cho
@@ -358,8 +387,8 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
         return {"loi": "khong_tim_thay"}
 
     # `kieu` trần là lưới an toàn cho một hàng cũ chưa từng đi qua
-    # `_cap_nhat_ten_cum` (cột thêm sau, mặc định NULL) — trên đường thi công
-    # bình thường mọi hàng cum_nhap đều có `ten_cum` vì mọi điểm ghi đều gọi
+    # `_chot_ten_moi_kieu` (cột thêm sau, mặc định NULL) — trên đường thi công
+    # bình thường mọi hàng cum_nhap đều có `ten_cum` vì `ghi_de_xuat` luôn gọi
     # hàm đó.
     kieu_dung = nhom_row["ten_cum"] or nhom_row["kieu"]
     u, g, k = models_cum.kiem_nhan(usecase, insight_goc, kieu_dung)
@@ -615,14 +644,14 @@ def _op_doi_ten(conn, chia_lan_id, chu, lan, cum_nhap_id: int, kieu: str,
     nhom_moi = models_cum.chuan_hoa_chu(nhom) if nhom else row["nhom"]
     conn.execute("UPDATE cum_nhap SET nhom = ?, kieu = ? WHERE id = ?",
                 (nhom_moi, kieu_moi, cum_nhap_id))
-    # Đổi tên đổi CHÍNH tập (nhom, kieu) mà tên hiển thị lúc duyệt dựa vào —
-    # chốt lại ngay, đừng để `ten_cum` cũ (của cái tên vừa bị thay) trôi tới
-    # lúc duyệt.
-    _cap_nhat_ten_cum(conn, chia_lan_id)
+    # Đổi tên là điểm DUY NHẤT sau `ghi_de_xuat` được tính lại tên — và chỉ
+    # cho hàng này + hàng va chạm với nó. Tên cũ của mọi hàng vừa bị ghi đi
+    # vào nhật ký để `hoan_tac` trả lại đúng.
+    ten_cum_truoc = _chot_ten_sau_doi_ten(conn, chia_lan_id, cum_nhap_id)
     n = conn.execute("SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? "
                      "AND cum_nhap_id = ?", (chia_lan_id, cum_nhap_id)).fetchone()[0]
     return n, {"cum_nhap_id": cum_nhap_id, "truoc": {"nhom": row["nhom"], "kieu": row["kieu"]},
-              "sau": {"nhom": nhom_moi, "kieu": kieu_moi}}
+              "sau": {"nhom": nhom_moi, "kieu": kieu_moi}, "ten_cum_truoc": ten_cum_truoc}
 
 
 def _op_gop(conn, chia_lan_id, chu, lan, tu_cum_nhap_id: int, den_cum_nhap_id: int, **_):
@@ -643,13 +672,11 @@ def _op_gop(conn, chia_lan_id, chu, lan, tu_cum_nhap_id: int, den_cum_nhap_id: i
         "UPDATE video_cum_nhap SET cum_nhap_id = ? WHERE chia_lan_id = ? AND cum_nhap_id = ?",
         (den_cum_nhap_id, chia_lan_id, tu_cum_nhap_id))
     conn.execute("DELETE FROM cum_nhap WHERE id = ?", (tu_cum_nhap_id,))
-    # Xoá nguồn có thể làm MẤT một va chạm tên (nguồn là "anh em" trùng tên
-    # duy nhất của một kiểu khác) — chốt lại tên hiển thị cho các kiểu còn
-    # sống.
-    _cap_nhat_ten_cum(conn, chia_lan_id)
+    # KHÔNG tính lại tên kiểu nào (xem `_chot_ten_moi_kieu`); `tu_ten_cum`
+    # để `hoan_tac` hồi sinh nguồn với đúng tên nó có.
     return len(video_ids), {"tu_cum_nhap_id": tu_cum_nhap_id, "den_cum_nhap_id": den_cum_nhap_id,
                             "video_ids": video_ids, "tu_nhom": tu["nhom"], "tu_kieu": tu["kieu"],
-                            "tu_thu_tu": tu["thu_tu"]}
+                            "tu_thu_tu": tu["thu_tu"], "tu_ten_cum": tu["ten_cum"]}
 
 
 def _hang_video_cum_nhap(conn, chia_lan_id, video_ids):
@@ -735,11 +762,10 @@ def _op_xoa_kieu(conn, chia_lan_id, chu, lan, cum_nhap_id: int, **_):
         "UPDATE video_cum_nhap SET cum_nhap_id = NULL, lan = 'nghi' "
         "WHERE chia_lan_id = ? AND cum_nhap_id = ?", (chia_lan_id, cum_nhap_id))
     conn.execute("DELETE FROM cum_nhap WHERE id = ?", (cum_nhap_id,))
-    # Cùng lý do ở `_op_gop`: xoá một kiểu có thể gỡ va chạm tên của một kiểu
-    # khác.
-    _cap_nhat_ten_cum(conn, chia_lan_id)
+    # Cùng luật ở `_op_gop`: không tính lại tên; lưu `ten_cum` cho `hoan_tac`.
     return len(video_ids), {"cum_nhap_id": cum_nhap_id, "nhom": row["nhom"], "kieu": row["kieu"],
-                            "thu_tu": row["thu_tu"], "video_ids": video_ids}
+                            "thu_tu": row["thu_tu"], "ten_cum": row["ten_cum"],
+                            "video_ids": video_ids}
 
 
 def _op_doi_insight(conn, chia_lan_id, chu, lan, usecase: str | None = None,
@@ -783,11 +809,15 @@ def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
         return None
     chi_tiet = json.loads(hang["chi_tiet_json"])
     loai = hang["loai"]
+    # `hoan_tac` KHÔNG tính lại tên nào: nó trả lại đúng `ten_cum` đã lưu
+    # trong dòng nhật ký gốc (`.get` — dòng ghi trước khi nhật ký mang khoá
+    # này thì để NULL, lưới `ten_cum or kieu` lúc duyệt lo phần còn lại).
     if loai == "gop":
         conn.execute(
-            "INSERT INTO cum_nhap (id, chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO cum_nhap (id, chia_lan_id, nhom, kieu, thu_tu, ten_cum) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (chi_tiet["tu_cum_nhap_id"], chia_lan_id, chi_tiet["tu_nhom"], chi_tiet["tu_kieu"],
-             chi_tiet["tu_thu_tu"]))
+             chi_tiet["tu_thu_tu"], chi_tiet.get("tu_ten_cum")))
         conn.executemany(
             "UPDATE video_cum_nhap SET cum_nhap_id = ? WHERE chia_lan_id = ? AND video_id = ?",
             [(chi_tiet["tu_cum_nhap_id"], chia_lan_id, vid) for vid in chi_tiet["video_ids"]])
@@ -796,14 +826,19 @@ def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
         conn.execute("UPDATE cum_nhap SET nhom = ?, kieu = ? WHERE id = ?",
                     (chi_tiet["truoc"]["nhom"], chi_tiet["truoc"]["kieu"],
                      chi_tiet["cum_nhap_id"]))
+        conn.executemany(
+            "UPDATE cum_nhap SET ten_cum = ? WHERE id = ? AND chia_lan_id = ?",
+            [(ten, int(cid), chia_lan_id)
+             for cid, ten in chi_tiet.get("ten_cum_truoc", {}).items()])
         so = conn.execute("SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? "
                           "AND cum_nhap_id = ?",
                           (chia_lan_id, chi_tiet["cum_nhap_id"])).fetchone()[0]
     elif loai == "xoa_kieu":
         conn.execute(
-            "INSERT INTO cum_nhap (id, chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO cum_nhap (id, chia_lan_id, nhom, kieu, thu_tu, ten_cum) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (chi_tiet["cum_nhap_id"], chia_lan_id, chi_tiet["nhom"], chi_tiet["kieu"],
-             chi_tiet["thu_tu"]))
+             chi_tiet["thu_tu"], chi_tiet.get("ten_cum")))
         conn.executemany(
             "UPDATE video_cum_nhap SET cum_nhap_id = ?, lan = 'kieu' "
             "WHERE chia_lan_id = ? AND video_id = ?",
@@ -816,11 +851,6 @@ def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
             [(r["cum_nhap_id"], r["lan"], chia_lan_id, r["video_id"])
              for r in chi_tiet["truoc"]])
         so = len(chi_tiet["truoc"])
-    if loai in ("gop", "doi_ten", "xoa_kieu"):
-        # Chỉ ba loại này đổi TẬP (nhom, kieu) của lượt — `chuyen`/
-        # `ngoai_chu_de`/`tra_ve` chỉ di chuyển VIDEO giữa các kiểu đã có sẵn,
-        # không đụng danh tính kiểu nào, nên không cần chốt lại tên.
-        _cap_nhat_ten_cum(conn, chia_lan_id)
     # Đánh dấu dòng GỐC đã bị lùi — đây là điều kiện `da_lui = 0` phía trên
     # dựa vào. Không có dòng này, undo kế tiếp lại chọn trúng đúng dòng này
     # lần nữa.
