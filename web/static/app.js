@@ -873,11 +873,6 @@
     if (ev.target.closest("[data-xoa-cum]")) xoaCum(cum);
   });
 
-  // Bỏ chọn tất cả: xoá state VÀ gỡ dấu trên thẻ. Hai vế phải đi cùng nhau —
-  // `loaiDaChon` thoát được vế thứ hai chỉ vì nó `loadVideos()` dựng lại toàn
-  // bộ lưới ngay sau đó. Đường nào KHÔNG nạp lại lưới mà chỉ xoá state sẽ để
-  // thẻ tô xanh trong khi thanh chọn nói "0 video", và lần bấm kế tiếp đọc
-  // một state khác với cái người dùng đang nhìn.
   // Bỏ chọn một nhóm video, giữ nguyên phần còn lại của lựa chọn.
   function boChonCacVideo(ids) {
     ids.forEach((id) => state.selected.delete(id));
@@ -890,6 +885,11 @@
     veNutChonTrang();
   }
 
+  // Bỏ chọn tất cả: xoá state VÀ gỡ dấu trên thẻ. Hai vế phải đi cùng nhau —
+  // `loaiDaChon` thoát được vế thứ hai chỉ vì nó `loadVideos()` dựng lại toàn
+  // bộ lưới ngay sau đó. Đường nào KHÔNG nạp lại lưới mà chỉ xoá state sẽ để
+  // thẻ tô xanh trong khi thanh chọn nói "0 video", và lần bấm kế tiếp đọc
+  // một state khác với cái người dùng đang nhìn.
   function boChonTatCa() {
     state.selected.clear();
     document.querySelectorAll(".card.selected").forEach((c) => {
@@ -928,9 +928,10 @@
     const items = guiDuoc.map(itemBanGiao);
 
     if (!items.length) {
-      showToast(chuaLenDrive.length
-        ? "Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk."
-        : "Video đã chọn thiếu link gốc hợp lệ — Creative Desk không nhận được.");
+      showToast("Chưa có gì để gửi sang Creative Desk: " + [
+        chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+        khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
+      ].filter(Boolean).join(", ") + ".");
       return;
     }
     if (items.length > MAX_PM_ITEMS) {
