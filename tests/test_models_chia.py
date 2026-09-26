@@ -213,7 +213,7 @@ def test_duyet_trung_ten_dung_lai_cum_co_san_khi_da_xac_nhan(kho):
         {"cum_nhap_id": couple_id, "cum_id": cu_id, "ten": "Badaboum couple", "so_video": 2}]
     assert _dem(db, "cum") == 1
     assert models_chia.lay_chia(db, lan_id, TOI)["kieu"]  # nhóm còn đó
-    # Trùng chưa xác nhận ⇒ KHÔNG ghi `duyet_het` — chỉ có dòng `doi_insight`
+    # Trùng chưa xác nhận ⇒ KHÔNG ghi `duyet_kieu` — chỉ có dòng `doi_insight`
     # (lượt chưa có usecase/insight, body vừa truyền vào).
     assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["doi_insight"]
 
@@ -318,9 +318,9 @@ def test_thao_tac_khong_hop_le_bi_tu_choi_khong_ghi_nhat_ky(kho):
     assert _thao_tac(db, lan_id) == []
 
 
-def test_loai_thao_tac_la_tap_dong_10_gia_tri():
+def test_loai_thao_tac_la_tap_dong_11_gia_tri():
     assert models_chia.LOAI_THAO_TAC == (
-        "chap_nhan", "duyet_het", "gop", "doi_ten", "chuyen",
+        "chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
         "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight")
 
 
@@ -331,11 +331,27 @@ def test_ap_thao_tac_tu_choi_loai_khong_ro(kho):
         models_chia.ap_thao_tac(db, lan_id, TOI, "an-trom")
 
 
-def test_ap_thao_tac_tu_choi_duyet_het_qua_duong_nay(kho):
+@pytest.mark.parametrize("loai", ["duyet_het", "duyet_kieu"])
+def test_ap_thao_tac_tu_choi_duyet_qua_duong_nay(kho, loai):
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job)
     with pytest.raises(ValueError):
-        models_chia.ap_thao_tac(db, lan_id, TOI, "duyet_het")
+        models_chia.ap_thao_tac(db, lan_id, TOI, loai)
+
+
+def test_duyet_kieu_ghi_nhat_ky_rieng_va_khong_hoan_tac_duoc(kho):
+    """Duyệt MỘT kiểu ghi `loai='duyet_kieu'` — phân biệt được với "Duyệt tất
+    cả" (`duyet_het`) khi đọc nhật ký — và, như mọi dòng duyệt, không nằm
+    trong luồng hoàn tác nháp."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1",), b=("2",))
+    models_chia.duyet_kieu(db, lan_id, _nhom_id(db, lan_id, "couple"), TOI, None,
+                           "Dance", "Badaboum")
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["doi_insight", "duyet_kieu"]
+    assert "duyet_kieu" not in models_chia._HOAN_TAC_DUOC
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac") == {"tu_choi": "khong_hop_le"}
+    models_chia.duyet_het(db, lan_id, TOI, None)
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["doi_insight", "duyet_kieu", "duyet_het"]
 
 
 def test_chap_nhan_ghi_nhat_ky_khong_doi_du_lieu(kho):

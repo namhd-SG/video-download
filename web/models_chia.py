@@ -34,13 +34,16 @@ from web.models import _connect, _now
 # đầu tệp `web/models.py::_THAO_TAC_DUYET_SCHEMA`.
 TRANG_THAI_CHIA_LAN = ("cho_hinh", "de_xuat", "da_duyet", "huy")
 LAN_VIDEO = ("kieu", "huong_dan", "nghi")
-LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "gop", "doi_ten", "chuyen",
+# `duyet_kieu` = duyệt MỘT kiểu, `duyet_het` = "Duyệt tất cả" (một dòng cho
+# cả lượt gọi) — hai giá trị riêng để nhật ký phân biệt được hai cú bấm.
+LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
                  "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight")
 
 # Loại có thể LÙI LẠI bằng `hoan_tac` — `chap_nhan` không đổi gì để lùi,
 # `doi_insight` đổi nhãn (không đổi cấu trúc video) nên không nằm trong luồng
-# hoàn tác cấu trúc này, và `hoan_tac`/`duyet_het` không tự lùi
-# chính nó (duyệt đã đi qua `cum` thật — ngoài phạm vi "hoàn tác nháp").
+# hoàn tác cấu trúc này, `hoan_tac` không tự lùi chính nó, và hai loại duyệt
+# (`duyet_kieu`/`duyet_het`) không bao giờ lùi được (duyệt đã đi qua `cum`
+# thật — ngoài phạm vi "hoàn tác nháp").
 _HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kieu")
 
 
@@ -571,7 +574,7 @@ def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
         luc = _now()
         conn.execute(
             "INSERT INTO thao_tac_duyet (chia_lan_id, chu, loai, so_video, "
-            "chi_tiet_json, luc, the_he) VALUES (?, ?, 'duyet_het', ?, ?, ?, ?)",
+            "chi_tiet_json, luc, the_he) VALUES (?, ?, 'duyet_kieu', ?, ?, ?, ?)",
             (chia_lan_id, chu, len(ket["gan"]), json.dumps(ket, ensure_ascii=False), luc,
              lan["the_he"]))
         # Duyệt được BẤT CỨ GÌ là một điểm CHỐT: bump `the_he` ngay ở đây làm
@@ -828,8 +831,8 @@ def _op_doi_insight(conn, chia_lan_id, chu, lan, usecase: str | None = None,
 
 def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
     """Hoàn tác thao tác sửa CẤU TRÚC gần nhất CHƯA bị lùi của lượt này
-    (`_HOAN_TAC_DUOC`). `chap_nhan` không đổi gì để lùi; `duyet_het`/
-    `hoan_tac`/`doi_insight` nằm ngoài phạm vi hoàn tác nháp này.
+    (`_HOAN_TAC_DUOC`). `chap_nhan` không đổi gì để lùi; `duyet_kieu`/
+    `duyet_het`/`hoan_tac`/`doi_insight` nằm ngoài phạm vi hoàn tác nháp này.
 
     Undo là một NGĂN XẾP, không phải "luôn áp lại dòng mới nhất": `AND da_lui
     = 0` loại các dòng ĐÃ được một `hoan_tac` trước đó xử lý — thiếu điều kiện
@@ -956,12 +959,12 @@ def ap_thao_tac(db_path: Path, chia_lan_id: int, chu: str, loai: str,
     trạng thái `de_xuat` — ba ca này là lỗi YÊU CẦU, khác lỗi "đích không tồn
     tại" ở trên.
 
-    `duyet_het` không được áp qua đường này — đó là việc của `duyet_kieu`/
-    `duyet_het` (đi qua `cum` thật), không phải một thao tác sửa nháp.
+    `duyet_kieu`/`duyet_het` không được áp qua đường này — đó là việc của hai
+    hàm cùng tên (đi qua `cum` thật), không phải một thao tác sửa nháp.
     """
     if loai not in LOAI_THAO_TAC:
         raise ValueError(f"loại thao tác không hợp lệ: {loai!r}")
-    if loai == "duyet_het":
+    if loai in ("duyet_kieu", "duyet_het"):
         raise ValueError("dùng POST /chia/{id}/duyet để duyệt, không phải /thao-tac")
     _kiem_truong_bat_buoc(loai, tham_so)
     with _connect(db_path) as conn:

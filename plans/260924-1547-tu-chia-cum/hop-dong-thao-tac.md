@@ -12,7 +12,7 @@ tác bị lùi trỏ tới một `cum_nhap` đã bị xoá thật lúc duyệt).
 
 ## `POST /chia/{chia_lan_id}/thao-tac`
 
-Thân chung: `{"loai": <một trong 10>, ...trường riêng}`. Trường không liệt kê cho `loai` đó thì bị bỏ qua. Lượt không phải của người gọi (admin GHI/SỬA/DUYỆT cũng tính là "không phải" — admin chỉ XEM được qua `GET /chia/{job_id}`, không sửa/duyệt thay ai) ⇒ 404.
+Thân chung: `{"loai": <một trong tập `models_chia.LOAI_THAO_TAC`>, ...trường riêng}` — 11 giá trị: `chap_nhan · duyet_het · duyet_kieu · gop · doi_ten · chuyen · ngoai_chu_de · tra_ve · hoan_tac · xoa_kieu · doi_insight`. Trường không liệt kê cho `loai` đó thì bị bỏ qua. Lượt không phải của người gọi (admin GHI/SỬA/DUYỆT cũng tính là "không phải" — admin chỉ XEM được qua `GET /chia/{job_id}`, không sửa/duyệt thay ai) ⇒ 404.
 
 Mã lỗi validate — BA ca khác nhau, ĐỪNG gộp:
 - **Sai hình dạng body** (FastAPI/pydantic, trước khi tới model) ⇒ **422** — gồm mọi trường id (`cum_nhap_id`, `tu_cum_nhap_id`, `den_cum_nhap_id`, phần tử `xac_nhan_gop` ở `/duyet`) ngoài khoảng `1..2**63-1` (INTEGER 64-bit của SQLite).
@@ -33,7 +33,7 @@ Mỗi thao tác thành công ghi đúng MỘT dòng `thao_tac_duyet`, trong cùn
 | `xoa_kieu` | `cum_nhap_id` | — | số video của kiểu | video về "chưa vào kiểu" của lượt (không rời lượt) |
 | `doi_insight` | — | `usecase`, `insight_goc` | 0 | ghi `chia_lan` VÀ `jobs` **CHỈ khi `jobs.nguoi_tao = chu` gọi request** (M2); cùng luật độ dài `kiem_nhan` |
 | `hoan_tac` | — | — | số video của thao tác bị lùi | **là một NGĂN XẾP** (H1): lùi thao tác GẦN NHẤT CHƯA bị lùi (`gop`, `doi_ten`, `xoa_kieu`, `chuyen`, `ngoai_chu_de`, `tra_ve`) trong CÙNG thế hệ nháp hiện tại (H2b — một `ghi_de_xuat` mới mở thế hệ mới, thao tác của thế hệ trước không lùi được nữa); bấm liên tiếp đi lùi qua từng thao tác một, không lặp lại thao tác đã lùi; không còn gì (cùng thế hệ, chưa lùi) ⇒ **400** |
-| `duyet_het` | — | — | — | KHÔNG nhận ở route này ⇒ 400; dùng `/duyet` |
+| `duyet_het` / `duyet_kieu` | — | — | — | KHÔNG nhận ở route này ⇒ 400; dùng `/duyet`. Hai giá trị chỉ xuất hiện trong nhật ký: `duyet_kieu` = một lần duyệt MỘT kiểu, `duyet_het` = một lần "Duyệt tất cả" (một dòng cho cả lượt gọi). Dòng duyệt không bao giờ hoàn tác được |
 
 ## `POST /chia/{chia_lan_id}/duyet`
 
