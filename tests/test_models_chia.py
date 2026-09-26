@@ -1172,34 +1172,71 @@ def test_hau_to_so_bo_qua_ten_da_co_san_trong_luot(kho):
     assert ket["trung_cum_co_san"] == [] and _dem(db, "cum") == 4
 
 
-def test_doi_ten_ra_trung_ten_ghep_thi_them_hau_to_va_hoan_tac_tra_lai_dung(kho):
-    """Đường `doi_ten` dùng cùng luật hậu tố; hoàn tác trả lại ĐÚNG tên cũ
-    của mọi hàng vừa bị ghi (kể cả hàng bị thêm hậu tố)."""
-    db, job = kho
+def _doi_ten_ra_couple_trung_ca_ten_ghep(db, job, x_truoc: bool, them: list[dict] = ()):
+    """Lượt có "C"/"A B couple" (Y) và "D"/"couple" (W) đã chốt tên, cộng "A
+    B"/"cartoon" (X) đứng TRƯỚC hoặc SAU Y trong `thu_tu`; đổi X thành
+    "couple": tên trần trùng W, tên ghép "A B couple" trùng Y."""
+    x = {"nhom": "A B", "kieu": [{"kieu": "cartoon", "video_ids": ["1"]}]}
+    yw = [{"nhom": "C", "kieu": [{"kieu": "A B couple", "video_ids": ["2"]}]},
+          {"nhom": "D", "kieu": [{"kieu": "couple", "video_ids": ["3"]}]}, *them]
     lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
-    models_chia.ghi_de_xuat(db, lan_id, TOI, [
-        {"nhom": "A", "kieu": [{"kieu": "B couple", "video_ids": ["1"]}]},
-        {"nhom": "A B", "kieu": [{"kieu": "cartoon", "video_ids": ["2"]}]},
-        {"nhom": "B", "kieu": [{"kieu": "couple", "video_ids": ["3"]}]},
-    ])
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [x, *yw] if x_truoc else [*yw, x])
     truoc = _ten_cum_theo_nhom_kieu(db, lan_id)
-    assert truoc == {("A", "B couple"): "B couple", ("A B", "cartoon"): "cartoon",
-                     ("B", "couple"): "couple"}
-    id_cua = {(k["nhom"], k["kieu"]): k["cum_nhap_id"]
-              for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]}
-    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=id_cua[("A B", "cartoon")],
-                            kieu="couple")
+    x_id = next(k["cum_nhap_id"] for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]
+                if k["nhom"] == "A B")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="couple")
+    return lan_id, truoc
+
+
+def test_doi_ten_hang_dung_sau_nhan_hau_to_hang_khac_giu_ten_va_hoan_tac_tra_lai_dung(kho):
+    """X đứng SAU Y: tên trần và tên ghép của X đều trùng tên đã chốt của hàng
+    khác ⇒ X nhận hậu tố " 2"; Y và W giữ nguyên. Hoàn tác trả lại đúng."""
+    db, job = kho
+    lan_id, truoc = _doi_ten_ra_couple_trung_ca_ten_ghep(db, job, x_truoc=False)
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
-        ("A", "B couple"): "A B couple", ("A B", "couple"): "A B couple 2",
-        ("B", "couple"): "B couple"}
+        ("C", "A B couple"): "A B couple", ("D", "couple"): "couple",
+        ("A B", "couple"): "A B couple 2"}
     models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == truoc
 
 
-def test_doi_ten_trung_ten_cuoi_lan_truyen_ghep_nhom_sang_hang_khac(kho):
-    """Đổi tên cũng dùng luật tên cuối: đổi "cartoon" thành "couple" (trùng
-    kiểu "A"/"couple") ⇒ cả hai ghép nhóm; "A couple" vừa sinh trùng tên cuối
-    của "B"/"A couple" ⇒ hàng đó cũng ghép. Hàng không dính va chạm giữ tên."""
+def test_doi_ten_hang_dung_truoc_van_la_hang_nhan_hau_to_bo_qua_ten_co_san(kho):
+    """X đứng TRƯỚC Y trong `thu_tu` — vẫn CHỈ X đổi (thứ tự không quyết định
+    ai nhường), và hậu tố bỏ qua tên đã có "A B couple 2" ⇒ " 3"."""
+    db, job = kho
+    them = [{"nhom": "E", "kieu": [{"kieu": "A B couple 2", "video_ids": ["4"]}]}]
+    lan_id, truoc = _doi_ten_ra_couple_trung_ca_ten_ghep(db, job, x_truoc=True, them=them)
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("C", "A B couple"): "A B couple", ("D", "couple"): "couple",
+        ("E", "A B couple 2"): "A B couple 2", ("A B", "couple"): "A B couple 3"}
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Motion", "Strom")
+    assert ket["trung_cum_co_san"] == [] and _dem(db, "cum") == 4
+
+
+def test_doi_ten_thanh_bien_the_hoa_thuong_cung_nhom_thi_lay_dung_ten_de_tu_gop(kho):
+    """Đổi thành biến thể hoa/thường của một kiểu CÙNG nhóm (cùng một kiểu) ⇒
+    hàng vừa đổi lấy ĐÚNG tên đã chốt của kiểu đó, không hậu tố — lúc duyệt
+    hai hàng tự gộp một cụm."""
+    db, job = kho
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "Vest", "kieu": [{"kieu": "couple", "video_ids": ["1"]},
+                                  {"kieu": "cartoon", "video_ids": ["2"]}]},
+        {"nhom": "Đồng phục", "kieu": [{"kieu": "couple", "video_ids": ["3"]}]},
+    ])
+    x_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="Couple")
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("Vest", "couple"): "Vest couple", ("Vest", "Couple"): "Vest couple",
+        ("Đồng phục", "couple"): "Đồng phục couple"}
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Motion", "Strom")
+    assert ket["trung_cum_co_san"] == [] and _dem(db, "cum") == 2
+
+def test_doi_ten_chi_doi_ten_hang_vua_doi_khong_lan_sang_hang_khac(kho):
+    """Đổi tên CHỈ đổi `ten_cum` của hàng vừa đổi: "cartoon"→"couple" trùng
+    tên đã chốt "couple" của "A"/"couple" ⇒ hàng vừa đổi ghép nhóm thành "C
+    couple"; "A"/"couple" và "B"/"A couple" giữ nguyên tên (không lan tiền tố
+    sang hàng khác). Hàng không dính va chạm cũng giữ tên."""
     db, job = kho
     lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
     models_chia.ghi_de_xuat(db, lan_id, TOI, [
@@ -1213,13 +1250,12 @@ def test_doi_ten_trung_ten_cuoi_lan_truyen_ghep_nhom_sang_hang_khac(kho):
     models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=id_cua[("C", "cartoon")],
                             kieu="couple")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
-        ("A", "couple"): "A couple", ("B", "A couple"): "B A couple",
+        ("A", "couple"): "couple", ("B", "A couple"): "A couple",
         ("C", "couple"): "C couple", ("C", "dance"): "dance"}
     models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
         ("A", "couple"): "couple", ("B", "A couple"): "A couple",
         ("C", "cartoon"): "cartoon", ("C", "dance"): "dance"}
-
 
 def test_duyet_kiem_lai_trung_voi_cum_that_xuat_hien_sau_ghi_de_xuat(kho):
     """Tên cụm chốt lúc `ghi_de_xuat`, nhưng lúc duyệt vẫn phải KIỂM LẠI va
@@ -1322,10 +1358,10 @@ def test_hoan_tac_gop_va_xoa_kieu_tra_lai_dung_ten_cum_cu(kho):
 
 
 def test_hoan_tac_doi_ten_tra_lai_dung_ten_cu_cua_hang_doi_va_hang_va_cham(kho):
-    """`doi_ten` "cartoon"→"dance" va chạm với "dance" có sẵn ⇒ CẢ HAI ghép
-    nhóm. Hoàn tác phải trả lại ĐÚNG tên cũ của hàng bị đổi VÀ của hàng va
-    chạm — kể cả một hàng không liên quan mà tên đã chốt ("A couple", còn
-    tiền tố dù anh em "B couple" đã bị xoá) khác với cái một lần tính lại
+    """`doi_ten` "cartoon"→"dance" va chạm với "dance" có sẵn ⇒ CHỈ hàng vừa
+    đổi ghép nhóm ("C dance"), "dance" giữ nguyên. Hoàn tác phải trả lại
+    ĐÚNG tên cũ — kể cả một hàng không liên quan mà tên đã chốt ("A couple",
+    còn tiền tố dù anh em "B couple" đã bị xoá) khác với cái một lần tính lại
     toàn lượt sẽ cho ra."""
     db, job = kho
     lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
@@ -1345,7 +1381,7 @@ def test_hoan_tac_doi_ten_tra_lai_dung_ten_cu_cua_hang_doi_va_hang_va_cham(kho):
     models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=id_cua[("C", "cartoon")],
                             kieu="dance")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
-        ("A", "couple"): "A couple", ("C", "dance"): "C dance", ("D", "dance"): "D dance"}
+        ("A", "couple"): "A couple", ("C", "dance"): "C dance", ("D", "dance"): "dance"}
 
     models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
     assert _ten_cum_theo_nhom_kieu(db, lan_id) == truoc
