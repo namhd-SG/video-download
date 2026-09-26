@@ -276,26 +276,62 @@ def _ap_doi_insight_neu_co(conn, chia_lan_id: int, chu: str, lan,
     return u, g
 
 
-def _kieu_trung_ten(conn, chia_lan_id: int) -> set[int]:
-    """`cum_nhap_id` mà `kieu` (chuẩn hoá + casefold, khoá `models_cum._khoa_ten`)
-    TRÙNG với ít nhất một `cum_nhap` KHÁC còn sống trong CÙNG lượt.
+def _khoa_ten(ten: str) -> str:
+    """Khoá so trùng tên: chuẩn hoá khoảng trắng + casefold (khoá
+    `models_cum._khoa_ten`)."""
+    return models_cum.chuan_hoa_chu(ten).casefold()
 
-    Dùng để đặt tên cụm: tên cụm mặc định là `"<insight gốc> <kiểu>"`; CHỈ
-    khi ≥2 kiểu trong cùng lượt trùng tên chuẩn hoá thì các kiểu đó (và chỉ
-    chúng) mới ghép thêm `nhom` — `"<insight gốc> <nhom> <kiểu>"` — để không
-    sinh ra một lời mời "gộp" trỏ vào một cụm mà chính `duyet_het` vừa tạo
-    trong CÙNG lượt gọi (câu hỏi "gộp vào cụm có sẵn" lẽ ra chỉ để bắt trùng
-    với cụm cũ THẬT, không phải bắt trùng giữa hai kiểu anh em).
 
-    CHỈ gọi từ `_chot_ten_moi_kieu` — xem `_chot_ten_moi_kieu` để biết vì sao
-    tên không được tính lại lúc duyệt.
+def _giai_va_cham_ten(hang, ten: dict[int, str],
+                      nhom_dau: list[list[int]] | None = None) -> None:
+    """Luật đặt tên cụm, SỬA TẠI CHỖ `ten` (`{cum_nhap_id: tên cuối}`).
+
+    Tên cụm mặc định là `"<insight gốc> <kiểu>"`. Khi ≥2 hàng của cùng lượt
+    có cùng TÊN CUỐI (so bằng `_khoa_ten`), mọi hàng trong nhóm trùng đó ghép
+    thêm `nhom` — `"<insight gốc> <nhom> <kiểu>"`. Tên ghép có thể lại trùng
+    tên cuối của một hàng khác (vd "Vest"/"couple" thành "Vest couple", trùng
+    kiểu đơn "Vest couple" của nhóm khác) ⇒ lặp tới khi mọi nhóm trùng còn
+    lại chỉ gồm hàng đã ghép nhóm. Mục đích: `duyet_het` không tự gộp hai
+    kiểu khác nhau vào một cụm, và không bao giờ hỏi "gộp vào cụm vừa tạo
+    trong CHÍNH lượt gọi này" (câu hỏi gộp chỉ để bắt trùng với cụm THẬT có
+    từ trước).
+
+    Trần vòng lặp: mỗi vòng chạy tiếp chỉ khi đã đổi ít nhất một hàng từ tên
+    chưa ghép sang tên ghép, và hàng đã ghép không đổi nữa ⇒ tối đa
+    `len(hang) + 1` vòng. Va chạm CÒN LẠI khi mọi hàng dính vào đã ghép nhóm
+    không còn cách tách bằng luật này ⇒ giữ nguyên, và lúc duyệt các hàng đó
+    tự gộp vào MỘT cụm (không hỏi). Hai ca: biến thể hoa/thường của cùng một
+    kiểu trong cùng nhóm ("Vest"/"couple" và "Vest"/"Couple" — đúng là một
+    kiểu); và hai kiểu khác nhau mà tên ghép trùng nhau ("A"/"B couple" và
+    "A B"/"couple" cùng ra "A B couple").
+
+    `nhom_dau`: các nhóm id xét va chạm TRƯỚC vòng lặp — `doi_ten` dùng để áp
+    luật "trùng kiểu thô" giữa hàng vừa đổi và các hàng cùng kiểu với nó,
+    đúng như `ghi_de_xuat` (mọi hàng bắt đầu từ kiểu thô) tự có ở vòng đầu.
     """
-    dem: dict[str, list[int]] = {}
-    for r in conn.execute("SELECT id, kieu FROM cum_nhap WHERE chia_lan_id = ?",
-                          (chia_lan_id,)).fetchall():
-        khoa = models_cum.chuan_hoa_chu(r["kieu"]).casefold()
-        dem.setdefault(khoa, []).append(r["id"])
-    return {cid for ids in dem.values() if len(ids) > 1 for cid in ids}
+    ghep = {r["id"]: _ten_ghep(r) for r in hang}
+
+    def ghep_nhom(ids) -> bool:
+        doi = False
+        for i in ids:
+            if ten[i] != ghep[i]:
+                ten[i] = ghep[i]
+                doi = True
+        return doi
+
+    for ids in nhom_dau or []:
+        if len(ids) > 1:
+            ghep_nhom(ids)
+    for _ in range(len(hang) + 1):
+        theo_khoa: dict[str, list[int]] = {}
+        for i, t in ten.items():
+            theo_khoa.setdefault(_khoa_ten(t), []).append(i)
+        doi = False
+        for ids in theo_khoa.values():
+            if len(ids) > 1 and ghep_nhom(ids):
+                doi = True
+        if not doi:
+            return
 
 
 def _ten_ghep(r) -> str:
@@ -303,8 +339,8 @@ def _ten_ghep(r) -> str:
 
 
 def _chot_ten_moi_kieu(conn, chia_lan_id: int) -> None:
-    """Tính VÀ LƯU `ten_cum` (tên dùng lúc duyệt — kèm luật chèn nhóm khi
-    trùng, `_kieu_trung_ten`) cho MỌI kiểu của lượt. CHỈ gọi từ `ghi_de_xuat`.
+    """Tính VÀ LƯU `ten_cum` (tên dùng lúc duyệt — luật `_giai_va_cham_ten`)
+    cho MỌI kiểu của lượt. CHỈ gọi từ `ghi_de_xuat`.
 
     Sau lúc đó tên của một kiểu CHỈ đổi khi `doi_ten` đụng tới nó (xem
     `_chot_ten_sau_doi_ten`); duyệt, gộp, xoá, chuyển KHÔNG tính lại tên kiểu
@@ -315,17 +351,19 @@ def _chot_ten_moi_kieu(conn, chia_lan_id: int) -> None:
     tác (ca đo được: duyệt riêng "Vest couple" rồi đổi tên một kiểu không
     liên quan làm "Đồng phục couple" thành "couple" trần).
     """
-    trung = _kieu_trung_ten(conn, chia_lan_id)
-    for r in conn.execute("SELECT id, nhom, kieu FROM cum_nhap WHERE chia_lan_id = ?",
-                          (chia_lan_id,)).fetchall():
-        ten = _ten_ghep(r) if r["id"] in trung else models_cum.chuan_hoa_chu(r["kieu"])
-        conn.execute("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?", (ten, r["id"]))
+    hang = conn.execute("SELECT id, nhom, kieu FROM cum_nhap WHERE chia_lan_id = ?",
+                        (chia_lan_id,)).fetchall()
+    ten = {r["id"]: models_cum.chuan_hoa_chu(r["kieu"]) for r in hang}
+    _giai_va_cham_ten(hang, ten)
+    conn.executemany("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?",
+                     [(t, i) for i, t in ten.items()])
 
 
 def _chot_ten_sau_doi_ten(conn, chia_lan_id: int, cum_nhap_id: int) -> dict[str, str | None]:
-    """Tính lại `ten_cum` CHỈ cho hàng vừa `doi_ten` và các hàng trùng kiểu
-    với nó (cùng luật chèn nhóm của `_kieu_trung_ten`, áp trên tập con đó);
-    mọi hàng khác giữ nguyên tên đã chốt.
+    """Tính lại `ten_cum` CHỈ cho hàng vừa `doi_ten` và các hàng va chạm với
+    nó (cùng luật `_giai_va_cham_ten`, xuất phát từ tên ĐÃ LƯU của mọi hàng
+    khác và kiểu thô của hàng vừa đổi); hàng không dính va chạm nào giữ
+    nguyên tên đã chốt.
 
     Trả `{str(cum_nhap_id): ten_cum_truoc}` của MỌI hàng vừa bị ghi — lưu vào
     nhật ký để `hoan_tac` trả lại ĐÚNG tên cũ thay vì tính lại.
@@ -333,16 +371,15 @@ def _chot_ten_sau_doi_ten(conn, chia_lan_id: int, cum_nhap_id: int) -> dict[str,
     hang = conn.execute("SELECT id, nhom, kieu, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
                         (chia_lan_id,)).fetchall()
     doi = next(r for r in hang if r["id"] == cum_nhap_id)
-    khoa = models_cum.chuan_hoa_chu(doi["kieu"]).casefold()
-    anh_em = [r for r in hang if r["id"] != cum_nhap_id
-              and models_cum.chuan_hoa_chu(r["kieu"]).casefold() == khoa]
-    moi = {doi["id"]: _ten_ghep(doi) if anh_em else models_cum.chuan_hoa_chu(doi["kieu"])}
-    moi.update({r["id"]: _ten_ghep(r) for r in anh_em})
+    ten = {r["id"]: r["ten_cum"] or models_cum.chuan_hoa_chu(r["kieu"]) for r in hang}
+    ten[cum_nhap_id] = models_cum.chuan_hoa_chu(doi["kieu"])
+    cung_kieu = [r["id"] for r in hang if _khoa_ten(r["kieu"]) == _khoa_ten(doi["kieu"])]
+    _giai_va_cham_ten(hang, ten, [cung_kieu])
     truoc: dict[str, str | None] = {}
     for r in hang:
-        if r["id"] in moi and (r["id"] == cum_nhap_id or moi[r["id"]] != r["ten_cum"]):
+        if r["id"] == cum_nhap_id or ten[r["id"]] != r["ten_cum"]:
             truoc[str(r["id"])] = r["ten_cum"]
-            conn.execute("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?", (moi[r["id"]], r["id"]))
+            conn.execute("UPDATE cum_nhap SET ten_cum = ? WHERE id = ?", (ten[r["id"]], r["id"]))
     return truoc
 
 
@@ -358,12 +395,11 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
 
     `da_tao_trong_luot`: `{(usecase.casefold, insight_con.casefold): cum_id}`
     của MỌI cụm đã tạo/dùng TRONG CHÍNH lượt gọi `duyet_het` này (rỗng cho
-    `duyet_kieu`, vốn chỉ giải quyết một kiểu). Cần vì tên đã CHỐT của hai
-    kiểu khác nhau đôi khi khác NHAU Ở MẶT CHỮ nhưng trùng nhau ở casefold —
-    ví dụ hai biến thể hoa/thường của cùng một kiểu trong cùng nhóm ghép ra
-    "Vest couple"/"Vest Couple" (chữ kiểu giữ NGUYÊN cách viết gốc của từng
-    hàng), hoặc tên ghép nhóm+kiểu của một hàng trùng NGUYÊN VĂN kiểu đơn của
-    một hàng khác. Không có bước tra map này, hàng xử lý SAU sẽ thấy cụm hàng
+    `duyet_kieu`, vốn chỉ giải quyết một kiểu). Cần cho va chạm CÒN LẠI mà
+    `_giai_va_cham_ten` để nguyên — hai hàng đã ghép nhóm mà tên vẫn trùng ở
+    casefold: biến thể hoa/thường của cùng một kiểu trong cùng nhóm ("Vest
+    couple"/"Vest Couple"), hoặc hai kiểu có tên ghép trùng nhau ("A"/"B
+    couple" và "A B"/"couple"). Không có bước tra map này, hàng xử lý SAU sẽ thấy cụm hàng
     TRƯỚC vừa tạo (cùng transaction, cùng lượt gọi) qua `cum_trung` và hỏi
     "gộp" — đúng điều hợp đồng cấm ("không bao giờ hỏi gộp vào cụm vừa tạo
     trong cùng lượt duyệt"); phải tự gộp thẳng, không hỏi.
@@ -558,7 +594,7 @@ def duyet_het(db_path: Path, chia_lan_id: int, chu: str, chi_cua: str | None,
     tên trùng.
 
     Một kiểu có tên (usecase/insight gốc/kiểu, hay bản ghép nhóm+kiểu khi
-    trùng — xem `_kieu_trung_ten`) không hợp lệ (`kiem_nhan` raise) bị báo lại
+    trùng — xem `_giai_va_cham_ten`) không hợp lệ (`kiem_nhan` raise) bị báo lại
     ở `loi_ten` (kèm `cum_nhap_id` + lý do) và BỎ QUA — ở NGUYÊN trong nháp
     cho tới khi người dùng sửa tên — thay vì làm sập TOÀN BỘ transaction.
     """

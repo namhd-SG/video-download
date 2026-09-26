@@ -1025,23 +1025,107 @@ def test_bien_the_hoa_thuong_trong_cung_nhom_tu_gop_khong_hoi(kho):
     assert vc == {"1", "2"}
 
 
-def test_ten_ghep_nhom_trung_voi_kieu_don_cua_hang_khac_tu_gop_khong_hoi(kho):
-    """Nhóm "A" và nhóm "B" cùng có kiểu "couple" ⇒ ghép
-    "A couple"/"B couple"; một hàng thứ ba ở nhóm "C" có kiểu ĐƠN vốn ĐÃ LÀ
-    "A couple" (không hề trùng chữ "couple" của hai hàng kia, nên không tự
-    ghép nhóm) — tên GHÉP của hàng đầu trùng NGUYÊN VĂN kiểu ĐƠN của hàng thứ
-    ba. Từng đọc thành "trùng cụm có sẵn" với cụm vừa tự tạo trong CHÍNH lượt
-    gọi này; giờ phải tự gộp."""
+def test_ten_ghep_nhom_trung_ten_cuoi_cua_hang_khac_cung_ghep_nhom_thanh_ba_cum(kho):
+    """Va chạm tên xét trên TÊN CUỐI (sau khi ghép nhóm), không phải `kieu`
+    thô. "Vest"/"couple" ghép thành "Vest couple" — trùng tên cuối của hàng
+    "khác"/"Vest couple" (một kiểu KHÁC) ⇒ hàng đó cũng ghép nhóm thành
+    "khác Vest couple". Ba kiểu khác nhau ra ba cụm, cả khi duyệt hết một lần
+    lẫn khi duyệt từng kiểu — không tự gộp hai kiểu khác nhau, không hỏi gộp."""
+    db, job = kho
+    de_xuat = [
+        {"nhom": "Vest", "kieu": [{"kieu": "couple", "video_ids": ["1"]}]},
+        {"nhom": "Đồng phục", "kieu": [{"kieu": "couple", "video_ids": ["2"]}]},
+        {"nhom": "khác", "kieu": [{"kieu": "Vest couple", "video_ids": ["3"]}]}]
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, de_xuat)
+    assert sorted(k["ten_cum"] for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]) == [
+        "Vest couple", "khác Vest couple", "Đồng phục couple"]
+    ket = models_chia.duyet_het(db, lan_id, TOI, TOI, "Motion", "Strom")
+    assert ket["trung_cum_co_san"] == []
+    assert len({k["cum_id"] for k in ket["cum"]}) == 3
+
+    # Cùng đề xuất, job thứ hai, duyệt TỪNG kiểu (insight khác để không đụng
+    # cụm của lượt trên): không kiểu nào bị hỏi gộp vào cụm kiểu kia vừa tạo.
+    job2 = models.create_job(db, "https://www.tiktok.com/tag/b", 3, TOI)
+    for vid in ("7", "8", "9"):
+        models.record_video(db, job_id=job2, video_id=vid, url=f"u{vid}")
+    lan2 = models_chia.tao_chia_lan(db, job2, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan2, TOI, [
+        {"nhom": "Vest", "kieu": [{"kieu": "couple", "video_ids": ["7"]}]},
+        {"nhom": "Đồng phục", "kieu": [{"kieu": "couple", "video_ids": ["8"]}]},
+        {"nhom": "khác", "kieu": [{"kieu": "Vest couple", "video_ids": ["9"]}]}])
+    id_cua = {(k["nhom"], k["kieu"]): k["cum_nhap_id"]
+              for k in models_chia.lay_chia(db, lan2, TOI)["kieu"]}
+    a = models_chia.duyet_kieu(db, lan2, id_cua[("Vest", "couple")], TOI, TOI, "Motion", "Khac")
+    b = models_chia.duyet_kieu(db, lan2, id_cua[("khác", "Vest couple")], TOI, TOI)
+    assert "trung_cum_co_san" not in b and b["cum_id"] != a["cum_id"]
+
+
+def test_ghep_nhom_lan_truyen_qua_nhieu_vong_toi_khi_het_trung(kho):
+    """Ghép nhóm có thể sinh va chạm MỚI với tên cuối của hàng thứ ba, rồi
+    thứ tư…: lặp tới khi không còn hai kiểu KHÁC nhau chung tên cuối."""
     db, job = kho
     lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
     models_chia.ghi_de_xuat(db, lan_id, TOI, [
         {"nhom": "A", "kieu": [{"kieu": "couple", "video_ids": ["1"]}]},
         {"nhom": "B", "kieu": [{"kieu": "couple", "video_ids": ["2"]}]},
         {"nhom": "C", "kieu": [{"kieu": "A couple", "video_ids": ["3"]}]},
+        {"nhom": "D", "kieu": [{"kieu": "C A couple", "video_ids": ["4"]}]},
+        {"nhom": "E", "kieu": [{"kieu": "D C A couple", "video_ids": ["5"]}]},
+        {"nhom": "F", "kieu": [{"kieu": "khác", "video_ids": ["6"]}]},
     ])
-    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Motion", "Strom Ai")
-    assert ket["trung_cum_co_san"] == []
-    assert _dem(db, "cum") == 2, "'A couple' (ghép) và 'A couple' (đơn) là MỘT cụm; 'B couple' là cụm còn lại"
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("A", "couple"): "A couple", ("B", "couple"): "B couple",
+        ("C", "A couple"): "C A couple", ("D", "C A couple"): "D C A couple",
+        ("E", "D C A couple"): "E D C A couple", ("F", "khác"): "khác"}
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Motion", "Strom")
+    assert ket["trung_cum_co_san"] == [] and _dem(db, "cum") == 6
+
+
+def test_va_cham_con_lai_sau_khi_moi_hang_da_ghep_nhom_thi_giu_nguyen_va_tu_gop(kho):
+    """Vòng lặp có trần: mỗi vòng ghép nhóm ít nhất một hàng CHƯA ghép, hàng đã
+    ghép không đổi nữa ⇒ dừng. "A"/"B couple" và "A B"/"couple" ra CÙNG tên
+    ghép "A B couple" dù đã ghép nhóm cả hai — không còn gì để ghép thêm, nên
+    giữ nguyên, và lúc duyệt hai kiểu đó tự gộp vào MỘT cụm, không hỏi."""
+    db, job = kho
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "A", "kieu": [{"kieu": "B couple", "video_ids": ["1"]}]},
+        {"nhom": "X", "kieu": [{"kieu": "B couple", "video_ids": ["2"]}]},
+        {"nhom": "A B", "kieu": [{"kieu": "couple", "video_ids": ["3"]}]},
+        {"nhom": "Y", "kieu": [{"kieu": "couple", "video_ids": ["4"]}]},
+    ])
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("A", "B couple"): "A B couple", ("X", "B couple"): "X B couple",
+        ("A B", "couple"): "A B couple", ("Y", "couple"): "Y couple"}
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Motion", "Strom")
+    assert ket["trung_cum_co_san"] == [] and len(ket["cum"]) == 4
+    assert _dem(db, "cum") == 3, "hai kiểu còn trùng tên ghép gộp vào một cụm"
+
+
+def test_doi_ten_trung_ten_cuoi_lan_truyen_ghep_nhom_sang_hang_khac(kho):
+    """Đổi tên cũng dùng luật tên cuối: đổi "cartoon" thành "couple" (trùng
+    kiểu "A"/"couple") ⇒ cả hai ghép nhóm; "A couple" vừa sinh trùng tên cuối
+    của "B"/"A couple" ⇒ hàng đó cũng ghép. Hàng không dính va chạm giữ tên."""
+    db, job = kho
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "A", "kieu": [{"kieu": "couple", "video_ids": ["1"]}]},
+        {"nhom": "B", "kieu": [{"kieu": "A couple", "video_ids": ["2"]}]},
+        {"nhom": "C", "kieu": [{"kieu": "cartoon", "video_ids": ["3"]},
+                               {"kieu": "dance", "video_ids": ["4"]}]},
+    ])
+    id_cua = {(k["nhom"], k["kieu"]): k["cum_nhap_id"]
+              for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]}
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=id_cua[("C", "cartoon")],
+                            kieu="couple")
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("A", "couple"): "A couple", ("B", "A couple"): "B A couple",
+        ("C", "couple"): "C couple", ("C", "dance"): "dance"}
+    models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert _ten_cum_theo_nhom_kieu(db, lan_id) == {
+        ("A", "couple"): "couple", ("B", "A couple"): "A couple",
+        ("C", "cartoon"): "cartoon", ("C", "dance"): "dance"}
 
 
 def test_duyet_kiem_lai_trung_voi_cum_that_xuat_hien_sau_ghi_de_xuat(kho):
