@@ -171,7 +171,7 @@ def page(may_chu):
         job = models.create_job(db, "https://www.tiktok.com/tag/dance", TONG, NGUOI)
         for i in range(TONG):
             models.record_video(db, job_id=job, video_id=f"76870{i:05d}", url=f"https://t/{i}",
-                                title=f"Video {i + 1}", drive_file_id=f"drv{i}",
+                                title=f"Video {i + 1}", drive_file_id=f"drive_file_{i:05d}",  # id Drive thật ≥10 ký tự
                                 tao_luc=f"2026-09-23T00:{i // 60:02d}:{i % 60:02d}+00:00")
     pw_api = pytest.importorskip("playwright.sync_api")
     with pw_api.sync_playwright() as pw:

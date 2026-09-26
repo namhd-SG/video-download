@@ -13,7 +13,7 @@ const grab = (n) => {
 };
 
 // cachTra: "ack" | "tu_choi" | "im" | "sai_origin" | "sai_id" | null (popup bị chặn)
-async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false }) {
+async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0 }) {
   const CREATIVE_DESK_URL = "https://automation.example";
   const CREATIVE_DESK_ORIGIN = "https://automation.example";
   const MAX_PM_ITEMS = 500;
@@ -22,13 +22,18 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
   const ids = Array.from({ length: soVideo }, (_, i) => `v${i}`);
   const state = {
     selected: new Set(ids),
-    videos: ids.map((id, i) => ({ video_id: id, drive_file_id: i < chuaDrive ? null : "d" + id,
-                                  title: "t" + id, url: "u" + id })),
+    // Drive id thật dài ≥10 ký tự; link gốc http(s). `linhHong` video cuối mang
+    // link hỏng ⇒ bên nhận sẽ từ chối, bên gửi phải tự lọc ra.
+    videos: ids.map((id, i) => ({ video_id: id,
+                                  drive_file_id: i < chuaDrive ? null : "drive_" + id.padStart(6, "0"),
+                                  title: "t" + id,
+                                  url: i >= soVideo - linhHong ? "khong-phai-link" : "https://t/" + id })),
     idTrang: [], dangBanGiao: false,
   };
   const daGoi = { renderSelectionBar: 0, open: 0, toast: [], gui: [], url: null };
-  const the = state.videos.map(() => ({
-    classList: { _co: true, remove() { this._co = false; } },
+  const the = state.videos.map((v) => ({
+    dataset: { videoId: v.video_id },
+    classList: { _co: true, remove() { this._co = false; }, toggle(_, on) { this._co = !!on; } },
     setAttribute() {},
   }));
   const showToast = (m) => daGoi.toast.push(m);
@@ -57,8 +62,8 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     removeEventListener: (t, f) => { if (t === "message") nguoiNghe.delete(f); },
   };
   // `grab` cắt từ chữ "function" nên mất tiền tố `async` của moBoTuTim — gắn lại.
-  eval(["veNutChonTrang", "boChonTatCa", "datNutBanGiao", "guiBanGiaoPm",
-        "itemBanGiao", "moTabCreativeDesk"].map(grab).join("\n") + "\n" +
+  eval(["veNutChonTrang", "boChonTatCa", "boChonCacVideo", "datNutBanGiao", "guiBanGiaoPm",
+        "itemBanGiao", "itemHopLeBenNhan", "moTabCreativeDesk"].map(grab).join("\n") + "\n" +
        grab("moBoTuTim").replace(/^function/, "async function") + "\nvar __f = moBoTuTim;");
   const p1 = __f();
   const nutKhiCho = { disabled: nut.disabled, text: nut.textContent };
@@ -100,6 +105,8 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     sai_id: await chay({ cachTra: "sai_id" }),
     popup_bi_chan: await chay({ cachTra: null }),
     nhieu: await chay({ cachTra: "ack", soVideo: 90, chuaDrive: 4 }),
+    link_hong: await chay({ cachTra: "ack", soVideo: 10, linhHong: 3 }),
+    toan_hong: await chay({ cachTra: "ack", soVideo: 2, linhHong: 2 }),
     qua_tran: await chay({ cachTra: "ack", soVideo: 501 }),
     bam_dup: await chay({ cachTra: "ack", ackSauLuot: 3, bamDup: true }),
     gui_lai: await chay({ cachTra: "im", lanHaiAck: true }),

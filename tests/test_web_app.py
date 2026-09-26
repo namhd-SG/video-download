@@ -1836,6 +1836,13 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
         "popup bị chặn thì chưa bàn giao được — không được xoá lựa chọn"
     assert do["nhieu"]["tin"]["soItem"] == 86, "90 chọn, 4 chưa lên Drive ⇒ gửi 86, không trần 30"
     assert "4 video chưa lên Drive" in do["nhieu"]["toast"]
+    assert do["nhieu"]["conChon"] == 4, "video chưa lên Drive chưa được gửi ⇒ phải còn tick"
+    # Bên nhận bỏ CẢ LÔ khi một item sai luật (không ack ⇒ treo tới hết hạn),
+    # nên bên gửi phải tự lọc item sai trước khi gửi.
+    assert do["link_hong"]["tin"]["soItem"] == 7 and do["link_hong"]["conChon"] == 3
+    assert "3 video thiếu link gốc hợp lệ" in do["link_hong"]["toast"]
+    assert do["toan_hong"]["moTab"] == 0 and do["toan_hong"]["conChon"] == 2
+    assert "thiếu link gốc hợp lệ" in do["toan_hong"]["toast"]
     assert do["qua_tran"]["moTab"] == 0 and do["qua_tran"]["conChon"] == 501
     assert do["bam_dup"]["moTab"] == 1, "bấm đúp lúc đang chờ ack không được mở tab thứ hai"
     assert do["gui_lai"]["moTab"] == 2 and do["gui_lai"]["lanHai"]["idMoi"] is True, \

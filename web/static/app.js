@@ -877,6 +877,18 @@
   // bộ lưới ngay sau đó. Đường nào KHÔNG nạp lại lưới mà chỉ xoá state sẽ để
   // thẻ tô xanh trong khi thanh chọn nói "0 video", và lần bấm kế tiếp đọc
   // một state khác với cái người dùng đang nhìn.
+  // Bỏ chọn một nhóm video, giữ nguyên phần còn lại của lựa chọn.
+  function boChonCacVideo(ids) {
+    ids.forEach((id) => state.selected.delete(id));
+    document.querySelectorAll("#card-grid .card").forEach((c) => {
+      const chon = state.selected.has(c.dataset.videoId);
+      c.classList.toggle("selected", chon);
+      c.setAttribute("aria-checked", String(chon));
+    });
+    renderSelectionBar();
+    veNutChonTrang();
+  }
+
   function boChonTatCa() {
     state.selected.clear();
     document.querySelectorAll(".card.selected").forEach((c) => {
@@ -907,10 +919,17 @@
     // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ chúng TRƯỚC khi gửi và
     // nói ra số bị bỏ — để số video mỗi bộ bên kia đếm trên đúng thứ sẽ copy.
     const chuaLenDrive = daChon.filter((v) => !v.drive_file_id);
-    const items = daChon.filter((v) => v.drive_file_id).map(itemBanGiao);
+    const coDrive = daChon.filter((v) => v.drive_file_id);
+    // Bên nhận bỏ CẢ LÔ, không ack, khi chỉ một item sai luật — người dùng sẽ
+    // chờ trọn hạn ack. Lọc trước theo đúng luật đó và nói ra số bị bỏ.
+    const guiDuoc = coDrive.filter(itemHopLeBenNhan);
+    const khongHopLe = coDrive.length - guiDuoc.length;
+    const items = guiDuoc.map(itemBanGiao);
 
     if (!items.length) {
-      showToast("Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk.");
+      showToast(chuaLenDrive.length
+        ? "Video đã chọn chưa lên Drive — chưa có gì để gửi sang Creative Desk."
+        : "Video đã chọn thiếu link gốc hợp lệ — Creative Desk không nhận được.");
       return;
     }
     if (items.length > MAX_PM_ITEMS) {
@@ -929,8 +948,11 @@
       return;
     }
     const id = crypto.randomUUID();
-    if (chuaLenDrive.length) {
-      showToast(`${chuaLenDrive.length} video chưa lên Drive nên không gửi kèm.`);
+    if (chuaLenDrive.length || khongHopLe) {
+      showToast([
+        chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+        khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
+      ].filter(Boolean).join(", ") + " nên không gửi kèm.");
     }
 
     datNutBanGiao(true);
@@ -948,7 +970,9 @@
     // chưa có gì được bàn giao cả — xoá lựa chọn là bắt người dùng chọn lại vì
     // một việc CHƯA xảy ra.
     if (kq.ket === "ack") {
-      boChonTatCa();
+      // Chỉ bỏ chọn đúng những video ĐÃ gửi: video chưa lên Drive / thiếu link
+      // vẫn giữ tick để người dùng thấy chúng chưa đi đâu cả.
+      boChonCacVideo(guiDuoc.map((v) => v.video_id));
       showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.`);
       return;
     }
@@ -1003,6 +1027,14 @@
   // ========================================================================
   function itemBanGiao(v) {
     return { f: v.drive_file_id, n: v.title || v.video_id, u: v.url };
+  }
+
+  // Cùng luật với bên nhận (meta-ads `frontend/src/lib/videodesk-handoff.ts`
+  // `parseVideodeskHandoffItem`): Drive id `[A-Za-z0-9_-]{10,128}`, link gốc
+  // http(s). Tên không cần kiểm — bên nhận tự cắt ở 200 ký tự.
+  function itemHopLeBenNhan(v) {
+    return /^[A-Za-z0-9_-]{10,128}$/.test(String(v.drive_file_id || "")) &&
+           /^https?:\/\//i.test(String(v.url || ""));
   }
 
   // `nhan` CHỈ có khi bàn giao từ cụm; `null` ⇒ không có khoá đó (quy tắc 1-2).
