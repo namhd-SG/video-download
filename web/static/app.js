@@ -1521,8 +1521,15 @@
     // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
     // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị
     // đếm vào "không hiện ở trang này" và vào số của hộp xác nhận Xoá.
+    // Mọi thao tác chỉ thấy tập ĐÃ NẠP (bộ lọc `renderLibrary`, `moBoTuTim` đều
+    // lọc trên `state.videos`) — giữ id ngoài tập là để Xoá xoá mù đúng video đó.
+    // Bỏ thì phải NÓI ra: lựa chọn không được mất im lặng.
     const conLai = new Set(videos.map((v) => v.video_id));
-    for (const id of [...state.selected]) if (!conLai.has(id)) state.selected.delete(id);
+    const roi = [...state.selected].filter((id) => !conLai.has(id));
+    roi.forEach((id) => state.selected.delete(id));
+    if (roi.length) {
+      showToast(`Đã bỏ ${roi.length} video khỏi lựa chọn vì không còn trong thư viện đang hiện.`);
+    }
     // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
     // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
     try {
