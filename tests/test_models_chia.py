@@ -527,6 +527,37 @@ def test_xay_payload_lo_chi_gom_video_co_drive_va_dung_thu_tu(kho):
                                "template": "Goc", "cum_id": cum_id, "lo": {"thu": 1, "tong": 1}}
 
 
+def test_xay_payload_lo_bo_video_da_loai_sau_khi_vao_cum(kho):
+    """Video bị "loại" SAU khi đã ở cụm vẫn còn hàng `video_cum`, nhưng không
+    được sang Creative Desk — cùng bộ lọc mà `lay_cum` đếm, để lô gửi đi khớp
+    số video người dùng thấy."""
+    db, job = kho
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET drive_file_id = 'd' || video_id")
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["1", "2", "3"])
+    models.danh_dau_da_loai(db, "2", TOI)
+    cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
+    payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
+    assert [i["f"] for i in payload["items"]] == ["d1", "d3"]
+
+
+def test_xay_payload_lo_chi_gom_video_trong_pham_vi_chi_cua(kho):
+    """Cụm có cả video thuộc job của người khác (gán khi không giới hạn phạm
+    vi) — lô gửi đi dưới phạm vi `chi_cua` chỉ mang video của người đó, cùng
+    bộ lọc `lay_cum` dùng để đếm."""
+    db, job = kho
+    job_ho = models.create_job(db, "https://www.tiktok.com/tag/b", 1, HO)
+    models.record_video(db, job_id=job_ho, video_id="h1", url="uh1")
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET drive_file_id = 'd' || video_id")
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
+    models_cum.gan_video(db, cum_id, TOI, None, ["1", "h1"])
+    cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
+    payload = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1)
+    assert [i["f"] for i in payload["items"]] == ["d1"]
+
+
 # --- hoan_tac là NGĂN XẾP (review 24/09) -------------------------------------
 
 def test_hoan_tac_gop_hai_lan_lien_tiep_undo_hai_lan_khoi_phuc_ca_hai(kho):
@@ -813,6 +844,31 @@ def test_hoan_tac_khong_the_lui_xuyen_mot_lan_duyet_sau_khi_chuyen(kho):
     assert ket == {"tu_choi": "khong_hop_le"}
     assert not any(h["loai"] == "hoan_tac" for h in _thao_tac(db, lan_id)), \
         "hoàn tác bị từ chối không được ghi thêm dòng nhật ký nào"
+
+
+def test_hoan_tac_khong_the_lui_xuyen_duyet_het_khi_con_kieu_o_lai(kho):
+    """Cùng luật chốt thế hệ, qua `duyet_het`: `chuyen` video "1" sang
+    "cartoon" rồi "Duyệt tất cả" — "couple" và "cartoon" vào cụm thật, còn
+    "khac" Ở LẠI nháp vì trùng một cụm có sẵn chưa được xác nhận gộp, nên lượt
+    vẫn `de_xuat` và luật trạng thái không che hộ. Hoàn tác sau đó phải bị từ
+    chối sạch, không cố chèn lại hàng `cum_nhap` đã bị xoá khi duyệt."""
+    db, job = kho
+    models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "khac")
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "n", "kieu": [
+            {"kieu": "couple", "video_ids": ["1", "2"]},
+            {"kieu": "cartoon", "video_ids": ["3"]},
+            {"kieu": "khac", "video_ids": ["4"]},
+        ]},
+    ])
+    models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=["1"],
+                            den_cum_nhap_id=_nhom_id(db, lan_id, "cartoon"))
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert len(ket["cum"]) == 2 and len(ket["trung_cum_co_san"]) == 1
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "de_xuat"
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac") == {"tu_choi": "khong_hop_le"}
+    assert not any(h["loai"] == "hoan_tac" for h in _thao_tac(db, lan_id))
 
 
 def test_hoan_tac_khong_the_lui_xuyen_mot_lan_duyet_sau_khi_gop(kho):
