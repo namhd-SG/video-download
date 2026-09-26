@@ -246,6 +246,28 @@ class CreateJobRequest(BaseModel):
 
     url: str
     so_luong: int = Field(gt=0, le=MAX_SO_LUONG, description="Số video tối đa muốn tải")
+    # Tuỳ chọn: bỏ trống lúc tạo thì hỏi lại lúc chia (màn nháp duyệt kiểu).
+    # Không đặt `max_length` ở đây — sai độ dài phải trả 400 kèm câu rõ
+    # (`_chuan_hoa_truong_tuy_chon`), không phải 422 của FastAPI.
+    usecase: str | None = None
+    insight_goc: str | None = None
+
+
+def _chuan_hoa_truong_tuy_chon(gia_tri: str | None, toi_da: int, ten_truong: str) -> str | None:
+    """Chuẩn hoá một trường tuỳ chọn kiểu chữ trong `CreateJobRequest`.
+
+    `None` hoặc chuỗi chỉ toàn khoảng trắng ⇒ coi như KHÔNG điền, trả `None`
+    — đây là điều giữ hành vi của client cũ (không gửi trường) nguyên vẹn.
+    Có nội dung mà vượt trần ⇒ `ValueError` để route đổi thành 400 (cùng kiểu
+    lỗi `models_cum.kiem_nhan` dùng ở `/cum`)."""
+    if gia_tri is None:
+        return None
+    chuan = models_cum.chuan_hoa_chu(gia_tri)
+    if not chuan:
+        return None
+    if len(chuan) > toi_da:
+        raise ValueError(f"{ten_truong} không được quá {toi_da} ký tự")
+    return chuan
 
 
 def _la_admin(email: str) -> bool:
@@ -294,7 +316,21 @@ def create_job(payload: CreateJobRequest,
             status_code=400,
             detail="url phải là trang TikTok music/tag/search/profile",
         )
-    job_id = models.create_job(DB_PATH, payload.url, payload.so_luong, nguoi_tao)
+    # Cùng luật chuẩn hoá/độ dài `models_cum` dùng cho `/cum`. `insight_goc`
+    # không có trần riêng trong `models_cum` — trần duy nhất áp lên nó là
+    # `INSIGHT_CON_TOI_DA` trên CHUỖI GHÉP "insight gốc + kiểu"
+    # (`ten_insight_con`), và vì kiểu chưa tồn tại lúc tạo job, dùng nguyên
+    # trần đó cho một mình `insight_goc` là biên RỘNG HƠN cái sẽ áp lúc chia —
+    # không phát minh số mới, và không chặn nhầm cái sẽ được `kiem_nhan` chấp
+    # nhận sau này.
+    try:
+        usecase = _chuan_hoa_truong_tuy_chon(payload.usecase, models_cum.USECASE_TOI_DA, "usecase")
+        insight_goc = _chuan_hoa_truong_tuy_chon(
+            payload.insight_goc, models_cum.INSIGHT_CON_TOI_DA, "insight gốc")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    job_id = models.create_job(DB_PATH, payload.url, payload.so_luong, nguoi_tao,
+                               usecase=usecase, insight_goc=insight_goc)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng
     return job

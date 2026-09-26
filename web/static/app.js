@@ -1736,6 +1736,18 @@
     renderLibrary();
   }
 
+  // Thuần, không đụng DOM — tách riêng để `tests/js/` gọi được thẳng bằng
+  // node (xem `tao-job-body.js`). Hai ô tuỳ chọn CHỈ vào body khi có nội
+  // dung: client cũ (không có hai ô) và người để trống hai ô phải gửi cùng
+  // một body — server đọc "vắng trường" và "trường rỗng" khác nhau cho việc
+  // khác (xem `_chuan_hoa_truong_tuy_chon` ở web/app.py).
+  function taoJobBody(url, soLuong, usecase, insightGoc) {
+    const body = { url, so_luong: soLuong };
+    if (usecase) body.usecase = usecase;
+    if (insightGoc) body.insight_goc = insightGoc;
+    return body;
+  }
+
   document.getElementById("job-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const errorBox = document.getElementById("error");
@@ -1743,12 +1755,15 @@
     errorBox.textContent = "";
     const url = document.getElementById("url").value.trim();
     const soLuong = parseInt(document.getElementById("so-luong").value, 10);
+    const usecase = document.getElementById("usecase").value.trim();
+    const insightGoc = document.getElementById("insight-goc").value.trim();
     submitBtn.disabled = true;
     try {
+      const body = taoJobBody(url, soLuong, usecase, insightGoc);
       const res = await fetch("/jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url, so_luong: soLuong }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1760,6 +1775,8 @@
       renderQueue();
       followJob(data.id);
       document.getElementById("url").value = "";
+      document.getElementById("usecase").value = "";
+      document.getElementById("insight-goc").value = "";
     } catch (err) {
       errorBox.textContent = "Lỗi mạng: " + err.message;
     } finally {

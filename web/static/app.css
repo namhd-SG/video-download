@@ -723,7 +723,7 @@
 .selection-actions .popover .cum-row:hover { background: var(--surface-alt); }
 .cum-form input { width: 100%; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg);
   color: var(--text); border-radius: 7px; padding: .4rem .5rem; font: inherit; font-size: .8rem; margin-top: 4px; }
-.cum-form label.lb { font-size: .68rem; color: var(--text-muted); display: block; margin-top: 6px; }
+.cum-form label.lb, #job-form label.lb { font-size: .68rem; color: var(--text-muted); display: block; margin-top: 6px; }
 .cum-form .ok { margin-top: 8px; width: 100%; }
 .preview-name { font-size: 12.5px; margin: 8px 0 2px; }
 .preview-name b { font-family: var(--mono); }
