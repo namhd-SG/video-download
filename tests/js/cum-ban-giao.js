@@ -159,8 +159,8 @@ function chayOpenerNem() {
 }
 
 // `moHetLoCum` phải DỪNG ở lô ĐẦU gặp hết phiên, không mở-đóng lặp cho MỌI lô
-// còn lại (review lượt 2: `moLoCum` từng trả "mo" cho ca hết phiên, khiến
-// `moHetLoCum` đọc thành "đi tiếp"). Cụm 64 video ⇒ 3 lô (30/30/4); mọi
+// còn lại: nếu `moLoCum` trả "mo" cho ca hết phiên thì `moHetLoCum` đọc
+// nhầm thành "đi tiếp". Cụm 64 video ⇒ 3 lô (30/30/4); mọi
 // `apiGet` đều ném hết phiên NGAY — nếu vòng lặp không dừng, "open" sẽ xuất
 // hiện 3 lần thay vì 1.
 async function chayMoHetLoCumHetPhienGiuaChung() {

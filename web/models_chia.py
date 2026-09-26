@@ -5,8 +5,8 @@ Bảng sống trong `web/models.py` (`init_db`); đây là câu hỏi/ghi trên 
 Luật quyền sở hữu giống `models_cum`: mọi hàm nhận `chu` KHÔNG có mặc định và
 lọc theo nó NGAY TRONG SQL. `chu` luôn là email người gọi.
 
-KHÔNG ĐỤNG `web/models_cum.py` (địa phận phase khác). `duyet_kieu`/`duyet_het`
-CẦN hành vi tương đương `models_cum.tao_cum` (trùng tên ⇒ cụm có sẵn) +
+Module này KHÔNG gọi thẳng `models_cum.tao_cum`/`models_cum.gan_video`.
+`duyet_kieu`/`duyet_het` CẦN hành vi tương đương `models_cum.tao_cum` (trùng tên ⇒ cụm có sẵn) +
 `models_cum.gan_video` (chuyển video) — nhưng viết LẠI hai câu INSERT đó ngay
 trên kết nối của module này, thay vì gọi thẳng hai hàm kia, vì cả hai hàm gốc
 tự mở `_connect` riêng (= transaction riêng của CHÚNG NÓ). Duyệt cần khoan gộp
@@ -39,7 +39,7 @@ LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "gop", "doi_ten", "chuyen",
 
 # Loại có thể LÙI LẠI bằng `hoan_tac` — `chap_nhan` không đổi gì để lùi,
 # `doi_insight` đổi nhãn (không đổi cấu trúc video) nên không nằm trong luồng
-# hoàn tác cấu trúc của phase này, và `hoan_tac`/`duyet_het` không tự lùi
+# hoàn tác cấu trúc này, và `hoan_tac`/`duyet_het` không tự lùi
 # chính nó (duyệt đã đi qua `cum` thật — ngoài phạm vi "hoàn tác nháp").
 _HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kieu")
 
@@ -50,7 +50,7 @@ def _lan_cua_toi(conn, chia_lan_id: int, chu: str):
 
 
 # ---------------------------------------------------------------------------
-# Tạo lượt + ghi đề xuất (tầng hình gọi sau khi phân tích xong — phase 2)
+# Tạo lượt + ghi đề xuất (tầng hình gọi sau khi phân tích xong)
 # ---------------------------------------------------------------------------
 
 def tao_chia_lan(db_path: Path, job_id: int, chu: str, phien_ban_prompt: str,
@@ -506,8 +506,8 @@ def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
         # MỌI thao tác sửa nháp trước đó (dù chưa từng bị hoàn tác) mang
         # `the_he` CŨ, nên bộ lọc `AND the_he = ?` của `_op_hoan_tac` loại hết
         # chúng — hoàn tác không còn cách nào lùi XUYÊN QUA một lần duyệt.
-        # Trước bản vá này, `chuyen`/`gop` một video/kiểu RỒI DUYỆT đúng chỗ
-        # đó RỒI `hoan_tac` cố phục hồi một `cum_nhap.id` đã bị xoá thật khi
+        # Thiếu bump này, `chuyen`/`gop` một video/kiểu RỒI DUYỆT đúng chỗ đó
+        # RỒI `hoan_tac` sẽ cố phục hồi một `cum_nhap.id` đã bị xoá thật khi
         # duyệt ⇒ `sqlite3.IntegrityError` (khoá ngoại) — route chỉ bắt
         # `ValueError` nên lộ ra thành 500 thay vì 400.
         conn.execute("UPDATE chia_lan SET the_he = the_he + 1 WHERE id = ?", (chia_lan_id,))
@@ -760,7 +760,7 @@ def _op_doi_insight(conn, chia_lan_id, chu, lan, usecase: str | None = None,
 def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
     """Hoàn tác thao tác sửa CẤU TRÚC gần nhất CHƯA bị lùi của lượt này
     (`_HOAN_TAC_DUOC`). `chap_nhan` không đổi gì để lùi; `duyet_het`/
-    `hoan_tac`/`doi_insight` nằm ngoài phạm vi hoàn tác nháp của phase này.
+    `hoan_tac`/`doi_insight` nằm ngoài phạm vi hoàn tác nháp này.
 
     Undo là một NGĂN XẾP, không phải "luôn áp lại dòng mới nhất": `AND da_lui
     = 0` loại các dòng ĐÃ được một `hoan_tac` trước đó xử lý — thiếu điều kiện
@@ -921,17 +921,17 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     """Dựng `{v, items, nhan}` cho lô `thu` của cụm THẬT `cum` — hợp đồng
     `nhan` (plans/260923-1558-tai-theo-cum/hop-dong-nhan.md), 8 quy tắc.
 
-    Trước bản vá này, `app.js::nhanTuCum` tự ghép nhãn này ở CLIENT; giờ dựng
-    lại Ở SERVER để `nhan` (thứ mang tên kiểu sang taxonomy Creative Desk)
-    không bao giờ phụ thuộc vào một bản JS cũ còn cache trong trình duyệt
-    người dùng.
+    `nhan` (thứ mang tên kiểu sang taxonomy Creative Desk) phải dựng Ở
+    SERVER, không phải ghép ở CLIENT (`app.js::nhanTuCum`) — ghép ở client
+    làm nó phụ thuộc vào một bản JS cũ còn cache trong trình duyệt người
+    dùng.
 
     `cum` là kết quả `models_cum.lay_cum`/`_cum_hoac_404` (đã kiểm quyền sở
-    hữu + tính `so_lo`) — hàm này KHÔNG tự truy vấn bảng `cum` (không sửa
-    được `models_cum.py` ở phase này), chỉ đọc thẳng `video_cum`/`videos`/
-    `jobs`, dùng ĐÚNG khoá lọc sở hữu (`da_loai_luc IS NULL` + phạm vi
-    `chi_cua`) mà `models_cum._VIDEO_CON_THAY` áp dụng, để số video một lô
-    không bao giờ lệch số `liet_ke_cum` đã đếm.
+    hữu + tính `so_lo`) — hàm này KHÔNG tự truy vấn bảng `cum`, chỉ đọc
+    thẳng `video_cum`/`videos`/`jobs`, dùng ĐÚNG khoá lọc sở hữu
+    (`da_loai_luc IS NULL` + phạm vi `chi_cua`) mà
+    `models_cum._VIDEO_CON_THAY` áp dụng, để số video một lô không bao giờ
+    lệch số `liet_ke_cum` đã đếm.
 
     Thứ tự cắt lô PHẢI khớp `app.js::videoCuaCum` + `chiaLo` (video CŨ nhất
     trước, cắt block `LO_TOI_DA`, RỒI mới lọc video chưa lên Drive) — lọc

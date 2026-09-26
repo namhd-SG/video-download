@@ -109,9 +109,10 @@ def test_loi_payload_dong_tab_trong_va_bao_ly_do_khong_nuot_im():
 
 
 def test_het_phien_giua_luc_mo_dong_tab_va_khong_ghi_da_mo():
-    """Review lượt 2: hết phiên đúng lúc fetch payload từng trả "mo" (đọc như
-    "đã mở xong"), khiến `moHetLoCum` mở-đóng lặp một tab trống cho MỌI lô
-    còn lại. Giờ phải trả một giá trị RIÊNG, đóng tab, và KHÔNG ghi "đã mở"."""
+    """Hết phiên đúng lúc fetch payload phải trả một giá trị RIÊNG (không lẫn
+    với "mo"/"đã mở xong"), đóng tab, và KHÔNG ghi "đã mở" — lẫn với "mo" thì
+    `moHetLoCum` đọc thành đã mở xong và mở-đóng lặp một tab trống cho MỌI lô
+    còn lại."""
     d = _node("cum-ban-giao.js")
     hp = d["het_phien"]
     assert hp["kq"] not in ("mo", "chan"), "hết phiên không được đọc như đã mở thành công"
@@ -164,11 +165,11 @@ def test_gan_vao_cum_co_san_theo_id_dong_duoc_bam_khong_tra_theo_ten():
 
 
 def test_mo_lo_cum_mo_tab_dong_bo_truoc_khi_await_fetch_payload():
-    """Review lượt 2: tính chất quyết định cho Safari là "`window.open`
-    chạy đồng bộ TRONG lượt xử lý click, TRƯỚC bất kỳ `await` nào" — trước
-    đây không test nào pin được điều này (harness cũ không log fetch payload
-    vào `nhatKy` để so thứ tự). Ở đây fetch TREO VĨNH VIỄN và ta đọc trạng
-    thái ngay sau khi gọi `moLoCum` mà KHÔNG await nó."""
+    """Tính chất quyết định cho Safari là "`window.open` chạy đồng bộ TRONG
+    lượt xử lý click, TRƯỚC bất kỳ `await` nào" — pin đúng nó cần fetch
+    payload được log vào `nhatKy` để so thứ tự với `open`. Ở đây fetch TREO
+    VĨNH VIỄN và ta đọc trạng thái ngay sau khi gọi `moLoCum` mà KHÔNG await
+    nó."""
     d = _node("mo-dong-bo-va-catch.js")
     assert d["fetchTreo"]["daMoNgayLapTuc"] is True
 

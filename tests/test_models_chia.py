@@ -558,13 +558,13 @@ def test_xay_payload_lo_chi_gom_video_trong_pham_vi_chi_cua(kho):
     assert [i["f"] for i in payload["items"]] == ["d1"]
 
 
-# --- hoan_tac là NGĂN XẾP (review 24/09) -------------------------------------
+# --- hoan_tac là NGĂN XẾP -----------------------------------------------
 
 def test_hoan_tac_gop_hai_lan_lien_tiep_undo_hai_lan_khoi_phuc_ca_hai(kho):
-    """Probe review: undo lần hai từng chọn LẠI đúng dòng của lần một (không
-    phân biệt dòng đã lùi), ra `IntegrityError UNIQUE constraint failed:
-    cum_nhap.id` khi thao tác là `gop`. Ở đây gop HAI LẦN (a→b rồi b→c) — undo
-    hai lần phải trả cấu trúc về nguyên vẹn ba kiểu tách biệt."""
+    """`hoan_tac` phải chọn ĐÚNG dòng chưa lùi, không lặp lại dòng lần undo
+    trước đã lùi — lặp lại dòng đó ra `IntegrityError UNIQUE constraint
+    failed: cum_nhap.id` khi thao tác là `gop`. Ở đây gop HAI LẦN (a→b rồi
+    b→c) — undo hai lần phải trả cấu trúc về nguyên vẹn ba kiểu tách biệt."""
     db, job = kho
     lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
     models_chia.ghi_de_xuat(db, lan_id, TOI, [
@@ -597,8 +597,8 @@ def test_hoan_tac_gop_hai_lan_lien_tiep_undo_hai_lan_khoi_phuc_ca_hai(kho):
 
 
 def test_hoan_tac_doi_ten_hai_lan_lien_tiep_undo_hai_lan_ve_ten_goc(kho):
-    """`a→a2→b`, undo hai lần ⇒ về đúng `a` — probe review: undo lần hai từng
-    không lùi được cái ĐẦU TIÊN vì luôn chọn lại dòng mới nhất."""
+    """`a→a2→b`, undo hai lần ⇒ về đúng `a` — undo lần hai phải lùi được cái
+    ĐẦU TIÊN, không chọn lại dòng mới nhất mỗi lần."""
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"))
     couple_id = _nhom_id(db, lan_id, "couple")
@@ -617,10 +617,10 @@ def test_hoan_tac_doi_ten_hai_lan_lien_tiep_undo_hai_lan_ve_ten_goc(kho):
 #     thế hệ, `ghi_de_xuat` không hồi sinh lượt `huy` ----------------------------
 
 def test_ap_thao_tac_va_duyet_tu_choi_khi_luot_da_duyet(kho):
-    """Probe review: gop rồi `duyet_het` (lượt thành `da_duyet`) rồi
-    `hoan_tac` từng CHẠY ĐƯỢC — hồi sinh một kiểu nháp bên trong một lượt đã
-    báo đã duyệt xong. Giờ MỌI `ap_thao_tac`/`duyet_kieu`/`duyet_het` phải từ
-    chối một khi lượt không còn `de_xuat`."""
+    """MỌI `ap_thao_tac`/`duyet_kieu`/`duyet_het` phải từ chối một khi lượt
+    không còn `de_xuat` — thiếu chặn này thì gop rồi `duyet_het` (lượt
+    thành `da_duyet`) rồi `hoan_tac` hồi sinh một kiểu nháp bên trong một
+    lượt đã báo đã duyệt xong."""
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
     couple_id = _nhom_id(db, lan_id, "couple")
@@ -641,9 +641,9 @@ def test_ap_thao_tac_va_duyet_tu_choi_khi_luot_da_duyet(kho):
 
 
 def test_hoan_tac_khong_lui_xuyen_the_he_sau_ghi_de_xuat_moi(kho):
-    """Probe review: `xoa_kieu` rồi `ghi_de_xuat` một đề xuất MỚI (thế hệ mới)
-    rồi `hoan_tac` từng HỒI SINH kiểu của đề xuất CŨ, kéo video ra khỏi đề
-    xuất mới. `the_he` phải chặn việc lùi xuyên thế hệ."""
+    """`the_he` phải chặn việc lùi xuyên thế hệ — thiếu nó thì `xoa_kieu`
+    rồi `ghi_de_xuat` một đề xuất MỚI (thế hệ mới) rồi `hoan_tac` hồi sinh
+    kiểu của đề xuất CŨ, kéo video ra khỏi đề xuất mới."""
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job, a=("1",), b=("2",))
     couple_id = _nhom_id(db, lan_id, "couple")
@@ -957,10 +957,10 @@ def test_duyet_phat_hien_trung_cum_that_bat_ke_hoa_thuong(kho):
 # --- usecase/insight gốc trống ⇒ 400 GIỐNG NHAU ở cả hai đường duyệt -------
 
 def test_duyet_kieu_va_duyet_het_tra_loi_giong_nhau_khi_insight_trong(kho):
-    """Trước bản vá, `duyet_kieu` với usecase/insight trống đã 400 (qua
-    `kiem_nhan`), nhưng `duyet_het` lại nuốt lỗi đó vào `loi_ten` của TỪNG
-    kiểu và trả 200 — hai đường không khớp nhau cho CÙNG một đầu vào. Giờ cả
-    hai phải raise CÙNG một `ValueError`, và `duyet_het` không được có
+    """`duyet_kieu` và `duyet_het` phải raise CÙNG một `ValueError` khi
+    usecase/insight gốc trống (qua `kiem_nhan`) — nếu `duyet_het` nuốt lỗi
+    đó vào `loi_ten` của TỪNG kiểu và trả 200 thay vì raise thì hai đường
+    không khớp nhau cho CÙNG một đầu vào, và `duyet_het` không được có
     `loi_ten` cho ca này."""
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))

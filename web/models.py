@@ -203,8 +203,8 @@ _CUM_INDEX = (
 
 # Một lượt CHIA cho một JOB của một NGƯỜI. `trang_thai` đi qua
 # cho_hinh → de_xuat → da_duyet (hoặc huy bất cứ lúc nào trước da_duyet).
-# `usecase`/`insight_goc` khởi tạo từ `jobs` lúc tạo lượt (phase 5 hỏi lúc tạo
-# job) và ĐỔI được lúc chia (thao tác `doi_insight`) — cache riêng ở đây để
+# `usecase`/`insight_goc` khởi tạo từ `jobs` lúc tạo lượt (đọc từ `jobs` lúc
+# tạo job) và ĐỔI được lúc chia (thao tác `doi_insight`) — cache riêng ở đây để
 # lượt chia THỨ HAI của cùng job (nếu có) không phụ thuộc lượt đầu còn sống.
 # `phien_ban_prompt` NOT NULL: nhãn vision (`video_dac_diem`) cache theo phiên
 # bản prompt, và một lượt chia phải biết nó sinh từ phiên bản nào để biết có
@@ -271,8 +271,8 @@ CREATE TABLE IF NOT EXISTS video_dac_diem (
 # trong toàn bộ module — một dòng ghi rồi là một sự việc đã xảy ra, mãi mãi.
 # `loai` là tập ĐÓNG, kiểm ở tầng Python (`models_chia.LOAI_THAO_TAC`) chứ
 # không phải CHECK constraint: SQLite CHECK không kèm được thông báo tiếng
-# Việt rõ ràng như `ValueError`, và tập này còn có thể cần thêm giá trị ở
-# phase sau — sửa hằng số Python rẻ hơn một migration ALTER TABLE.
+# Việt rõ ràng như `ValueError`, và tập này còn có thể cần thêm giá trị về
+# sau — sửa hằng số Python rẻ hơn một migration ALTER TABLE.
 _THAO_TAC_DUYET_SCHEMA = """
 CREATE TABLE IF NOT EXISTS thao_tac_duyet (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -366,9 +366,9 @@ def init_db(db_path: Path) -> None:
         # sau). NULL cho hàng cũ trước khi cột này tồn tại; `models_chia` tự
         # có lưới an toàn (đọc `kieu` trần) cho ca đó.
         _add_column_if_missing(conn, "cum_nhap", "ten_cum", "TEXT")
-        # `usecase`/`insight_goc` hỏi lúc tạo job (phase 5); `doi_insight` ghi
-        # NGƯỢC vào đây mỗi khi sửa lúc chia, để "chia lại" đọc được giá trị
-        # mới nhất mà không phải gõ lại.
+        # `usecase`/`insight_goc` hỏi lúc tạo job; `doi_insight` ghi NGƯỢC
+        # vào đây mỗi khi sửa lúc chia, để "chia lại" đọc được giá trị mới
+        # nhất mà không phải gõ lại.
         _add_column_if_missing(conn, "jobs", "usecase", "TEXT")
         _add_column_if_missing(conn, "jobs", "insight_goc", "TEXT")
         # `videos` shipped before `music_id`/`drive_file_id` existed, so an

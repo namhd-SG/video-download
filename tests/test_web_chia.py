@@ -146,9 +146,9 @@ def test_thao_tac_route_400_khong_500_khi_thieu_truong_bat_buoc(kho, loai, tham_
 
 def test_hoan_tac_route_400_khong_500_sau_khi_kieu_da_duyet(kho):
     """`chuyen` một video khỏi "couple" rồi duyệt đúng "couple" rồi hoàn tác
-    thao tác `chuyen` đó — trước bản vá, việc này rơi xuống một
-    `sqlite3.IntegrityError` (khoá ngoại) mà route chỉ bắt `ValueError` nên
-    lộ ra thành 500. Giờ phải là 400 sạch."""
+    thao tác `chuyen` đó rơi xuống một `sqlite3.IntegrityError` (khoá
+    ngoại) — route phải bắt CẢ `IntegrityError`, không chỉ `ValueError`, để
+    trả 400 sạch thay vì lộ ra thành 500."""
     db, job = kho
     lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
     couple_id = _nhom_id(db, lan_id, "couple")
