@@ -143,7 +143,7 @@ def _khoa_ten(usecase: str, insight_con: str) -> tuple[str, str]:
 def cum_trung(conn, chu: str, usecase: str, insight_con: str,
               tru_id: int | None = None) -> int | None:
     """So trùng (usecase, insight con) trên mọi cụm THẬT của `chu` — CÔNG KHAI
-    (đổi tên từ `_cum_trung`) để `models_chia._giai_quyet_kieu` gọi thẳng hàm
+    để `models_chia._giai_quyet_kieu` gọi thẳng hàm
     này thay vì có một bản riêng có thể trôi theo thời gian (chống-trôi, xem
     docstring đầu `models_chia.py`)."""
     khoa = _khoa_ten(usecase, insight_con)
@@ -153,10 +153,6 @@ def cum_trung(conn, chu: str, usecase: str, insight_con: str,
                 r["usecase"], ten_insight_con(r["insight_goc"], r["kieu"])) == khoa:
             return int(r["id"])
     return None
-
-
-# Tên cũ giữ lại — tương thích ngược cho bất cứ chỗ nào còn gọi qua tên riêng.
-_cum_trung = cum_trung
 
 
 # Chống trùng bằng kiểm-trong-transaction, KHÔNG bằng UNIQUE index: khoá là
