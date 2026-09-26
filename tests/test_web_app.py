@@ -9,7 +9,9 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import stat
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,7 +22,11 @@ from web import lifecycle
 from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
 from web import cookies
 from web import models
+from web import models_cum
 from web.auth import require_user
+
+STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+JS_HARNESS = Path(__file__).parent / "js"
 
 
 # `nguoi_tao` arrives as a FastAPI dependency (`web.auth.require_user`), so a
@@ -119,6 +125,118 @@ def test_body_cannot_set_nguoi_tao(tmp_path, monkeypatch):
 
     job = app_mod.create_job(payload, nguoi_tao=TEST_USER)
     assert job["nguoi_tao"] == TEST_USER
+
+
+# ---------------------------------------------------------------------------
+# Phase 05: `usecase`/`insight_goc` tuỳ chọn lúc tạo job (POST /jobs).
+# ---------------------------------------------------------------------------
+
+def _payload_voi_insight(usecase: str | None = None, insight_goc: str | None = None):
+    body = {"url": "https://www.tiktok.com/music/x-1", "so_luong": 5}
+    if usecase is not None:
+        body["usecase"] = usecase
+    if insight_goc is not None:
+        body["insight_goc"] = insight_goc
+    return app_mod.CreateJobRequest.model_validate(body)
+
+
+def test_creating_a_job_with_neither_field_still_works_like_an_old_client(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+
+    job = app_mod.create_job(_payload_voi_insight(), nguoi_tao=TEST_USER)
+
+    assert job["usecase"] is None
+    assert job["insight_goc"] is None
+
+
+def test_creating_a_job_with_both_fields_stores_them_normalized(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+
+    job = app_mod.create_job(
+        _payload_voi_insight("  Dance   trend  ", "Badaboum   couple"), nguoi_tao=TEST_USER)
+
+    assert job["usecase"] == "Dance trend"
+    assert job["insight_goc"] == "Badaboum couple"
+
+
+def test_creating_a_job_with_only_usecase_leaves_insight_null(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+
+    job = app_mod.create_job(_payload_voi_insight(usecase="Dance"), nguoi_tao=TEST_USER)
+
+    assert job["usecase"] == "Dance"
+    assert job["insight_goc"] is None
+
+
+def test_creating_a_job_with_whitespace_only_fields_treats_them_as_absent(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+
+    job = app_mod.create_job(
+        _payload_voi_insight("   ", "\t\n "), nguoi_tao=TEST_USER)
+
+    assert job["usecase"] is None
+    assert job["insight_goc"] is None
+
+
+def test_an_oversized_usecase_is_a_400_and_creates_no_job_row(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+    qua_dai = "a" * (models_cum.USECASE_TOI_DA + 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.create_job(_payload_voi_insight(usecase=qua_dai), nguoi_tao=TEST_USER)
+
+    assert exc_info.value.status_code == 400
+    assert models.list_jobs(db_path, None) == []
+
+
+def test_an_oversized_insight_goc_is_a_400_and_creates_no_job_row(tmp_path, monkeypatch):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    monkeypatch.setattr(app_mod, "DB_PATH", db_path)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+    qua_dai = "a" * (models_cum.INSIGHT_CON_TOI_DA + 1)
+
+    with pytest.raises(HTTPException) as exc_info:
+        app_mod.create_job(_payload_voi_insight(insight_goc=qua_dai), nguoi_tao=TEST_USER)
+
+    assert exc_info.value.status_code == 400
+    assert models.list_jobs(db_path, None) == []
+
+
+def test_job_body_only_sends_usecase_and_insight_when_non_empty():
+    """Hàm thuần `taoJobBody` (web/static/app.js) trích ra và chạy bằng node —
+    xem `tests/js/tao-job-body.js`. SKIP (không phải fail) khi máy không có
+    `node`; đừng đọc suite xanh thành "đã kiểm" phần này khi nó SKIP."""
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần `node` để chạy hàm JS thật")
+    r = subprocess.run(
+        [node, str(JS_HARNESS / "tao-job-body.js"), str(STATIC / "app.js")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert r.returncode == 0, r.stderr
+    d = json.loads(r.stdout)
+
+    assert d["khong_dien_gi"] == {"url": "https://x", "so_luong": 5}
+    assert d["dien_ca_hai"] == {
+        "url": "https://x", "so_luong": 5, "usecase": "Dance", "insight_goc": "Badaboum"}
+    assert d["chi_usecase"] == {"url": "https://x", "so_luong": 5, "usecase": "Dance"}
+    assert d["chi_insight"] == {"url": "https://x", "so_luong": 5, "insight_goc": "Badaboum"}
 
 
 def _dependency_calls(route) -> set:

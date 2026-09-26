@@ -537,7 +537,8 @@ def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
     return da_moi
 
 
-def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
+def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
+              usecase: str | None = None, insight_goc: str | None = None) -> int:
     """Insert a pending job. `so_luong` (what the user asked for) IS `tong`,
     and nothing overwrites it afterwards.
 
@@ -549,12 +550,17 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str) -> int:
     the number they typed, and overwriting `tong` was the only place it was
     kept, so it was not merely hidden: it was gone.
 
-    The count actually found now lands in `tim_thay` (see `set_job_found`)."""
+    The count actually found now lands in `tim_thay` (see `set_job_found`).
+
+    `usecase`/`insight_goc` tuỳ chọn (mặc định `None`) — hỏi lúc tạo job để
+    `chia_lan` sau này có sẵn giá trị mà không phải gõ lại (xem dòng
+    `_add_column_if_missing(conn, "jobs", "usecase", ...)` phía trên). Client
+    cũ không gửi hai trường này vẫn tạo job như trước."""
     with _connect(db_path) as conn:
         cur = conn.execute(
-            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao) "
-            "VALUES (?, 'pending', ?, 0, 0, ?, ?)",
-            (url, so_luong, _now(), nguoi_tao),
+            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao, "
+            "usecase, insight_goc) VALUES (?, 'pending', ?, 0, 0, ?, ?, ?, ?)",
+            (url, so_luong, _now(), nguoi_tao, usecase, insight_goc),
         )
         job_id = cur.lastrowid
     assert job_id is not None
