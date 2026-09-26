@@ -407,3 +407,58 @@ def test_payload_server_khop_byte_voi_ban_js_cu_tren_cung_cum(kho):
         cu = _payload_kieu_cu_qua_js_that(db, cum_id, TOI, thu, models_cum.LO_TOI_DA)
         moi = _py_json_compact(app_mod.payload_lo_cum(cum_id, thu, nguoi_tao=TOI))
         assert moi == cu, f"lô {thu}: payload server phải byte-equal với bản JS cũ"
+
+
+# --- id số nguyên ngoài miền SQLite ⇒ 422, không 500 --------------------------
+
+def _post_asgi(path: str, body: dict) -> int:
+    """Gửi MỘT request POST thẳng vào ứng dụng ASGI (venv không có httpx cho
+    TestClient) — đi qua đúng tầng parse body của FastAPI, nơi sinh ra 422.
+    Lỗi không bắt được trong route vẫn được `ServerErrorMiddleware` trả 500
+    trước khi ném lại; bắt nó ở đây để đọc được mã trạng thái đã gửi."""
+    import asyncio
+
+    gui: list[dict] = []
+
+    async def nhan():
+        return {"type": "http.request", "body": json.dumps(body).encode(), "more_body": False}
+
+    async def gui_di(tin):
+        gui.append(tin)
+
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+             "method": "POST", "scheme": "http", "path": path, "raw_path": path.encode(),
+             "query_string": b"", "root_path": "", "client": ("test", 1),
+             "server": ("test", 80), "headers": [(b"content-type", b"application/json")]}
+    app_mod.app.dependency_overrides[require_user] = lambda: TOI
+    try:
+        asyncio.run(app_mod.app(scope, nhan, gui_di))
+    except Exception:  # noqa: BLE001 — lỗi route đã được trả 500 ở trên, xem docstring
+        pass
+    finally:
+        app_mod.app.dependency_overrides.pop(require_user, None)
+    return next(t["status"] for t in gui if t["type"] == "http.response.start")
+
+
+@pytest.mark.parametrize("duong,than", [
+    ("thao-tac", {"loai": "chap_nhan", "cum_nhap_id": 2 ** 70}),
+    ("thao-tac", {"loai": "gop", "tu_cum_nhap_id": 2 ** 70, "den_cum_nhap_id": 1}),
+    ("thao-tac", {"loai": "chuyen", "video_ids": ["1"], "den_cum_nhap_id": 2 ** 70}),
+    ("thao-tac", {"loai": "chap_nhan", "cum_nhap_id": 0}),
+    ("duyet", {"cum_nhap_id": 2 ** 70}),
+    ("duyet", {"xac_nhan_gop": [2 ** 70]}),
+])
+def test_id_ngoai_mien_sqlite_tra_422_khong_500(kho, duong, than):
+    """Id lớn hơn INTEGER 64-bit của SQLite từng tới tận câu SQL ⇒
+    `OverflowError` ⇒ 500. Id phải bị chặn ở tầng request (≥1, ≤ 2**63-1)."""
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    assert _post_asgi(f"/chia/{lan_id}/{duong}", than) == 422
+
+
+def test_id_hop_le_qua_asgi_van_200(kho):
+    """Đối chứng dương cho `_post_asgi`: cùng đường gọi, id thật ⇒ 200."""
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    assert _post_asgi(f"/chia/{lan_id}/thao-tac",
+                      {"loai": "chap_nhan", "cum_nhap_id": _nhom_id(db, lan_id, "couple")}) == 200

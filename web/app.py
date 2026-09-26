@@ -15,6 +15,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
@@ -795,11 +796,17 @@ def payload_lo_cum(cum_id: int, thu: int,
 # câu chữ với lượt không tồn tại (như cụm ở trên).
 # ---------------------------------------------------------------------------
 
+# Id của một hàng SQLite: INTEGER 64-bit có dấu, rowid luôn ≥1. Không chặn ở
+# đây thì một số lớn hơn (JSON cho phép) tới tận câu SQL và `sqlite3` ném
+# `OverflowError` ⇒ 500; chặn ở tầng request ⇒ 422 như mọi lỗi hình dạng khác.
+IdSqlite = Annotated[int, Field(ge=1, le=2 ** 63 - 1)]
+
+
 class ThaoTacChiaRequest(BaseModel):
     loai: str
-    cum_nhap_id: int | None = None
-    tu_cum_nhap_id: int | None = None
-    den_cum_nhap_id: int | None = None
+    cum_nhap_id: IdSqlite | None = None
+    tu_cum_nhap_id: IdSqlite | None = None
+    den_cum_nhap_id: IdSqlite | None = None
     video_ids: list[str] | None = None
     nhom: str | None = None
     kieu: str | None = None
@@ -809,14 +816,14 @@ class ThaoTacChiaRequest(BaseModel):
 
 class DuyetChiaRequest(BaseModel):
     # `None` ⇒ duyệt HẾT phần còn lại của lượt; số ⇒ duyệt đúng MỘT kiểu.
-    cum_nhap_id: int | None = None
+    cum_nhap_id: IdSqlite | None = None
     # Tuỳ chọn — usecase/insight gửi kèm lúc duyệt: có ⇒ ghi như một
     # `doi_insight` TRONG CÙNG transaction duyệt rồi dùng; không có ⇒ đọc từ
     # `chia_lan`.
     usecase: str | None = None
     insight_goc: str | None = None
     # Id các cụm có sẵn người dùng đã XÁC NHẬN muốn gộp vào.
-    xac_nhan_gop: list[int] = []
+    xac_nhan_gop: list[IdSqlite] = []
 
 
 @app.get("/chia/{job_id}")

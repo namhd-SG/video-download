@@ -15,6 +15,7 @@ tác bị lùi trỏ tới một `cum_nhap` đã bị xoá thật lúc duyệt).
 Thân chung: `{"loai": <một trong 10>, ...trường riêng}`. Trường không liệt kê cho `loai` đó thì bị bỏ qua. Lượt không phải của người gọi (admin GHI/SỬA/DUYỆT cũng tính là "không phải" — admin chỉ XEM được qua `GET /chia/{job_id}`, không sửa/duyệt thay ai) ⇒ 404.
 
 Mã lỗi validate — BA ca khác nhau, ĐỪNG gộp:
+- **Sai hình dạng body** (FastAPI/pydantic, trước khi tới model) ⇒ **422** — gồm mọi trường id (`cum_nhap_id`, `tu_cum_nhap_id`, `den_cum_nhap_id`, phần tử `xac_nhan_gop` ở `/duyet`) ngoài khoảng `1..2**63-1` (INTEGER 64-bit của SQLite).
 - **Thiếu HẲN một trường bắt buộc** (route lọc `None` khỏi payload trước khi tới model, nên "thiếu" và "gửi `null`" là một) ⇒ **400**, kèm câu nói rõ tên trường.
 - **Lượt không đang ở `trang_thai = 'de_xuat'`** (chưa có đề xuất / đã duyệt xong / đã huỷ) ⇒ **400**, kèm câu nói rõ trạng thái hiện tại. Áp cho MỌI `loai`, kể cả `hoan_tac`.
 - **Trường có mặt nhưng giá trị không trỏ tới gì thật** trong lượt (id không tồn tại/không thuộc lượt) ⇒ **409** — trừ RIÊNG `hoan_tac` "không còn gì để lùi", ca đó trả **400** (đây là trạng thái bình thường người dùng tự chạm tới bằng cách bấm hoài, không phải xung đột với ai).
