@@ -132,7 +132,7 @@ def test_doi_trang_giu_lua_chon_va_dem_ngoai_trang(page):
     assert page.is_visible("#selection-bar")
     assert _so_da_chon(page) == "40 đã chọn"
     assert _chon(page) == 0, "trang 2 chưa chọn thẻ nào"
-    assert page.inner_text("#selection-ngoai") == "· 40 ở trang khác"
+    assert page.inner_text("#selection-ngoai") == "· 40 không hiện ở trang này"
     assert "Đã bỏ chọn" not in page.inner_text("#toast")
     _bam_trang(page, 1)
     assert _chon(page) == 40 and page.inner_text("#selection-ngoai") == ""
@@ -145,7 +145,7 @@ def test_doi_so_moi_trang_giu_lua_chon(page):
     assert _the(page) == 30
     assert _so_da_chon(page) == "40 đã chọn"
     assert _chon(page) == 30
-    assert page.inner_text("#selection-ngoai") == "· 10 ở trang khác"
+    assert page.inner_text("#selection-ngoai") == "· 10 không hiện ở trang này"
     page.evaluate("localStorage.removeItem('videodl-per-page')")
 
 
@@ -158,7 +158,7 @@ def test_xoa_khi_co_video_o_trang_khac_hoi_kem_so(page):
     page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
     page.click("#selection-bar [data-action='loai']")
     assert cau and cau[0].startswith("Bỏ 41 video")
-    assert "40 video ở trang khác" in cau[0]
+    assert "40 video không hiện ở trang này" in cau[0]
     assert _so_da_chon(page) == "41 đã chọn", "bấm Huỷ thì không đụng lựa chọn"
 
 
@@ -168,7 +168,7 @@ def test_dua_vao_cum_khi_co_video_o_trang_khac_hoi_truoc(page):
     cau = []
     page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
     page.click("#selection-bar [data-action='cum']")
-    assert cau and "40 video ở trang khác" in cau[0]
+    assert cau and "40 video không hiện ở trang này" in cau[0]
     assert page.is_hidden("#cum-popover"), "Huỷ ⇒ không mở hộp gán cụm"
 
 
@@ -201,3 +201,20 @@ def test_doi_bo_loc_ve_trang_1_va_giu_lua_chon(page):
     page.click('#filter-bar input[data-group="thi_truong"][value="VN"]')
     assert "Hiện 1–40 / 60 video" in page.inner_text("#lib-pager-dem"), "phải về trang 1"
     assert _so_da_chon(page) == "1 đã chọn", "đổi bộ lọc không được xoá lựa chọn"
+
+
+def test_bam_them_the_o_trang_2_giu_so_khong_hien(page):
+    page.click("#chon-trang")
+    _bam_trang(page, 2)
+    page.locator("#card-grid .card").first.click()
+    assert _so_da_chon(page) == "41 đã chọn"
+    assert page.inner_text("#selection-ngoai") == "· 40 không hiện ở trang này"
+
+
+def test_video_bi_bo_loc_an_cung_tinh_la_khong_hien(page):
+    """Chọn ở trang 1 (VN) rồi lọc US ⇒ các thẻ đã chọn không nằm ở trang nào của bộ lọc."""
+    page.locator("#card-grid .card").first.click()
+    page.click('#filter-bar [data-toggle="thi_truong"]')
+    page.click('#filter-bar input[data-group="thi_truong"][value="US"]')
+    assert _so_da_chon(page) == "1 đã chọn"
+    assert page.inner_text("#selection-ngoai") == "· 1 không hiện ở trang này"

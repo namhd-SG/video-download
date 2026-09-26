@@ -1965,6 +1965,6 @@ def test_giu_chon_xuyen_trang_ham_thuan():
     do = json.loads(r.stdout)
     assert do["so_moi_trang"] == [10, 20, 30, 40, 100]
     assert (do["ngoai_0"], do["ngoai_2"], do["ngoai_rong"]) == (0, 2, 0)
-    assert do["nhan_0"] == "" and do["nhan_2"] == "· 2 ở trang khác"
+    assert do["nhan_0"] == "" and do["nhan_2"] == "· 2 không hiện ở trang này"
     assert do["dong_0"] == ""
-    assert "2 video ở trang khác" in do["dong_2"]
+    assert "2 video không hiện ở trang này" in do["dong_2"]

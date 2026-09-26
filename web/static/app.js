@@ -501,8 +501,11 @@
   // Đổi trang / đổi số mỗi trang GIỮ lựa chọn (user 26/09: "khi tôi chọn tôi mở
   // qua trang mới không bị mất chọn"; đổi số/trang: "giữ"). Bản 23/09 xoá lựa chọn
   // vì người ta không thấy thẻ đã chọn ở trang kia — cái giá đó giờ trả bằng
-  // CON SỐ: thanh chọn nói bao nhiêu video nằm ở trang khác, và thao tác hàng
-  // loạt nhắc lại con số đó trước khi chạy. "Chọn tất cả" vẫn chỉ là trang đang xem.
+  // CON SỐ: thanh chọn nói bao nhiêu video đã chọn KHÔNG hiện ở trang này (ở
+  // trang khác, hoặc đang bị bộ lọc ẩn — bộ lọc vốn giữ lựa chọn), và Xoá / Đưa
+  // vào cụm nhắc lại con số đó trước khi chạy. "Tạo bộ tự tìm" không hỏi: nó
+  // không ghi gì, và Creative Desk hiện đủ danh sách trước khi tạo bộ.
+  // "Chọn tất cả" vẫn chỉ là trang đang xem.
   //
   // Hàm thuần — test gọi thẳng.
   function demNgoaiTrang(selected, idTrang) {
@@ -513,14 +516,14 @@
   }
 
   function nhanNgoaiTrang(soNgoai) {
-    return soNgoai > 0 ? `· ${soNgoai} ở trang khác` : "";
+    return soNgoai > 0 ? `· ${soNgoai} không hiện ở trang này` : "";
   }
 
   // Dòng chèn vào hộp xác nhận của thao tác hàng loạt; rỗng khi mọi video đã
   // chọn đang nằm trên màn hình.
   function dongNgoaiTrang(soNgoai) {
     return soNgoai > 0
-      ? `\n\nTrong đó ${soNgoai} video ở trang khác (bạn không thấy trên màn hình).`
+      ? `\n\nTrong đó ${soNgoai} video không hiện ở trang này (ở trang khác hoặc đang bị bộ lọc ẩn).`
       : "";
   }
 
@@ -1515,6 +1518,11 @@
 
     state.videos = videos;
     state.videosTotal = tong;
+    // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
+    // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị
+    // đếm vào "không hiện ở trang này" và vào số của hộp xác nhận Xoá.
+    const conLai = new Set(videos.map((v) => v.video_id));
+    for (const id of [...state.selected]) if (!conLai.has(id)) state.selected.delete(id);
     // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
     // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
     try {
