@@ -1,0 +1,266 @@
+{
+  "nhom": {
+    "Hướng dẫn": [
+      "Hướng dẫn"
+    ],
+    "Không có đám đông": [
+      "Không có đám đông"
+    ],
+    "Trang phục vest": [
+      "Vest công sở",
+      "Vest học sinh",
+      "Vest cách điệu"
+    ],
+    "Đồng phục": [
+      "Đồ bảo hộ",
+      "Đồ thể thao",
+      "Đồ thường ngày"
+    ],
+    "Truyền thống": [
+      "Cổ trang",
+      "Đồ dân tộc"
+    ],
+    "Hoá trang": [
+      "Mặt nạ",
+      "Khác"
+    ]
+  },
+  "gan": {
+    "7686170723815083285": {
+      "nhom": "Hoá trang",
+      "kieu": "Khác"
+    },
+    "7686280242817731871": {
+      "nhom": "Truyền thống",
+      "kieu": "Cổ trang"
+    },
+    "7686331164444953876": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7686380269934333202": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7686405805490408725": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7686475023606910215": {
+      "nhom": "Hoá trang",
+      "kieu": "Mặt nạ"
+    },
+    "7686534009773444382": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7686537023670308103": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7686573852385611016": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7686579808486116629": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7686632652488772887": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7686672955144801537": {
+      "nhom": "Hoá trang",
+      "kieu": "Mặt nạ"
+    },
+    "7686694825210662152": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7686746412905778452": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest học sinh"
+    },
+    "7686794180605021453": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest học sinh"
+    },
+    "7686827157439515922": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7686838102446411015": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7686843006581837074": {
+      "nhom": "Không có đám đông",
+      "kieu": "Không có đám đông"
+    },
+    "7686887835638484240": {
+      "nhom": "Hoá trang",
+      "kieu": "Mặt nạ"
+    },
+    "7686921736331332896": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7686941575322045717": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7687000380877671713": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7687086121490173185": {
+      "nhom": "Hoá trang",
+      "kieu": "Mặt nạ"
+    },
+    "7687207711628479751": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7687261960915684638": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7687315024196537630": {
+      "nhom": "Hoá trang",
+      "kieu": "Mặt nạ"
+    },
+    "7687323486506781972": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7687455712745655573": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ thường ngày"
+    },
+    "7687458202195103006": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7687493146506300690": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest công sở"
+    },
+    "7687556707928575253": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687570893253463328": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687675428072410382": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7687685379742272789": {
+      "nhom": "Truyền thống",
+      "kieu": "Cổ trang"
+    },
+    "7687702661428235538": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687806395353238805": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7687812097203277076": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687817736050756878": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687844626786553109": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687906080608898311": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7687924168012139790": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7687924644233350431": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7687934866813357325": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7687956979574131998": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7687965285998923039": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ thể thao"
+    },
+    "7687970699100572944": {
+      "nhom": "Không có đám đông",
+      "kieu": "Không có đám đông"
+    },
+    "7687988188853472535": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7687990418155375885": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ thể thao"
+    },
+    "7687991048236207390": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7687997278975577374": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest học sinh"
+    },
+    "7687998056603634957": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    },
+    "7688000680983842061": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ thường ngày"
+    },
+    "7688002125003099400": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ thường ngày"
+    },
+    "7688041508334882080": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7688041956261350688": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7688046245121740045": {
+      "nhom": "Đồng phục",
+      "kieu": "Đồ bảo hộ"
+    },
+    "7688046268425293087": {
+      "nhom": "Trang phục vest",
+      "kieu": "Vest cách điệu"
+    },
+    "7688105630527261959": {
+      "nhom": "Hướng dẫn",
+      "kieu": "Hướng dẫn"
+    },
+    "7688273667091942686": {
+      "nhom": "Truyền thống",
+      "kieu": "Đồ dân tộc"
+    }
+  }
+}

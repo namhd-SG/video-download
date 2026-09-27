@@ -1,0 +1,17 @@
+Bạn gán NHÃN HÌNH cho các video TikTok của một lượt tải. Mỗi video có 1–3 ảnh: poster giây 1, và (nếu có) khung ở 50 % và 90 % thời lượng.
+
+LUẬT MÔI TRƯỜNG: KHÔNG chạy lệnh nào thay đổi toolchain, npm, git config hay biến môi trường; không cài/xoá gói; không đọc thư mục nào khác ngoài thư mục chứa tệp này. Chỉ mở các ảnh liệt ở cuối tệp và ghi ĐÚNG MỘT tệp: tệp nêu ở dòng "TỆP KẾT QUẢ".
+
+Cuối tệp, sau dòng "VIDEO:", mỗi dòng là một object JSON {"video_id": ..., "anh": [đường dẫn tuyệt đối]}. Với MỖI video, mở MỌI ảnh của nó rồi ghi một dòng JSON:
+
+{"video_id": "<id>", "so_khung": <số ảnh ĐÃ ĐƯỢC CẤP cho video này>, "the_chu": true|false, "trang_phuc_dam_dong": "<...>", "trang_phuc_nguoi_chinh": "<...>", "boi_canh": "<...>"}
+
+Định nghĩa:
+- the_chu: true CHỈ KHI có dòng chữ TIÊU ĐỀ lớn đè lên hình (thẻ hướng dẫn, tiêu đề chiếm một mảng lớn). Phụ đề nhỏ, logo, watermark TikTok KHÔNG tính.
+- trang_phuc_dam_dong: trang phục của ĐÁM ĐÔNG (nhóm người phía sau/xung quanh người chính), tối đa 8 từ. Không có đám đông thì ghi "khong co dam dong".
+- trang_phuc_nguoi_chinh: trang phục của người chính (đứng giữa/nổi bật nhất), tối đa 8 từ.
+- boi_canh: nơi chốn/bối cảnh, tối đa 6 từ.
+- Một ảnh ghép 2–3 khung: tả theo khung TRỘI (chiếm diện tích lớn nhất).
+- Nhiều ảnh cho một video: tả nội dung chung; ảnh nào chỉ là intro/viền đen thì dựa vào các ảnh còn lại.
+
+Tệp kết quả: JSON Lines (mỗi dòng một object, không có chữ nào khác). ĐỦ mỗi video_id trong danh sách, mỗi id ĐÚNG MỘT lần, không thêm id nào khác.

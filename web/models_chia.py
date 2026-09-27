@@ -27,7 +27,7 @@ import json
 import re
 from pathlib import Path
 
-from web import models_cum
+from web import models_cum, models_dac_diem
 from web.models import _connect, _now
 
 # Tập ĐÓNG cho `chia_lan.trang_thai`, `video_cum_nhap.lan` và
@@ -71,17 +71,22 @@ def tao_chia_lan(db_path: Path, job_id: int, chu: str, phien_ban_prompt: str,
     `lay_chia_theo_job(la_admin=True)`, nhưng không tạo/sửa/duyệt thay).
     """
     with _connect(db_path) as conn:
-        job = conn.execute("SELECT usecase, insight_goc, nguoi_tao FROM jobs WHERE id = ?",
-                           (job_id,)).fetchone()
-        if job is None or job["nguoi_tao"] != chu:
-            return None
-        usecase = job["usecase"]
-        insight_goc = job["insight_goc"]
-        cur = conn.execute(
-            "INSERT INTO chia_lan (job_id, chu, trang_thai, truc, usecase, insight_goc, "
-            "phien_ban_prompt, tao_luc) VALUES (?, ?, 'cho_hinh', ?, ?, ?, ?, ?)",
-            (job_id, chu, truc, usecase, insight_goc, phien_ban_prompt, _now()))
-        return int(cur.lastrowid)
+        return _tao_chia_lan_tren(conn, job_id, chu, phien_ban_prompt, truc)
+
+
+def _tao_chia_lan_tren(conn, job_id: int, chu: str, phien_ban_prompt: str,
+                       truc: str | None) -> int | None:
+    """Thân của `tao_chia_lan` trên một kết nối CÓ SẴN — để `nhap_de_xuat`
+    tạo lượt và ghi nháp trong CÙNG một transaction."""
+    job = conn.execute("SELECT usecase, insight_goc, nguoi_tao FROM jobs WHERE id = ?",
+                       (job_id,)).fetchone()
+    if job is None or job["nguoi_tao"] != chu:
+        return None
+    cur = conn.execute(
+        "INSERT INTO chia_lan (job_id, chu, trang_thai, truc, usecase, insight_goc, "
+        "phien_ban_prompt, tao_luc) VALUES (?, ?, 'cho_hinh', ?, ?, ?, ?, ?)",
+        (job_id, chu, truc, job["usecase"], job["insight_goc"], phien_ban_prompt, _now()))
+    return int(cur.lastrowid)
 
 
 def ghi_de_xuat(db_path: Path, chia_lan_id: int, chu: str, nhoms: list[dict],
@@ -106,70 +111,195 @@ def ghi_de_xuat(db_path: Path, chia_lan_id: int, chu: str, nhoms: list[dict],
     """
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        lan = _lan_cua_toi(conn, chia_lan_id, chu)
-        if lan is None:
-            return None
-        if lan["trang_thai"] in ("da_duyet", "huy"):
-            raise ValueError(
-                f"lượt này đã '{lan['trang_thai']}' — không ghi đè nháp lên kết quả đã chốt")
+        return _ghi_de_xuat_tren(conn, chia_lan_id, chu, nhoms, huong_dan, nghi)
 
-        da_o_cum: set[str] = set()
+
+def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
+                      huong_dan: list[str] | None, nghi: list[str] | None) -> dict | None:
+    """Thân của `ghi_de_xuat` trên một kết nối ĐÃ mở transaction ghi — người
+    gọi lo `BEGIN IMMEDIATE`/commit."""
+    lan = _lan_cua_toi(conn, chia_lan_id, chu)
+    if lan is None:
+        return None
+    if lan["trang_thai"] in ("da_duyet", "huy"):
+        raise ValueError(
+            f"lượt này đã '{lan['trang_thai']}' — không ghi đè nháp lên kết quả đã chốt")
+
+    da_o_cum: set[str] = set()
+
+    def loc(ids):
+        ra = []
+        for vid in dict.fromkeys(ids or []):
+            if conn.execute("SELECT 1 FROM video_cum WHERE video_id = ? AND chu = ?",
+                            (vid, chu)).fetchone():
+                da_o_cum.add(vid)
+            else:
+                ra.append(vid)
+        return ra
+
+    # "Thay toàn bộ": xoá nháp cũ của lượt này trước khi ghi nháp mới —
+    # `ghi_de_xuat` là lần chạy tầng hình MỚI NHẤT thắng, không cộng dồn.
+    conn.execute("DELETE FROM video_cum_nhap WHERE chia_lan_id = ?", (chia_lan_id,))
+    conn.execute("DELETE FROM cum_nhap WHERE chia_lan_id = ?", (chia_lan_id,))
+
+    thu_tu = 0
+    for nhom in nhoms:
+        for kieu in nhom.get("kieu", []):
+            ids = loc(kieu.get("video_ids", []))
+            if not ids:
+                # Kiểu rỗng sau khi lọc KHÔNG vào nháp: nó không có gì để
+                # duyệt, và nếu nằm lại nó vẫn tham gia luật va chạm tên
+                # (`_chot_ten_moi_kieu`) — ép tiền tố nhóm/hậu tố số lên
+                # một kiểu thật trùng tên với nó.
+                continue
+            cur = conn.execute(
+                "INSERT INTO cum_nhap (chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?)",
+                (chia_lan_id, nhom["nhom"], kieu["kieu"], thu_tu))
+            thu_tu += 1
+            # `ON CONFLICT` giữ đúng luật "một video một chỗ trong một
+            # lượt" NGAY CẢ KHI lời gọi này tự liệt một video ở hai
+            # nhóm/làn — phần liệt SAU thắng, khớp cách PK sẽ xử nếu
+            # ai đó chèn tay hai lần.
+            conn.executemany(
+                "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
+                "VALUES (?, ?, ?, 'kieu') "
+                "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
+                "cum_nhap_id = excluded.cum_nhap_id, lan = excluded.lan",
+                [(vid, chia_lan_id, int(cur.lastrowid)) for vid in ids])
+
+    for lan_ten, nguon in (("huong_dan", huong_dan), ("nghi", nghi)):
+        ids = loc(nguon)
+        if ids:
+            conn.executemany(
+                "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
+                "VALUES (?, ?, NULL, ?) "
+                "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
+                "cum_nhap_id = NULL, lan = excluded.lan",
+                [(vid, chia_lan_id, lan_ten) for vid in ids])
+
+    # Bump `the_he`: một đề xuất MỚI mở một thế hệ mới — `hoan_tac` sau
+    # đây (H2b) chỉ được lùi thao tác của thế hệ HIỆN TẠI, không được lùi
+    # xuyên qua đề xuất vừa bị GHI ĐÈ ở trên (dữ liệu của thế hệ cũ đã bị
+    # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác).
+    conn.execute(
+        "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1 WHERE id = ?",
+        (chia_lan_id,))
+    # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_chot_ten_moi_kieu`.
+    _chot_ten_moi_kieu(conn, chia_lan_id)
+    return {"da_o_cum": sorted(da_o_cum)}
+
+
+# ---------------------------------------------------------------------------
+# Video nào được vào một lượt chia + nhập đề xuất của tầng hình (CLI trên mini)
+# ---------------------------------------------------------------------------
+
+# Điều kiện SQL (trên `videos` bí danh `v`) quyết định video nào của một job
+# được đưa vào một lượt chia — MỘT chỗ cho mọi nơi hỏi câu đó: liệt video gửi
+# tầng hình phân tích (ảnh rời máy), và lọc id lúc nhập nháp. Mỗi mục là
+# `(lý do bị loại, điều kiện để ĐƯỢC vào)`; lý do dùng để đếm trong báo cáo.
+# Loại thêm một loại video khỏi lượt chia = thêm MỘT dòng vào tuple này; vd
+# khi có cột mốc video đã dọn khỏi Drive thì thêm dòng
+# `("da_don_drive", "v.drive_don_luc IS NULL"),`.
+# `da_o_cum`: video đã nằm trong một cụm THẬT của CHỦ JOB (người chia lượt
+# này — cùng luật sở hữu với `ghi_de_xuat`) không được phân tích lại: duyệt
+# không bao giờ chuyển nó, nên gửi ảnh nó đi chỉ tốn tiền và để ảnh rời máy vô
+# ích. `ghi_de_xuat::loc` vẫn tự kiểm lại (hai nháp song song).
+DIEU_KIEN_VAO_LUOT_CHIA = (
+    ("da_loai", "v.da_loai_luc IS NULL"),
+    ("da_o_cum", "NOT EXISTS (SELECT 1 FROM video_cum vc JOIN jobs jc ON jc.id = v.job_id "
+                 "WHERE vc.video_id = v.video_id AND vc.chu = jc.nguoi_tao)"),
+)
+
+
+def video_vao_luot_chia(conn, job_id: int) -> list:
+    """Các video của `job_id` được đưa vào lượt chia (lọc theo
+    `DIEU_KIEN_VAO_LUOT_CHIA`), cũ nhất trước. Hàng có `video_id`,
+    `description`."""
+    dieu_kien = " AND ".join(("v.job_id = ?", *(d for _, d in DIEU_KIEN_VAO_LUOT_CHIA)))
+    return conn.execute(
+        f"SELECT v.video_id, v.description FROM videos v WHERE {dieu_kien} "
+        "ORDER BY v.tao_luc, v.video_id", (job_id,)).fetchall()
+
+
+def dem_bi_loc_theo_ly_do(conn, job_id: int) -> dict[str, int]:
+    """`{lý do: số video của job KHÔNG qua điều kiện đó}` — một video trượt
+    hai điều kiện được đếm ở cả hai."""
+    return {ly_do: conn.execute(f"SELECT COUNT(*) FROM videos v WHERE v.job_id = ? "
+                                f"AND NOT ({d})", (job_id,)).fetchone()[0]
+            for ly_do, d in DIEU_KIEN_VAO_LUOT_CHIA}
+
+
+class NhapBiChan(ValueError):
+    """Lượt chia hiện tại của job không nhận đề xuất mới — ghi đè sẽ xoá công
+    người dùng đã bỏ ra trên nháp."""
+
+
+def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | None,
+                 nhoms: list[dict], huong_dan: list[str], nghi: list[str],
+                 dac_diem: list[dict]) -> dict | None:
+    """Nhập MỘT đề xuất của tầng hình cho `job_id`, trong MỘT transaction:
+    chọn/tạo lượt chia, ghi cache nhãn (`models_dac_diem`), ghi nháp
+    (`ghi_de_xuat`). Trượt ở bất kỳ bước nào ⇒ không ghi gì.
+
+    Người chia = người tạo job (chỉ chủ job chia được job của mình).
+
+    Chọn lượt: lượt MỚI NHẤT của chủ job đang `cho_hinh`, hoặc đang `de_xuat`
+    mà CHƯA có dòng nhật ký nào ⇒ dùng lại (nháp mới thay nháp cũ). Đang
+    `de_xuat` và ĐÃ có nhật ký (người dùng đã sửa/duyệt một phần) ⇒
+    `NhapBiChan`. Không có lượt, hoặc lượt mới nhất đã `da_duyet`/`huy` ⇒ mở
+    lượt mới ("chia lại").
+
+    Id không thuộc job ⇒ `ValueError` (tệp sai, không phải chuyện lọc). Id của
+    job nhưng bị `DIEU_KIEN_VAO_LUOT_CHIA` loại (vd vừa bị loại sau lúc liệt)
+    ⇒ bỏ khỏi nháp, trả ở `bo_vi_loc`. `None` ⇒ không có job.
+    """
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        job = conn.execute("SELECT nguoi_tao FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if job is None:
+            return None
+        chu = job["nguoi_tao"]
+        cua_job = {r["video_id"] for r in conn.execute(
+            "SELECT video_id FROM videos WHERE job_id = ?", (job_id,)).fetchall()}
+        duoc_vao = {r["video_id"] for r in video_vao_luot_chia(conn, job_id)}
+
+        moi_id = [v for n in nhoms for k in n["kieu"] for v in k["video_ids"]]
+        moi_id += [*huong_dan, *nghi, *(d["video_id"] for d in dac_diem)]
+        la = sorted(set(moi_id) - cua_job)
+        if la:
+            raise ValueError(f"{len(la)} id không thuộc job {job_id}: {', '.join(la[:10])}")
+        bo_vi_loc = sorted((set(moi_id) & cua_job) - duoc_vao)
 
         def loc(ids):
-            ra = []
-            for vid in dict.fromkeys(ids or []):
-                if conn.execute("SELECT 1 FROM video_cum WHERE video_id = ? AND chu = ?",
-                                (vid, chu)).fetchone():
-                    da_o_cum.add(vid)
-                else:
-                    ra.append(vid)
-            return ra
+            return [v for v in ids if v in duoc_vao]
 
-        # "Thay toàn bộ": xoá nháp cũ của lượt này trước khi ghi nháp mới —
-        # `ghi_de_xuat` là lần chạy tầng hình MỚI NHẤT thắng, không cộng dồn.
-        conn.execute("DELETE FROM video_cum_nhap WHERE chia_lan_id = ?", (chia_lan_id,))
-        conn.execute("DELETE FROM cum_nhap WHERE chia_lan_id = ?", (chia_lan_id,))
+        nhoms = [{"nhom": n["nhom"], "kieu": [{"kieu": k["kieu"], "video_ids": loc(k["video_ids"])}
+                                              for k in n["kieu"]]} for n in nhoms]
 
-        thu_tu = 0
-        for nhom in nhoms:
-            for kieu in nhom.get("kieu", []):
-                ids = loc(kieu.get("video_ids", []))
-                cur = conn.execute(
-                    "INSERT INTO cum_nhap (chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?)",
-                    (chia_lan_id, nhom["nhom"], kieu["kieu"], thu_tu))
-                thu_tu += 1
-                if ids:
-                    # `ON CONFLICT` giữ đúng luật "một video một chỗ trong một
-                    # lượt" NGAY CẢ KHI lời gọi này tự liệt một video ở hai
-                    # nhóm/làn — phần liệt SAU thắng, khớp cách PK sẽ xử nếu
-                    # ai đó chèn tay hai lần.
-                    conn.executemany(
-                        "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
-                        "VALUES (?, ?, ?, 'kieu') "
-                        "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
-                        "cum_nhap_id = excluded.cum_nhap_id, lan = excluded.lan",
-                        [(vid, chia_lan_id, int(cur.lastrowid)) for vid in ids])
+        lan = conn.execute(
+            "SELECT id, trang_thai FROM chia_lan WHERE job_id = ? AND chu = ? "
+            "ORDER BY tao_luc DESC, id DESC LIMIT 1", (job_id, chu)).fetchone()
+        dung_lai = None
+        if lan is not None and lan["trang_thai"] in ("cho_hinh", "de_xuat"):
+            so_thao_tac = conn.execute("SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ?",
+                                       (lan["id"],)).fetchone()[0]
+            if lan["trang_thai"] == "de_xuat" and so_thao_tac:
+                raise NhapBiChan(
+                    f"lượt {lan['id']} đã có {so_thao_tac} thao tác sửa/duyệt — không ghi đè nháp")
+            dung_lai = int(lan["id"])
+        if dung_lai is not None:
+            chia_lan_id = dung_lai
+            conn.execute("UPDATE chia_lan SET phien_ban_prompt = ?, truc = ? WHERE id = ?",
+                         (phien_ban_prompt, truc, chia_lan_id))
+        else:
+            chia_lan_id = _tao_chia_lan_tren(conn, job_id, chu, phien_ban_prompt, truc)
 
-        for lan_ten, nguon in (("huong_dan", huong_dan), ("nghi", nghi)):
-            ids = loc(nguon)
-            if ids:
-                conn.executemany(
-                    "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
-                    "VALUES (?, ?, NULL, ?) "
-                    "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
-                    "cum_nhap_id = NULL, lan = excluded.lan",
-                    [(vid, chia_lan_id, lan_ten) for vid in ids])
-
-        # Bump `the_he`: một đề xuất MỚI mở một thế hệ mới — `hoan_tac` sau
-        # đây (H2b) chỉ được lùi thao tác của thế hệ HIỆN TẠI, không được lùi
-        # xuyên qua đề xuất vừa bị GHI ĐÈ ở trên (dữ liệu của thế hệ cũ đã bị
-        # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác).
-        conn.execute(
-            "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1 WHERE id = ?",
-            (chia_lan_id,))
-        # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_chot_ten_moi_kieu`.
-        _chot_ten_moi_kieu(conn, chia_lan_id)
-    return {"da_o_cum": sorted(da_o_cum)}
+        models_dac_diem.ghi(conn, dac_diem)
+        ket = _ghi_de_xuat_tren(conn, chia_lan_id, chu, nhoms, loc(huong_dan), loc(nghi))
+        so_video = conn.execute("SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ?",
+                                (chia_lan_id,)).fetchone()[0]
+    return {"chia_lan_id": chia_lan_id, "tao_moi": dung_lai is None, "so_video": so_video,
+            "da_o_cum": ket["da_o_cum"], "bo_vi_loc": bo_vi_loc}
 
 
 def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) -> dict | None:
