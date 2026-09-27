@@ -772,7 +772,7 @@ body.cc-lock-scroll { overflow: hidden; }
 .chip.cc-chip-nhap { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
 .chip.cc-chip-ok { background: var(--success-bg); color: var(--success); border-color: transparent; }
 
-.cc-layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px 1fr;
+.cc-layout { max-width: 1180px; margin: 16px auto 0; display: grid; grid-template-columns: 250px 1fr;
   gap: 16px; padding: 0 16px 90px; }
 .cc-rail { padding: 12px; position: sticky; top: 12px; align-self: start; }
 .cc-rail h3 { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);

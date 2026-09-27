@@ -197,6 +197,7 @@ def test_tach_tao_kieu_moi_tang_bo_dem_hoan_tac_xoa(page, dulieu):
     _mo_chia(page, dulieu["job_full"])
     assert page.locator(".cc-kieu").count() == 3
     truoc = _so_thao_tac(page)
+    assert page.locator('[data-cc-action="hoan-tac"]').is_disabled()
 
     page.locator('.cc-t[data-cc-video]').first.click()
     page.locator('.cc-t[data-cc-video]').nth(1).click()
@@ -208,10 +209,12 @@ def test_tach_tao_kieu_moi_tang_bo_dem_hoan_tac_xoa(page, dulieu):
         page.click('[data-cc-action="confirm-tach"]')
     page.wait_for_function("document.querySelectorAll('.cc-kieu').length === 4")
     assert _so_thao_tac(page) == truoc + 1
+    assert page.locator('[data-cc-action="hoan-tac"]').is_enabled()
 
     with page.expect_response(lambda r: "/thao-tac" in r.url):
         page.click('[data-cc-action="hoan-tac"]')
     page.wait_for_function("document.querySelectorAll('.cc-kieu').length === 3")
+    assert page.locator('[data-cc-action="hoan-tac"]').is_disabled()
 
 
 def test_huy_lenh_moi_token_khong_ngat_dong_390(page, dulieu):

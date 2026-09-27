@@ -254,7 +254,7 @@
         ${tr ? `<div class="cc-why">Điền <b>usecase</b> và <b>insight gốc</b> để duyệt — tên cụm = ` +
                `“&lt;insight gốc&gt; &lt;kiểu&gt;”.</div>` : ""}
         <button type="button" class="btn" data-cc-action="mo-huy">Hủy lượt để chia lại…</button>
-        <button type="button" class="btn ghost" data-cc-action="hoan-tac">Hoàn tác</button>
+        <button type="button" class="btn ghost" data-cc-action="hoan-tac" ${data.co_the_hoan_tac ? "" : 'disabled title="Chưa có thao tác sửa nào để hoàn tác"'}>Hoàn tác</button>
         <span class="cc-faint cc-mono">${data.so_thao_tac} thao tác sửa · ` +
         `so với ${baselineChiaTay(data)} nếu chia tay</span>`;
     }

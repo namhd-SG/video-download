@@ -355,8 +355,16 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         so_thao_tac = conn.execute(
             "SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ?",
             (chia_lan_id,)).fetchone()[0]
+        # Cùng điều kiện chọn dòng của `_op_hoan_tac` — nút "Hoàn tác" chỉ bật
+        # khi bấm vào thật sự có thứ để lùi (không suy từ `so_thao_tac`:
+        # `doi_insight`/duyệt ghi nhật ký nhưng không lùi được).
+        marks = ",".join("?" * len(_HOAN_TAC_DUOC))
+        co_the_hoan_tac = conn.execute(
+            f"SELECT 1 FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN ({marks}) "
+            f"AND da_lui = 0 AND the_he = ? LIMIT 1",
+            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he"])).fetchone() is not None
     return {**dict(lan), "kieu": list(nhoms.values()), "huong_dan": huong_dan, "nghi": nghi,
-            "bi_bo": bi_bo, "so_thao_tac": so_thao_tac}
+            "bi_bo": bi_bo, "so_thao_tac": so_thao_tac, "co_the_hoan_tac": co_the_hoan_tac}
 
 
 def lay_chia_theo_job(db_path: Path, job_id: int, chu: str, la_admin: bool = False) -> dict | None:

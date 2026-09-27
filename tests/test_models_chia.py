@@ -1598,3 +1598,19 @@ def test_lay_chia_tra_so_thao_tac_dung_so_dong(kho):
     assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
     models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
     assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2
+
+
+def test_co_the_hoan_tac_chi_bat_khi_co_thao_tac_lui_duoc(kho):
+    """Nút "Hoàn tác" đọc cờ này: nhật ký có dòng (vd `doi_insight`) chưa
+    chắc có gì để lùi, nên cờ không được suy từ `so_thao_tac`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is False
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_insight", usecase="Motion", insight_goc="Strom Ai")
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["so_thao_tac"] == 1 and chia["co_the_hoan_tac"] is False
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is True
+    models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is False
