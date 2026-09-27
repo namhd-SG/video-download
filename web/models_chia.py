@@ -146,21 +146,26 @@ def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
     for nhom in nhoms:
         for kieu in nhom.get("kieu", []):
             ids = loc(kieu.get("video_ids", []))
+            if not ids:
+                # Kiểu rỗng sau khi lọc KHÔNG vào nháp: nó không có gì để
+                # duyệt, và nếu nằm lại nó vẫn tham gia luật va chạm tên
+                # (`_chot_ten_moi_kieu`) — ép tiền tố nhóm/hậu tố số lên
+                # một kiểu thật trùng tên với nó.
+                continue
             cur = conn.execute(
                 "INSERT INTO cum_nhap (chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?)",
                 (chia_lan_id, nhom["nhom"], kieu["kieu"], thu_tu))
             thu_tu += 1
-            if ids:
-                # `ON CONFLICT` giữ đúng luật "một video một chỗ trong một
-                # lượt" NGAY CẢ KHI lời gọi này tự liệt một video ở hai
-                # nhóm/làn — phần liệt SAU thắng, khớp cách PK sẽ xử nếu
-                # ai đó chèn tay hai lần.
-                conn.executemany(
-                    "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
-                    "VALUES (?, ?, ?, 'kieu') "
-                    "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
-                    "cum_nhap_id = excluded.cum_nhap_id, lan = excluded.lan",
-                    [(vid, chia_lan_id, int(cur.lastrowid)) for vid in ids])
+            # `ON CONFLICT` giữ đúng luật "một video một chỗ trong một
+            # lượt" NGAY CẢ KHI lời gọi này tự liệt một video ở hai
+            # nhóm/làn — phần liệt SAU thắng, khớp cách PK sẽ xử nếu
+            # ai đó chèn tay hai lần.
+            conn.executemany(
+                "INSERT INTO video_cum_nhap (video_id, chia_lan_id, cum_nhap_id, lan) "
+                "VALUES (?, ?, ?, 'kieu') "
+                "ON CONFLICT(video_id, chia_lan_id) DO UPDATE SET "
+                "cum_nhap_id = excluded.cum_nhap_id, lan = excluded.lan",
+                [(vid, chia_lan_id, int(cur.lastrowid)) for vid in ids])
 
     for lan_ten, nguon in (("huong_dan", huong_dan), ("nghi", nghi)):
         ids = loc(nguon)
@@ -190,13 +195,19 @@ def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
 
 # Điều kiện SQL (trên `videos` bí danh `v`) quyết định video nào của một job
 # được đưa vào một lượt chia — MỘT chỗ cho mọi nơi hỏi câu đó: liệt video gửi
-# tầng hình phân tích, và lọc id lúc nhập nháp. Loại thêm một loại video khỏi
-# lượt chia = thêm MỘT dòng vào tuple này; vd khi có cột mốc video đã dọn khỏi
-# Drive thì thêm dòng `"v.drive_don_luc IS NULL",`.
-# Video đã nằm trong một cụm THẬT KHÔNG lọc ở đây: `ghi_de_xuat` tự bỏ chúng
-# (`da_o_cum`), vì câu đó phụ thuộc NGƯỜI chia chứ không chỉ phụ thuộc video.
+# tầng hình phân tích (ảnh rời máy), và lọc id lúc nhập nháp. Mỗi mục là
+# `(lý do bị loại, điều kiện để ĐƯỢC vào)`; lý do dùng để đếm trong báo cáo.
+# Loại thêm một loại video khỏi lượt chia = thêm MỘT dòng vào tuple này; vd
+# khi có cột mốc video đã dọn khỏi Drive thì thêm dòng
+# `("da_don_drive", "v.drive_don_luc IS NULL"),`.
+# `da_o_cum`: video đã nằm trong một cụm THẬT của CHỦ JOB (người chia lượt
+# này — cùng luật sở hữu với `ghi_de_xuat`) không được phân tích lại: duyệt
+# không bao giờ chuyển nó, nên gửi ảnh nó đi chỉ tốn tiền và để ảnh rời máy vô
+# ích. `ghi_de_xuat::loc` vẫn tự kiểm lại (hai nháp song song).
 DIEU_KIEN_VAO_LUOT_CHIA = (
-    "v.da_loai_luc IS NULL",
+    ("da_loai", "v.da_loai_luc IS NULL"),
+    ("da_o_cum", "NOT EXISTS (SELECT 1 FROM video_cum vc JOIN jobs jc ON jc.id = v.job_id "
+                 "WHERE vc.video_id = v.video_id AND vc.chu = jc.nguoi_tao)"),
 )
 
 
@@ -204,10 +215,18 @@ def video_vao_luot_chia(conn, job_id: int) -> list:
     """Các video của `job_id` được đưa vào lượt chia (lọc theo
     `DIEU_KIEN_VAO_LUOT_CHIA`), cũ nhất trước. Hàng có `video_id`,
     `description`."""
-    dieu_kien = " AND ".join(("v.job_id = ?", *DIEU_KIEN_VAO_LUOT_CHIA))
+    dieu_kien = " AND ".join(("v.job_id = ?", *(d for _, d in DIEU_KIEN_VAO_LUOT_CHIA)))
     return conn.execute(
         f"SELECT v.video_id, v.description FROM videos v WHERE {dieu_kien} "
         "ORDER BY v.tao_luc, v.video_id", (job_id,)).fetchall()
+
+
+def dem_bi_loc_theo_ly_do(conn, job_id: int) -> dict[str, int]:
+    """`{lý do: số video của job KHÔNG qua điều kiện đó}` — một video trượt
+    hai điều kiện được đếm ở cả hai."""
+    return {ly_do: conn.execute(f"SELECT COUNT(*) FROM videos v WHERE v.job_id = ? "
+                                f"AND NOT ({d})", (job_id,)).fetchone()[0]
+            for ly_do, d in DIEU_KIEN_VAO_LUOT_CHIA}
 
 
 class NhapBiChan(ValueError):

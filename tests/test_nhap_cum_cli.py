@@ -243,7 +243,9 @@ def test_ghi_bo_video_da_o_cum_that(kho, capsys, tmp_path):
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "Có sẵn")
     models_cum.gan_video(db, cum_id, TOI, None, ["1"])
     ra = _chay(capsys, db, "ghi", job, _tep(tmp_path, _de_xuat()))[1]
-    assert ra["da_o_cum"] == ["1"] and ra["so_video"] == 2
+    # Bị bộ lọc chung loại trước (không bao giờ vào lượt) — `da_o_cum` của
+    # `ghi_de_xuat` là lớp chặn thứ hai cho nháp song song.
+    assert ra["bo_vi_loc"] == ["1"] and ra["da_o_cum"] == [] and ra["so_video"] == 2
 
 
 @pytest.mark.parametrize("sua, chu_loi", [
@@ -293,3 +295,86 @@ def test_ghi_trot_giua_chung_khong_de_lai_gi(kho, capsys, tmp_path, monkeypatch)
     rc, _, err = _chay(capsys, db, "ghi", job, _tep(tmp_path, _de_xuat()))
     assert rc == nhap_cum_cli.MA_LOI_DB and "đĩa đầy" in err
     assert (_dem(db, "chia_lan"), _dem(db, "video_dac_diem")) == (0, 0)
+
+
+# --- ghi-dac-diem: cache lưu độc lập với nháp ----------------------------------------
+
+def test_ghi_dac_diem_chi_ghi_cache(kho, capsys, tmp_path):
+    db, job = kho
+    tep = _tep(tmp_path, {"dac_diem": _de_xuat()["dac_diem"]})
+    rc, ra, _ = _chay(capsys, db, "ghi-dac-diem", job, tep)
+    assert (rc, ra) == (0, {"so_hang": 2})
+    assert (_dem(db, "video_dac_diem"), _dem(db, "chia_lan")) == (2, 0)
+
+
+@pytest.mark.parametrize("obj", [
+    {"dac_diem": [{"video_id": "999", "phien_ban_prompt": "nhan:a", "nhan": {}}]},
+    {"dac_diem": [{"video_id": "1", "phien_ban_prompt": "a", "nhan": {}}]},
+    {"dac_diem": [], "nhoms": []},
+    [],
+])
+def test_ghi_dac_diem_tep_sai_khong_ghi_gi(kho, capsys, tmp_path, obj):
+    db, job = kho
+    assert _chay(capsys, db, "ghi-dac-diem", job, _tep(tmp_path, obj))[0] == \
+        nhap_cum_cli.MA_TEP_SAI
+    assert _dem(db, "video_dac_diem") == 0
+
+
+# --- liet báo lượt mới nhất + lý do lọc ------------------------------------------------
+
+def test_liet_bao_luot_moi_nhat_va_so_thao_tac(kho, capsys, tmp_path):
+    db, job = kho
+    assert _chay(capsys, db, "liet", job)[1]["luot_moi_nhat"] is None
+    lan = _chay(capsys, db, "ghi", job, _tep(tmp_path, _de_xuat()))[1]["chia_lan_id"]
+    assert _chay(capsys, db, "liet", job)[1]["luot_moi_nhat"] == {
+        "id": lan, "trang_thai": "de_xuat", "so_thao_tac": 0}
+    kieu = models_chia.lay_chia(db, lan, TOI)["kieu"][0]["cum_nhap_id"]
+    models_chia.ap_thao_tac(db, lan, TOI, "chap_nhan", cum_nhap_id=kieu)
+    assert _chay(capsys, db, "liet", job)[1]["luot_moi_nhat"]["so_thao_tac"] == 1
+
+
+def test_liet_bo_video_da_o_cum_that_cua_chu_job(kho, capsys):
+    """Chỉ cụm của CHỦ JOB loại video; cụm của người khác không."""
+    db, job = kho
+    cum_toi, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "Mặc vest")
+    models_cum.gan_video(db, cum_toi, TOI, None, ["1", "2"])
+    cum_ho, _ = models_cum.tao_cum(db, HO, "Dance", "Badaboum", "Mặc vest")
+    models_cum.gan_video(db, cum_ho, HO, None, ["3"])
+    models.danh_dau_da_loai(db, "2", TOI)
+    ra = _chay(capsys, db, "liet", job)[1]
+    assert [v["video_id"] for v in ra["video"]] == ["3", "4"]
+    assert ra["so_bi_loc"] == 2
+    assert ra["bi_loc_theo_ly_do"] == {"da_loai": 1, "da_o_cum": 2}
+
+
+# --- kiểu rỗng sau khi lọc không vào nháp -----------------------------------------------
+
+def _ten_cum(db, lan_id) -> dict:
+    return {(k["nhom"], k["kieu"]): k["ten_cum"]
+            for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]}
+
+
+def test_kieu_rong_sau_loc_khong_tao_hang_va_khong_ep_ten(kho, capsys, tmp_path):
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "Có sẵn")
+    models_cum.gan_video(db, cum_id, TOI, None, ["1", "2"])
+    obj = _de_xuat(nhoms=[
+        {"nhom": "A", "kieu": [{"kieu": "Vest", "video_ids": ["1", "2"]}]},
+        {"nhom": "B", "kieu": [{"kieu": "Vest", "video_ids": ["3"]}]}], huong_dan=["4"])
+    ra = _chay(capsys, db, "ghi", job, _tep(tmp_path, obj))[1]
+    assert _ten_cum(db, ra["chia_lan_id"]) == {("B", "Vest"): "Vest"}
+    assert _dem(db, "cum_nhap") == 1
+
+
+def test_ghi_de_xuat_kieu_rong_vi_da_o_cum_khong_tao_hang(kho):
+    """Lớp chặn thứ hai (`ghi_de_xuat::loc`, nháp song song): kiểu còn 0 video
+    cũng không vào nháp."""
+    db, job = kho
+    lan = models_chia.tao_chia_lan(db, job, TOI, "p")
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "Có sẵn")
+    models_cum.gan_video(db, cum_id, TOI, None, ["1"])
+    ket = models_chia.ghi_de_xuat(db, lan, TOI, [
+        {"nhom": "A", "kieu": [{"kieu": "Vest", "video_ids": ["1"]}]},
+        {"nhom": "B", "kieu": [{"kieu": "Vest", "video_ids": ["2"]}]}])
+    assert ket["da_o_cum"] == ["1"]
+    assert _ten_cum(db, lan) == {("B", "Vest"): "Vest"}

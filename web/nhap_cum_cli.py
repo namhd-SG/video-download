@@ -3,6 +3,7 @@
     python -m web.nhap_cum_cli cho-chia
     python -m web.nhap_cum_cli liet <job_id> [--nhan-ver V] [--caption-ver V]
     python -m web.nhap_cum_cli ten-co-san <job_id>
+    python -m web.nhap_cum_cli ghi-dac-diem <job_id> <tệp.json | ->
     python -m web.nhap_cum_cli ghi <job_id> <tệp.json | ->
 
 Vì sao CLI thay vì route HTTP: route trên mini nằm sau Cloudflare Access (JWT),
@@ -79,13 +80,23 @@ def _liet(db: Path, job_id: int, nhan_ver: str | None, caption_ver: str | None) 
         tong = conn.execute("SELECT COUNT(*) FROM videos WHERE job_id = ?",
                             (job_id,)).fetchone()[0]
         rows = models_chia.video_vao_luot_chia(conn, job_id)
+        bi_loc = models_chia.dem_bi_loc_theo_ly_do(conn, job_id)
+        # Lượt chia MỚI NHẤT của chủ job + số dòng nhật ký — cùng câu hỏi
+        # `models_chia.nhap_de_xuat` dùng để quyết từ chối, để máy dev từ chối
+        # TRƯỚC khi kéo ảnh / gọi agy thay vì trả tiền rồi mới bị chặn lúc ghi.
+        lan = conn.execute(
+            "SELECT c.id, c.trang_thai, (SELECT COUNT(*) FROM thao_tac_duyet t "
+            "WHERE t.chia_lan_id = c.id) AS so_thao_tac FROM chia_lan c "
+            "WHERE c.job_id = ? AND c.chu = ? ORDER BY c.tao_luc DESC, c.id DESC LIMIT 1",
+            (job_id, job["nguoi_tao"])).fetchone()
         ids = [r["video_id"] for r in rows]
         nhan = models_dac_diem.doc_nhan(conn, ids, nhan_ver) if nhan_ver else {}
         caption = models_dac_diem.doc_caption(conn, ids, caption_ver) if caption_ver else {}
     _in({"job_id": job_id, "url": job["url"], "nguoi_tao": job["nguoi_tao"],
          "trang_thai": job["trang_thai"], "usecase": job["usecase"],
          "insight_goc": job["insight_goc"], "so_video_cua_job": tong,
-         "so_bi_loc": tong - len(rows),
+         "so_bi_loc": tong - len(rows), "bi_loc_theo_ly_do": bi_loc,
+         "luot_moi_nhat": dict(lan) if lan else None,
          "video": [{"video_id": r["video_id"], "anh": _anh_cua(db, r["video_id"]),
                     "description": r["description"] or "",
                     "nhan": nhan.get(r["video_id"]), "caption": caption.get(r["video_id"])}
@@ -143,6 +154,20 @@ def _ds_id(x, ten: str) -> list[str]:
     return [v.strip() for v in x]
 
 
+def _kiem_dac_diem(ds) -> list[dict]:
+    """`[{"video_id", "phien_ban_prompt": "nhan:…|caption:…", "nhan": {…}}]`."""
+    if not isinstance(ds, list):
+        raise LoiTep("dac_diem phải là danh sách")
+    ra = []
+    for d in ds:
+        if not isinstance(d, dict) or not isinstance(d.get("nhan"), dict):
+            raise LoiTep("mỗi dac_diem phải có 'video_id', 'phien_ban_prompt', 'nhan' (object)")
+        ra.append({"video_id": _chu(d.get("video_id"), "video_id"),
+                   "phien_ban_prompt": _chu(d.get("phien_ban_prompt"), "phien_ban_prompt"),
+                   "nhan": d["nhan"]})
+    return ra
+
+
 def kiem_tep_ghi(obj) -> dict:
     """Kiểm + chuẩn hoá tệp `ghi`. Hình dạng:
 
@@ -180,24 +205,54 @@ def kiem_tep_ghi(obj) -> dict:
     trung = sorted({v for v in moi_id if moi_id.count(v) > 1})
     if trung:
         raise LoiTep(f"{len(trung)} id xuất hiện hơn một lần: {', '.join(trung[:10])}")
-    if not isinstance(obj["dac_diem"], list):
-        raise LoiTep("dac_diem phải là danh sách")
-    dac_diem = []
-    for d in obj["dac_diem"]:
-        if not isinstance(d, dict) or not isinstance(d.get("nhan"), dict):
-            raise LoiTep("mỗi dac_diem phải có 'video_id', 'phien_ban_prompt', 'nhan' (object)")
-        dac_diem.append({"video_id": _chu(d.get("video_id"), "video_id"),
-                         "phien_ban_prompt": _chu(d.get("phien_ban_prompt"), "phien_ban_prompt"),
-                         "nhan": d["nhan"]})
+    dac_diem = _kiem_dac_diem(obj["dac_diem"])
     return {"phien_ban_prompt": _chu(obj["phien_ban_prompt"], "phien_ban_prompt"),
             "truc": truc, "nhoms": nhoms, "huong_dan": huong_dan, "nghi": nghi,
             "dac_diem": dac_diem}
 
 
+def _doc_tep(tep: str):
+    van_ban = sys.stdin.read() if tep == "-" else Path(tep).read_text(encoding="utf-8")
+    return json.loads(van_ban, object_pairs_hook=_khong_trung_khoa)
+
+
+def _ghi_dac_diem(db: Path, job_id: int, tep: str) -> int:
+    """Ghi CHỈ hàng cache `video_dac_diem` (`{"dac_diem": [...]}`), transaction
+    riêng — gọi ngay sau khi nhãn/cờ caption qua phép kiểm máy, TRƯỚC chuẩn
+    hoá: phần đã trả tiền agy không được mất theo một bước sau trượt."""
+    try:
+        obj = _doc_tep(tep)
+        if not isinstance(obj, dict) or set(obj) != {"dac_diem"}:
+            raise LoiTep("tệp phải là object đúng một khoá 'dac_diem'")
+        hang = _kiem_dac_diem(obj["dac_diem"])
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, LoiTep) as exc:
+        _bao(f"tệp sai: {exc}")
+        return MA_TEP_SAI
+    with models._connect(db) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        if conn.execute("SELECT 1 FROM jobs WHERE id = ?", (job_id,)).fetchone() is None:
+            _bao(f"không có job {job_id}")
+            return MA_KHONG_CO_JOB
+        cua_job = {r["video_id"] for r in conn.execute(
+            "SELECT video_id FROM videos WHERE job_id = ?", (job_id,)).fetchall()}
+        la = sorted({h["video_id"] for h in hang} - cua_job)
+        if la:
+            _bao(f"tệp sai: {len(la)} id không thuộc job {job_id}: {', '.join(la[:10])}")
+            return MA_TEP_SAI
+        try:
+            n = models_dac_diem.ghi(conn, hang)
+        except ValueError as exc:
+            conn.rollback()
+            _bao(f"tệp sai: {exc}")
+            return MA_TEP_SAI
+    _in({"so_hang": n})
+    _bao(f"đã ghi {n} hàng cache")
+    return MA_OK
+
+
 def _ghi(db: Path, job_id: int, tep: str) -> int:
     try:
-        van_ban = sys.stdin.read() if tep == "-" else Path(tep).read_text(encoding="utf-8")
-        du_lieu = kiem_tep_ghi(json.loads(van_ban, object_pairs_hook=_khong_trung_khoa))
+        du_lieu = kiem_tep_ghi(_doc_tep(tep))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, LoiTep) as exc:
         _bao(f"tệp sai: {exc}")
         return MA_TEP_SAI
@@ -229,9 +284,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--caption-ver")
     s = sub.add_parser("ten-co-san")
     s.add_argument("job_id", type=int)
-    s = sub.add_parser("ghi")
-    s.add_argument("job_id", type=int)
-    s.add_argument("tep")
+    for ten in ("ghi-dac-diem", "ghi"):
+        s = sub.add_parser(ten)
+        s.add_argument("job_id", type=int)
+        s.add_argument("tep")
     a = p.parse_args(argv)
     if not a.db.is_file():
         # Không để `_connect` lặng lẽ tạo một DB rỗng rồi trả "0 job".
@@ -246,6 +302,8 @@ def main(argv: list[str] | None = None) -> int:
             return _liet(a.db, a.job_id, a.nhan_ver, a.caption_ver)
         if a.lenh == "ten-co-san":
             return _ten_co_san(a.db, a.job_id)
+        if a.lenh == "ghi-dac-diem":
+            return _ghi_dac_diem(a.db, a.job_id, a.tep)
         return _ghi(a.db, a.job_id, a.tep)
     except sqlite3.Error as exc:
         _bao(f"lỗi DB: {exc}")
