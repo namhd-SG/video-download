@@ -34,3 +34,9 @@ Hai làn riêng của màn nháp: "Hướng dẫn / thẻ chữ" (user Q3: thàn
 
 ## Risk Assessment
 - Âm tính giả (video lạc nằm trong kiểu 15 video) là lỗ im lặng thật ⇒ chữa bằng lưới thumb đầy đủ ở phase 3, không bằng ngưỡng.
+
+## Bổ sung trước thi công (27/09 09:0x, lane V) — chờ vòng agy `tuchiacum-p34-plan`
+
+- **Bước 1 (phân làn) ĐÃ LÀM ở phase 2**, nhưng khác chỗ: thẻ chữ ⇒ `huong_dan` quyết ở MÁY DEV (`phan_tich_hinh.py:186-187`, theo nhãn `the_chu`), `nghi` do agy chuẩn hoá trả `{"lan":"nghi"}`; `ghi_de_xuat` chỉ nhận danh sách. Không có kiểu "Khác" — prompt chuẩn hoá cho ra `nghi` trực tiếp.
+- **Bước 3 (cờ caption ⇒ làn nghi) CHƯA LÀM:** cờ `caption_lech_chu_de` được chấm và lưu (`video_dac_diem`, hàng `caption:<v>`) nhưng không chỗ nào đọc cờ để đưa video vào `nghi` (grep `caption` trong `models_chia.py`: chỉ một docstring). Dữ liệu thật: job 10 = 54 `khong_ro`, job 17 = 20 `false` ⇒ **0 video `true`**, nên luật này chưa đổi được nháp nào đang có. Đề xuất đặt luật ở MÁY DEV (cùng chỗ `huong_dan`): `true` và video đang ở kiểu ⇒ chuyển sang `nghi` trước khi ghi, lý do lưu trong nhật ký/nháp; không bao giờ rút video khỏi `nghi`. Cần chốt: lý do "caption lệch chủ đề" lưu ở đâu (nháp chưa có cột lý do theo video).
+- **Tiêu chí "Job 10: làn Hướng dẫn 12, làn nghi 3" đã lệch với nhãn mới:** đo 27/09 = hướng dẫn **9**, nghi **4** (54 video, không phải 59 như mock, vì 5 video đã ở cụm + 1 đã loại). Sửa tiêu chí thành "khớp nháp thật đang có trên mini", không theo mock.
