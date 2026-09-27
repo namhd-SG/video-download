@@ -213,7 +213,9 @@ def test_ghi_tu_choi_de_nhap_da_co_sua_tay(kho, capsys, tmp_path):
     db, job = kho
     lan = _chay(capsys, db, "ghi", job, _tep(tmp_path, _de_xuat()))[1]["chia_lan_id"]
     kieu = models_chia.lay_chia(db, lan, TOI)["kieu"][0]["cum_nhap_id"]
-    models_chia.ap_thao_tac(db, lan, TOI, "chap_nhan", cum_nhap_id=kieu)
+    # Chỉ sửa CÁCH CHIA (hoặc duyệt) mới chặn ghi đè; `chap_nhan`/`doi_insight`
+    # đơn lẻ thì không (xem `models_chia.LOAI_CHAN_GHI_DE_NHAP`).
+    models_chia.ap_thao_tac(db, lan, TOI, "doi_ten", cum_nhap_id=kieu, kieu="x")
     truoc = models_chia.lay_chia(db, lan, TOI)
     rc, _, err = _chay(capsys, db, "ghi", job, _tep(tmp_path, _de_xuat(nhoms=[])))
     assert rc == nhap_cum_cli.MA_NHAP_BI_CHAN and "thao tác" in err
