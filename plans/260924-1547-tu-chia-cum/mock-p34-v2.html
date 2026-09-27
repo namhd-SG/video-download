@@ -62,7 +62,7 @@ h1::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--ac
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
 .modal label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-muted);margin-top:8px}
 .cmd{display:flex;gap:6px;align-items:center;background:var(--surface-alt);border-radius:5px;padding:6px 8px;margin-top:8px;overflow-x:auto}
-.cmd code{font-family:var(--mono);font-size:12px;white-space:normal;word-break:break-all;flex:1}
+.cmd code{font-family:var(--mono);font-size:12px;flex:1;min-width:0}.cmd code span{white-space:nowrap}
 .mini-luoi{display:flex;gap:4px;margin-top:8px}.mini-luoi .t{width:34px}
 </style></head><body>
 <div class="mockbar">MOCK v2 — nháp THẬT lượt 1 (job 10, mini 27/09) · poster ở ~/plans/260924-1031-tu-chia-cum-video-desk/posters/
@@ -122,7 +122,7 @@ function render(){
   $("#rail").innerHTML = r;
   if (ch){ $("#main").innerHTML = `<div class="card empty"><h2 style="font-family:var(--display)">Chưa phân tích hình</h2>
      <p class="muted">54 video đã tải. Hệ chưa chia cụm vì tầng hình chưa chạy. Chạy lệnh này trên máy dev (thử khô trước, thêm <code>--yes</code> để làm thật):</p>
-     <div class="cmd" style="max-width:560px;margin:0 auto"><code>bash scripts/phan-tich-hinh.sh --luot 10</code><button class="btn ghost">Chép</button></div>
+     <div class="cmd" style="max-width:560px;margin:0 auto"><code><span>bash</span> <span>scripts/phan-tich-hinh.sh</span> <span>--luot</span> <span>10</span></code><button class="btn ghost">Chép</button></div>
      <p class="faint">Không có nút chạy ở đây: máy chủ không tự gọi được tầng hình.</p></div>`; $("#modal").innerHTML=""; return; }
   let m = "";
   for (const n of nhoms){
@@ -131,8 +131,8 @@ function render(){
       ${ks.length>1&&S!=="da_duyet"?`<button class="btn">Gộp cả nhóm thành 1 kiểu</button>`:""}</div>`;
     for (const k of ks){
       const pop = S==="gop" && k.kieu==="Học sinh";
-      m += `<div class="kieu" style="position:relative"><div class="kieu-h"><input class="ten" value="${k.kieu}"><span class="faint">${byK[k.cn].length} video · tên cụm: ${tenCum(k)}</span>${trungCoSan(k)&&S!=="da_duyet"?`<span class="tag nhap" title="D13: server hỏi trước khi gộp">trùng cụm có sẵn — duyệt sẽ hỏi gộp</span>`:""}<span class="sp" style="flex:1"></span>
-        ${S==="da_duyet"?"":`<button class="btn ghost">Gộp vào cụm có sẵn ▾</button><button class="btn ghost">Xoá kiểu</button><button class="btn" ${tr?"disabled title=\"Điền insight gốc trước\"":""}>Duyệt kiểu này</button>`}
+      m += `<div class="kieu" style="position:relative"><div class="kieu-h"><input class="ten" value="${k.kieu}"><span class="faint">${byK[k.cn].length} video · ${S==="da_duyet"&&k.kieu==="Mặc vest"?"<b>đã gộp vào “Strom Ai Mặc vest”</b> (cụm có sẵn)":"tên cụm: "+tenCum(k)}</span>${trungCoSan(k)&&S!=="da_duyet"?`<span class="tag nhap" title="D13: server hỏi trước khi gộp">trùng cụm có sẵn — duyệt sẽ hỏi gộp</span>`:""}<span class="sp" style="flex:1"></span>
+        ${S==="da_duyet"?"":`<button class="btn ghost" ${tr?"disabled title=\"Điền insight gốc trước (D18)\"":""}>Gộp vào cụm có sẵn ▾</button><button class="btn ghost">Xoá kiểu</button><button class="btn" ${tr?"disabled title=\"Điền insight gốc trước\"":""}>Duyệt kiểu này</button>`}
         <button class="btn" ${S==="da_duyet"?"":"disabled title=\"Nháp chưa duyệt: server từ chối\""}>Tạo bộ tự tìm (${byK[k.cn].length})</button></div>
         ${pop?`<div class="pop" style="top:40px"><div class="faint">Duyệt “${k.kieu}” bằng cách gộp ${byK[k.cn].length} video vào một cụm có sẵn của bạn (khác tên vẫn được):</div>${COSAN.map(c=>`<div><b>${c.ten}</b> <span class="faint">· ${c.n} video</span></div>`).join("")}<div class="faint">Video đã ở cụm khác của bạn được giữ nguyên chỗ. Không hoàn tác được — như mọi lần duyệt.</div></div>`:""}
         ${thumbs(byK[k.cn], S==="tach"&&k.kieu==="Mặc vest"?3:0)}</div>`;
@@ -156,7 +156,7 @@ function render(){
       <p class="muted" style="margin:0">Lượt có <b>3 thao tác sửa</b> — nhật ký vẫn được giữ, nhưng nháp này thôi hiệu lực. Kiểu đã duyệt (nếu có) vẫn là cụm thật, không bị chia lại.</p>
       <label>Chia lại theo<select class="ten"><option>Trang phục đám đông</option><option>Trang phục người chính</option><option>Bối cảnh</option></select></label>
       <div class="faint" style="margin-top:8px">Sau khi hủy, chạy trên máy dev (thử khô, thêm <code>--yes</code> để làm thật):</div>
-      <div class="cmd"><code>bash scripts/phan-tich-hinh.sh --luot 10 --truc trang_phuc_dam_dong</code><button class="btn ghost">Chép</button></div>
+      <div class="cmd"><code><span>bash</span> <span>scripts/phan-tich-hinh.sh</span> <span>--luot</span> <span>10</span> <span>--truc</span> <span>trang_phuc_dam_dong</span></code><button class="btn ghost">Chép</button></div>
       <div class="row"><button class="btn">Giữ nháp</button><button class="btn pri" style="background:var(--danger);border-color:var(--danger)">Hủy lượt</button></div></div></div>` : "";
 }
 document.querySelectorAll(".mockbar [data-s]").forEach(b => b.onclick = () => { S = b.dataset.s; mark(); render(); });
