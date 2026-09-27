@@ -1040,7 +1040,7 @@ def _op_tach(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, nhom: str
     nhom_moi = models_cum.chuan_hoa_chu(nhom)
     if not video_ids or not kieu_moi or not nhom_moi:
         return None
-    truoc = _hang_video_cum_nhap(conn, chia_lan_id, video_ids)
+    truoc = _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
     if not truoc:
         return None
     thu_tu_max = conn.execute(
@@ -1164,14 +1164,23 @@ def _op_doi_ten_nhom(conn, chia_lan_id, chu, lan, nhom_cu: str, nhom_moi: str, *
     return n, {"nhom_moi": nhom_moi_chuan, "truoc": truoc}
 
 
-def _hang_video_cum_nhap(conn, chia_lan_id, video_ids):
+def _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids):
+    """Hàng `video_cum_nhap` của các `video_ids` — BỎ những video ĐÃ nằm
+    trong một cụm THẬT của `chu` (`video_cum`), kể cả khi hàng nháp của nó
+    còn "mồ côi" (`lan = 'kieu'`, `cum_nhap_id = NULL` sau khi kiểu chứa nó
+    được DUYỆT — FK `ON DELETE SET NULL` chỉ lo cột `cum_nhap_id`, không tự
+    đổi `lan`). Không lọc thì `tach`/`chuyen`/`ngoai_chu_de` có thể kéo một
+    video ĐÃ DUYỆT trở lại nháp — dữ liệu `video_cum` không đổi, nhưng màn
+    nháp báo sai và ghi thêm một dòng nhật ký vô nghĩa cho một video không
+    còn thuộc phạm vi sửa của lượt này."""
     if not video_ids:
         return []
     marks = ",".join("?" * len(video_ids))
     return [dict(r) for r in conn.execute(
         f"SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
-        f"WHERE chia_lan_id = ? AND video_id IN ({marks})",
-        [chia_lan_id, *video_ids]).fetchall()]
+        f"WHERE chia_lan_id = ? AND video_id IN ({marks}) "
+        f"AND video_id NOT IN (SELECT video_id FROM video_cum WHERE chu = ?)",
+        [chia_lan_id, *video_ids, chu]).fetchall()]
 
 
 def _op_chuyen(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
@@ -1183,7 +1192,7 @@ def _op_chuyen(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
     if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
                     (den_cum_nhap_id, chia_lan_id)).fetchone() is None:
         return None
-    truoc = _hang_video_cum_nhap(conn, chia_lan_id, video_ids)
+    truoc = _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
     if not truoc:
         return None
     conn.executemany(
@@ -1195,10 +1204,18 @@ def _op_chuyen(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
 
 
 def _op_ngoai_chu_de(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, **_):
-    """Đưa các video sang làn "nghi ngoài chủ đề" — bỏ khỏi mọi kiểu."""
+    """Đưa các video sang làn "nghi ngoài chủ đề" — bỏ khỏi mọi kiểu.
+
+    Video ĐÃ ở làn "nghi" rồi bị lọc ra (`r["lan"] != "nghi"`) — hợp đồng chỉ
+    có MỘT trạng thái "nghi" (`hop-dong-thao-tac.md`), không có trạng thái
+    "đã xác nhận bỏ khỏi lượt" riêng, nên lặp lại thao tác này trên video đã
+    ở nghi là NO-OP thật (trả `None`, không ghi log) — trước đây nó vẫn ghi
+    một dòng `_HOAN_TAC_DUOC` dù không đổi gì, chiếm mất một lượt "Hoàn tác"
+    của thao tác TRƯỚC đó."""
     if not video_ids:
         return None
-    truoc = _hang_video_cum_nhap(conn, chia_lan_id, video_ids)
+    truoc = [r for r in _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
+             if r["lan"] != "nghi"]
     if not truoc:
         return None
     conn.executemany(
@@ -1211,7 +1228,12 @@ def _op_ngoai_chu_de(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, *
 def _op_tra_ve(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
               den_cum_nhap_id: int, **_):
     """Trả video đang ở làn "hướng dẫn"/"nghi" VỀ một kiểu — khác `chuyen` ở
-    chỗ chỉ nhận video KHÔNG đang ở một kiểu nào (đó là việc của `chuyen`)."""
+    chỗ chỉ nhận video KHÔNG đang ở một kiểu nào (đó là việc của `chuyen`).
+
+    Cùng luật loại-trừ với `_hang_video_cum_nhap`: video ĐÃ nằm trong một cụm
+    THẬT của `chu` không được kéo trở lại nháp, dù hàng của nó đang mang
+    `lan='nghi'` (vd sau một `ngoai_chu_de` gọi TRÊN video đã duyệt trước khi
+    có luật lọc này)."""
     if not video_ids:
         return None
     if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
@@ -1220,8 +1242,9 @@ def _op_tra_ve(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
     marks = ",".join("?" * len(video_ids))
     truoc = [dict(r) for r in conn.execute(
         f"SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap WHERE chia_lan_id = ? "
-        f"AND video_id IN ({marks}) AND lan != 'kieu'",
-        [chia_lan_id, *video_ids]).fetchall()]
+        f"AND video_id IN ({marks}) AND lan != 'kieu' "
+        f"AND video_id NOT IN (SELECT video_id FROM video_cum WHERE chu = ?)",
+        [chia_lan_id, *video_ids, chu]).fetchall()]
     if not truoc:
         return None
     conn.executemany(

@@ -417,6 +417,70 @@ def test_tra_ve_tu_choi_video_dang_o_mot_kieu(kho):
     assert ket == {"tu_choi": "khong_hop_le"}
 
 
+# --- video ĐÃ DUYỆT không được kéo lại nháp qua tach/chuyen/ngoai_chu_de/tra_ve --
+
+def test_op_tu_choi_video_da_duyet_khong_keo_lai_vao_nhap(kho):
+    """Video đã DUYỆT (vào `video_cum` thật) không được kéo lại nháp qua
+    `tach`/`chuyen`/`ngoai_chu_de` — hàng nháp của nó còn "mồ côi"
+    (`lan='kieu'`, `cum_nhap_id=NULL`, FK `ON DELETE SET NULL` chỉ xoá cột đó,
+    không đổi `lan`) nhưng KHÔNG còn thuộc phạm vi sửa của lượt này."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    truoc = len(_thao_tac(db, lan_id))
+
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="n",
+                                   kieu="k") == {"tu_choi": "khong_hop_le"}
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=["1"],
+                                   den_cum_nhap_id=cartoon_id) == {"tu_choi": "khong_hop_le"}
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de",
+                                   video_ids=["1"]) == {"tu_choi": "khong_hop_le"}
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào"
+
+
+def test_tra_ve_tu_choi_video_da_duyet_du_dang_o_lan_nghi(kho):
+    """`tra_ve` cũng phải chặn video đã duyệt — kể cả khi hàng của nó đang
+    mang `lan='nghi'` (mô phỏng trạng thái còn sót lại từ trước khi có luật
+    lọc này, hoặc một đường ghi trực tiếp khác)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE video_cum_nhap SET lan = 'nghi' WHERE chia_lan_id = ? AND video_id = '1'",
+            (lan_id,))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["1"],
+                                  den_cum_nhap_id=cartoon_id)
+    assert ket == {"tu_choi": "khong_hop_le"}
+
+
+def test_ngoai_chu_de_tren_video_da_o_nghi_la_no_op_khong_ghi_log(kho):
+    """Nút cũ "Đúng, bỏ khỏi lượt" gọi `ngoai_chu_de` trên chính video ĐÃ ở
+    nghi — không có gì đổi (hợp đồng chỉ có MỘT trạng thái "nghi") nên phải
+    là no-op: không ghi log, và không chiếm mất lượt "Hoàn tác" của thao tác
+    TRƯỚC đó."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    models_chia.ap_thao_tac(db, lan_id, TOI, "xoa_kieu",
+                            cum_nhap_id=_nhom_id(db, lan_id, "cartoon"))
+    assert models_chia.lay_chia(db, lan_id, TOI)["nghi"] == ["3"]
+    truoc = len(_thao_tac(db, lan_id))
+
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=["3"])
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert len(_thao_tac(db, lan_id)) == truoc, "video đã ở nghi rồi ⇒ no-op, không ghi log"
+
+    ket2 = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket2["so_video"] == 1
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "cartoon" in [k["kieu"] for k in chia["kieu"]], \
+        "hoan_tac phải lùi đúng xoa_kieu, không bị dòng no-op chiếm mất"
+
+
 def test_xoa_kieu_dua_video_ve_lan_nghi(kho):
     db, job = kho
     lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))

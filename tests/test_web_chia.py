@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from web import app as app_mod
 from web import models, models_chia, models_cum
@@ -166,6 +167,43 @@ def test_thao_tac_route_400_khong_500_khi_thieu_truong_bat_buoc(kho, loai, tham_
         app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(loai=loai, **tham_so),
                               nguoi_tao=TOI)
     assert e.value.status_code == 400, f"{loai}({tham_so}) phải trả 400, không phải 500/khác"
+
+
+def test_thao_tac_request_tu_choi_ten_qua_dai():
+    """`nhom`/`kieu`/`nhom_cu`/`nhom_moi`/`usecase`/`insight_goc` phải có trần
+    độ dài ở TẦNG REQUEST — tái dùng đúng hằng số `models_cum` áp cho cụm
+    thật, không bịa số mới."""
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_ten", cum_nhap_id=1, kieu="x" * (models_cum.INSIGHT_CON_TOI_DA * 2 + 1))
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_ten", cum_nhap_id=1, kieu="k",
+            nhom="n" * (models_cum.INSIGHT_CON_TOI_DA * 2 + 1))
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_ten_nhom", nhom_cu="n" * (models_cum.INSIGHT_CON_TOI_DA * 2 + 1),
+            nhom_moi="x")
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_ten_nhom", nhom_cu="n",
+            nhom_moi="x" * (models_cum.INSIGHT_CON_TOI_DA * 2 + 1))
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_insight", usecase="u" * (models_cum.USECASE_TOI_DA * 2 + 1))
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(
+            loai="doi_insight", insight_goc="g" * (models_cum.INSIGHT_CON_TOI_DA * 2 + 1))
+
+
+def test_thao_tac_request_tu_choi_qua_nhieu_video_ids():
+    qua_tran = [str(i) for i in range(app_mod.MAX_VIDEO_IDS_THAO_TAC + 1)]
+    with pytest.raises(ValidationError):
+        app_mod.ThaoTacChiaRequest(loai="ngoai_chu_de", video_ids=qua_tran)
+    # ĐÚNG trần thì vẫn hợp lệ ở tầng request (bị model từ chối vì lý do khác
+    # là chuyện của route, không phải của validate hình dạng).
+    dung_tran = [str(i) for i in range(app_mod.MAX_VIDEO_IDS_THAO_TAC)]
+    app_mod.ThaoTacChiaRequest(loai="ngoai_chu_de", video_ids=dung_tran)
 
 
 def test_thao_tac_route_tach_thanh_cong(kho):

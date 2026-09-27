@@ -837,6 +837,13 @@ def payload_lo_cum(cum_id: int, thu: int,
 # `OverflowError` ⇒ 500; chặn ở tầng request ⇒ 422 như mọi lỗi hình dạng khác.
 IdSqlite = Annotated[int, Field(ge=1, le=2 ** 63 - 1)]
 
+# Trần AN TOÀN cho `video_ids` của một thao tác sửa nháp (`tach`/`chuyen`/
+# `ngoai_chu_de`/`tra_ve`) — KHÔNG phải ngưỡng nghiệp vụ. Lượt tải THẬT lớn
+# nhất đo được trên máy mini (job 16) có 175 video (job 10/15/17 chỉ
+# 60/20/20); 500 ≈ 2,9× mức lớn nhất đã thấy, đủ dư để không chặn ca thật
+# nào, chỉ chặn payload cố tình phình to.
+MAX_VIDEO_IDS_THAO_TAC = 500
+
 
 class ThaoTacChiaRequest(BaseModel):
     loai: str
@@ -846,15 +853,15 @@ class ThaoTacChiaRequest(BaseModel):
     # Nhiều nguồn cho `gop_nhom` (gộp NHIỀU kiểu vào MỘT cú bấm) — khác
     # `tu_cum_nhap_id` của `gop` (chỉ MỘT nguồn).
     cum_nhap_ids: list[IdSqlite] | None = None
-    video_ids: list[str] | None = None
-    nhom: str | None = None
-    kieu: str | None = None
+    video_ids: list[str] | None = Field(default=None, max_length=MAX_VIDEO_IDS_THAO_TAC)
+    nhom: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    kieu: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
     # `doi_ten_nhom` — đổi tên MỘT nhóm (mọi kiểu của nó) trong MỘT cú bấm,
     # khác `nhom`/`kieu` ở trên (đích của `doi_ten`/`tach`, MỘT hàng).
-    nhom_cu: str | None = None
-    nhom_moi: str | None = None
-    usecase: str | None = None
-    insight_goc: str | None = None
+    nhom_cu: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    nhom_moi: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    usecase: str | None = Field(default=None, max_length=models_cum.USECASE_TOI_DA * 2)
+    insight_goc: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
 
 
 class DuyetChiaRequest(BaseModel):

@@ -128,6 +128,18 @@
     CC.data = data;
     CC.cums = (cumRes && cumRes.cum) || [];
     if (data && data.truc) CC.axis = data.truc;
+    // Tập đang chọn (dock) chỉ giữ id CÒN HIỂN THỊ trong nháp sau khi vẽ lại
+    // — video vừa DUYỆT (rời nháp, vào cụm thật) phải rơi khỏi dock, nếu
+    // không thao tác kế tiếp (tách/chuyển/ngoài chủ đề) sẽ tưởng nó còn ở
+    // nháp và ghi một dòng nhật ký vô nghĩa cho video đã không còn trong lượt
+    // (server cũng tự chặn — xem `_hang_video_cum_nhap` — đây chỉ là lớp UI
+    // để dock không hiện số chọn sai).
+    if (CC.selected.size) {
+      const conHienThi = data
+        ? new Set([...data.kieu.flatMap((k) => k.video_ids), ...data.huong_dan, ...data.nghi])
+        : new Set();
+      CC.selected = new Set([...CC.selected].filter((v) => conHienThi.has(v)));
+    }
     render();
   }
 
@@ -171,9 +183,16 @@
 
   function trungCumCoSan(k) {
     if (insightTrong()) return null;
+    // Cùng khoá so trùng server dùng (`models_cum._khoa_ten`): CẢ usecase VÀ
+    // insight con (chuẩn hoá khoảng trắng + casefold) — thiếu vế usecase thì
+    // nhãn này dán "sẽ hỏi gộp" cho một cặp khác usecase, trong khi server sẽ
+    // tự tạo cụm MỚI (không hỏi gộp), làm rail "Cụm của tôi" có 2 cụm trùng
+    // tên insight nhưng khác usecase.
     const khoa = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
-    const ten = khoa(tenCumDay(k));
-    return CC.cums.find((c) => khoa(c.insight) === ten) || null;
+    const usecaseTa = khoa(CC.data.usecase);
+    const insightTa = khoa(tenCumDay(k));
+    return CC.cums.find((c) => khoa(c.usecase) === usecaseTa && khoa(c.insight) === insightTa)
+      || null;
   }
 
   // Xem trước tên cụm trong modal "Kiểu mới từ chọn" — CHỈ để hiển thị (ước
@@ -387,14 +406,14 @@
       <div class="cc-nhom-h"><b>Nghi ngoài chủ đề</b>
         <span class="muted">${data.nghi.length} video · không xoá, không ẩn, không bao giờ vào bộ</span>
         <span class="cc-sp"></span>
-        <button type="button" class="btn" data-cc-action="nghi-bo-khoi-luot">Đúng, bỏ khỏi lượt</button>
         <span class="pop-wrap">
           <div class="popover" data-cc-popover="traVe" hidden></div>
           <button type="button" class="btn" data-cc-action="toggle-tra-ve">Không, trả về kiểu…</button>
         </span>
       </div>
-      <div class="cc-note">Vì sao nghi: tầng hình xếp “không có đám đông / không thuộc kiểu nào”, hoặc caption ` +
-        `lệch chủ đề. Caption chỉ được TĂNG nghi, không gỡ nghi.</div>
+      <div class="cc-note">Video ở làn này không vào cụm nào khi duyệt. Vì sao nghi: tầng hình xếp ` +
+        `“không có đám đông / không thuộc kiểu nào”, hoặc caption lệch chủ đề. Caption chỉ được TĂNG ` +
+        `nghi, không gỡ nghi.</div>
       ${thumbsHtml(data.nghi)}
     </div>`;
     main.innerHTML = m;
@@ -516,7 +535,21 @@
   }
 
   async function duyet(body) {
-    return apiSend("POST", `/chia/${CC.data.id}/duyet`, body);
+    // MỌI đường duyệt (một kiểu, tất cả, gộp vào cụm có sẵn, xác nhận gộp
+    // sau "trùng cụm có sẵn") phải mang usecase/insight gốc HIỆN TẠI trong ô
+    // nhập — để server tự ghi một `doi_insight` TRONG CÙNG transaction duyệt
+    // trước khi dùng (`_ap_doi_insight_neu_co`) và hết race giữa blur ô nhập
+    // với bấm Duyệt (hai POST độc lập, không có thứ tự đảm bảo tới server).
+    // Thiếu bước này thì cụm THẬT có thể mang tên theo insight CŨ, và không
+    // có đường lùi (duyệt không nằm trong `_HOAN_TAC_DUOC`).
+    const usecaseInput = document.querySelector('[data-cc-field="usecase"]');
+    const insightInput = document.querySelector('[data-cc-field="insight_goc"]');
+    const than = {
+      usecase: usecaseInput ? usecaseInput.value : (CC.data && CC.data.usecase) || "",
+      insight_goc: insightInput ? insightInput.value : (CC.data && CC.data.insight_goc) || "",
+      ...body,
+    };
+    return apiSend("POST", `/chia/${CC.data.id}/duyet`, than);
   }
 
   async function duyetKieu(cumNhapId, xacNhanGop) {
@@ -659,11 +692,6 @@
           await thaoTac("ngoai_chu_de", { video_ids: CC.data.huong_dan });
           return;
         }
-        if (action === "nghi-bo-khoi-luot") {
-          if (!CC.data.nghi.length) return;
-          await thaoTac("ngoai_chu_de", { video_ids: CC.data.nghi });
-          return;
-        }
         if (action === "toggle-tra-ve") {
           CC.popover = (CC.popover && CC.popover.type === "traVe") ? null : { type: "traVe" };
           render();
@@ -697,7 +725,15 @@
         }
         if (action === "dock-tach") {
           if (!CC.selected.size) return;
-          CC.modal = { type: "tach", nhom: nhomsOf(CC.data)[0] || "", kieu: "" };
+          const nhoms = CC.data ? nhomsOf(CC.data) : [];
+          // Lượt còn 0 kiểu (đã `xoa_kieu` hết, hoặc tầng hình xếp mọi video
+          // vào nghi/hướng dẫn): mặc định chế độ "+ nhóm mới…" luôn, vì đó
+          // là lựa chọn DUY NHẤT trong `<select>` — không có option khác để
+          // người dùng CHỌN LẠI mà sinh sự kiện `change` bật `nhomMoi`, nên ô
+          // "Tên nhóm mới" sẽ không bao giờ hiện nếu không tự bật ở đây.
+          CC.modal = nhoms.length
+            ? { type: "tach", nhom: nhoms[0], kieu: "" }
+            : { type: "tach", nhom: "", kieu: "", nhomMoi: true };
           render();
           return;
         }
