@@ -84,6 +84,16 @@ def test_lay_chia_cua_job_khong_thay_luot_cua_nguoi_khac(kho):
     assert e.value.status_code == 404
 
 
+def test_lay_chia_cua_job_tra_so_thao_tac(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)["so_thao_tac"] == 0
+    couple_id = _nhom_id(db, lan_id, "couple")
+    app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+        loai="chap_nhan", cum_nhap_id=couple_id), nguoi_tao=TOI)
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)["so_thao_tac"] == 1
+
+
 # --- POST /chia/{id}/thao-tac -------------------------------------------------
 
 def test_thao_tac_route_404_cho_luot_khong_phai_cua_minh(kho):
@@ -137,7 +147,8 @@ def test_thao_tac_route_400_khi_hoan_tac_khong_con_gi(kho):
 @pytest.mark.parametrize("loai,tham_so", [
     ("gop", {}), ("doi_ten", {"cum_nhap_id": 1}), ("chuyen", {"video_ids": ["1"]}),
     ("tra_ve", {"den_cum_nhap_id": 1}), ("ngoai_chu_de", {}), ("xoa_kieu", {}),
-    ("chap_nhan", {}),
+    ("chap_nhan", {}), ("tach", {"video_ids": ["1"], "nhom": "n"}),
+    ("tach", {"nhom": "n", "kieu": "k"}), ("gop_nhom", {"den_cum_nhap_id": 1}),
 ])
 def test_thao_tac_route_400_khong_500_khi_thieu_truong_bat_buoc(kho, loai, tham_so):
     """`{"loai":"gop"}` (không `tu_cum_nhap_id`/`den_cum_nhap_id`) từng ném
@@ -149,6 +160,39 @@ def test_thao_tac_route_400_khong_500_khi_thieu_truong_bat_buoc(kho, loai, tham_
         app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(loai=loai, **tham_so),
                               nguoi_tao=TOI)
     assert e.value.status_code == 400, f"{loai}({tham_so}) phải trả 400, không phải 500/khác"
+
+
+def test_thao_tac_route_tach_thanh_cong(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    out = app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+        loai="tach", video_ids=["1"], nhom="mới", kieu="riêng"), nguoi_tao=TOI)
+    assert out["so_video"] == 1
+    chia = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    assert "riêng" in [k["kieu"] for k in chia["kieu"]]
+
+
+def test_thao_tac_route_gop_nhom_thanh_cong(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    out = app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+        loai="gop_nhom", cum_nhap_ids=[couple_id], den_cum_nhap_id=cartoon_id), nguoi_tao=TOI)
+    assert out["so_video"] == 2
+    chia = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    assert [k["kieu"] for k in chia["kieu"]] == ["cartoon"]
+
+
+def test_thao_tac_route_huy_luot_roi_khoa_moi_thao_tac_sau(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    out = app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(loai="huy_luot"),
+                               nguoi_tao=TOI)
+    assert out["so_video"] == 0
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(loai="hoan_tac"), nguoi_tao=TOI)
+    assert e.value.status_code == 400
 
 
 def test_hoan_tac_route_400_khong_500_sau_khi_kieu_da_duyet(kho):
@@ -257,6 +301,43 @@ def test_duyet_route_tra_trung_cum_co_san_khong_gop(kho):
         cum_nhap_id=couple_id, usecase="Dance", insight_goc="Badaboum",
         xac_nhan_gop=[cu_id]), nguoi_tao=TOI)
     assert out2["cum_id"] == cu_id and out2["da_co"] is True
+
+
+def test_duyet_route_gop_vao_cum_id_khac_ten_van_gop_duoc(kho):
+    """`gop_vao_cum_id` chạy được cả khi TÊN KHÔNG trùng — khác `xac_nhan_gop`
+    (chỉ dùng khi D13 tự phát hiện trùng tên)."""
+    db, job = kho
+    cu_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    out = app_mod.duyet_chia(lan_id, app_mod.DuyetChiaRequest(
+        cum_nhap_id=couple_id, usecase="Dance", insight_goc="Badaboum",
+        gop_vao_cum_id=cu_id), nguoi_tao=TOI)
+    assert out["cum_id"] == cu_id and sorted(out["gan"]) == ["1", "2"]
+
+
+def test_duyet_route_400_khi_gop_vao_cum_id_khong_kem_cum_nhap_id(kho):
+    """`gop_vao_cum_id` CHỈ hợp lệ kèm `cum_nhap_id` (một kiểu) — không kèm
+    ⇒ 400, không âm thầm áp cho "duyệt tất cả"."""
+    db, job = kho
+    cu_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat(db, job)
+    with pytest.raises(HTTPException) as e:
+        app_mod.duyet_chia(lan_id, app_mod.DuyetChiaRequest(
+            usecase="Dance", insight_goc="Badaboum", gop_vao_cum_id=cu_id), nguoi_tao=TOI)
+    assert e.value.status_code == 400
+
+
+def test_duyet_route_gop_vao_cum_id_tu_choi_cum_nguoi_khac(kho):
+    db, job = kho
+    cu_id, _ = models_cum.tao_cum(db, HO, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat(db, job)
+    couple_id = _nhom_id(db, lan_id, "couple")
+    with pytest.raises(HTTPException) as e:
+        app_mod.duyet_chia(lan_id, app_mod.DuyetChiaRequest(
+            cum_nhap_id=couple_id, usecase="Dance", insight_goc="Badaboum",
+            gop_vao_cum_id=cu_id), nguoi_tao=TOI)
+    assert e.value.status_code == 400
 
 
 # --- GET /cum/{id}/lo/{thu}/payload -------------------------------------------
@@ -452,8 +533,11 @@ def _post_asgi(path: str, body: dict) -> int:
     ("thao-tac", {"loai": "gop", "tu_cum_nhap_id": 2 ** 70, "den_cum_nhap_id": 1}),
     ("thao-tac", {"loai": "chuyen", "video_ids": ["1"], "den_cum_nhap_id": 2 ** 70}),
     ("thao-tac", {"loai": "chap_nhan", "cum_nhap_id": 0}),
+    ("thao-tac", {"loai": "gop_nhom", "cum_nhap_ids": [2 ** 70], "den_cum_nhap_id": 1}),
+    ("thao-tac", {"loai": "gop_nhom", "cum_nhap_ids": [1], "den_cum_nhap_id": 2 ** 70}),
     ("duyet", {"cum_nhap_id": 2 ** 70}),
     ("duyet", {"xac_nhan_gop": [2 ** 70]}),
+    ("duyet", {"cum_nhap_id": 1, "gop_vao_cum_id": 2 ** 70}),
 ])
 def test_id_ngoai_mien_sqlite_tra_422_khong_500(kho, duong, than):
     """Id lớn hơn INTEGER 64-bit của SQLite từng tới tận câu SQL ⇒

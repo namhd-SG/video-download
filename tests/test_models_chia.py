@@ -5,6 +5,7 @@ Gọi thẳng các hàm model, cùng khuôn `tests/test_web_cum.py`.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -318,10 +319,11 @@ def test_thao_tac_khong_hop_le_bi_tu_choi_khong_ghi_nhat_ky(kho):
     assert _thao_tac(db, lan_id) == []
 
 
-def test_loai_thao_tac_la_tap_dong_11_gia_tri():
+def test_loai_thao_tac_la_tap_dong_gia_tri():
     assert models_chia.LOAI_THAO_TAC == (
         "chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
-        "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight")
+        "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight",
+        "tach", "gop_nhom", "huy_luot")
 
 
 def test_ap_thao_tac_tu_choi_loai_khong_ro(kho):
@@ -1400,3 +1402,199 @@ def test_duyet_kieu_id_khong_thuoc_luot_khong_ghi_doi_insight(kho):
                             (job,)).fetchone() == (None, None)
         assert conn.execute("SELECT usecase, insight_goc FROM chia_lan WHERE id = ?",
                             (lan_id,)).fetchone() == (None, None)
+
+
+# --- tach: tạo kiểu MỚI từ video chọn tay (phase 3+4) --------------------------
+
+def test_tach_tao_kieu_moi_va_chuyen_video(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1", "3"],
+                                  nhom="mới", kieu="tách riêng")
+    assert ket["so_video"] == 2
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    moi = next(k for k in chia["kieu"] if k["kieu"] == "tách riêng")
+    assert sorted(moi["video_ids"]) == ["1", "3"] and moi["nhom"] == "mới"
+    couple = next(k for k in chia["kieu"] if k["kieu"] == "couple")
+    cartoon = next(k for k in chia["kieu"] if k["kieu"] == "cartoon")
+    assert couple["video_ids"] == ["2"] and cartoon["video_ids"] == ["4"]
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["tach"], "MỘT dòng nhật ký"
+
+
+def test_tach_tu_choi_video_ids_rong_hoac_kieu_rong(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    with pytest.raises(ValueError):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=[], nhom="n", kieu="k")
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="n", kieu="   ")
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert _thao_tac(db, lan_id) == []
+
+
+def test_hoan_tac_tach_xoa_hang_moi_va_tra_video_ve_cho_cu(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    truoc = _dem(db, "cum_nhap")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="mới", kieu="riêng")
+    assert _dem(db, "cum_nhap") == truoc + 1
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket["so_video"] == 1
+    assert _dem(db, "cum_nhap") == truoc, "hàng mới PHẢI bị xoá, không chỉ trống video"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "riêng" not in [k["kieu"] for k in chia["kieu"]]
+    assert sorted(next(k["video_ids"] for k in chia["kieu"] if k["cum_nhap_id"] == couple_id)) \
+        == ["1", "2"]
+
+
+# --- gop_nhom: gộp NHIỀU kiểu vào MỘT kiểu đích trong MỘT cú bấm (D15) --------
+
+def _de_xuat_3_kieu(db, job, chu=TOI):
+    lan_id = models_chia.tao_chia_lan(db, job, chu, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, chu, [
+        {"nhom": "n", "kieu": [
+            {"kieu": "a", "video_ids": ["1"]},
+            {"kieu": "b", "video_ids": ["2"]},
+            {"kieu": "c", "video_ids": ["3"]},
+        ]},
+    ])
+    return lan_id
+
+
+def test_gop_nhom_gop_nhieu_kieu_mot_dong_nhat_ky(kho):
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, b_id, c_id = (_nhom_id(db, lan_id, k) for k in ("a", "b", "c"))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                                  cum_nhap_ids=[a_id, b_id], den_cum_nhap_id=c_id)
+    assert ket["so_video"] == 2
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert [k["cum_nhap_id"] for k in chia["kieu"]] == [c_id]
+    assert sorted(chia["kieu"][0]["video_ids"]) == ["1", "2", "3"]
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["gop_nhom"], "MỘT dòng, không phải N"
+
+
+def test_gop_nhom_tu_choi_khi_mot_nguon_khong_thuoc_luot(kho):
+    """VALIDATE mọi nguồn TRƯỚC khi đổi bất cứ gì — một nguồn giả ⇒ từ chối CẢ
+    thao tác, không gộp phần còn lại."""
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, c_id = _nhom_id(db, lan_id, "a"), _nhom_id(db, lan_id, "c")
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                                  cum_nhap_ids=[a_id, 999999], den_cum_nhap_id=c_id)
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert _thao_tac(db, lan_id) == []
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert sorted(k["kieu"] for k in chia["kieu"]) == ["a", "b", "c"], "KHÔNG gộp một phần"
+
+
+def test_hoan_tac_gop_nhom_khoi_phuc_tat_ca(kho):
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, b_id, c_id = (_nhom_id(db, lan_id, k) for k in ("a", "b", "c"))
+    truoc = _dem(db, "cum_nhap")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                            cum_nhap_ids=[a_id, b_id], den_cum_nhap_id=c_id)
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket["so_video"] == 2
+    assert _dem(db, "cum_nhap") == truoc
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    nhoms = {k["kieu"]: sorted(k["video_ids"]) for k in chia["kieu"]}
+    assert nhoms == {"a": ["1"], "b": ["2"], "c": ["3"]}
+
+
+# --- huy_luot: huỷ lượt, KHÔNG hoàn tác được, cho phép cả sau duyệt một phần --
+
+def test_huy_luot_dat_trang_thai_huy_khong_hoan_tac_duoc(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "huy_luot")
+    assert ket["so_video"] == 0
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "huy"
+    with pytest.raises(ValueError, match="huy"):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+
+
+def test_huy_luot_cho_phep_sau_khi_duyet_mot_phan(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "de_xuat", "còn 'cartoon'"
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "huy_luot")
+    assert ket is not None
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "huy"
+
+
+def test_nhap_de_xuat_mo_luot_moi_sau_khi_huy(kho):
+    db, job = kho
+    lan1 = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan1, TOI, [
+        {"nhom": "n", "kieu": [{"kieu": "a", "video_ids": ["1"]}]}])
+    models_chia.ap_thao_tac(db, lan1, TOI, "huy_luot")
+    ket = models_chia.nhap_de_xuat(db, job, "p1", None,
+                                   [{"nhom": "n", "kieu": [{"kieu": "b", "video_ids": ["2"]}]}],
+                                   [], [], [])
+    assert ket["tao_moi"] is True and ket["chia_lan_id"] != lan1
+    chia_moi = models_chia.lay_chia(db, ket["chia_lan_id"], TOI)
+    assert [k["kieu"] for k in chia_moi["kieu"]] == ["b"]
+    assert models_chia.lay_chia(db, lan1, TOI)["trang_thai"] == "huy", "lượt cũ giữ nguyên"
+
+
+# --- duyet với gop_vao_cum_id: gộp vào cụm có sẵn TÊN KHÁC (D13 không bắt) ----
+
+def test_duyet_kieu_gop_vao_cum_id_chuyen_video_vao_cum_co_san(kho):
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    ket = models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum",
+                                 gop_vao_cum_id=cum_id)
+    assert ket["cum_id"] == cum_id and ket["da_co"] is True
+    assert sorted(ket["gan"]) == ["1", "2"]
+    with sqlite3.connect(db) as conn:
+        vc = {r[0] for r in conn.execute("SELECT video_id FROM video_cum WHERE cum_id = ?",
+                                         (cum_id,))}
+    assert vc == {"1", "2"}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "couple" not in [k["kieu"] for k in chia["kieu"]]
+    hang = _thao_tac(db, lan_id)
+    assert hang[-1]["loai"] == "duyet_kieu"
+    assert json.loads(hang[-1]["chi_tiet_json"])["cum_id"] == cum_id, "id đích PHẢI có trong log"
+
+
+def test_duyet_gop_vao_cum_id_tu_choi_cum_khong_thuoc_chu(kho):
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, HO, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    with pytest.raises(ValueError, match="không phải của bạn"):
+        models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum",
+                               gop_vao_cum_id=cum_id)
+    assert _dem(db, "video_cum") == 0
+    assert _thao_tac(db, lan_id) == [], "không ghi dòng nào khi từ chối"
+
+
+def test_duyet_gop_vao_cum_id_van_400_khi_insight_trong(kho):
+    """D18 (ĐP-169): usecase/insight gốc trống chặn CẢ đường `gop_vao_cum_id`
+    y hệt đường thường — không nới lỏng riêng."""
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    with pytest.raises(ValueError, match="usecase/insight gốc"):
+        models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "", "", gop_vao_cum_id=cum_id)
+    assert _dem(db, "video_cum") == 0
+
+
+# --- so_thao_tac: bộ đếm nghiệm thu D15 trong GET /chia/{job_id} --------------
+
+def test_lay_chia_tra_so_thao_tac_dung_so_dong(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "chap_nhan", cum_nhap_id=couple_id)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2

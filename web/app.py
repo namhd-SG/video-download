@@ -843,6 +843,9 @@ class ThaoTacChiaRequest(BaseModel):
     cum_nhap_id: IdSqlite | None = None
     tu_cum_nhap_id: IdSqlite | None = None
     den_cum_nhap_id: IdSqlite | None = None
+    # Nhiều nguồn cho `gop_nhom` (gộp NHIỀU kiểu vào MỘT cú bấm) — khác
+    # `tu_cum_nhap_id` của `gop` (chỉ MỘT nguồn).
+    cum_nhap_ids: list[IdSqlite] | None = None
     video_ids: list[str] | None = None
     nhom: str | None = None
     kieu: str | None = None
@@ -860,6 +863,10 @@ class DuyetChiaRequest(BaseModel):
     insight_goc: str | None = None
     # Id các cụm có sẵn người dùng đã XÁC NHẬN muốn gộp vào.
     xac_nhan_gop: list[IdSqlite] = []
+    # User tự CHỌN TAY một cụm có sẵn để gộp kiểu này vào — CHỈ hợp lệ kèm
+    # `cum_nhap_id` (một kiểu); khác `xac_nhan_gop` (chỉ dùng khi TÊN trùng,
+    # D13) — đường này dùng khi tên KHÔNG trùng nhưng user vẫn muốn gộp.
+    gop_vao_cum_id: IdSqlite | None = None
 
 
 @app.get("/chia/{job_id}")
@@ -899,6 +906,10 @@ def duyet_chia(chia_lan_id: int, body: DuyetChiaRequest,
               nguoi_tao: str = Depends(require_user)) -> dict:
     """Duyệt một kiểu (`cum_nhap_id` có giá trị) hoặc tất cả còn lại
     (`cum_nhap_id` bỏ trống) — lối DUY NHẤT từ nháp sang cụm THẬT."""
+    if body.gop_vao_cum_id is not None and body.cum_nhap_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="gop_vao_cum_id chỉ dùng được kèm cum_nhap_id (duyệt đúng một kiểu)")
     chi_cua = _pham_vi(nguoi_tao)
     try:
         if body.cum_nhap_id is None:
@@ -907,7 +918,7 @@ def duyet_chia(chia_lan_id: int, body: DuyetChiaRequest,
         else:
             ket = models_chia.duyet_kieu(DB_PATH, chia_lan_id, body.cum_nhap_id, nguoi_tao,
                                          chi_cua, body.usecase, body.insight_goc,
-                                         body.xac_nhan_gop)
+                                         body.xac_nhan_gop, body.gop_vao_cum_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if ket is None:
