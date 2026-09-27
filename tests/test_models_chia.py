@@ -1874,6 +1874,110 @@ def test_so_thao_tac_khong_dem_the_he_cu_sau_ghi_de_xuat(kho):
         "dòng của thế hệ cũ không được đếm sau khi ghi đề xuất mới"
 
 
+def test_so_thao_tac_khong_tut_ve_0_sau_duyet_mot_phan(kho):
+    """`so_thao_tac` KHÔNG được tụt về 0 sau khi duyệt MỘT PHẦN (khác thế hệ
+    cũ bị GHI ĐÈ ở test trên) — `duyet_kieu`/`duyet_het` bump `the_he` (để
+    khoá hoàn tác xuyên qua duyệt) nhưng KHÔNG bump `the_he_nhap` (không mở
+    nháp mới), nên công sửa TRƯỚC lúc duyệt vẫn phải còn được đếm."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+
+    models_chia.duyet_kieu(db, lan_id, cartoon_id, TOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, \
+        "duyệt MỘT kiểu KHÁC không được xoá công đã sửa ở kiểu còn lại"
+
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2, \
+        "sửa TRƯỚC + sửa SAU một lần duyệt một phần đều phải được đếm"
+
+
+def test_so_thao_tac_dem_du_sau_duyet_het_toan_bo(kho):
+    """3 lần sửa rồi `duyet_het` xong CẢ LƯỢT (không còn kiểu nào ở nháp,
+    `trang_thai` chuyển `da_duyet`) — bộ đếm vẫn phải giữ nguyên 3, không tụt
+    về 0 (đây là con số D15 hiển thị "N thao tác sửa" ở màn đã duyệt)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    y_id = _nhom_id(db, lan_id, "y")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=y_id, kieu="z")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 3
+
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert len(ket["cum"]) == 2, "cả hai kiểu còn lại (z + cartoon) phải được duyệt hết"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["trang_thai"] == "da_duyet"
+    assert chia["so_thao_tac"] == 3, "duyệt hết cả lượt không được xoá công đã sửa trước đó"
+
+
+def test_the_he_nhap_bump_cung_gia_tri_moi_voi_the_he_khi_ghi_de(kho):
+    """`ghi_de_xuat` (gọi TRỰC TIẾP — mô phỏng đường nhập đè nháp, khác
+    `test_so_thao_tac_khong_dem_the_he_cu_sau_ghi_de_xuat` ở chỗ test này đo
+    thêm CẢ giá trị cột lẫn công sửa SAU lần ghi đè): phải bump CẢ `the_he`
+    VÀ `the_he_nhap` lên CÙNG một giá trị mới — dòng sửa của thế hệ CŨ (trước
+    khi ghi đè) không còn được đếm sau đó dù `da_lui = 0`, và một sửa MỚI
+    (sau khi ghi đè) phải đếm lại từ 1."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "trang phục", "kieu": [{"kieu": "moi", "video_ids": ["1", "2"]}]}])
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        hang = conn.execute("SELECT the_he, the_he_nhap FROM chia_lan WHERE id = ?",
+                            (lan_id,)).fetchone()
+    assert hang["the_he"] == hang["the_he_nhap"], \
+        "the_he_nhap phải bằng the_he NGAY sau khi ghi đè (cùng bump)"
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, \
+        "chưa có sửa nào ở thế hệ MỚI"
+
+    moi_id = _nhom_id(db, lan_id, "moi")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=moi_id, kieu="moi2")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, \
+        "sửa MỚI (sau ghi đè) đếm lại từ 1 — sửa CŨ không lẫn vào"
+
+
+def test_the_he_nhap_migration_tu_schema_cu_dem_dung_lich_su(kho):
+    """DB có sẵn dữ liệu TỪ TRƯỚC khi có cột `the_he_nhap` (mô phỏng: xoá cột
+    sau khi đã có nháp thật + 2 dòng sửa) — mở lại qua `init_db` (đường nâng
+    cấp bình thường mọi lần khởi động đều chạy) phải tự thêm cột với giá trị
+    MẶC ĐỊNH 0, và bộ đếm D15 phải đếm ĐÚNG toàn bộ lịch sử của nháp đó (nháp
+    chưa từng bị `ghi_de_xuat` ghi đè lần hai, nên đếm cả từ đầu là đúng)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2
+
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE chia_lan DROP COLUMN the_he_nhap")
+        cot = {r[1] for r in conn.execute("PRAGMA table_info(chia_lan)")}
+        assert "the_he_nhap" not in cot, "phép mô phỏng phải thật sự bỏ cột trước khi nâng cấp lại"
+
+    models.init_db(db)   # đường nâng cấp bình thường — chạy mỗi lần khởi động
+    with sqlite3.connect(db) as conn:
+        cot = {r[1] for r in conn.execute("PRAGMA table_info(chia_lan)")}
+        assert "the_he_nhap" in cot, "init_db phải tự thêm lại cột"
+        gia_tri = conn.execute("SELECT the_he_nhap FROM chia_lan WHERE id = ?",
+                               (lan_id,)).fetchone()[0]
+        assert gia_tri == 0, "hàng có TỪ TRƯỚC khi có cột phải nhận mặc định 0"
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["so_thao_tac"] == 2, "mặc định 0 ⇒ đếm TOÀN BỘ lịch sử của nháp"
+
+
 # --- nhap_de_xuat: LOAI_CHAN_GHI_DE_NHAP (rộng + khác cách lọc bộ đếm D15) ---
 
 def test_nhap_de_xuat_chi_doi_insight_khong_chan_va_giu_nguyen_insight(kho):

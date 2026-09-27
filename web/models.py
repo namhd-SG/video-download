@@ -349,8 +349,20 @@ def init_db(db_path: Path) -> None:
         # `the_he` (thế hệ): bump mỗi lần `ghi_de_xuat` GHI ĐÈ nháp — `hoan_tac`
         # chỉ được lùi thao tác cùng thế hệ với nháp HIỆN TẠI, không được lùi
         # xuyên qua một đề xuất đã bị thay thế (nháp cũ hồi sinh dữ liệu đã bị
-        # `ghi_de_xuat` sau đó xoá).
+        # `ghi_de_xuat` sau đó xoá). CŨNG bump ngay sau khi duyệt được BẤT CỨ
+        # GÌ (`duyet_kieu`/`duyet_het`) — hai mốc "thế hệ nháp" và "thế hệ
+        # hoàn-tác-được" đứng CHUNG một cột này.
         _add_column_if_missing(conn, "chia_lan", "the_he", "INTEGER NOT NULL DEFAULT 0")
+        # `the_he_nhap`: mốc RIÊNG, chỉ bump lúc `ghi_de_xuat` (KHÔNG bump lúc
+        # duyệt) — dùng cho bộ đếm hiển thị D15 (`lay_chia::so_thao_tac`).
+        # Tách khỏi `the_he` vì `the_he` mang HAI nghĩa cộng dồn nhau (nháp
+        # mới VÀ đã duyệt một phần), còn bộ đếm D15 chỉ cần biết "có còn nằm
+        # trong nháp hiện tại không" — nó phải sống sót qua một lần duyệt một
+        # phần (`duyet_kieu`/`duyet_het` bump `the_he` để KHOÁ hoàn tác xuyên
+        # qua duyệt, nhưng KHÔNG mở một nháp mới, nên không được làm bộ đếm
+        # tụt về 0). Hàng cũ (trước khi có cột này) mặc định 0 ⇒ đếm TOÀN BỘ
+        # lịch sử của lượt — đúng cho nháp CHƯA TỪNG bị `ghi_de_xuat` ghi đè.
+        _add_column_if_missing(conn, "chia_lan", "the_he_nhap", "INTEGER NOT NULL DEFAULT 0")
         # `the_he` trên chính dòng nhật ký: ghi lại thế hệ TẠI LÚC thao tác xảy
         # ra, để `hoan_tac` so được với thế hệ hiện tại của `chia_lan`.
         # `da_lui`: đánh dấu một dòng nhật ký ĐÃ bị `hoan_tac` xử lý — không có

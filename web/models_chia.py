@@ -60,9 +60,11 @@ _HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kie
 # KHÁC NHAU dưới đây; đọc kỹ trước khi thêm/bớt một loại vào tuple này, vì hai
 # nơi dùng nó lọc THEO HAI CÁCH khác nhau (xem hai chỗ gọi):
 #   - bộ đếm HIỂN THỊ D15 (`lay_chia::so_thao_tac`) chỉ đếm những dòng còn
-#     "sống" của THẾ HỆ HIỆN TẠI — dùng `_HOAN_TAC_DUOC` (tuple này TRỪ
-#     `hoan_tac`, vì `hoan_tac` không tự lùi chính nó) CỘNG lọc
-#     `da_lui = 0 AND the_he = the_he hiện tại`;
+#     "sống" kể từ lần `ghi_de_xuat` GẦN NHẤT — dùng `_HOAN_TAC_DUOC` (tuple
+#     này TRỪ `hoan_tac`, vì `hoan_tac` không tự lùi chính nó) CỘNG lọc
+#     `da_lui = 0 AND the_he >= the_he_nhap` (mốc `the_he_nhap` RIÊNG, chỉ
+#     bump lúc `ghi_de_xuat`, KHÔNG bump lúc duyệt — xem
+#     `web/models.py::init_db`);
 #   - cửa CHẶN ghi đè nháp (`nhap_de_xuat`/`NhapBiChan`, xem
 #     `LOAI_CHAN_GHI_DE_NHAP` dưới đây) dùng tuple này NGUYÊN VẸN (kể cả
 #     `hoan_tac`) CỘNG `duyet_kieu`/`duyet_het`, KHÔNG lọc `da_lui`/`the_he`.
@@ -219,9 +221,14 @@ def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
     # Bump `the_he`: một đề xuất MỚI mở một thế hệ mới — `hoan_tac` sau
     # đây (H2b) chỉ được lùi thao tác của thế hệ HIỆN TẠI, không được lùi
     # xuyên qua đề xuất vừa bị GHI ĐÈ ở trên (dữ liệu của thế hệ cũ đã bị
-    # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác).
+    # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác). Cũng bump
+    # `the_he_nhap` CÙNG giá trị mới (SQLite tính vế phải của MỌI cột trong
+    # một câu SET trên giá trị hàng TRƯỚC câu UPDATE, nên `the_he + 1` ở đây
+    # và ở `the_he` là CÙNG một số) — mốc RIÊNG cho bộ đếm D15, xem
+    # `web/models.py::init_db` (`the_he_nhap`).
     conn.execute(
-        "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1 WHERE id = ?",
+        "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1, "
+        "the_he_nhap = the_he + 1 WHERE id = ?",
         (chia_lan_id,))
     # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_chot_ten_moi_kieu`.
     _chot_ten_moi_kieu(conn, chia_lan_id)
@@ -397,20 +404,29 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
             elif r["video_id"] not in video_cum_cua_chu:
                 bi_bo.append(r["video_id"])
         # Bộ đếm nghiệm thu D15 — đếm dòng SỬA CÁCH CHIA còn "sống" (chưa bị
-        # `hoan_tac` lùi) của THẾ HỆ HIỆN TẠI: dùng `_HOAN_TAC_DUOC` (=
+        # `hoan_tac` lùi) kể từ lần `ghi_de_xuat` GẦN NHẤT (`the_he_nhap`,
+        # mốc RIÊNG — xem `web/models.py::init_db`): dùng `_HOAN_TAC_DUOC` (=
         # `LOAI_SUA_CACH_CHIA` TRỪ `hoan_tac` — `hoan_tac` không tự lùi chính
-        # nó nên tự động không được đếm) CỘNG `da_lui = 0 AND the_he = the_he
-        # hiện tại` — cùng bộ lọc `co_the_hoan_tac` dùng ngay dưới đây. Ví dụ:
-        # `gop` ⇒ 1; `gop` rồi `hoan_tac` ⇒ 0 (dòng `gop` bị đánh `da_lui=1`);
-        # `gop`, `hoan_tac`, `gop` lại ⇒ 1 (dòng `gop` MỚI còn sống). Nhật ký
-        # (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất kể loại — chỉ cách ĐẾM
-        # đổi, không phải cách GHI. Xem `LOAI_CHAN_GHI_DE_NHAP` cho câu hỏi
-        # KHÁC ("có được ghi đè nháp không") — hai câu hỏi lọc khác nhau.
+        # nó nên tự động không được đếm) CỘNG `da_lui = 0 AND the_he >=
+        # the_he_nhap`. `>=`, KHÔNG `=`: `duyet_kieu`/`duyet_het` bump
+        # `the_he` (để KHOÁ hoàn tác xuyên qua duyệt — xem `co_the_hoan_tac`
+        # ngay dưới, vẫn dùng `the_he` đúng nghĩa CŨ) nhưng KHÔNG bump
+        # `the_he_nhap` (không mở nháp mới) — lọc `the_he = the_he` (bằng)
+        # sẽ làm một dòng sửa TRƯỚC lúc duyệt một phần (nay mang `the_he` CŨ,
+        # nhỏ hơn `the_he` hiện tại) rơi khỏi bộ đếm dù công đó còn "sống".
+        # Ví dụ: `gop` ⇒ 1; `gop` rồi `hoan_tac` ⇒ 0 (dòng `gop` bị đánh
+        # `da_lui=1`); `gop`, `hoan_tac`, `gop` lại ⇒ 1 (dòng `gop` MỚI còn
+        # sống); `gop`, `doi_ten`, `duyet_kieu` MỘT kiểu khác (bump `the_he`,
+        # không bump `the_he_nhap`) ⇒ vẫn 2 (không tụt về 0 như trước khi có
+        # `the_he_nhap`). Nhật ký (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất
+        # kể loại — chỉ cách ĐẾM đổi, không phải cách GHI. Xem
+        # `LOAI_CHAN_GHI_DE_NHAP` cho câu hỏi KHÁC ("có được ghi đè nháp
+        # không") — hai câu hỏi lọc khác nhau.
         marks_sua = ",".join("?" * len(_HOAN_TAC_DUOC))
         so_thao_tac = conn.execute(
             f"SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN ({marks_sua}) "
-            f"AND da_lui = 0 AND the_he = ?",
-            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he"])).fetchone()[0]
+            f"AND da_lui = 0 AND the_he >= ?",
+            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he_nhap"])).fetchone()[0]
         # Cùng điều kiện chọn dòng của `_op_hoan_tac` — nút "Hoàn tác" chỉ bật
         # khi bấm vào thật sự có thứ để lùi (không suy từ `so_thao_tac`:
         # `doi_insight`/duyệt ghi nhật ký nhưng không lùi được).
