@@ -39,11 +39,13 @@ LAN_VIDEO = ("kieu", "huong_dan", "nghi")
 # cả lượt gọi) — hai giá trị riêng để nhật ký phân biệt được hai cú bấm.
 # `tach` = tạo một kiểu MỚI từ video chọn tay (mirror `_op_doi_ten` cho tên
 # hàng mới); `gop_nhom` = gộp NHIỀU kiểu vào một kiểu đích trong MỘT cú bấm
-# (mirror `_op_gop` với danh sách nguồn); `huy_luot` = huỷ lượt (không hoàn
+# (mirror `_op_gop` với danh sách nguồn); `doi_ten_nhom` = đổi tên MỘT nhóm
+# (mọi kiểu của nhóm đó) trong MỘT cú bấm, atomic — mirror `_op_doi_ten` áp
+# cho từng hàng của nhóm thay vì một hàng; `huy_luot` = huỷ lượt (không hoàn
 # tác được — xem `_HOAN_TAC_DUOC`).
 LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
                  "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight",
-                 "tach", "gop_nhom", "huy_luot")
+                 "tach", "gop_nhom", "doi_ten_nhom", "huy_luot")
 
 # Loại có thể LÙI LẠI bằng `hoan_tac` — `chap_nhan` không đổi gì để lùi,
 # `doi_insight` đổi nhãn (không đổi cấu trúc video) nên không nằm trong luồng
@@ -52,7 +54,37 @@ LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuy
 # thật — ngoài phạm vi "hoàn tác nháp"), và `huy_luot` không lùi được (huỷ là
 # điểm dừng, không phải một bước có thể quay lại).
 _HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kieu",
-                  "tach", "gop_nhom")
+                  "tach", "gop_nhom", "doi_ten_nhom")
+
+# Loại thao tác coi là SỬA CÁCH CHIA — dùng làm phần tử chung cho HAI câu hỏi
+# KHÁC NHAU dưới đây; đọc kỹ trước khi thêm/bớt một loại vào tuple này, vì hai
+# nơi dùng nó lọc THEO HAI CÁCH khác nhau (xem hai chỗ gọi):
+#   - bộ đếm HIỂN THỊ D15 (`lay_chia::so_thao_tac`) chỉ đếm những dòng còn
+#     "sống" của THẾ HỆ HIỆN TẠI — dùng `_HOAN_TAC_DUOC` (tuple này TRỪ
+#     `hoan_tac`, vì `hoan_tac` không tự lùi chính nó) CỘNG lọc
+#     `da_lui = 0 AND the_he = the_he hiện tại`;
+#   - cửa CHẶN ghi đè nháp (`nhap_de_xuat`/`NhapBiChan`, xem
+#     `LOAI_CHAN_GHI_DE_NHAP` dưới đây) dùng tuple này NGUYÊN VẸN (kể cả
+#     `hoan_tac`) CỘNG `duyet_kieu`/`duyet_het`, KHÔNG lọc `da_lui`/`the_he`.
+# Nhật ký (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất kể loại ở cả hai nơi —
+# hai bộ lọc trên chỉ đổi cách ĐẾM/CHẶN, không đổi cách GHI. `doi_insight`
+# (điền usecase/insight gốc), `chap_nhan` (xem qua, không đổi gì) và
+# `huy_luot` (bỏ lượt) đều KHÔNG nằm trong tuple này: chia tay cũng phải điền
+# insight/huỷ, nên đó không phải công sửa CÁCH CHIA.
+LOAI_SUA_CACH_CHIA = ("gop", "gop_nhom", "doi_ten", "doi_ten_nhom", "chuyen", "tach",
+                      "ngoai_chu_de", "tra_ve", "xoa_kieu", "hoan_tac")
+
+# Loại CHẶN ghi đè nháp (`nhap_de_xuat` — `NhapBiChan`) — RỘNG HƠN và ĐO
+# KHÁC bộ đếm hiển thị D15 ở trên:
+#   - rộng hơn ở TẬP LOẠI: cộng thêm `duyet_kieu`/`duyet_het` — duyệt MỘT
+#     PHẦN (còn kiểu khác ở lại nháp) vẫn là công người dùng đã bỏ ra, không
+#     được một lượt nhập đề xuất khác xoá mất;
+#   - khác ở CÁCH LỌC: KHÔNG lọc `da_lui`/`the_he` — một `tach` bị `hoan_tac`
+#     lùi lại vẫn phải chặn (người dùng ĐÃ sửa tay, không phải một nháp còn
+#     trắng), và một `duyet_kieu` một phần luôn nằm ở THẾ HỆ CŨ (nó tự bump
+#     `the_he` ngay sau khi ghi — xem `duyet_kieu`/`duyet_het`) nên lọc theo
+#     thế hệ hiện tại sẽ BỎ SÓT đúng ca cần chặn nhất.
+LOAI_CHAN_GHI_DE_NHAP = LOAI_SUA_CACH_CHIA + ("duyet_kieu", "duyet_het")
 
 
 def _lan_cua_toi(conn, chia_lan_id: int, chu: str):
@@ -251,10 +283,14 @@ def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | 
     Người chia = người tạo job (chỉ chủ job chia được job của mình).
 
     Chọn lượt: lượt MỚI NHẤT của chủ job đang `cho_hinh`, hoặc đang `de_xuat`
-    mà CHƯA có dòng nhật ký nào ⇒ dùng lại (nháp mới thay nháp cũ). Đang
-    `de_xuat` và ĐÃ có nhật ký (người dùng đã sửa/duyệt một phần) ⇒
-    `NhapBiChan`. Không có lượt, hoặc lượt mới nhất đã `da_duyet`/`huy` ⇒ mở
-    lượt mới ("chia lại").
+    mà CHƯA có dòng nhật ký nào thuộc `LOAI_CHAN_GHI_DE_NHAP` ⇒ dùng lại
+    (nháp mới thay nháp cũ) — usecase/insight gốc đã điền trên lượt đó (qua
+    `doi_insight`) được GIỮ NGUYÊN vì đường dùng lại không đụng tới hai cột đó
+    (chỉ `phien_ban_prompt`/`truc`). Đang `de_xuat` và ĐÃ có dòng sửa/duyệt
+    (người dùng đã đổi tên/gộp/tách/duyệt một phần..., kể cả một sửa đã bị
+    `hoan_tac` lùi lại) ⇒ `NhapBiChan` — chỉ điền usecase/insight gốc không
+    nên khoá việc chạy lại tầng hình, mọi thứ khác thì có. Không có
+    lượt, hoặc lượt mới nhất đã `da_duyet`/`huy` ⇒ mở lượt mới ("chia lại").
 
     Id không thuộc job ⇒ `ValueError` (tệp sai, không phải chuyện lọc). Id của
     job nhưng bị `DIEU_KIEN_VAO_LUOT_CHIA` loại (vd vừa bị loại sau lúc liệt)
@@ -288,11 +324,20 @@ def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | 
             "ORDER BY tao_luc DESC, id DESC LIMIT 1", (job_id, chu)).fetchone()
         dung_lai = None
         if lan is not None and lan["trang_thai"] in ("cho_hinh", "de_xuat"):
-            so_thao_tac = conn.execute("SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ?",
-                                       (lan["id"],)).fetchone()[0]
-            if lan["trang_thai"] == "de_xuat" and so_thao_tac:
+            # Cửa CHẶN dùng `LOAI_CHAN_GHI_DE_NHAP` (RỘNG HƠN + KHÔNG lọc
+            # `da_lui`/`the_he` — xem comment tại định nghĩa nó): điền
+            # usecase/insight gốc (`doi_insight`) không được tính vào đây,
+            # nếu không user chỉ cần điền hai ô đó là script máy dev không
+            # chạy lại được nữa (phải `huy_luot`); nhưng một `tach` dù đã bị
+            # `hoan_tac` lùi lại, hay một `duyet_kieu` một phần, vẫn phải
+            # chặn — đó là công người dùng đã bỏ ra, không phải nháp trắng.
+            marks_chan = ",".join("?" * len(LOAI_CHAN_GHI_DE_NHAP))
+            so_sua = conn.execute(
+                f"SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN "
+                f"({marks_chan})", (lan["id"], *LOAI_CHAN_GHI_DE_NHAP)).fetchone()[0]
+            if lan["trang_thai"] == "de_xuat" and so_sua:
                 raise NhapBiChan(
-                    f"lượt {lan['id']} đã có {so_thao_tac} thao tác sửa/duyệt — không ghi đè nháp")
+                    f"lượt {lan['id']} đã có {so_sua} thao tác sửa/duyệt — không ghi đè nháp")
             dung_lai = int(lan["id"])
         if dung_lai is not None:
             chia_lan_id = dung_lai
@@ -351,10 +396,21 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
                 nghi.append(r["video_id"])
             elif r["video_id"] not in video_cum_cua_chu:
                 bi_bo.append(r["video_id"])
-        # Bộ đếm nghiệm thu D15 — "mỗi bấm = 1 dòng nhật ký".
+        # Bộ đếm nghiệm thu D15 — đếm dòng SỬA CÁCH CHIA còn "sống" (chưa bị
+        # `hoan_tac` lùi) của THẾ HỆ HIỆN TẠI: dùng `_HOAN_TAC_DUOC` (=
+        # `LOAI_SUA_CACH_CHIA` TRỪ `hoan_tac` — `hoan_tac` không tự lùi chính
+        # nó nên tự động không được đếm) CỘNG `da_lui = 0 AND the_he = the_he
+        # hiện tại` — cùng bộ lọc `co_the_hoan_tac` dùng ngay dưới đây. Ví dụ:
+        # `gop` ⇒ 1; `gop` rồi `hoan_tac` ⇒ 0 (dòng `gop` bị đánh `da_lui=1`);
+        # `gop`, `hoan_tac`, `gop` lại ⇒ 1 (dòng `gop` MỚI còn sống). Nhật ký
+        # (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất kể loại — chỉ cách ĐẾM
+        # đổi, không phải cách GHI. Xem `LOAI_CHAN_GHI_DE_NHAP` cho câu hỏi
+        # KHÁC ("có được ghi đè nháp không") — hai câu hỏi lọc khác nhau.
+        marks_sua = ",".join("?" * len(_HOAN_TAC_DUOC))
         so_thao_tac = conn.execute(
-            "SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ?",
-            (chia_lan_id,)).fetchone()[0]
+            f"SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN ({marks_sua}) "
+            f"AND da_lui = 0 AND the_he = ?",
+            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he"])).fetchone()[0]
         # Cùng điều kiện chọn dòng của `_op_hoan_tac` — nút "Hoàn tác" chỉ bật
         # khi bấm vào thật sự có thứ để lùi (không suy từ `so_thao_tac`:
         # `doi_insight`/duyệt ghi nhật ký nhưng không lùi được).
@@ -1067,6 +1123,47 @@ def _op_gop_nhom(conn, chia_lan_id, chu, lan, cum_nhap_ids: list[int] | None,
     return tong, {"den_cum_nhap_id": den_cum_nhap_id, "nguon": nguon}
 
 
+def _op_doi_ten_nhom(conn, chia_lan_id, chu, lan, nhom_cu: str, nhom_moi: str, **_):
+    """Đổi tên MỘT NHÓM — đổi `nhom` của MỌI `cum_nhap` của lượt khớp
+    `nhom_cu` (so khoá như `_khoa_ten`, cùng cách trang JS so trùng tên nhóm)
+    trong MỘT dòng nhật ký, MỘT transaction (atomic — khác vòng lặp `doi_ten`
+    phía client trước đây, N request rời cho N kiểu của một nhóm, có thể
+    trượt giữa chừng để lại nhóm đổi tên một nửa).
+
+    Tên từng hàng bị đổi tính lại NHƯ `_op_doi_ten` (D19: chỉ hàng của
+    NHÓM đó, không đụng tên hàng ngoài nhóm) — gọi `_chot_ten_sau_doi_ten`
+    cho từng hàng SAU KHI đã đổi `nhom` của CẢ nhóm, để hàng nào so trùng
+    "cùng kiểu" cũng thấy đúng `nhom` mới của các hàng anh em.
+
+    Không có hàng nào khớp `nhom_cu`, hoặc `nhom_moi` rỗng sau chuẩn hoá ⇒
+    `None` (cùng luật "khong_hop_le" các `_op_*` khác dùng)."""
+    nhom_moi_chuan = models_cum.chuan_hoa_chu(nhom_moi)
+    if not nhom_moi_chuan:
+        return None
+    khoa_cu = _khoa_ten(nhom_cu)
+    hang = conn.execute("SELECT id, nhom, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
+                        (chia_lan_id,)).fetchall()
+    khop = [r for r in hang if _khoa_ten(r["nhom"]) == khoa_cu]
+    if not khop:
+        return None
+    conn.executemany("UPDATE cum_nhap SET nhom = ? WHERE id = ?",
+                     [(nhom_moi_chuan, r["id"]) for r in khop])
+    # `truoc`: MỘT dòng cho MỖI hàng bị đổi — `nhom_truoc`/`ten_cum_truoc` để
+    # `hoan_tac` trả lại đúng của TỪNG hàng (không suy ngược từ `nhom_cu`, vì
+    # tên nhóm gốc trên mỗi hàng có thể lệch dấu cách/hoa-thường dù cùng khoá
+    # `_khoa_ten`).
+    truoc = []
+    for r in khop:
+        ten_cum_truoc = _chot_ten_sau_doi_ten(conn, chia_lan_id, r["id"])[str(r["id"])]
+        truoc.append({"cum_nhap_id": r["id"], "nhom_truoc": r["nhom"],
+                     "ten_cum_truoc": ten_cum_truoc})
+    marks = ",".join("?" * len(khop))
+    n = conn.execute(
+        f"SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? AND cum_nhap_id IN ({marks})",
+        (chia_lan_id, *[r["id"] for r in khop])).fetchone()[0]
+    return n, {"nhom_moi": nhom_moi_chuan, "truoc": truoc}
+
+
 def _hang_video_cum_nhap(conn, chia_lan_id, video_ids):
     if not video_ids:
         return []
@@ -1268,6 +1365,17 @@ def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
                 "UPDATE video_cum_nhap SET cum_nhap_id = ? WHERE chia_lan_id = ? AND video_id = ?",
                 [(ng["cum_nhap_id"], chia_lan_id, vid) for vid in ng["video_ids"]])
             so += len(ng["video_ids"])
+    elif loai == "doi_ten_nhom":
+        conn.executemany("UPDATE cum_nhap SET nhom = ? WHERE id = ?",
+                         [(r["nhom_truoc"], r["cum_nhap_id"]) for r in chi_tiet["truoc"]])
+        conn.executemany(
+            "UPDATE cum_nhap SET ten_cum = ? WHERE id = ? AND chia_lan_id = ?",
+            [(r["ten_cum_truoc"], r["cum_nhap_id"], chia_lan_id) for r in chi_tiet["truoc"]])
+        marks = ",".join("?" * len(chi_tiet["truoc"]))
+        so = conn.execute(
+            f"SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? "
+            f"AND cum_nhap_id IN ({marks})",
+            (chia_lan_id, *[r["cum_nhap_id"] for r in chi_tiet["truoc"]])).fetchone()[0]
     else:   # chuyen · ngoai_chu_de · tra_ve — đều lưu `truoc: [{video_id,cum_nhap_id,lan}]`
         conn.executemany(
             "UPDATE video_cum_nhap SET cum_nhap_id = ?, lan = ? "
@@ -1294,6 +1402,7 @@ _AP_THAO_TAC = {
     "hoan_tac": _op_hoan_tac,
     "tach": _op_tach,
     "gop_nhom": _op_gop_nhom,
+    "doi_ten_nhom": _op_doi_ten_nhom,
     "huy_luot": _op_huy_luot,
 }
 
@@ -1318,6 +1427,7 @@ _TRUONG_BAT_BUOC: dict[str, tuple[str, ...]] = {
     "hoan_tac": (),
     "tach": ("video_ids", "nhom", "kieu"),
     "gop_nhom": ("cum_nhap_ids", "den_cum_nhap_id"),
+    "doi_ten_nhom": ("nhom_cu", "nhom_moi"),
     "huy_luot": (),
 }
 # Trường DẠNG DANH SÁCH đòi khác-rỗng — xem chú thích trên `_TRUONG_BAT_BUOC`.

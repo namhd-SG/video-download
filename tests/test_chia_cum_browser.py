@@ -148,15 +148,23 @@ def test_insight_trong_khoa_nut_va_hien_ly_do_roi_dien_thi_mo(page, dulieu):
     assert page.locator(".cc-why").count() == 1
 
     truoc = _so_thao_tac(page)
-    with page.expect_response(lambda r: "/thao-tac" in r.url):
+    with page.expect_response(lambda r: "/thao-tac" in r.url) as resp1:
         page.fill('[data-cc-field="usecase"]', "Motion")
         page.locator('[data-cc-field="usecase"]').blur()
+    than1 = resp1.value.request.post_data_json
+    assert than1["loai"] == "doi_insight" and than1["usecase"] == "Motion", \
+        "điền usecase gửi MỘT doi_insight mang usecase mới"
     page.wait_for_timeout(150)
-    with page.expect_response(lambda r: "/thao-tac" in r.url):
+    with page.expect_response(lambda r: "/thao-tac" in r.url) as resp2:
         page.fill('[data-cc-field="insight_goc"]', "Strom Ai")
         page.locator('[data-cc-field="insight_goc"]').blur()
+    than2 = resp2.value.request.post_data_json
+    assert than2["loai"] == "doi_insight"
+    assert than2["usecase"] == "Motion" and than2["insight_goc"] == "Strom Ai", \
+        "điền ô THỨ HAI vẫn phải mang CẢ HAI giá trị hiện tại trong CÙNG một request"
     page.wait_for_function("!document.querySelector('[data-cc-action=\"duyet-het\"]').disabled")
-    assert _so_thao_tac(page) == truoc + 2, "mỗi ô gõ phải ghi đúng MỘT dòng doi_insight"
+    assert _so_thao_tac(page) == truoc, \
+        "doi_insight KHÔNG tính vào bộ đếm hiển thị D15 — điền 2 ô (2 request) không đổi số"
     assert not page.locator('[data-cc-action="duyet-kieu"]').first.is_disabled()
     assert not page.locator('[data-cc-action="toggle-gop"]').first.is_disabled()
     assert page.locator(".cc-why").count() == 0
@@ -164,6 +172,22 @@ def test_insight_trong_khoa_nut_va_hien_ly_do_roi_dien_thi_mo(page, dulieu):
     with page.expect_response(lambda r: "/duyet" in r.url):
         page.locator('[data-cc-action="duyet-kieu"]').first.click()
     page.wait_for_function("document.querySelectorAll('.cc-kieu').length < 3")
+
+
+def test_doi_ten_nhom_gui_mot_thao_tac_va_tang_bo_dem_dung_mot(page, dulieu):
+    """Đổi tên MỘT nhóm gửi ĐÚNG một `doi_ten_nhom` (không phải N request rời
+    cho N kiểu của nhóm), và bộ đếm hiển thị tăng đúng 1."""
+    _mo_chia(page, dulieu["job_full"])
+    truoc = _so_thao_tac(page)
+    nhom_input = page.locator("[data-cc-nhom-rename]").first
+    cur = nhom_input.get_attribute("data-cc-nhom-cur")
+    with page.expect_response(lambda r: "/thao-tac" in r.url) as resp:
+        nhom_input.fill("Đổi tên nhóm")
+        nhom_input.dispatch_event("change")
+    than = resp.value.request.post_data_json
+    assert than == {"loai": "doi_ten_nhom", "nhom_cu": cur, "nhom_moi": "Đổi tên nhóm"}
+    page.wait_for_timeout(150)
+    assert _so_thao_tac(page) == truoc + 1
 
 
 def _so_thao_tac(page) -> int:

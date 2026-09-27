@@ -747,8 +747,15 @@
       guard(async () => {
         const field = ev.target.closest("[data-cc-field]");
         if (field) {
-          const key = field.dataset.ccField;
-          await thaoTac("doi_insight", { [key]: field.value });
+          // MỘT `doi_insight` mang CẢ HAI trường hiện tại — không phải một
+          // request riêng cho từng ô — để hai ô luôn ghi cùng lúc, đúng luật
+          // "một cú bấm/gõ = một dòng nhật ký sửa" (D15).
+          const usecaseInput = root.querySelector('[data-cc-field="usecase"]');
+          const insightInput = root.querySelector('[data-cc-field="insight_goc"]');
+          await thaoTac("doi_insight", {
+            usecase: usecaseInput ? usecaseInput.value : (CC.data.usecase || ""),
+            insight_goc: insightInput ? insightInput.value : (CC.data.insight_goc || ""),
+          });
           return;
         }
         const kieuRename = ev.target.closest("[data-cc-kieu-rename]");
@@ -764,12 +771,10 @@
           const cur = nhomRename.dataset.ccNhomCur;
           const moi = nhomRename.value.trim();
           if (!moi || moi === cur) { await refresh(); return; }
-          const ks = CC.data.kieu.filter((k) => k.nhom === cur);
-          for (const k of ks) {
-            await apiSend("POST", `/chia/${CC.data.id}/thao-tac`,
-              { loai: "doi_ten", cum_nhap_id: k.cum_nhap_id, kieu: k.kieu, nhom: moi });
-          }
-          await refresh();
+          // MỘT thao tác `doi_ten_nhom` cho CẢ nhóm — atomic ở tầng server,
+          // thay vòng lặp `doi_ten` cũ (N request rời cho N kiểu, có thể
+          // trượt giữa chừng để lại nhóm đổi tên một nửa).
+          await thaoTac("doi_ten_nhom", { nhom_cu: cur, nhom_moi: moi });
           return;
         }
         const huyTruc = ev.target.closest("[data-cc-huy-truc]");

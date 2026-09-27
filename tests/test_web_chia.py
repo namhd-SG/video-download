@@ -85,12 +85,17 @@ def test_lay_chia_cua_job_khong_thay_luot_cua_nguoi_khac(kho):
 
 
 def test_lay_chia_cua_job_tra_so_thao_tac(kho):
+    """`so_thao_tac` chỉ đếm thao tác SỬA CÁCH CHIA — `chap_nhan` (xem qua,
+    không đổi gì) không đếm; `doi_ten` (sửa cách chia thật) đếm."""
     db, job = kho
     lan_id = _de_xuat(db, job)
     assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)["so_thao_tac"] == 0
     couple_id = _nhom_id(db, lan_id, "couple")
     app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
         loai="chap_nhan", cum_nhap_id=couple_id), nguoi_tao=TOI)
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)["so_thao_tac"] == 0, "chap_nhan không đếm"
+    app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+        loai="doi_ten", cum_nhap_id=couple_id, kieu="x"), nguoi_tao=TOI)
     assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)["so_thao_tac"] == 1
 
 
@@ -149,6 +154,7 @@ def test_thao_tac_route_400_khi_hoan_tac_khong_con_gi(kho):
     ("tra_ve", {"den_cum_nhap_id": 1}), ("ngoai_chu_de", {}), ("xoa_kieu", {}),
     ("chap_nhan", {}), ("tach", {"video_ids": ["1"], "nhom": "n"}),
     ("tach", {"nhom": "n", "kieu": "k"}), ("gop_nhom", {"den_cum_nhap_id": 1}),
+    ("doi_ten_nhom", {"nhom_cu": "n"}), ("doi_ten_nhom", {"nhom_moi": "n"}),
 ])
 def test_thao_tac_route_400_khong_500_khi_thieu_truong_bat_buoc(kho, loai, tham_so):
     """`{"loai":"gop"}` (không `tu_cum_nhap_id`/`den_cum_nhap_id`) từng ném
@@ -182,6 +188,62 @@ def test_thao_tac_route_gop_nhom_thanh_cong(kho):
     assert out["so_video"] == 2
     chia = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
     assert [k["kieu"] for k in chia["kieu"]] == ["cartoon"]
+
+
+def test_thao_tac_route_doi_ten_nhom_thanh_cong(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    out = app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+        loai="doi_ten_nhom", nhom_cu="trang phục", nhom_moi="Đồng phục"), nguoi_tao=TOI)
+    assert out["so_video"] == 3
+    chia = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    assert {k["nhom"] for k in chia["kieu"]} == {"Đồng phục"}
+
+
+def test_thao_tac_route_doi_ten_nhom_409_khi_khong_co_nhom_khop(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="doi_ten_nhom", nhom_cu="không tồn tại", nhom_moi="x"), nguoi_tao=TOI)
+    assert e.value.status_code == 409
+
+
+# --- Quyền sở hữu: id THẬT của người khác, không phải id giả 999999 ----------
+
+def test_gop_nhom_tu_choi_id_that_cua_nguoi_khac(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    truoc = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="gop_nhom", cum_nhap_ids=[couple_id], den_cum_nhap_id=cartoon_id), nguoi_tao=HO)
+    assert e.value.status_code == 404
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI) == truoc, "nháp của TOI không đổi"
+
+
+def test_tach_tu_choi_id_that_cua_nguoi_khac(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    truoc = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="tach", video_ids=["1"], nhom="mới", kieu="riêng"), nguoi_tao=HO)
+    assert e.value.status_code == 404
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI) == truoc, "nháp của TOI không đổi"
+
+
+def test_doi_ten_nhom_tu_choi_luot_that_cua_nguoi_khac(kho):
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    truoc = app_mod.lay_chia_cua_job(job, nguoi_tao=TOI)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="doi_ten_nhom", nhom_cu="trang phục", nhom_moi="Đồng phục"), nguoi_tao=HO)
+    assert e.value.status_code == 404
+    assert app_mod.lay_chia_cua_job(job, nguoi_tao=TOI) == truoc, "nháp của TOI không đổi"
 
 
 def test_thao_tac_route_huy_luot_roi_khoa_moi_thao_tac_sau(kho):

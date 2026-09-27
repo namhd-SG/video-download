@@ -849,6 +849,10 @@ class ThaoTacChiaRequest(BaseModel):
     video_ids: list[str] | None = None
     nhom: str | None = None
     kieu: str | None = None
+    # `doi_ten_nhom` — đổi tên MỘT nhóm (mọi kiểu của nó) trong MỘT cú bấm,
+    # khác `nhom`/`kieu` ở trên (đích của `doi_ten`/`tach`, MỘT hàng).
+    nhom_cu: str | None = None
+    nhom_moi: str | None = None
     usecase: str | None = None
     insight_goc: str | None = None
 
