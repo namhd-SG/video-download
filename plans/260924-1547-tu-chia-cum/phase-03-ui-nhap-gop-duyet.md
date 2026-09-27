@@ -54,6 +54,17 @@ Dựng màn nháp đúng mock `~/plans/260924-1031-tu-chia-cum-video-desk/mock-t
 4. **Tên NHÓM không ổn định giữa lượt** (chạy thật 27/09: cùng kiểu có sẵn "Mặc vest" ra nhóm "Âu phục" ở job 10, "Áo vest" ở job 17). Nhóm chỉ để gom trên màn nháp; tên cụm thật = "<insight gốc> <kiểu>" nên không vào taxonomy, TRỪ ca D16 ghép nhóm khi trùng tên cuối. Câu hỏi: ghim tên nhóm có sẵn giống ghim kiểu (prompt chuẩn hoá nhận thêm cặp nhóm→kiểu đã duyệt), hay chấp nhận và để user sửa (`doi_ten` đã nhận `nhom`)? Đề xuất: chấp nhận ở v1, vì cụm thật không lưu nhóm (`cum` không có cột nhóm), và ghim nhóm cần đổi prompt ⇒ đổi hash phiên bản ⇒ mất cache chuẩn hoá. Chỉ ghi là đã biết.
 5. **Scratch sau lượt thành công** giữ prompt + kết quả (`phan_tich_hinh.py:237` chỉ dọn `anh/`). Đề xuất: giữ (để soát khi user hỏi "vì sao video X vào kiểu Y"), thêm comment nói là cố ý, và in đường dẫn scratch ở dòng cuối. Không phải việc UI — đưa vào PR phase 3+4 vì là thay đổi một dòng.
 
+### B′. Phán (vòng agy `tuchiacum-p34-plan` KHÉP ở R4, 09:04)
+
+- **B1 NHẬN** (R2 bác bằng cơ chế sai, R3 dẫn `models_chia.py:1050-1076` — hoàn tác đã INSERT lại `cum_nhap`): thêm loại `tach {video_ids, nhom, kieu}` = tạo `cum_nhap` + chuyển video, 1 dòng nhật ký; tên hàng mới tính như `_op_doi_ten` (chỉ hàng đó, D19); `hoan_tac` = trả video về `truoc` + DELETE hàng mới.
+- **B2 NHẬN:** `/duyet` nhận `gop_vao_cum_id` cho MỘT kiểu — cụm đích phải của `chu` (D17), video `da_o_cum` bỏ qua (D14); không hoàn tác được (như mọi duyệt).
+- **B3 NHẬN:** loại `huy_luot` (nhật ký, không hoàn tác), không chặn khi đã duyệt một phần — video đã thành cụm thật bị `DIEU_KIEN_VAO_LUOT_CHIA["da_o_cum"]` loại khỏi lượt chia lại.
+- **B4 NHẬN:** chấp nhận tên nhóm lệch giữa lượt ở v1; user sửa bằng `doi_ten`.
+- **B5 NHẬN:** giữ scratch khi thành công + comment nói cố ý + in đường dẫn.
+- **Thêm từ agy R2 (Q7):** loại `gop_nhom {cum_nhap_ids, den_cum_nhap_id}` — gộp NHIỀU kiểu trong một lần bấm = 1 dòng nhật ký (D15), hoàn tác được; `lay_chia` trả thêm `so_thao_tac` cho bộ đếm.
+- ⇒ PR phase 3+4 có phần backend: 4 loại thao tác mới (`tach`, `gop_nhom`, `huy_luot`, và tham số `gop_vao_cum_id` trên `/duyet`) + `so_thao_tac`. Mỗi cái có test + đột biến (bỏ nhật ký ⇒ ĐỎ; hoàn tác `tach` không xoá hàng ⇒ ĐỎ; `gop_vao_cum_id` sang cụm người khác ⇒ ĐỎ).
+- **Mock v2** cho các màn đổi so với v1 (bỏ nút "Chạy phân tích" theo D12; chưa-hình hiện lệnh copy; ô insight + nút duyệt khoá; tách; gộp vào cụm có sẵn tên khác; hủy lượt) — dựng trong `plans/260924-1547-tu-chia-cum/mock-p34-v2.html`, ĐP mở PNG TRƯỚC khi code.
+
 ### C. Nghiệm thu bổ sung
 
 - Render nháp THẬT của lượt 1 và lượt 2 (DB sao từ mini, không ghi mini) ngoài 6 trạng thái như mock; ĐP mở PNG.
