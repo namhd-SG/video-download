@@ -3,28 +3,29 @@
 
 Mỗi lượt tải (job): liệt video (qua CLI mini) → kéo poster/khung → agy vision
 gán nhãn → agy chấm caption lệch chủ đề → agy chuẩn hoá 2 tầng nhóm→kiểu →
-kiểm máy → ghi nháp lên mini (một transaction). Nhãn và cờ caption cache trên
-mini theo phiên bản prompt RIÊNG của từng loại: chạy lại (đổi trục, chia lại)
-không trả tiền lại cho phần đã có.
+kiểm máy → ghi nháp lên mini (một transaction). Nhãn và cờ caption ĐÃ QUA
+phép kiểm được lưu lên mini NGAY (transaction riêng, trước chuẩn hoá), theo
+phiên bản prompt RIÊNG của từng loại: chạy lại (đổi trục, chia lại, hay sau
+một lần chuẩn hoá trượt) không trả tiền lại cho phần đã có.
 
 KHÔNG có `--yes` ⇒ THỬ KHÔ: in kế hoạch rồi thoát, không kéo ảnh, không gọi
 agy, không ghi gì.
 
 Mã thoát: 0 xong · 2 sai cú pháp · 3 ĐO HỎNG (ssh/CLI mini/agy không sinh tệp
-đích — chưa biết kết quả) · 4 KẾT QUẢ KHÔNG ĐẠT (có tệp, trượt phép kiểm; không
-ghi gì) · 5 TỪ CHỐI (nguồn không phải TikTok công khai, hoặc nháp đang có sửa tay).
+đích hay sinh tệp rác — chưa biết kết quả) · 4 KẾT QUẢ KHÔNG ĐẠT (có tệp,
+trượt phép kiểm; không ghi nháp) · 5 TỪ CHỐI (nguồn không phải TikTok công
+khai, hoặc nháp đang có sửa tay).
 """
 from __future__ import annotations
 
 import argparse
 import importlib.util
 import json
-import math
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
@@ -33,6 +34,9 @@ sys.path.insert(0, str(_DAY))
 
 import agy_lenh  # noqa: E402
 import mini as mini_mod  # noqa: E402
+from ke_hoach import (LO_NHAN, MA_CU_PHAP, MA_DO_HONG, MA_KHONG_DAT, MA_OK,  # noqa: E402,F401
+                      MA_TU_CHOI, DoHong, KeHoach, KhongDat, PhienBan, TuChoi, cli_json,
+                      in_ke_hoach, lap_ke_hoach, nguon_duoc_phep)
 
 
 def _nap_kiem():
@@ -45,125 +49,34 @@ def _nap_kiem():
 
 kiem = _nap_kiem()
 
-MA_OK, MA_CU_PHAP, MA_DO_HONG, MA_KHONG_DAT, MA_TU_CHOI = 0, 2, 3, 4, 5
-
-# Ảnh rời máy sang Google khi gọi agy ⇒ chỉ video TikTok CÔNG KHAI.
-NGUON_CHO_PHEP = "https://www.tiktok.com/"
 TRUC = ("trang_phuc_dam_dong", "trang_phuc_nguoi_chinh", "boi_canh")
-# Số video mỗi lượt gọi vision (≤3 ảnh/video ⇒ ≤60 ảnh/lượt). Chọn, chưa đo
-# trần thật của agy.
-LO_NHAN = 20
-MINI_SSH_MAC_DINH = "nobi_auto@100.109.39.103"
+# Cùng tên biến + mặc định với `deploy/rollback-on-mini.sh`.
+MINI_HOST_MAC_DINH = "nobi_auto@100.109.39.103"
 MINI_REPO_MAC_DINH = "~/Projects/video-download"
 # Trần một lượt agy: `--print-timeout 25m` cộng một phút lề.
 AGY_TIMEOUT_GIAY = 26 * 60
 
 
-class DoHong(Exception):
-    """Phép đo / đường ống hỏng — chưa có kết quả để phán."""
-
-
-class KhongDat(Exception):
-    """Có kết quả nhưng trượt phép kiểm máy — không ghi gì."""
-
-
-class TuChoi(Exception):
-    """Lượt không được phép chạy/ghi."""
-
-
-def nguon_duoc_phep(url) -> bool:
-    return isinstance(url, str) and url.startswith(NGUON_CHO_PHEP)
-
-
-@dataclass(frozen=True)
-class PhienBan:
-    nhan: str
-    caption: str
-    chuan_hoa: str
-
-    @classmethod
-    def tu_thu_muc(cls, thu_muc: Path) -> "PhienBan":
-        return cls(*(agy_lenh.phien_ban(loai, thu_muc) for loai in ("nhan", "caption", "chuan_hoa")))
-
-    def cho_chia_lan(self) -> str:
-        return f"{self.nhan};{self.caption};{self.chuan_hoa}"
-
-
-def _cli_json(m, args: list[str], stdin: bytes | None = None):
+def _agy(argv, tep_ra, chay_agy, dang, scratch):
     try:
-        rc, ra, loi = m.cli(args, stdin)
-    except mini_mod.LoiMini as exc:
-        raise DoHong(str(exc)) from exc
-    if rc != 0:
-        raise DoHong(f"mini `{args[0]}` rc={rc}: {loi.strip()[:300]}")
-    try:
-        return json.loads(ra)
-    except json.JSONDecodeError as exc:
-        raise DoHong(f"mini `{args[0]}` trả không phải JSON: {ra[:200]!r}") from exc
-
-
-@dataclass
-class KeHoach:
-    job_id: int
-    url: str
-    tu_choi: str | None
-    video: list[dict]
-    so_bi_loc: int
-
-    @property
-    def co_anh(self) -> list[dict]:
-        return [v for v in self.video if v["anh"]]
-
-    @property
-    def khong_anh(self) -> list[dict]:
-        return [v for v in self.video if not v["anh"]]
-
-    @property
-    def can_nhan(self) -> list[dict]:
-        return [v for v in self.co_anh if v["nhan"] is None]
-
-    @property
-    def can_caption(self) -> list[dict]:
-        return [v for v in self.co_anh if v["caption"] is None]
-
-    def so_goi_agy(self) -> int:
-        """Ước tính: vision theo lô + một lượt caption (nếu có caption chữ cần
-        chấm) + một lượt chuẩn hoá (nếu còn video có ảnh)."""
-        return (math.ceil(len(self.can_nhan) / LO_NHAN)
-                + int(any(v["description"].strip() for v in self.can_caption))
-                + int(bool(self.co_anh)))
-
-
-def lap_ke_hoach(m, job_id: int, pb: PhienBan) -> KeHoach:
-    d = _cli_json(m, ["liet", str(job_id), "--nhan-ver", pb.nhan, "--caption-ver", pb.caption])
-    tu_choi = None if nguon_duoc_phep(d["url"]) else \
-        f"nguồn không phải TikTok công khai ({d['url']}) — ảnh không được rời máy"
-    return KeHoach(job_id, d["url"], tu_choi, d["video"], d["so_bi_loc"])
-
-
-def in_ke_hoach(kh: KeHoach, out: Callable[[str], None]) -> None:
-    if kh.tu_choi:
-        out(f"job {kh.job_id}: TỪ CHỐI — {kh.tu_choi}")
-        return
-    co, khong = kh.co_anh, kh.khong_anh
-    out(f"job {kh.job_id}: {len(kh.video)} video vào lượt (bị lọc {kh.so_bi_loc}) · "
-        f"có ảnh {len(co)} · không có ảnh nào k={len(khong)}")
-    if khong:
-        out(f"  bỏ khỏi lượt vì không có ảnh ({len(khong)}): "
-            f"{', '.join(v['video_id'] for v in khong)}")
-    can_cap = kh.can_caption
-    rong = sum(1 for v in can_cap if not v["description"].strip())
-    out(f"  nhãn: cache {len(co) - len(kh.can_nhan)} · cần gán {len(kh.can_nhan)} "
-        f"({sum(len(v['anh']) for v in kh.can_nhan)} ảnh) · caption: cache "
-        f"{len(co) - len(can_cap)} · rỗng⇒khong_ro {rong} · cần chấm {len(can_cap) - rong}")
-    out(f"  ước tính {kh.so_goi_agy()} lượt gọi agy")
-
-
-def _agy(argv, tep_ra, chay_agy, dang):
-    try:
-        return agy_lenh.chay(argv, tep_ra, chay_agy, dang)
+        return agy_lenh.chay(argv, tep_ra, chay_agy, dang, cwd=scratch)
     except agy_lenh.KhongCoTepDich as exc:
         raise DoHong(str(exc)) from exc
+
+
+def _luu_dac_diem(m, job_id: int, hang: list[dict]) -> None:
+    """Lưu hàng cache (đã qua phép kiểm) lên mini, transaction riêng."""
+    if not hang:
+        return
+    du_lieu = json.dumps({"dac_diem": hang}, ensure_ascii=False).encode("utf-8")
+    try:
+        rc, _, err = m.cli(["ghi-dac-diem", str(job_id), "-"], du_lieu)
+    except mini_mod.LoiMini as exc:
+        raise DoHong(str(exc)) from exc
+    if rc == 4:
+        raise KhongDat(f"mini từ chối hàng cache: {err.strip()[:300]}")
+    if rc != 0:
+        raise DoHong(f"mini `ghi-dac-diem` rc={rc}: {err.strip()[:300]}")
 
 
 def chuyen_chia(obj: dict, ids: list[str]) -> tuple[list[dict], list[str], list[str]]:
@@ -190,21 +103,10 @@ def chuyen_chia(obj: dict, ids: list[str]) -> tuple[list[dict], list[str], list[
     return [{"nhom": n, "kieu": ks} for n, ks in nhoms.items()], huong_dan, nghi
 
 
-def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: str,
-              truc: str, out: Callable[[str], None], thu_muc_prompt: Path) -> dict | None:
-    scratch.mkdir(parents=True, exist_ok=True)
-    scratch = scratch.resolve()
-    co_anh = kh.co_anh
-    ids = [v["video_id"] for v in co_anh]
-    if not co_anh:
-        out(f"job {kh.job_id}: 0 video có ảnh — không phân tích, không ghi nháp")
-        return None
-    out(f"job {kh.job_id}: bắt đầu — {len(co_anh)} video có ảnh, scratch {scratch}")
-    ten = _cli_json(m, ["ten-co-san", str(kh.job_id)])
-    out(f"  tên có sẵn: {len(ten['kieu'])} kiểu"
-        + ("" if ten["loc_theo_insight"] else " (không lọc theo insight)"))
-
-    # 1. Ảnh — chỉ của video CHƯA có nhãn cache.
+def _gan_nhan(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin, out,
+              thu_muc_prompt) -> dict[str, dict]:
+    """Nhãn của MỌI video có ảnh: cache + gán mới theo lô. Mỗi lô qua phép
+    kiểm thì lưu lên mini ngay."""
     can_nhan = kh.can_nhan
     duong = [d for v in can_nhan for d in v["anh"]]
     thu_muc_anh = scratch / "anh"
@@ -216,44 +118,71 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
     out(f"  kéo ảnh: {co}/{len(duong)}")
     if co != len(duong):
         raise DoHong(f"kéo được {co}/{len(duong)} ảnh")
-
-    # 2. Nhãn vision theo lô.
-    nhan = {v["video_id"]: v["nhan"] for v in co_anh if v["nhan"] is not None}
-    moi_nhan: dict[str, dict] = {}
+    nhan = {v["video_id"]: v["nhan"] for v in kh.co_anh if v["nhan"] is not None}
+    so_moi = 0
     for i in range(0, len(can_nhan), LO_NHAN):
         lo = can_nhan[i:i + LO_NHAN]
         tep_ra = scratch / f"nhan-{i // LO_NHAN + 1}.jsonl"
         argv, _ = agy_lenh.lenh_nhan(
             scratch, [{"video_id": v["video_id"], "anh": [str(thu_muc_anh / d) for d in v["anh"]]}
-                      for v in lo], tep_ra, agy_bin, thu_muc_prompt)
-        hang = _agy(argv, tep_ra, chay_agy, "jsonl")
+                      for v in lo], tep_ra, agy_bin, thu_muc_prompt, pb.model_nhan)
+        hang = _agy(argv, tep_ra, chay_agy, "jsonl", scratch)
         loi = kiem.kiem_nhan(hang, {v["video_id"] for v in lo},
                              {v["video_id"]: len(v["anh"]) for v in lo})
         out(f"  nhãn lô {i // LO_NHAN + 1}: {len(hang)} dòng / {len(lo)} video · {len(loi)} lỗi")
         if loi:
             raise KhongDat("\n".join(loi))
-        moi_nhan.update({h["video_id"]: h for h in hang})
-    nhan.update(moi_nhan)
-    out(f"  nhãn: cache {len(nhan) - len(moi_nhan)} · mới {len(moi_nhan)} · tổng {len(nhan)}/{len(ids)}")
+        # Lưu SAU phép kiểm, không bao giờ trước.
+        _luu_dac_diem(m, kh.job_id, [{"video_id": h["video_id"], "phien_ban_prompt": pb.nhan,
+                                      "nhan": h} for h in hang])
+        nhan.update({h["video_id"]: h for h in hang})
+        so_moi += len(hang)
+    out(f"  nhãn: cache {len(nhan) - so_moi} · mới {so_moi} (đã lưu) · tổng {len(nhan)}")
+    return nhan
 
-    # 3. Cờ caption — caption rỗng là "không có bằng chứng", không gọi agy.
+
+def _cham_caption(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin, out,
+                  thu_muc_prompt) -> None:
+    """Cờ caption — caption rỗng là "không có bằng chứng", không gọi agy. Cờ
+    qua phép kiểm được lưu lên mini ngay."""
     can_cap = kh.can_caption
-    moi_cap = {v["video_id"]: {"caption_lech_chu_de": "khong_ro"}
-               for v in can_cap if not v["description"].strip()}
+    moi = {v["video_id"]: "khong_ro" for v in can_cap if not v["description"].strip()}
     co_chu = {v["video_id"]: v["description"] for v in can_cap if v["description"].strip()}
     if co_chu:
         tep_ra = scratch / "caption.json"
-        argv, _ = agy_lenh.lenh_caption(scratch, kh.url, co_chu, tep_ra, agy_bin, thu_muc_prompt)
-        obj, trung = _agy(argv, tep_ra, chay_agy, "json")
+        argv, _ = agy_lenh.lenh_caption(scratch, kh.url, co_chu, tep_ra, agy_bin, thu_muc_prompt,
+                                        pb.model_chuan_hoa)
+        obj, trung = _agy(argv, tep_ra, chay_agy, "json", scratch)
         loi = kiem.kiem_caption(obj, set(co_chu), trung)
-        out(f"  caption: {len(obj)} cờ / {len(co_chu)} video · {len(loi)} lỗi")
+        out(f"  caption: {len(obj) if isinstance(obj, dict) else '?'} cờ / {len(co_chu)} video · "
+            f"{len(loi)} lỗi")
         if loi:
             raise KhongDat("\n".join(loi))
-        moi_cap.update({v: {"caption_lech_chu_de": c} for v, c in obj.items()})
-    out(f"  caption: cache {len(co_anh) - len(can_cap)} · rỗng⇒khong_ro "
-        f"{len(can_cap) - len(co_chu)} · chấm mới {len(co_chu)}")
+        moi.update(obj)
+    _luu_dac_diem(m, kh.job_id, [{"video_id": v, "phien_ban_prompt": pb.caption,
+                                  "nhan": {"caption_lech_chu_de": c}} for v, c in moi.items()])
+    out(f"  caption: cache {len(kh.co_anh) - len(can_cap)} · rỗng⇒khong_ro "
+        f"{len(can_cap) - len(co_chu)} · chấm mới {len(co_chu)} (đã lưu)")
 
-    # 4. Chuẩn hoá — thẻ chữ đi thẳng làn hướng dẫn, không qua agy.
+
+def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: str,
+              truc: str, out: Callable[[str], None], thu_muc_prompt: Path) -> dict | None:
+    scratch.mkdir(parents=True, exist_ok=True)
+    scratch = scratch.resolve()
+    co_anh = kh.co_anh
+    ids = [v["video_id"] for v in co_anh]
+    if not co_anh:
+        out(f"job {kh.job_id}: 0 video có ảnh — không phân tích, không ghi nháp")
+        return None
+    out(f"job {kh.job_id}: bắt đầu — {len(co_anh)} video có ảnh, scratch {scratch}")
+    ten = cli_json(m, ["ten-co-san", str(kh.job_id)])
+    out(f"  tên có sẵn: {len(ten['kieu'])} kiểu"
+        + ("" if ten["loc_theo_insight"] else " (không lọc theo insight)"))
+
+    nhan = _gan_nhan(m, kh, pb, scratch, chay_agy, agy_bin, out, thu_muc_prompt)
+    _cham_caption(m, kh, pb, scratch, chay_agy, agy_bin, out, thu_muc_prompt)
+
+    # Chuẩn hoá — thẻ chữ đi thẳng làn hướng dẫn, không qua agy.
     huong_dan = [v for v in ids if nhan[v].get("the_chu") is True]
     ids_chia = [v for v in ids if nhan[v].get("the_chu") is not True]
     nhoms: list[dict] = []
@@ -261,27 +190,25 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
     if ids_chia:
         tep_ra = scratch / "chia.json"
         argv, _ = agy_lenh.lenh_chuan_hoa(scratch, truc, {v: nhan[v] for v in ids_chia},
-                                          ten["kieu"], tep_ra, agy_bin, thu_muc_prompt)
-        obj, trung = _agy(argv, tep_ra, chay_agy, "json")
+                                          ten["kieu"], tep_ra, agy_bin, thu_muc_prompt,
+                                          pb.model_chuan_hoa)
+        obj, trung = _agy(argv, tep_ra, chay_agy, "json", scratch)
         loi = kiem.kiem_chia(obj, set(ids_chia), trung)
-        out(f"  chuẩn hoá: {len(obj.get('nhom', {}))} nhóm · {len(obj.get('gan', {}))} gán / "
-            f"{len(ids_chia)} video · {len(loi)} lỗi")
         if loi:
+            out(f"  chuẩn hoá: {len(loi)} lỗi")
             raise KhongDat("\n".join(loi))
+        out(f"  chuẩn hoá: {len(obj['nhom'])} nhóm · {len(obj['gan'])} gán / "
+            f"{len(ids_chia)} video · 0 lỗi")
         nhoms, hd_them, nghi = chuyen_chia(obj, ids_chia)
         huong_dan += hd_them
 
-    # 5. Kiểm cả nháp rồi mới ghi.
+    # Kiểm cả nháp rồi mới ghi.
     tat_ca = [v for n in nhoms for k in n["kieu"] for v in k["video_ids"]] + huong_dan + nghi
     loi = kiem.kiem_tap_id(tat_ca, set(ids), "nháp")
     if loi:
         raise KhongDat("\n".join(loi))
     tep = {"phien_ban_prompt": pb.cho_chia_lan(), "truc": truc, "nhoms": nhoms,
-           "huong_dan": huong_dan, "nghi": nghi,
-           "dac_diem": [{"video_id": v, "phien_ban_prompt": pb.nhan, "nhan": n}
-                        for v, n in moi_nhan.items()]
-           + [{"video_id": v, "phien_ban_prompt": pb.caption, "nhan": c}
-              for v, c in moi_cap.items()]}
+           "huong_dan": huong_dan, "nghi": nghi, "dac_diem": []}
     du_lieu = json.dumps(tep, ensure_ascii=False).encode("utf-8")
     (scratch / "ghi.json").write_bytes(du_lieu)
     try:
@@ -294,19 +221,27 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
         raise TuChoi(err.strip()[:300])
     if rc != 0:
         raise DoHong(f"mini `ghi` rc={rc}: {err.strip()[:300]}")
-    ket = json.loads(ra)
-    out(f"  ĐÃ GHI nháp lượt {ket['chia_lan_id']}: {ket['so_video']} video · "
+    try:
+        ket = json.loads(ra)
+        so = (ket["chia_lan_id"], ket["so_video"], len(ket["da_o_cum"]), len(ket["bo_vi_loc"]))
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise DoHong(f"mini `ghi` rc=0 nhưng kết quả không đọc được ({exc}) — nháp CÓ THỂ "
+                     f"đã ghi, kiểm trên mini: {ra[:200]!r}") from exc
+    out(f"  ĐÃ GHI nháp lượt {so[0]}: {so[1]} video · "
         f"{sum(len(n['kieu']) for n in nhoms)} kiểu · hướng dẫn {len(huong_dan)} · nghi {len(nghi)}"
-        f" · bỏ vì đã ở cụm {len(ket['da_o_cum'])} · bỏ vì bị lọc {len(ket['bo_vi_loc'])}")
+        f" · bỏ vì đã ở cụm {so[2]} · bỏ vì bị lọc {so[3]}")
     if kh.khong_anh:
         out(f"  bỏ k={len(kh.khong_anh)} video không có ảnh: "
             f"{', '.join(v['video_id'] for v in kh.khong_anh)}")
+    # Ảnh chỉ cần trong lúc chạy; lượt trượt thì GIỮ lại (in đường dẫn) để soi.
+    shutil.rmtree(scratch / "anh", ignore_errors=True)
+    out(f"  đã dọn ảnh tạm: {scratch / 'anh'}")
     return ket
 
 
-def _chay_agy_that(argv: list[str]) -> int | None:
+def _chay_agy_that(argv: list[str], cwd: Path) -> int | None:
     try:
-        return subprocess.run(argv, timeout=AGY_TIMEOUT_GIAY).returncode
+        return subprocess.run(argv, timeout=AGY_TIMEOUT_GIAY, cwd=cwd).returncode
     except subprocess.TimeoutExpired:
         return None
     except OSError as exc:
@@ -321,24 +256,32 @@ def main(argv: list[str] | None = None, *, chay_agy=None, chay_lenh=None,
     p.add_argument("--truc", choices=TRUC, default=TRUC[0])
     p.add_argument("--scratch", type=Path, help="thư mục tạm (mặc định: tạo mới trong $TMPDIR)")
     p.add_argument("--mini-db", type=Path, help="dùng DB CỤC BỘ này thay vì ssh (thử khô / test)")
-    p.add_argument("--ssh", default=os.environ.get("MINI_SSH", MINI_SSH_MAC_DINH))
-    p.add_argument("--repo-mini", default=os.environ.get("MINI_REPO", MINI_REPO_MAC_DINH))
+    p.add_argument("--ssh", default=os.environ.get("VIDEODL_MINI_HOST", MINI_HOST_MAC_DINH))
+    p.add_argument("--repo-mini", default=os.environ.get("VIDEODL_MINI_REPO", MINI_REPO_MAC_DINH))
     p.add_argument("--thu-muc-prompt", type=Path, default=_DAY)
+    p.add_argument("--model-nhan", help=f"model vision (mặc định {agy_lenh.MODEL_NHAN}); "
+                                        "không tự rơi tầng — đổi tay, phiên bản cache đổi theo")
+    p.add_argument("--model-chuan-hoa", help=f"model chuẩn hoá + caption (mặc định "
+                                             f"{agy_lenh.MODEL_CHUAN_HOA})")
     try:
         a = p.parse_args(argv)
     except SystemExit as exc:
         return MA_CU_PHAP if exc.code else MA_OK
 
-    pb = PhienBan.tu_thu_muc(a.thu_muc_prompt)
-    m = (mini_mod.MiniCucBo(a.mini_db) if a.mini_db else
-         mini_mod.MiniSsh(a.ssh, a.repo_mini, chay_lenh or mini_mod.chay_that,
-                          ssh_bin=os.environ.get("SSH_BIN", "ssh")))
+    pb = PhienBan.tu_thu_muc(a.thu_muc_prompt, a.model_nhan, a.model_chuan_hoa)
+    try:
+        m = (mini_mod.MiniCucBo(a.mini_db) if a.mini_db else
+             mini_mod.MiniSsh(a.ssh, a.repo_mini, chay_lenh or mini_mod.chay_that,
+                              ssh_bin=os.environ.get("SSH_BIN", "ssh")))
+    except ValueError as exc:
+        out(f"tham số sai: {exc}")
+        return MA_CU_PHAP
     agy_bin = os.environ.get("AGY_BIN", "agy")
     chay_agy = chay_agy or _chay_agy_that
     out(f"phiên bản prompt: {pb.cho_chia_lan()}")
     try:
         jobs = [a.luot] if a.luot is not None else \
-            [int(j["job_id"]) for j in _cli_json(m, ["cho-chia"])]
+            [int(j["job_id"]) for j in cli_json(m, ["cho-chia"])]
         out(f"{len(jobs)} lượt tải cần xử: {', '.join(map(str, jobs)) or '(không có)'}")
         ke_hoach = [lap_ke_hoach(m, j, pb) for j in jobs]
     except DoHong as exc:
@@ -357,14 +300,15 @@ def main(argv: list[str] | None = None, *, chay_agy=None, chay_lenh=None,
     for kh in ke_hoach:
         if kh.tu_choi:
             continue
+        scratch = goc / f"job-{kh.job_id}"
         try:
-            chay_luot(m, kh, pb, goc / f"job-{kh.job_id}", chay_agy, agy_bin, a.truc, out,
-                      a.thu_muc_prompt)
+            chay_luot(m, kh, pb, scratch, chay_agy, agy_bin, a.truc, out, a.thu_muc_prompt)
         except DoHong as exc:
-            out(f"ĐO HỎNG (job {kh.job_id}): {exc}")
+            out(f"ĐO HỎNG (job {kh.job_id}): {exc}\n  giữ scratch để soi: {scratch}")
             return MA_DO_HONG
         except KhongDat as exc:
-            out(f"KHÔNG ĐẠT (job {kh.job_id}) — không ghi gì:\n{exc}")
+            out(f"KHÔNG ĐẠT (job {kh.job_id}) — không ghi nháp:\n{exc}\n"
+                f"  giữ scratch để soi: {scratch}")
             return MA_KHONG_DAT
         except TuChoi as exc:
             out(f"TỪ CHỐI GHI (job {kh.job_id}): {exc}")

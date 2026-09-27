@@ -8,8 +8,10 @@ Ba luật đã đo của `agy`, dựng thành CẤU TẠO ở đây thay vì nh�
    ĐÍCH có thật và parse được (`chay`), không bằng mã thoát.
 3. `--effort` xung đột với tên model có hậu tố ⇒ không bao giờ truyền `--effort`.
 
-`--add-dir` chỉ bao giờ là thư mục scratch của lượt: agy không được thấy repo
-hay thư mục nào khác.
+agy chạy với quyền sửa tệp ⇒ `--add-dir` chỉ bao giờ là thư mục scratch của
+lượt, VÀ tiến trình agy chạy với cwd = chính scratch đó (`chay` truyền `cwd`
+cho người chạy): cwd mặc định của người gọi là repo, và một agy sửa tệp
+tương đối sẽ sửa thẳng vào repo dù `--add-dir` đúng.
 """
 from __future__ import annotations
 
@@ -35,19 +37,20 @@ _LOAI = {
 LOI_CAM_MOI_TRUONG = ("KHÔNG chạy lệnh nào thay đổi toolchain, npm, git config hay biến môi "
                       "trường; không cài/xoá gói; chỉ đọc tệp trong thư mục được cấp.")
 
-# Người chạy agy: nhận argv, trả mã thoát (hoặc None nếu quá giờ). Tiêm được
-# để test đếm lượt gọi mà không bao giờ chạm agy thật.
-ChayAgy = Callable[[list[str]], "int | None"]
+# Người chạy agy: nhận `(argv, cwd)`, trả mã thoát (hoặc None nếu quá giờ).
+# Tiêm được để test đếm lượt gọi mà không bao giờ chạm agy thật.
+ChayAgy = Callable[[list[str], Path], "int | None"]
 
 
-def phien_ban(loai: str, thu_muc: Path = THU_MUC_PROMPT) -> str:
+def phien_ban(loai: str, thu_muc: Path = THU_MUC_PROMPT, model: str | None = None) -> str:
     """`<tiền tố><sha256 12 ký tự của tệp prompt>@<model>`.
 
     Mỗi loại băm TỆP CỦA CHÍNH NÓ: sửa prompt nhãn đổi phiên bản nhãn (chạy
     lại vision) mà KHÔNG đổi phiên bản caption (cache caption còn nguyên).
     Model nằm trong phiên bản để một lượt chạy trên model khác (rơi tầng)
     không đọc nhầm cache của model kia."""
-    ten, tien_to, model = _LOAI[loai]
+    ten, tien_to, mac_dinh = _LOAI[loai]
+    model = model or mac_dinh
     bam = hashlib.sha256((thu_muc / ten).read_bytes()).hexdigest()[:12]
     return f"{tien_to}{bam}@{model}"
 
@@ -75,48 +78,53 @@ def _viet_prompt(loai: str, scratch: Path, ten: str, tep_ra: Path, dau: list[str
 
 
 def lenh_nhan(scratch: Path, lo: list[dict], tep_ra: Path, agy_bin: str = "agy",
-              thu_muc: Path = THU_MUC_PROMPT) -> tuple[list[str], Path]:
+              thu_muc: Path = THU_MUC_PROMPT, model: str = MODEL_NHAN) -> tuple[list[str], Path]:
     """`lo`: `[{"video_id", "anh": [đường dẫn tuyệt đối trong scratch]}]`."""
     tep = _viet_prompt("nhan", scratch, tep_ra.stem, tep_ra, [], lo, thu_muc)
-    return dung_argv(tep, scratch, MODEL_NHAN, agy_bin), tep
+    return dung_argv(tep, scratch, model, agy_bin), tep
 
 
 def lenh_caption(scratch: Path, nguon: str, caption: dict[str, str], tep_ra: Path,
-                 agy_bin: str = "agy", thu_muc: Path = THU_MUC_PROMPT) -> tuple[list[str], Path]:
+                 agy_bin: str = "agy", thu_muc: Path = THU_MUC_PROMPT,
+                 model: str = MODEL_CAPTION) -> tuple[list[str], Path]:
     """Caption đi vào agy CHỈ qua tệp prompt — argv không mang chuỗi caption nào."""
     dong = [{"video_id": v, "caption": c} for v, c in caption.items()]
     tep = _viet_prompt("caption", scratch, tep_ra.stem, tep_ra,
                        [f"NGUỒN: {json.dumps(nguon, ensure_ascii=False)}"], dong, thu_muc)
-    return dung_argv(tep, scratch, MODEL_CAPTION, agy_bin), tep
+    return dung_argv(tep, scratch, model, agy_bin), tep
 
 
 def lenh_chuan_hoa(scratch: Path, truc: str, nhan: dict[str, dict], ten_co_san: list[str],
-                   tep_ra: Path, agy_bin: str = "agy",
-                   thu_muc: Path = THU_MUC_PROMPT) -> tuple[list[str], Path]:
+                   tep_ra: Path, agy_bin: str = "agy", thu_muc: Path = THU_MUC_PROMPT,
+                   model: str = MODEL_CHUAN_HOA) -> tuple[list[str], Path]:
     dong = [{"video_id": v, **{k: x for k, x in n.items() if k != "video_id"}}
             for v, n in nhan.items()]
     dau = [f"TRỤC: {truc}", f"TÊN CÓ SẴN: {json.dumps(ten_co_san, ensure_ascii=False)}"]
     tep = _viet_prompt("chuan_hoa", scratch, tep_ra.stem, tep_ra, dau, dong, thu_muc)
-    return dung_argv(tep, scratch, MODEL_CHUAN_HOA, agy_bin), tep
+    return dung_argv(tep, scratch, model, agy_bin), tep
 
 
 class KhongCoTepDich(Exception):
     """agy không để lại tệp đích parse được — phép đo hỏng, KHÔNG phải kết quả."""
 
 
-def chay(argv: list[str], tep_ra: Path, chay_agy: ChayAgy, dang: str):
+def chay(argv: list[str], tep_ra: Path, chay_agy: ChayAgy, dang: str, cwd: Path):
     """Chạy một lượt agy rồi nghiệm thu bằng tệp đích.
 
     `dang`: `"jsonl"` ⇒ trả `list[dict]`; `"json"` ⇒ trả `(obj, khoa_trung)`
     — `khoa_trung` là mọi khoá object xuất hiện hơn một lần (`json.loads`
     trần lặng lẽ giữ bản sau, nên một id lặp sẽ biến mất thay vì bị bắt).
     Tệp cũ cùng tên bị xoá TRƯỚC khi gọi, để một tệp sót từ lượt trước không
-    bao giờ được đọc như kết quả của lượt này."""
+    bao giờ được đọc như kết quả của lượt này. Tệp không giải mã được UTF-8
+    / không parse được là ĐO HỎNG (đầu ra rác), không phải "kết quả sai"."""
     tep_ra.unlink(missing_ok=True)
-    rc = chay_agy(argv)
+    rc = chay_agy(argv, cwd)
     if not tep_ra.is_file():
         raise KhongCoTepDich(f"agy (rc={rc}) không sinh {tep_ra.name}")
-    van_ban = tep_ra.read_text(encoding="utf-8")
+    try:
+        van_ban = tep_ra.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise KhongCoTepDich(f"{tep_ra.name} không phải UTF-8: {exc}") from exc
     try:
         if dang == "jsonl":
             return [json.loads(d) for d in van_ban.splitlines() if d.strip()]

@@ -29,6 +29,11 @@ GOC_REPO = Path(__file__).resolve().parents[2]
 # cục bộ — chuỗi này đi từ DB ra, không phải hằng số.
 _ANH_HOP_LE = re.compile(r"thumbs/(?:khung/)?[A-Za-z0-9_]+(?:-[0-9]{1,3})?\.webp")
 _REPO_HOP_LE = re.compile(r"[~A-Za-z0-9_./-]+")
+# `[user@]host` — không bắt đầu bằng "-" (ssh sẽ đọc nó như một tuỳ chọn).
+_HOST_HOP_LE = re.compile(r"(?:[A-Za-z0-9_.-]+@)?[A-Za-z0-9_.-]+")
+# Không bao giờ hỏi mật khẩu/khoá trong một lượt chạy không người ngồi đợi,
+# và không treo vô hạn khi mini không trả lời.
+_SSH_TUY_CHON = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=15")
 
 
 class LoiMini(Exception):
@@ -59,12 +64,17 @@ class MiniSsh:
     ssh_bin: str = "ssh"
 
     def __post_init__(self):
+        if self.host.startswith("-") or not _HOST_HOP_LE.fullmatch(self.host):
+            raise ValueError(f"host ssh không hợp lệ: {self.host!r}")
         if not _REPO_HOP_LE.fullmatch(self.repo):
             raise ValueError(f"đường repo trên mini có ký tự lạ: {self.repo!r}")
 
+    def _ssh(self, lenh: str) -> list[str]:
+        return [self.ssh_bin, *_SSH_TUY_CHON, "--", self.host, lenh]
+
     def cli(self, args: list[str], stdin: bytes | None = None) -> tuple[int, str, str]:
         lenh = f"cd {self.repo} && .venv/bin/python -m web.nhap_cum_cli {shlex.join(args)}"
-        rc, ra, loi = self.chay([self.ssh_bin, self.host, lenh], stdin)
+        rc, ra, loi = self.chay(self._ssh(lenh), stdin)
         return rc, ra.decode("utf-8", "replace"), loi.decode("utf-8", "replace")
 
     def keo_anh(self, duong: list[str], dich: Path) -> None:
@@ -74,7 +84,7 @@ class MiniSsh:
         # COPYFILE_DISABLE: tar của macOS tự chèn mục `._<tên>` cho tệp có
         # xattr — mục ngoài danh sách đã xin, bị chặn ở dưới.
         lenh = f"cd {self.repo}/web/data && COPYFILE_DISABLE=1 tar -cf - -- {shlex.join(duong)}"
-        rc, ra, loi = self.chay([self.ssh_bin, self.host, lenh], None)
+        rc, ra, loi = self.chay(self._ssh(lenh), None)
         if rc != 0:
             raise LoiMini(f"tar trên mini rc={rc}: {loi.decode('utf-8', 'replace')[:300]}")
         dich.mkdir(parents=True, exist_ok=True)
