@@ -47,7 +47,27 @@
     return res.json();
   }
 
+  // Xếp hàng MỌI POST của màn này (dock lệnh sau — `apiQueueDuoi`) — hai
+  // `change` liên tiếp (vd sửa usecase rồi Tab sang insight gốc, mỗi ô gửi
+  // MỘT `doi_insight` mang CẢ HAI trường) gửi hai POST độc lập; không xếp
+  // hàng thì thứ tự PHẢN HỒI tới server không đảm bảo khớp thứ tự GỬI (do
+  // mạng, không phải do lỗi), làm giá trị ĐẾN SAU đè giá trị ĐẾN TRƯỚC dù
+  // người dùng gõ SAU (lost update). Xếp hàng: lệnh #2 chỉ THỰC SỰ bắt đầu
+  // (mở kết nối) sau khi #1 đã có phản hồi (dù thành công hay lỗi) — nên thứ
+  // tự phản hồi luôn khớp thứ tự gọi, hết reorder.
+  let apiQueueDuoi = Promise.resolve();
+
   async function apiSend(method, path, body) {
+    const luot = apiQueueDuoi.then(
+      () => _apiSendMotLuot(method, path, body),
+      () => _apiSendMotLuot(method, path, body));
+    // Giữ hàng đợi SỐNG kể cả khi lượt này lỗi — một lượt trượt không được
+    // chặn đứng mọi lượt sau nó.
+    apiQueueDuoi = luot.catch(() => {});
+    return luot;
+  }
+
+  async function _apiSendMotLuot(method, path, body) {
     const res = await fetch(path, {
       method,
       redirect: "manual",
@@ -82,6 +102,18 @@
   }
 
   function errorDetailText(err) {
+    // Lý do RIÊNG từ server (`detail` là một OBJECT, không phải chuỗi hay
+    // mảng lỗi validate) — hiện tại chỉ có `video_da_o_cum_that`
+    // (`models_chia._kiem_video_ids_thao_tac`, route `/thao-tac`): video đã
+    // duyệt/gán tay vào cụm thật thì không di chuyển được nữa qua
+    // tách/chuyển/ngoài chủ đề/trả về. Câu chữ RÕ lý do thay vì mã lỗi trần.
+    if (err.ma && typeof err.ma === "object" && !Array.isArray(err.ma)) {
+      if (err.ma.tu_choi === "video_da_o_cum_that") {
+        const n = Array.isArray(err.ma.video_ids) ? err.ma.video_ids.length : 0;
+        return `Video đã ở cụm thật, không di chuyển được (${n} video).`;
+      }
+      if (typeof err.ma.tu_choi === "string") return err.ma.tu_choi;
+    }
     if (typeof err.ma === "string") return err.ma;
     if (Array.isArray(err.ma)) return err.ma.map((e) => e.msg || JSON.stringify(e)).join("; ");
     return err.message || "Thao tác không thực hiện được";
@@ -247,7 +279,19 @@
 
     const fields = document.getElementById("cc-fields");
     const tr = insightTrong();
-    if (empty) {
+    // Hai ô usecase/insight gốc gửi MỘT `doi_insight` MỖI ô blur (`change`) —
+    // refresh() SAU cú của Ô NÀY không được đè lên nội dung Ô KIA nếu người
+    // dùng còn đang gõ dở nó (chưa blur, response của ô đầu tới trong lúc ô
+    // sau còn focus): thay `fields.innerHTML` bằng dữ liệu SERVER lúc đó sẽ
+    // xoá mất bản gõ chưa gửi VÀ cướp mất focus khỏi ô đang gõ. Bỏ qua HẲN
+    // việc vẽ lại khối này khi một trong hai ô đang có focus — lượt render
+    // kế tiếp (sau khi người dùng blur) sẽ vẽ lại đúng giá trị mới nhất.
+    const dangGoODoNao = document.activeElement instanceof HTMLElement
+      && fields.contains(document.activeElement)
+      && document.activeElement.matches('[data-cc-field]');
+    if (dangGoODoNao) {
+      // không đụng DOM — giữ nguyên nội dung + focus người dùng đang gõ.
+    } else if (empty) {
       fields.innerHTML = "";
     } else {
       const axisLabel = AXIS_LABEL[data.truc] || data.truc || "(chưa đặt)";

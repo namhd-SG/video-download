@@ -247,6 +247,36 @@ def test_thao_tac_route_doi_ten_nhom_409_khi_khong_co_nhom_khop(kho):
     assert e.value.status_code == 409
 
 
+def test_thao_tac_route_409_video_da_o_cum_that_mang_chi_tiet_rieng(kho):
+    """Lý do "video đã ở cụm thật" (khác lý do chung "khong_hop_le") phải
+    tới route dưới dạng `detail` là MỘT DICT `{"tu_choi", "video_ids"}` — UI
+    đọc `video_ids` để đếm số video trong toast (xem `chia-cum.js`)."""
+    db, job = kho
+    lan_id = _de_xuat(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    app_mod.duyet_chia(lan_id, app_mod.DuyetChiaRequest(
+        cum_nhap_id=couple_id, usecase="Dance", insight_goc="Badaboum"), nguoi_tao=TOI)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="chuyen", video_ids=["1"], den_cum_nhap_id=cartoon_id), nguoi_tao=TOI)
+    assert e.value.status_code == 409
+    assert e.value.detail == {"tu_choi": "video_da_o_cum_that", "video_ids": ["1"]}
+
+
+def test_thao_tac_route_409_khong_hop_le_van_giu_chuoi_tran(kho):
+    """Lý do chung "khong_hop_le" (đích không tồn tại/không thuộc lượt) vẫn
+    giữ `detail` là CHUỖI TRẦN — hợp đồng cũ, không đổi bởi mục "video đã ở
+    cụm thật" ở trên."""
+    db, job = kho
+    lan_id = _de_xuat(db, job)
+    with pytest.raises(HTTPException) as e:
+        app_mod.thao_tac_chia(lan_id, app_mod.ThaoTacChiaRequest(
+            loai="doi_ten", cum_nhap_id=999999, kieu="x"), nguoi_tao=TOI)
+    assert e.value.status_code == 409
+    assert e.value.detail == "khong_hop_le"
+
+
 # --- Quyền sở hữu: id THẬT của người khác, không phải id giả 999999 ----------
 
 def test_gop_nhom_tu_choi_id_that_cua_nguoi_khac(kho):

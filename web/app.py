@@ -907,8 +907,16 @@ def thao_tac_chia(chia_lan_id: int, body: ThaoTacChiaRequest,
         # lệ ở TRẠNG THÁI hiện tại, không phải xung đột với ai khác). Mọi
         # `tu_choi` khác ("đích không tồn tại/không thuộc lượt") giữ 409 —
         # hành vi đã pin bằng test trước đó, không đổi ở đây.
+        #
+        # Lý do RIÊNG (vd `"video_da_o_cum_that"`, xem
+        # `models_chia._kiem_video_ids_thao_tac`) mang thêm `video_ids` — cả
+        # dict được chuyển NGUYÊN VẸN vào `detail` để UI đọc được cả lý do
+        # lẫn danh sách; lý do chung `"khong_hop_le"` (không có trường nào
+        # khác) vẫn giữ `detail` là CHUỖI TRẦN, đúng hợp đồng cũ mọi bản gọi
+        # trước đây đã pin.
+        detail = ket if len(ket) > 1 else ket["tu_choi"]
         raise HTTPException(status_code=400 if body.loai == "hoan_tac" else 409,
-                            detail=ket["tu_choi"])
+                            detail=detail)
     return ket
 
 

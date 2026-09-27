@@ -270,6 +270,90 @@ def test_duyet_gui_kem_usecase_insight_hien_tai(page, dulieu):
     assert than2["usecase"] == "Motion" and than2["insight_goc"] == "Strom Ai"
 
 
+def test_toast_video_da_o_cum_that_hien_ro_ly_do(page, dulieu):
+    """Video gán TAY vào một cụm THẬT (`POST /cum/{id}/video`) trong lúc
+    nháp còn mở vẫn hiện trong dock (C3) — chạm nó qua `ngoai_chu_de` phải
+    báo toast RÕ lý do, không phải mã lỗi trần hay câu chung chung."""
+    db = dulieu["db"]
+    video_id = dulieu["ids"][0]
+    cum_id, _ = models_cum.tao_cum(db, NGUOI, "Motion", "Strom", "Vest")
+    models_cum.gan_video(db, cum_id, NGUOI, None, [video_id])
+    _mo_chia(page, dulieu["job_full"])
+
+    page.locator(f'.cc-t[data-cc-video="{video_id}"]').click()
+    assert page.inner_text("#cc-dachon") == "1 video đã chọn"
+    page.click('[data-cc-action="dock-ngoai"]')
+    page.wait_for_function(
+        "!document.getElementById('toast').hidden && "
+        "document.getElementById('toast').textContent.length > 0")
+    toast = page.inner_text("#toast")
+    assert toast == "Video đã ở cụm thật, không di chuyển được (1 video).", toast
+
+
+def test_doi_insight_hai_thay_doi_lien_tiep_khong_mat_ban_go_du_mang_cham(page, dulieu, monkeypatch):
+    """Hai `doi_insight` liên tiếp (usecase rồi insight gốc, KHÔNG đợi request
+    đầu xong) không được làm mất giá trị người dùng gõ sau — kể cả khi mạng
+    làm request ĐẦU tới server CHẬM hơn request thứ hai. Delay chèn TRƯỚC khi
+    `ap_thao_tac` mở transaction (`BEGIN IMMEDIATE` khoá ghi SQLite) — chèn
+    SAU điểm đó sẽ vô tình để chính khoá ghi tự sắp lại thứ tự, che mất cuộc
+    đua cần đo. Patch ở `models_chia.ap_thao_tac` (route `/thao-tac` tra
+    thuộc tính module MỖI lượt gọi, không giữ tham chiếu cũ) chạy trên luồng
+    threadpool RIÊNG của uvicorn — không phải luồng dispatch của Playwright,
+    nên không tự xếp hàng hộ như route interception."""
+    goc = models_chia.ap_thao_tac
+    da_cham = {"n": 0}
+
+    def _cham_doi_insight_dau(db_path, chia_lan_id, chu, loai, **tham_so):
+        if (loai == "doi_insight" and da_cham["n"] == 0
+                and tham_so.get("usecase") == "Motion" and tham_so.get("insight_goc") == ""):
+            da_cham["n"] += 1
+            time.sleep(0.5)
+        return goc(db_path, chia_lan_id, chu, loai, **tham_so)
+
+    monkeypatch.setattr(models_chia, "ap_thao_tac", _cham_doi_insight_dau)
+    _mo_chia(page, dulieu["job_full"])
+
+    page.fill('[data-cc-field="usecase"]', "Motion")
+    page.locator('[data-cc-field="usecase"]').blur()   # request #1 — bị làm CHẬM 500ms
+    # KHÔNG đợi request #1 — gõ và blur ô insight NGAY, để request #2 (nhanh,
+    # không delay) có cơ hội chạm server TRƯỚC request #1 nếu không xếp hàng.
+    page.fill('[data-cc-field="insight_goc"]', "Strom Ai")
+    page.locator('[data-cc-field="insight_goc"]').blur()   # request #2 — gửi NGAY
+    page.wait_for_timeout(800)   # qua khỏi mốc 500ms — cả hai request đã có phản hồi
+
+    chia = models_chia.lay_chia_theo_job(dulieu["db"], dulieu["job_full"], NGUOI)
+    assert (chia["usecase"], chia["insight_goc"]) == ("Motion", "Strom Ai"), \
+        "giá trị cuối trên SERVER phải khớp giá trị gõ SAU CÙNG, không bị request #1 chậm đè lại"
+
+
+def test_refresh_khong_de_len_o_dang_go_dang_focus(page, dulieu, monkeypatch):
+    """`refresh()` chạy sau phản hồi CHẬM của request #1 (đổi usecase) không
+    được đè GIÁ TRỊ lẫn FOCUS của ô insight người dùng đang gõ dở (CHƯA blur)
+    — khác test trên (cả hai ô đều đã blur), test này giữ ô insight Ở TRẠNG
+    THÁI ĐANG GÕ xuyên suốt cửa sổ phản hồi chậm để bắt đúng lỗi vẽ-lại-đè."""
+    goc = models_chia.ap_thao_tac
+    da_cham = {"n": 0}
+
+    def _cham_doi_insight_dau(db_path, chia_lan_id, chu, loai, **tham_so):
+        if (loai == "doi_insight" and da_cham["n"] == 0
+                and tham_so.get("usecase") == "Motion" and tham_so.get("insight_goc") == ""):
+            da_cham["n"] += 1
+            time.sleep(0.5)
+        return goc(db_path, chia_lan_id, chu, loai, **tham_so)
+
+    monkeypatch.setattr(models_chia, "ap_thao_tac", _cham_doi_insight_dau)
+    _mo_chia(page, dulieu["job_full"])
+
+    page.fill('[data-cc-field="usecase"]', "Motion")
+    page.locator('[data-cc-field="usecase"]').blur()   # request #1 — bị làm chậm 500ms
+    page.fill('[data-cc-field="insight_goc"]', "Strom Ai")   # KHÔNG blur — còn đang gõ dở
+    page.wait_for_timeout(700)   # qua khỏi mốc 500ms — request #1 đã có phản hồi, refresh() đã chạy
+    assert page.input_value('[data-cc-field="insight_goc"]') == "Strom Ai", \
+        "refresh() từ phản hồi CHẬM của request #1 không được đè ô đang gõ dở"
+    assert page.evaluate("document.activeElement.getAttribute('data-cc-field')") == "insight_goc", \
+        "refresh() không được cướp focus khỏi ô đang gõ"
+
+
 def _so_thao_tac(page) -> int:
     txt = page.inner_text("#cc-nut")
     import re
