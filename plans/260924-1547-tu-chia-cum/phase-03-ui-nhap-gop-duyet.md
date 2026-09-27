@@ -57,4 +57,5 @@ Dựng màn nháp đúng mock `~/plans/260924-1031-tu-chia-cum-video-desk/mock-t
 ### C. Nghiệm thu bổ sung
 
 - Render nháp THẬT của lượt 1 và lượt 2 (DB sao từ mini, không ghi mini) ngoài 6 trạng thái như mock; ĐP mở PNG.
-- Test trình duyệt: lượt insight trống ⇒ nút duyệt hiện lý do, gõ insight rồi duyệt được (D18).
+- **Insight trống (ĐP-163, bắt buộc):** màn duyệt có ô điền/sửa `usecase` + `insight_goc` NGAY trên thẻ lượt, lưu qua `doi_insight` có sẵn. Khi còn trống: nút "Duyệt"/"Duyệt tất cả" `disabled` kèm dòng nói lý do ("Điền insight gốc để duyệt — tên cụm = <insight gốc> <kiểu>"); user KHÔNG phải bấm rồi mới nhận 400. 400 của server (D18) vẫn giữ làm lưới.
+- Test trình duyệt: lượt insight trống ⇒ nút duyệt disabled + dòng lý do hiện; gõ insight ⇒ `doi_insight` ghi 1 dòng nhật ký ⇒ nút bật ⇒ duyệt được. Đột biến bỏ `disabled` ⇒ ĐỎ.
