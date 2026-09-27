@@ -290,6 +290,8 @@
   .skip-note { margin-top: 6px; font-size: .76rem; color: var(--text-muted); background: var(--surface-alt); border-radius: 6px; padding: 5px 8px; line-height: 1.35; }
   .job-meta { margin-top: 4px; font-size: .72rem; color: var(--text-muted); }
   .job-meta a { color: var(--accent); }
+  .chia-link { font: inherit; font-size: .72rem; color: var(--accent); background: none; border: none;
+    padding: 0; cursor: pointer; text-decoration: underline; }
   .empty-hint { color: var(--text-muted); font-size: .84rem; margin: 0; }
 
   /* ---- library ----------------------------------------------------------*/
@@ -738,4 +740,102 @@
   .cum-head .btn.primary { width: 100%; }
   .pop-wrap { display: flex; flex-direction: column; width: 100%; }
   .popover { position: static; width: auto; margin-bottom: 8px; max-height: 55vh; }
+}
+
+/* ===== Chia cụm — màn duyệt nháp "tự chia cụm" (phase 3+4, mock
+   plans/260924-1547-tu-chia-cum/mock-p34-v2.html). Namespace `.cc-` riêng để
+   không đụng lớp nào của thư viện chính; các lớp KHÔNG có tiền tố (`.card`,
+   `.btn`, `.chip`, `.muted`, `.popover`, `.pop-wrap`) được TÁI DÙNG nguyên
+   token — trang mock lấy màu/khuôn chữ từ chính app.css này. ===== */
+body.cc-lock-scroll { overflow: hidden; }
+#chia-view { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; }
+#chia-view[hidden] { display: none; }
+.cc-wrap { max-width: 1180px; margin: 0 auto; padding: 16px 16px 90px; }
+.cc-topbar { max-width: 1180px; margin: 0 auto; padding: 12px 16px 0; }
+.cc-faint { color: var(--text-faint); font-size: .74rem; }
+.cc-mono { font-family: var(--mono); font-size: .74rem; }
+.cc-sp { flex: 1; }
+
+.cc-luot { max-width: 1180px; margin: 12px auto 0; padding: 14px 16px; display: grid;
+  grid-template-columns: 1fr auto; gap: 10px 16px; align-items: start; }
+.cc-luot h2 { font-family: var(--display); font-size: 1.05rem; margin: 4px 0; }
+.cc-fields { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.cc-fields label { font-size: .74rem; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.cc-fields input, .cc-fields select, .cc-ten {
+  font: inherit; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  border-radius: 5px; padding: 5px 8px; font-size: .82rem;
+}
+.cc-fields input.cc-trong { border-color: var(--warn); background: var(--warn-bg); }
+.cc-nut { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.cc-why { font-size: .74rem; color: var(--warn); background: var(--warn-bg); border-radius: 5px;
+  padding: 6px 10px; max-width: 300px; text-align: right; }
+.chip.cc-chip-nhap { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.chip.cc-chip-ok { background: var(--success-bg); color: var(--success); border-color: transparent; }
+
+.cc-layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 250px 1fr;
+  gap: 16px; padding: 0 16px 90px; }
+.cc-rail { padding: 12px; position: sticky; top: 12px; align-self: start; }
+.cc-rail h3 { font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+  margin: 4px 4px 8px; }
+.cc-ri { display: flex; justify-content: space-between; padding: 5px 8px; border-radius: 5px; font-size: .82rem; }
+.cc-ri.cc-sub { padding-left: 22px; color: var(--text-muted); }
+.cc-ri .cc-n { color: var(--text-faint); font-family: var(--mono); font-size: .74rem; }
+.cc-ri.cc-lan { color: var(--warn); }
+
+.cc-nhom { margin-bottom: 14px; overflow: hidden; }
+.cc-nhom-h { display: flex; gap: 10px; align-items: center; padding: 12px 14px;
+  border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.cc-nhom-h .cc-ten { font-family: var(--display); font-weight: 700; font-size: .92rem; min-width: 160px; }
+.cc-kieu { padding: 10px 14px 14px; border-bottom: 1px dashed var(--border); }
+.cc-kieu:last-child { border-bottom: 0; }
+.cc-kieu-h { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.cc-kieu-h .cc-ten { font-weight: 600; min-width: 140px; }
+.cc-luoi { display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 6px; }
+.cc-t { position: relative; aspect-ratio: 200 / 356; border-radius: 4px; overflow: hidden;
+  background: var(--surface-alt); border: 2px solid transparent; cursor: pointer; }
+.cc-t img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cc-t.sel { border-color: var(--accent); }
+.cc-tag { font-size: .68rem; padding: 2px 7px; border-radius: 99px; background: var(--surface-alt);
+  color: var(--text-muted); }
+.cc-tag-nhap { background: var(--warn-bg); color: var(--warn); }
+.cc-note { font-size: .74rem; color: var(--text-muted); background: var(--surface-alt); border-radius: 5px;
+  padding: 7px 10px; margin: 8px 14px 0; }
+.cc-lan .cc-nhom-h { background: var(--warn-bg); }
+
+/* `.popover` (định nghĩa ở trên) mở LÊN TRÊN — đúng cho thanh chọn đóng ở
+   đáy trang, sai cho popover giữa danh sách kiểu/nhóm: mở lên sẽ đè lên
+   khối ngay phía trên nó. Trong `#chia-view`, mọi popover mở XUỐNG DƯỚI nút
+   bấm sinh ra nó — cùng hướng `.filter-panel` đã dùng cho bộ lọc thư viện. */
+#chia-view .popover { top: calc(100% + 6px); bottom: auto; right: 0; }
+
+.cc-dock { position: sticky; bottom: 0; background: var(--surface); border-top: 1px solid var(--border);
+  padding: 10px 16px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap;
+  z-index: 5; }
+.cc-empty { max-width: 640px; margin: 24px auto; padding: 40px 20px; text-align: center; }
+.cc-empty h2 { font-family: var(--display); }
+
+.cc-modal-bg { position: fixed; inset: 0; background: rgba(10, 20, 18, .45); display: flex;
+  align-items: flex-start; justify-content: center; padding-top: 90px; z-index: 60; overflow-y: auto; }
+.cc-modal { width: min(460px, calc(100vw - 32px)); padding: 16px 18px; }
+.cc-modal h3 { font-family: var(--display); margin: 0 0 8px; font-size: 1rem; }
+.cc-modal label { display: flex; flex-direction: column; gap: 3px; font-size: .74rem;
+  color: var(--text-muted); margin-top: 8px; }
+.cc-modal select, .cc-modal input { font: inherit; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); border-radius: 6px; padding: 6px 8px; }
+.cc-row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+.cc-mini-luoi { display: flex; gap: 4px; margin-top: 8px; }
+.cc-mini-luoi .cc-t { width: 44px; aspect-ratio: 200 / 356; flex: none; }
+
+/* Lệnh máy dev: mỗi TOKEN không tự xuống dòng giữa chừng — chỉ được ngắt ở
+   khoảng trắng giữa các token (D12: bắt buộc copy được nguyên vẹn ở 390px). */
+.cc-cmd { display: flex; gap: 6px; align-items: flex-start; background: var(--surface-alt);
+  border-radius: 5px; padding: 6px 8px; margin-top: 8px; }
+.cc-cmd code { font-family: var(--mono); font-size: .74rem; flex: 1; min-width: 0; white-space: normal; }
+.cc-cmd code span { white-space: nowrap; }
+.cc-cmd button { flex: none; }
+
+@media (max-width: 760px) {
+  .cc-layout { grid-template-columns: 1fr; }
+  .cc-rail { position: static; }
+  .cc-luot { grid-template-columns: 1fr; }
 }

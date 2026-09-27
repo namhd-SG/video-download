@@ -1,0 +1,813 @@
+(() => {
+  "use strict";
+
+  // ==========================================================================
+  // Màn duyệt nháp "tự chia cụm" (phase 3+4). Tách khỏi app.js (1600+ dòng) —
+  // đây là một MÀN RIÊNG, mở từ một nút trên thẻ lượt tải, render trọn vẹn
+  // TỪ SERVER (`GET /chia/{job_id}`) sau MỌI thao tác: không giữ trạng thái
+  // song song ở client (spec bắt buộc — mỗi hành động = POST rồi vẽ lại).
+  // ==========================================================================
+
+  const AXES = [
+    { v: "trang_phuc_dam_dong", label: "Trang phục đám đông" },
+    { v: "trang_phuc_nguoi_chinh", label: "Trang phục người chính" },
+    { v: "boi_canh", label: "Bối cảnh" },
+  ];
+  const AXIS_LABEL = Object.fromEntries(AXES.map((a) => [a.v, a.label]));
+
+  // Trạng thái phía client — CHỈ để nhớ "đang mở job nào" + "đang chọn gì" +
+  // "popover/modal nào đang mở". Dữ liệu THẬT luôn tới từ server sau mỗi lần
+  // vẽ lại (`CC.data` là bản sao MỚI NHẤT của GET /chia/{job_id}).
+  const CC = {
+    open: false,
+    jobId: null,
+    job: null,      // GET /jobs/{id}
+    data: null,     // GET /chia/{job_id} — null khi 404 (chưa có lượt chia)
+    cums: [],       // GET /cum → .cum — cụm CỦA NGƯỜI XEM
+    selected: new Set(),   // video_id đang chọn (dock, bất kể đang ở làn nào)
+    popover: null,  // {type:"gop"|"chuyen"|"traVe", key} — key phân biệt nút nào mở popover
+    modal: null,    // {type:"tach"|"huy"|"trung", ...}
+    axis: "trang_phuc_dam_dong",
+  };
+
+  // ---- helpers dùng chung, tách khỏi app.js để hai file không phụ vào nhau ----
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  class PhienHetHan extends Error {}
+
+  async function apiGet(path) {
+    const res = await fetch(path, { redirect: "manual" });
+    if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+    return res.json();
+  }
+
+  async function apiSend(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      redirect: "manual",
+      headers: body === undefined ? {} : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
+    if (!res.ok) {
+      let ma = null;
+      try { ma = (await res.json()).detail; } catch (e) { ma = null; }
+      const err = new Error(`${method} ${path} -> ${res.status}`);
+      err.ma = ma;
+      err.status = res.status;
+      throw err;
+    }
+    return res.status === 204 ? null : res.json();
+  }
+
+  let toastTimer = null;
+  function showToast(text) {
+    const el = document.getElementById("toast");
+    if (!el) return;
+    el.textContent = text;
+    el.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { el.hidden = true; }, 3200);
+  }
+
+  function baoPhienHetHan() {
+    const el = document.getElementById("session-expired");
+    if (el) el.hidden = false;
+  }
+
+  function errorDetailText(err) {
+    if (typeof err.ma === "string") return err.ma;
+    if (Array.isArray(err.ma)) return err.ma.map((e) => e.msg || JSON.stringify(e)).join("; ");
+    return err.message || "Thao tác không thực hiện được";
+  }
+
+  async function guard(fn) {
+    try {
+      await fn();
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+      showToast(errorDetailText(err));
+    }
+  }
+
+  // ==========================================================================
+  // Mở/đóng màn hình
+  // ==========================================================================
+  function view() { return document.getElementById("chia-view"); }
+
+  async function openChia(jobId) {
+    CC.open = true;
+    CC.jobId = jobId;
+    CC.selected = new Set();
+    CC.popover = null;
+    CC.modal = null;
+    view().hidden = false;
+    document.body.classList.add("cc-lock-scroll");
+    await refresh();
+  }
+
+  function closeChia() {
+    CC.open = false;
+    view().hidden = true;
+    document.body.classList.remove("cc-lock-scroll");
+  }
+
+  async function refresh() {
+    const [job, data, cumRes] = await Promise.all([
+      apiGet(`/jobs/${CC.jobId}`),
+      apiGet(`/chia/${CC.jobId}`),
+      apiGet("/cum"),
+    ]);
+    CC.job = job;
+    CC.data = data;
+    CC.cums = (cumRes && cumRes.cum) || [];
+    if (data && data.truc) CC.axis = data.truc;
+    render();
+  }
+
+  // ==========================================================================
+  // Dữ liệu dẫn xuất
+  // ==========================================================================
+  function chuaCoNhap() {
+    return !CC.data || CC.data.trang_thai === "cho_hinh" || CC.data.trang_thai === "huy";
+  }
+
+  function insightTrong() {
+    const d = CC.data;
+    return !d || !(d.usecase || "").trim() || !(d.insight_goc || "").trim();
+  }
+
+  function nhomsOf(data) {
+    const seen = [];
+    for (const k of data.kieu) if (!seen.includes(k.nhom)) seen.push(k.nhom);
+    return seen;
+  }
+
+  function baselineChiaTay(data) {
+    const soKieu = data.kieu.reduce((s, k) => s + k.video_ids.length, 0);
+    return soKieu + data.huong_dan.length + data.nghi.length + data.bi_bo.length;
+  }
+
+  // Tên cụm THẬT lúc duyệt = "<insight gốc> <ten_cum hoặc kiểu>" (server:
+  // `models_cum.ten_insight_con`, gọi trên `ten_cum or kieu` —
+  // `models_chia.py::_giai_quyet_kieu`). `ten_cum` bản thân KHÔNG mang
+  // insight gốc (`_chot_ten_moi_kieu` chỉ ghép nhóm khi trùng tên, xem
+  // docstring `_giai_va_cham_ten`) — ghép ở đây phải khớp ĐÚNG hai bước đó,
+  // không phải hiển thị thẳng `ten_cum`.
+  function tenCumDay(k) {
+    return `${CC.data.insight_goc} ${k.ten_cum || k.kieu}`.trim().replace(/\s+/g, " ");
+  }
+
+  function tenCumHien(k) {
+    if (insightTrong()) return `<i class="cc-faint">(insight gốc) ${escapeHtml(k.kieu)}</i>`;
+    return escapeHtml(tenCumDay(k));
+  }
+
+  function trungCumCoSan(k) {
+    if (insightTrong()) return null;
+    const khoa = (s) => (s || "").trim().replace(/\s+/g, " ").toLowerCase();
+    const ten = khoa(tenCumDay(k));
+    return CC.cums.find((c) => khoa(c.insight) === ten) || null;
+  }
+
+  // Xem trước tên cụm trong modal "Kiểu mới từ chọn" — CHỈ để hiển thị (ước
+  // lượng "<insight gốc> <kiểu mới gõ>"); tên THẬT tính lúc `tach`/`doi_ten`
+  // chạy trên server (có thể ghép nhóm khi trùng, D19) nên không luôn khớp
+  // tuyệt đối, nhưng khớp trong mọi ca không va chạm — cùng cách mock hiện.
+  function tachTenXem() {
+    const insightGoc = CC.data && CC.data.insight_goc ? CC.data.insight_goc : "(insight gốc)";
+    return `${insightGoc} ${(CC.modal && CC.modal.kieu) || ""}`.trim();
+  }
+
+  // ==========================================================================
+  // RENDER
+  // ==========================================================================
+  function render() {
+    renderHeader();
+    renderRail();
+    renderMain();
+    renderDock();
+    renderModal();
+  }
+
+  function renderHeader() {
+    const empty = chuaCoNhap();
+    const data = CC.data;
+    const ctx = document.getElementById("cc-context");
+    ctx.textContent = CC.job ? `Lượt tải #${CC.job.id} · ${CC.job.tong} video` : "";
+
+    const tieude = document.getElementById("cc-tieude");
+    if (empty) {
+      tieude.textContent = "Chưa chia cụm";
+    } else {
+      const nNhom = new Set(nhomsOf(data)).size;
+      const hau = data.trang_thai === "da_duyet" ? "— đã duyệt" : "— bản nháp";
+      tieude.textContent =
+        `Hệ đã chia thành ${nNhom} nhóm · ${data.kieu.length} kiểu + làn riêng ` +
+        `(thẻ chữ ${data.huong_dan.length} · nghi ${data.nghi.length}) ${hau}`;
+    }
+
+    const trangThai = document.getElementById("cc-trangthai");
+    if (!CC.data || CC.data.trang_thai === "cho_hinh") {
+      trangThai.innerHTML = `<span class="chip cc-chip-nhap">Chưa phân tích hình — tầng hình chạy từ máy ` +
+        `dev, người dùng bấm tay (không 24/7).</span>`;
+    } else if (CC.data.trang_thai === "huy") {
+      trangThai.innerHTML = `<span class="chip cc-chip-nhap">Lượt đã huỷ — chạy lệnh dưới đây để chia lại.</span>`;
+    } else if (CC.data.trang_thai === "da_duyet") {
+      trangThai.innerHTML = `<span class="chip cc-chip-ok"><b>Đã duyệt</b></span>`;
+    } else {
+      trangThai.innerHTML = `<span class="chip cc-chip-nhap"><b>Nháp</b> chưa vào taxonomy · ` +
+        `“Tạo bộ” khoá tới khi duyệt</span>`;
+    }
+
+    const fields = document.getElementById("cc-fields");
+    const tr = insightTrong();
+    if (empty) {
+      fields.innerHTML = "";
+    } else {
+      const axisLabel = AXIS_LABEL[data.truc] || data.truc || "(chưa đặt)";
+      fields.innerHTML = `
+        <label>Usecase<input type="text" class="${tr ? "cc-trong" : ""}" data-cc-field="usecase"
+          placeholder="vd Motion" value="${escapeHtml(data.usecase || "")}"></label>
+        <label>Insight gốc<input type="text" class="${tr ? "cc-trong" : ""}" data-cc-field="insight_goc"
+          placeholder="vd Strom Ai" value="${escapeHtml(data.insight_goc || "")}"></label>
+        <label>Chia theo<select disabled title="Đổi trục = chia lại (Hủy lượt)">
+          <option>${escapeHtml(axisLabel)}</option></select></label>`;
+    }
+
+    const nut = document.getElementById("cc-nut");
+    if (empty) {
+      nut.innerHTML = "";
+    } else if (data.trang_thai === "da_duyet") {
+      nut.innerHTML = `<span class="cc-faint cc-mono">${data.so_thao_tac} thao tác sửa · ` +
+        `so với ${baselineChiaTay(data)} nếu chia tay</span>`;
+    } else {
+      nut.innerHTML = `
+        <button type="button" class="btn primary" data-cc-action="duyet-het" ${tr ? "disabled" : ""}>
+          Duyệt tất cả còn lại</button>
+        ${tr ? `<div class="cc-why">Điền <b>usecase</b> và <b>insight gốc</b> để duyệt — tên cụm = ` +
+               `“&lt;insight gốc&gt; &lt;kiểu&gt;”.</div>` : ""}
+        <button type="button" class="btn" data-cc-action="mo-huy">Hủy lượt để chia lại…</button>
+        <button type="button" class="btn ghost" data-cc-action="hoan-tac">Hoàn tác</button>
+        <span class="cc-faint cc-mono">${data.so_thao_tac} thao tác sửa · ` +
+        `so với ${baselineChiaTay(data)} nếu chia tay</span>`;
+    }
+  }
+
+  function renderRail() {
+    const rail = document.getElementById("cc-rail");
+    let r = "<h3>Lượt này</h3>";
+    if (chuaCoNhap()) {
+      r += `<div class="cc-ri"><span>Chưa vào cụm</span><span class="cc-n">${CC.job ? CC.job.tong : 0}</span></div>`;
+    } else {
+      const data = CC.data;
+      for (const nhom of nhomsOf(data)) {
+        const ks = data.kieu.filter((k) => k.nhom === nhom);
+        const tong = ks.reduce((s, k) => s + k.video_ids.length, 0);
+        r += `<div class="cc-ri"><span>${escapeHtml(nhom)}</span><span class="cc-n">${tong}</span></div>`;
+        for (const k of ks) {
+          r += `<div class="cc-ri cc-sub"><span>${escapeHtml(k.kieu)}</span>` +
+               `<span class="cc-n">${k.video_ids.length}</span></div>`;
+        }
+      }
+      r += `<hr class="rail-sep"><h3>Làn riêng</h3>` +
+        `<div class="cc-ri cc-lan"><span>Hướng dẫn / thẻ chữ</span><span class="cc-n">${data.huong_dan.length}</span></div>` +
+        `<div class="cc-ri cc-lan"><span>Nghi ngoài chủ đề</span><span class="cc-n">${data.nghi.length}</span></div>`;
+    }
+    r += `<hr class="rail-sep"><h3>Cụm của tôi (đã có)</h3>`;
+    if (CC.cums.length === 0) {
+      r += `<div class="cc-faint">Chưa có cụm nào.</div>`;
+    } else {
+      r += CC.cums.map((c) =>
+        `<div class="cc-ri"><span>${escapeHtml(c.insight)}</span><span class="cc-n">${c.so_video}</span></div>`
+      ).join("");
+    }
+    rail.innerHTML = r;
+  }
+
+  function thumbsHtml(videoIds) {
+    if (videoIds.length === 0) return "";
+    return `<div class="cc-luoi">` + videoIds.map((vid) =>
+      `<div class="cc-t${CC.selected.has(vid) ? " sel" : ""}" data-cc-video="${escapeHtml(vid)}">` +
+      `<img src="/thumbs/${escapeHtml(vid)}" loading="lazy" alt=""></div>`
+    ).join("") + `</div>`;
+  }
+
+  function kieuBlockHtml(k) {
+    const tr = insightTrong();
+    const trung = trungCumCoSan(k);
+    const trungTag = trung
+      ? `<span class="cc-tag cc-tag-nhap" title="D13: server hỏi trước khi gộp">trùng cụm có sẵn — duyệt sẽ hỏi gộp</span>`
+      : "";
+    const popKey = `gop-${k.cum_nhap_id}`;
+    return `
+      <div class="cc-kieu" data-cum-nhap-id="${k.cum_nhap_id}">
+        <div class="cc-kieu-h">
+          <input class="cc-ten" data-cc-kieu-rename="${k.cum_nhap_id}" value="${escapeHtml(k.kieu)}">
+          <span class="cc-faint">${k.video_ids.length} video · tên cụm: ${tenCumHien(k)}</span>
+          ${trungTag}
+          <span class="cc-sp"></span>
+          <span class="pop-wrap">
+            <div class="popover" data-cc-popover="${popKey}" hidden></div>
+            <button type="button" class="btn ghost" data-cc-action="toggle-gop"
+              data-cum-nhap-id="${k.cum_nhap_id}" ${tr ? 'disabled title="Điền insight gốc trước (D18)"' : ""}>
+              Gộp vào cụm có sẵn ▾</button>
+          </span>
+          <button type="button" class="btn ghost" data-cc-action="xoa-kieu"
+            data-cum-nhap-id="${k.cum_nhap_id}">Xoá kiểu</button>
+          <button type="button" class="btn" data-cc-action="duyet-kieu"
+            data-cum-nhap-id="${k.cum_nhap_id}" ${tr ? 'disabled title="Điền insight gốc trước"' : ""}>
+            Duyệt kiểu này</button>
+          <button type="button" class="btn" disabled title="Nháp chưa duyệt: server từ chối">
+            Tạo bộ tự tìm (${k.video_ids.length})</button>
+        </div>
+        ${thumbsHtml(k.video_ids)}
+      </div>`;
+  }
+
+  function kieuPickerPopoverHtml(action, data) {
+    if (data.kieu.length === 0) {
+      return `<div class="cc-faint" style="padding:6px 8px">Chưa có kiểu nào trong lượt này.</div>`;
+    }
+    return data.kieu.map((k) =>
+      `<div data-cc-action="${action}" data-cum-nhap-id="${k.cum_nhap_id}">` +
+      `${escapeHtml(k.nhom)} · <b>${escapeHtml(k.kieu)}</b> ` +
+      `<span class="cc-faint">· ${k.video_ids.length} video</span></div>`
+    ).join("");
+  }
+
+  function renderMain() {
+    const main = document.getElementById("cc-main");
+    if (chuaCoNhap()) {
+      const cmd = CC.data === null
+        ? ["bash", "scripts/phan-tich-hinh.sh", "--luot", String(CC.jobId)]
+        : ["bash", "scripts/phan-tich-hinh.sh", "--luot", String(CC.jobId), "--truc", CC.axis];
+      main.innerHTML = `
+        <div class="card cc-empty">
+          <h2>Chưa phân tích hình</h2>
+          <p class="muted">${CC.job ? CC.job.tong : 0} video đã tải. Hệ chưa chia cụm vì tầng hình chưa chạy. ` +
+            `Chạy lệnh này trên máy dev (thử khô trước, thêm <code>--yes</code> để làm thật):</p>
+          ${cmdHtml(cmd)}
+          <p class="cc-faint">Không có nút chạy ở đây: máy chủ không tự gọi được tầng hình.</p>
+        </div>`;
+      return;
+    }
+    const data = CC.data;
+    let m = "";
+    for (const nhom of nhomsOf(data)) {
+      const ks = data.kieu.filter((k) => k.nhom === nhom);
+      const tong = ks.reduce((s, k) => s + k.video_ids.length, 0);
+      m += `<div class="card cc-nhom" data-cc-nhom="${escapeHtml(nhom)}">
+        <div class="cc-nhom-h">
+          <input class="cc-ten" data-cc-nhom-rename data-cc-nhom-cur="${escapeHtml(nhom)}" value="${escapeHtml(nhom)}">
+          <span class="chip cc-chip-nhap">đề xuất</span>
+          <span class="muted">${tong} video · ${ks.length} kiểu</span>
+          <span class="cc-sp"></span>
+          ${ks.length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
+            `data-nhom="${escapeHtml(nhom)}">Gộp cả nhóm thành 1 kiểu</button>` : ""}
+        </div>
+        ${ks.map(kieuBlockHtml).join("")}
+      </div>`;
+    }
+    m += `<div class="card cc-nhom cc-lan">
+      <div class="cc-nhom-h"><b>Hướng dẫn / thẻ chữ</b><span class="muted">${data.huong_dan.length} video</span>
+        <span class="cc-sp"></span>
+        <button type="button" class="btn" data-cc-action="hd-thanh-kieu">Thành kiểu “Hướng dẫn”</button>
+        <button type="button" class="btn" data-cc-action="hd-ngoai-chu-de">Đánh dấu ngoài chủ đề</button>
+      </div>
+      ${thumbsHtml(data.huong_dan)}
+    </div>`;
+    m += `<div class="card cc-nhom cc-lan">
+      <div class="cc-nhom-h"><b>Nghi ngoài chủ đề</b>
+        <span class="muted">${data.nghi.length} video · không xoá, không ẩn, không bao giờ vào bộ</span>
+        <span class="cc-sp"></span>
+        <button type="button" class="btn" data-cc-action="nghi-bo-khoi-luot">Đúng, bỏ khỏi lượt</button>
+        <span class="pop-wrap">
+          <div class="popover" data-cc-popover="traVe" hidden></div>
+          <button type="button" class="btn" data-cc-action="toggle-tra-ve">Không, trả về kiểu…</button>
+        </span>
+      </div>
+      <div class="cc-note">Vì sao nghi: tầng hình xếp “không có đám đông / không thuộc kiểu nào”, hoặc caption ` +
+        `lệch chủ đề. Caption chỉ được TĂNG nghi, không gỡ nghi.</div>
+      ${thumbsHtml(data.nghi)}
+    </div>`;
+    main.innerHTML = m;
+
+    // Popover nội dung được vẽ SAU khi khung đã có mặt trong DOM (chọn theo
+    // data-cc-popover) — tránh phải escape lồng nhau trong template ở trên.
+    for (const k of data.kieu) {
+      const el = main.querySelector(`[data-cc-popover="gop-${k.cum_nhap_id}"]`);
+      if (el) {
+        el.innerHTML = `<div class="cc-faint" style="padding:4px 6px">Duyệt “${escapeHtml(k.kieu)}” bằng cách ` +
+          `gộp ${k.video_ids.length} video vào một cụm có sẵn của bạn (khác tên vẫn được):</div>` +
+          (CC.cums.length === 0 ? `<div class="cc-faint" style="padding:4px 6px">Chưa có cụm nào.</div>` :
+            CC.cums.map((c) => `<div data-cc-action="gop-vao-cum" data-cum-nhap-id="${k.cum_nhap_id}" ` +
+              `data-cum-id="${c.id}"><b>${escapeHtml(c.insight)}</b> ` +
+              `<span class="cc-faint">· ${c.so_video} video</span></div>`).join("")) +
+          `<div class="cc-faint" style="padding:4px 6px">Video đã ở cụm khác của bạn được giữ nguyên chỗ. ` +
+          `Không hoàn tác được — như mọi lần duyệt.</div>`;
+        el.hidden = !(CC.popover && CC.popover.type === "gop" && CC.popover.key === k.cum_nhap_id);
+      }
+    }
+    const traVeEl = main.querySelector('[data-cc-popover="traVe"]');
+    if (traVeEl) {
+      traVeEl.innerHTML = kieuPickerPopoverHtml("tra-ve-den", data);
+      traVeEl.hidden = !(CC.popover && CC.popover.type === "traVe");
+    }
+  }
+
+  function renderDock() {
+    const dock = document.getElementById("cc-dock");
+    const n = CC.selected.size;
+    dock.hidden = chuaCoNhap();
+    document.getElementById("cc-dachon").textContent = `${n} video đã chọn`;
+    const chuyenPop = document.getElementById("cc-chuyen-popover");
+    if (chuyenPop) {
+      chuyenPop.innerHTML = CC.data ? kieuPickerPopoverHtml("chuyen-den", CC.data) : "";
+      chuyenPop.hidden = !(CC.popover && CC.popover.type === "chuyen");
+    }
+  }
+
+  function cmdHtml(tokens) {
+    const raw = tokens.join(" ");
+    return `<div class="cc-cmd"><code>${tokens.map((t) => `<span>${escapeHtml(t)}</span>`).join(" ")}</code>` +
+      `<button type="button" class="btn ghost" data-cc-action="copy-cmd" data-cmd="${escapeHtml(raw)}">Chép</button></div>`;
+  }
+
+  function renderModal() {
+    const host = document.getElementById("cc-modal");
+    const modal = CC.modal;
+    if (!modal) { host.innerHTML = ""; return; }
+    if (modal.type === "huy") {
+      const cmd = ["bash", "scripts/phan-tich-hinh.sh", "--luot", String(CC.jobId), "--truc", CC.axis];
+      host.innerHTML = `<div class="cc-modal-bg"><div class="card cc-modal">
+        <h3>Hủy lượt này để chia lại?</h3>
+        <p class="muted" style="margin:0">Lượt có <b>${CC.data.so_thao_tac} thao tác sửa</b> — nhật ký vẫn được ` +
+          `giữ, nhưng nháp này thôi hiệu lực. Kiểu đã duyệt (nếu có) vẫn là cụm thật, không bị chia lại.</p>
+        <label>Chia lại theo<select data-cc-huy-truc>${AXES.map((a) =>
+          `<option value="${a.v}" ${a.v === CC.axis ? "selected" : ""}>${escapeHtml(a.label)}</option>`).join("")}
+          </select></label>
+        <div class="cc-faint" style="margin-top:8px">Sau khi hủy, chạy trên máy dev (thử khô, thêm ` +
+          `<code>--yes</code> để làm thật):</div>
+        ${cmdHtml(cmd)}
+        <div class="cc-row">
+          <button type="button" class="btn" data-cc-action="modal-close">Giữ nháp</button>
+          <button type="button" class="btn danger" data-cc-action="confirm-huy">Hủy lượt</button>
+        </div>
+      </div></div>`;
+      return;
+    }
+    if (modal.type === "tach") {
+      const nhoms = CC.data ? nhomsOf(CC.data) : [];
+      const first = nhoms[0] || "";
+      const mv = [...CC.selected].slice(0, 3);
+      const tenXem = tachTenXem();
+      host.innerHTML = `<div class="cc-modal-bg"><div class="card cc-modal">
+        <h3>Kiểu mới từ ${CC.selected.size} video đã chọn</h3>
+        <div class="cc-mini-luoi">${mv.map((vid) =>
+          `<div class="cc-t"><img src="/thumbs/${escapeHtml(vid)}" alt=""></div>`).join("")}</div>
+        <label>Nhóm<select data-cc-tach-nhom>
+          ${nhoms.map((n) => `<option value="${escapeHtml(n)}" ${n === (modal.nhom || first) ? "selected" : ""}>` +
+            `${escapeHtml(n)}</option>`).join("")}
+          <option value="__moi__" ${modal.nhomMoi ? "selected" : ""}>+ nhóm mới…</option>
+        </select></label>
+        ${modal.nhomMoi ? `<label>Tên nhóm mới<input type="text" data-cc-tach-nhom-moi
+          value="${escapeHtml(modal.nhom || "")}"></label>` : ""}
+        <label>Tên kiểu<input type="text" data-cc-tach-kieu value="${escapeHtml(modal.kieu || "")}"></label>
+        <div class="cc-faint" id="cc-tach-preview" style="margin-top:6px">Tên cụm khi duyệt: “${escapeHtml(tenXem)}”. Hoàn tác được.</div>
+        <div class="cc-row">
+          <button type="button" class="btn" data-cc-action="modal-close">Huỷ</button>
+          <button type="button" class="btn primary" data-cc-action="confirm-tach">Tạo kiểu</button>
+        </div>
+      </div></div>`;
+      return;
+    }
+    if (modal.type === "trung") {
+      host.innerHTML = `<div class="cc-modal-bg"><div class="card cc-modal">
+        <h3>Tên trùng cụm có sẵn</h3>
+        <p class="muted">Kiểu bạn đang duyệt trùng tên với cụm có sẵn của bạn. Gộp video vào cụm đó?</p>
+        <ul>${modal.trung.map((t) => `<li><b>${escapeHtml(t.ten)}</b> · ${t.so_video} video</li>`).join("")}</ul>
+        <div class="cc-row">
+          <button type="button" class="btn" data-cc-action="modal-close">Huỷ</button>
+          <button type="button" class="btn primary" data-cc-action="confirm-trung">Xác nhận gộp</button>
+        </div>
+      </div></div>`;
+      return;
+    }
+  }
+
+  // ==========================================================================
+  // THAO TÁC — gọi server rồi refresh() từ đầu
+  // ==========================================================================
+  async function thaoTac(loai, tham) {
+    const ket = await apiSend("POST", `/chia/${CC.data.id}/thao-tac`, { loai, ...tham });
+    if (ket && ket.tu_choi) {
+      showToast(loai === "hoan_tac" ? "Không còn gì để hoàn tác." : "Thao tác không hợp lệ.");
+      return null;
+    }
+    await refresh();
+    return ket;
+  }
+
+  async function duyet(body) {
+    return apiSend("POST", `/chia/${CC.data.id}/duyet`, body);
+  }
+
+  async function duyetKieu(cumNhapId, xacNhanGop) {
+    const ket = await duyet({ cum_nhap_id: cumNhapId, xac_nhan_gop: xacNhanGop || [] });
+    if (ket.trung_cum_co_san) {
+      CC.modal = {
+        type: "trung",
+        trung: ket.trung_cum_co_san.map((t) => ({ ten: t.ten, so_video: t.so_video, cum_id: t.cum_id })),
+        cumNhapId,
+      };
+      render();
+      return;
+    }
+    showToast(ket.da_co ? "Đã duyệt — đã gộp vào cụm có sẵn." : "Đã duyệt — đã tạo cụm mới.");
+    await refresh();
+  }
+
+  async function duyetHet() {
+    const ket = await duyet({});
+    if (ket.trung_cum_co_san && ket.trung_cum_co_san.length) {
+      CC.modal = { type: "trung", trung: ket.trung_cum_co_san.map((t) =>
+        ({ ten: t.ten, so_video: t.so_video, cum_id: t.cum_id })), all: true };
+      render();
+      return;
+    }
+    if (ket.loi_ten && ket.loi_ten.length) {
+      showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`);
+    } else {
+      showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
+    }
+    await refresh();
+  }
+
+  // ==========================================================================
+  // Sự kiện — MỘT listener uỷ quyền trên toàn màn hình (view() vẽ lại liên
+  // tục, gắn tay từng nút sẽ mất tay nghe sau mỗi lần render).
+  // ==========================================================================
+  function wireEvents() {
+    const root = view();
+
+    root.addEventListener("click", (ev) => {
+      guard(async () => {
+        const closeBg = ev.target.closest("[data-cc-modal-bg]");
+        if (closeBg && ev.target === closeBg) { CC.modal = null; render(); return; }
+
+        const btn = ev.target.closest("[data-cc-action]");
+        if (!btn) {
+          // Bấm ra ngoài mọi popover đang mở thì đóng nó — trừ khi bấm NGAY
+          // trên chính nút mở popover đó (nút đó tự xử lý toggle bên dưới).
+          if (CC.popover && !ev.target.closest(".pop-wrap")) { CC.popover = null; render(); }
+          return;
+        }
+        const action = btn.dataset.ccAction;
+
+        if (action === "back") { closeChia(); return; }
+
+        if (action === "duyet-het") { await duyetHet(); return; }
+        if (action === "mo-huy") { CC.modal = { type: "huy" }; render(); return; }
+        if (action === "hoan-tac") { await thaoTac("hoan_tac", {}); return; }
+        if (action === "modal-close") { CC.modal = null; render(); return; }
+
+        if (action === "confirm-huy") {
+          await thaoTac("huy_luot", {});
+          CC.modal = null;
+          render();
+          return;
+        }
+        if (action === "confirm-trung") {
+          const ids = CC.modal.trung.map((t) => t.cum_id);
+          const wasAll = !!CC.modal.all;
+          const cumNhapId = CC.modal.cumNhapId;
+          CC.modal = null;
+          if (wasAll) {
+            const ket = await duyet({ xac_nhan_gop: ids });
+            if (ket.trung_cum_co_san && ket.trung_cum_co_san.length) {
+              CC.modal = { type: "trung", all: true, trung: ket.trung_cum_co_san.map((t) =>
+                ({ ten: t.ten, so_video: t.so_video, cum_id: t.cum_id })) };
+              render();
+              return;
+            }
+            showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
+          } else {
+            await duyetKieu(cumNhapId, ids);
+            return;
+          }
+          await refresh();
+          return;
+        }
+
+        if (action === "copy-cmd") {
+          const cmd = btn.dataset.cmd || "";
+          try { await navigator.clipboard.writeText(cmd); showToast("Đã chép lệnh."); }
+          catch (e) { showToast("Không chép được — chọn và copy tay."); }
+          return;
+        }
+
+        if (action === "xoa-kieu") {
+          await thaoTac("xoa_kieu", { cum_nhap_id: Number(btn.dataset.cumNhapId) });
+          return;
+        }
+        if (action === "duyet-kieu") {
+          await duyetKieu(Number(btn.dataset.cumNhapId));
+          return;
+        }
+        if (action === "toggle-gop") {
+          const id = Number(btn.dataset.cumNhapId);
+          CC.popover = (CC.popover && CC.popover.type === "gop" && CC.popover.key === id)
+            ? null : { type: "gop", key: id };
+          render();
+          return;
+        }
+        if (action === "gop-vao-cum") {
+          const cumNhapId = Number(btn.dataset.cumNhapId);
+          const cumId = Number(btn.dataset.cumId);
+          CC.popover = null;
+          const ket = await duyet({ cum_nhap_id: cumNhapId, gop_vao_cum_id: cumId });
+          showToast("Đã duyệt — đã gộp vào cụm có sẵn.");
+          void ket;
+          await refresh();
+          return;
+        }
+        if (action === "gop-nhom") {
+          const nhom = btn.dataset.nhom;
+          const ks = CC.data.kieu.filter((k) => k.nhom === nhom);
+          if (ks.length < 2) return;
+          const [den, ...tu] = ks;
+          await thaoTac("gop_nhom", {
+            den_cum_nhap_id: den.cum_nhap_id, cum_nhap_ids: tu.map((k) => k.cum_nhap_id),
+          });
+          return;
+        }
+
+        if (action === "hd-thanh-kieu") {
+          if (!CC.data.huong_dan.length) return;
+          await thaoTac("tach", { video_ids: CC.data.huong_dan, nhom: "Hướng dẫn", kieu: "Hướng dẫn" });
+          return;
+        }
+        if (action === "hd-ngoai-chu-de") {
+          if (!CC.data.huong_dan.length) return;
+          await thaoTac("ngoai_chu_de", { video_ids: CC.data.huong_dan });
+          return;
+        }
+        if (action === "nghi-bo-khoi-luot") {
+          if (!CC.data.nghi.length) return;
+          await thaoTac("ngoai_chu_de", { video_ids: CC.data.nghi });
+          return;
+        }
+        if (action === "toggle-tra-ve") {
+          CC.popover = (CC.popover && CC.popover.type === "traVe") ? null : { type: "traVe" };
+          render();
+          return;
+        }
+        if (action === "tra-ve-den") {
+          const denId = Number(btn.dataset.cumNhapId);
+          const ids = CC.selected.size
+            ? [...CC.selected].filter((v) => CC.data.nghi.includes(v) || CC.data.huong_dan.includes(v))
+            : CC.data.nghi;
+          CC.popover = null;
+          if (!ids.length) { render(); return; }
+          await thaoTac("tra_ve", { video_ids: ids, den_cum_nhap_id: denId });
+          return;
+        }
+        if (action === "chuyen-den") {
+          const denId = Number(btn.dataset.cumNhapId);
+          const ids = [...CC.selected];
+          CC.popover = null;
+          CC.selected = new Set();
+          if (!ids.length) { render(); return; }
+          await thaoTac("chuyen", { video_ids: ids, den_cum_nhap_id: denId });
+          return;
+        }
+
+        if (action === "dock-chuyen") {
+          if (!CC.selected.size) return;
+          CC.popover = (CC.popover && CC.popover.type === "chuyen") ? null : { type: "chuyen" };
+          render();
+          return;
+        }
+        if (action === "dock-tach") {
+          if (!CC.selected.size) return;
+          CC.modal = { type: "tach", nhom: nhomsOf(CC.data)[0] || "", kieu: "" };
+          render();
+          return;
+        }
+        if (action === "dock-ngoai") {
+          if (!CC.selected.size) return;
+          const ids = [...CC.selected];
+          CC.selected = new Set();
+          await thaoTac("ngoai_chu_de", { video_ids: ids });
+          return;
+        }
+        if (action === "dock-bo-chon") {
+          CC.selected = new Set();
+          render();
+          return;
+        }
+        if (action === "confirm-tach") {
+          const nhom = CC.modal.nhomMoi ? (CC.modal.nhom || "").trim() : (CC.modal.nhom || "");
+          const kieu = (CC.modal.kieu || "").trim();
+          if (!nhom || !kieu) { showToast("Cần nhóm và tên kiểu."); return; }
+          const ids = [...CC.selected];
+          CC.modal = null;
+          CC.selected = new Set();
+          await thaoTac("tach", { video_ids: ids, nhom, kieu });
+          return;
+        }
+      });
+    });
+
+    // Ô "Tên kiểu" của modal tách: cập nhật xem-trước NGAY MỖI PHÍM (không
+    // đợi blur như ô usecase/insight — ô đó gọi server nên phải chặn spam,
+    // ô này chỉ đổi state phía client). Vá TRỰC TIẾP text của dòng xem-trước
+    // thay vì gọi lại `render()` — gọi lại sẽ nạp lại `value` từ state cũ và
+    // làm con trỏ nhảy về cuối input giữa lúc đang gõ.
+    root.addEventListener("input", (ev) => {
+      const kieuInput = ev.target.closest("[data-cc-tach-kieu]");
+      if (kieuInput && CC.modal && CC.modal.type === "tach") {
+        CC.modal.kieu = kieuInput.value;
+        const prev = document.getElementById("cc-tach-preview");
+        if (prev) prev.textContent = `Tên cụm khi duyệt: “${tachTenXem()}”. Hoàn tác được.`;
+        return;
+      }
+      const nhomMoiInput = ev.target.closest("[data-cc-tach-nhom-moi]");
+      if (nhomMoiInput && CC.modal) CC.modal.nhom = nhomMoiInput.value;
+    });
+
+    root.addEventListener("change", (ev) => {
+      guard(async () => {
+        const field = ev.target.closest("[data-cc-field]");
+        if (field) {
+          const key = field.dataset.ccField;
+          await thaoTac("doi_insight", { [key]: field.value });
+          return;
+        }
+        const kieuRename = ev.target.closest("[data-cc-kieu-rename]");
+        if (kieuRename) {
+          const id = Number(kieuRename.dataset.ccKieuRename);
+          const kieu = kieuRename.value.trim();
+          if (!kieu) { await refresh(); return; }
+          await thaoTac("doi_ten", { cum_nhap_id: id, kieu });
+          return;
+        }
+        const nhomRename = ev.target.closest("[data-cc-nhom-rename]");
+        if (nhomRename) {
+          const cur = nhomRename.dataset.ccNhomCur;
+          const moi = nhomRename.value.trim();
+          if (!moi || moi === cur) { await refresh(); return; }
+          const ks = CC.data.kieu.filter((k) => k.nhom === cur);
+          for (const k of ks) {
+            await apiSend("POST", `/chia/${CC.data.id}/thao-tac`,
+              { loai: "doi_ten", cum_nhap_id: k.cum_nhap_id, kieu: k.kieu, nhom: moi });
+          }
+          await refresh();
+          return;
+        }
+        const huyTruc = ev.target.closest("[data-cc-huy-truc]");
+        if (huyTruc) { CC.axis = huyTruc.value; render(); return; }
+        const tachNhom = ev.target.closest("[data-cc-tach-nhom]");
+        if (tachNhom) {
+          CC.modal.nhomMoi = tachNhom.value === "__moi__";
+          CC.modal.nhom = CC.modal.nhomMoi ? "" : tachNhom.value;
+          render();
+          return;
+        }
+      });
+    });
+
+    // Chọn thumbnail cho dock (bất kỳ làn nào).
+    root.addEventListener("click", (ev) => {
+      const t = ev.target.closest(".cc-t[data-cc-video]");
+      if (!t || ev.target.closest("[data-cc-action]")) return;
+      const vid = t.dataset.ccVideo;
+      if (CC.selected.has(vid)) CC.selected.delete(vid); else CC.selected.add(vid);
+      render();
+    });
+  }
+
+  // ==========================================================================
+  // Khởi động — gắn nút mở từ thẻ lượt tải (đầu vào), tạo khung DOM một lần.
+  // ==========================================================================
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!document.getElementById("chia-view")) return;
+    wireEvents();
+  });
+
+  document.addEventListener("click", (ev) => {
+    const openBtn = ev.target.closest("[data-chia]");
+    if (!openBtn) return;
+    ev.preventDefault();
+    guard(() => openChia(Number(openBtn.dataset.chia)));
+  });
+
+  window.chiaCum = { open: openChia, close: closeChia };
+})();
