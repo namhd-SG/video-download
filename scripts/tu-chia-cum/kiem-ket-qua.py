@@ -106,12 +106,12 @@ def kiem_chia(obj, mong_doi: set[str], khoa_trung: list[str]) -> list[str]:
         if isinstance(g, dict) and set(g) == {"lan"}:
             if g["lan"] not in LAN_KHONG_KIEU:
                 loi.append(f"chia {vid}: làn ngoài danh sách: {g['lan']!r}")
-        elif isinstance(g, dict) and isinstance(g.get("nhom"), str) \
-                and isinstance(g.get("kieu"), str):
+        elif isinstance(g, dict) and set(g) == {"nhom", "kieu"} \
+                and isinstance(g["nhom"], str) and isinstance(g["kieu"], str):
             if (khoa_ten(g["nhom"]), khoa_ten(g["kieu"])) not in khai:
                 loi.append(f"chia {vid}: '{g['nhom']}/{g['kieu']}' ngoài danh sách nhóm/kiểu đã khai")
         else:
-            loi.append(f"chia {vid}: gán phải là {{nhom, kieu}} hoặc {{lan}}: {g!r}")
+            loi.append(f"chia {vid}: gán phải có ĐÚNG khoá {{nhom, kieu}} hoặc {{lan}}: {g!r}")
     return kiem_tap_id(list(obj["gan"]) + khoa_trung, mong_doi, "chia") + loi
 
 
@@ -144,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             obj, trung = _doc_json(a.tep)
             loi = (kiem_caption if a.loai == "caption" else kiem_chia)(obj, mong_doi, trung)
-    except (OSError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         print(f"ĐO HỎNG: {exc}", file=sys.stderr)
         return 3
     print(f"{a.loai}: mong đợi {len(mong_doi)} id · {len(loi)} lỗi")

@@ -122,6 +122,22 @@ def test_gan_vao_kieu_chua_khai_bi_bat(chia, ids):
     assert any("ngoài danh sách" in d and vid in d for d in kiem.kiem_chia(sai, ids, []))
 
 
+def test_gan_thua_khoa_bi_bat(chia, ids):
+    sai = copy.deepcopy(chia)
+    vid, g = next(iter(sai["gan"].items()))
+    sai["gan"][vid] = {**g, "lan": "nghi"}
+    assert any("ĐÚNG khoá" in d and vid in d for d in kiem.kiem_chia(sai, ids, []))
+    sai["gan"][vid] = {**g, "ly_do": "x"}
+    assert any("ĐÚNG khoá" in d for d in kiem.kiem_chia(sai, ids, []))
+
+
+def test_hinh_dang_sai_khong_nem_loi(ids):
+    for obj in ([], "x", {"nhom": [], "gan": {}}, {"nhom": {}, "gan": []}):
+        assert kiem.kiem_chia(obj, ids, [])
+    assert kiem.kiem_caption([], ids, [])
+    assert kiem.kiem_nhan([[], "x", 3], ids)
+
+
 def test_lan_ngoai_danh_sach_bi_bat(chia, ids):
     sai = copy.deepcopy(chia)
     vid = next(iter(sai["gan"]))
@@ -163,3 +179,7 @@ def test_cli_ma_thoat_dat_khong_dat_do_hong(tmp_path, chia, ids):
     (tmp_path / "bot.json").write_text(json.dumps(bot, ensure_ascii=False))
     assert kiem.main(["chia", str(tmp_path / "bot.json"), "--ids", str(tep_ids)]) == 4
     assert kiem.main(["chia", str(tmp_path / "khong-co.json"), "--ids", str(tep_ids)]) == 3
+    (tmp_path / "rac.json").write_bytes(b"\xff\xfe{")
+    assert kiem.main(["chia", str(tmp_path / "rac.json"), "--ids", str(tep_ids)]) == 3
+    (tmp_path / "list.json").write_text("[]")
+    assert kiem.main(["chia", str(tmp_path / "list.json"), "--ids", str(tep_ids)]) == 4
