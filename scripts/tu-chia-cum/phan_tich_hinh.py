@@ -297,23 +297,33 @@ def main(argv: list[str] | None = None, *, chay_agy=None, chay_lenh=None,
         return MA_TU_CHOI if tu_choi else MA_OK
 
     goc = a.scratch or Path(tempfile.mkdtemp(prefix="phan-tich-hinh-"))
-    for kh in ke_hoach:
-        if kh.tu_choi:
-            continue
+    chay = [kh.job_id for kh in ke_hoach if not kh.tu_choi]
+    for i, kh in enumerate(kh for kh in ke_hoach if not kh.tu_choi):
         scratch = goc / f"job-{kh.job_id}"
         try:
             chay_luot(m, kh, pb, scratch, chay_agy, agy_bin, a.truc, out, a.thu_muc_prompt)
         except DoHong as exc:
             out(f"ĐO HỎNG (job {kh.job_id}): {exc}\n  giữ scratch để soi: {scratch}")
+            _tong_ket(out, tu_choi, chay[i + 1:])
             return MA_DO_HONG
         except KhongDat as exc:
             out(f"KHÔNG ĐẠT (job {kh.job_id}) — không ghi nháp:\n{exc}\n"
                 f"  giữ scratch để soi: {scratch}")
+            _tong_ket(out, tu_choi, chay[i + 1:])
             return MA_KHONG_DAT
         except TuChoi as exc:
             out(f"TỪ CHỐI GHI (job {kh.job_id}): {exc}")
             tu_choi.append(kh.job_id)
     return MA_TU_CHOI if tu_choi else MA_OK
+
+
+def _tong_ket(out, tu_choi: list[int], chua_chay: list[int]) -> None:
+    """Dòng chót khi dừng sớm: mã thoát chỉ mang MỘT tình trạng (thứ tự nặng
+    3 đo hỏng > 4 không đạt > 5 từ chối), nên các job đã bị từ chối trước đó
+    và các job chưa kịp chạy phải được kể lại ở đây — không thì một lượt từ
+    chối bị mã 3/4 của job sau che mất."""
+    out(f"tổng kết khi dừng: từ chối {tu_choi or 'không có'} · "
+        f"chưa chạy {chua_chay or 'không có'}")
 
 
 if __name__ == "__main__":

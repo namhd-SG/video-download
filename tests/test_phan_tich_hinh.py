@@ -571,3 +571,34 @@ def test_host_ssh_lay_tu_bien_moi_truong_chung(monkeypatch):
     assert pth.main(["--luot", "1"], chay_agy=AgyGia(), chay_lenh=chay,
                     out=lambda _: None) == pth.MA_DO_HONG
     assert goi[0][goi[0].index("--") + 1] == "ai@may-khac"
+
+
+class AgyChuanHoaHong(AgyGia):
+    """Như `AgyGia` nhưng tệp chuẩn hoá là một mảng — không đạt kiểm."""
+
+    def __call__(self, argv, cwd):
+        rc = super().__call__(argv, cwd)
+        if self.goi and self.goi[-1] == "chuan_hoa":
+            tep = Path(re.search(r"Đọc tệp (\S+) và", argv[2]).group(1))
+            ra = Path(re.search(r"^TỆP KẾT QUẢ: (.+)$", tep.read_text(encoding="utf-8"),
+                                re.M).group(1))
+            ra.write_text("[]")
+        return rc
+
+
+def test_dung_som_van_ke_lai_job_bi_tu_choi_va_chua_chay(tmp_path):
+    """Chạy mọi lượt: job không phải TikTok bị từ chối, job sau không đạt ⇒ mã
+    thoát là 4, nhưng dòng tổng kết vẫn kể job bị từ chối."""
+    db, job_tu_choi = _kho(tmp_path, n=2, url="https://example.com/khong-phai-tiktok")
+    job_hong = models.create_job(db, TIKTOK, 2, TOI)
+    for vid in ("201", "202"):
+        models.record_video(db, job_id=job_hong, video_id=vid,
+                            url=f"https://www.tiktok.com/v/{vid}", description="c")
+        p = lifecycle.thumb_path_for(db, vid)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"webp")
+    models.finish_job(db, job_hong, "done")
+    rc, ra = _chay(tmp_path, db, "--yes", agy=AgyChuanHoaHong())
+    assert rc == pth.MA_KHONG_DAT, ra
+    cuoi = ra.strip().splitlines()[-1]
+    assert cuoi.startswith("tổng kết khi dừng") and str(job_tu_choi) in cuoi, ra
