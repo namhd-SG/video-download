@@ -44,10 +44,12 @@ def _khong_binary_that(monkeypatch):
 
 class AgyGia:
     """Đóng vai agy: đọc tệp prompt (đường dẫn lấy từ argv), viết tệp đích.
-    `the_chu`: id có thẻ chữ. Video id chẵn không có đám đông."""
+    `the_chu`: id có thẻ chữ. Video id chẵn không có đám đông. `caption_true`:
+    id agy chấm cờ `caption_lech_chu_de = True` (mặc định mọi id ra `False`)."""
 
-    def __init__(self, the_chu=()):
+    def __init__(self, the_chu=(), caption_true=()):
         self.the_chu = set(the_chu)
+        self.caption_true = set(caption_true)
         self.goi: list[str] = []
         self.argv: list[list[str]] = []
         self.cwd: list[Path] = []
@@ -73,7 +75,8 @@ class AgyGia:
                 "boi_canh": "san truong"}) for d in dong))
         elif tep.name.startswith("caption"):
             self.goi.append("caption")
-            ra.write_text(json.dumps({d["video_id"]: False for d in dong}))
+            ra.write_text(json.dumps({d["video_id"]: d["video_id"] in self.caption_true
+                                      for d in dong}))
         else:
             self.goi.append("chuan_hoa")
             truc = re.search(r"^TRỤC: (.+)$", van_ban, re.M).group(1)
@@ -225,6 +228,35 @@ def test_chay_that_ghi_nhap_du_video(tmp_path):
         assert not any(f"caption video {vid}" in a for argv in agy.argv for a in argv)
     # Ảnh tạm được dọn sau một lượt thành công.
     assert not (tmp_path / "s" / f"job-{job}" / "anh").exists()
+
+
+def test_caption_lech_chu_de_day_video_ra_khoi_kieu_vao_lan_nghi(tmp_path):
+    """`caption_lech_chu_de = True` CHỈ đẩy video RA khỏi một kiểu vào làn
+    nghi — không bao giờ ngược lại. "101" (kiểu "Vest Den" theo chuẩn hoá)
+    được agy chấm `True` ⇒ phải rơi khỏi kiểu, vào nghi. "102" đã ở nghi
+    (không đám đông) TỪ TRƯỚC, cũng chấm `True` ⇒ vẫn ở nghi, không nhân đôi.
+    """
+    db, job = _kho(tmp_path, n=5, khong_anh=())
+    agy = AgyGia(the_chu={"103"}, caption_true={"101", "102"})
+    rc, ra = _chay(tmp_path, db, "--luot", job, "--yes", agy=agy)
+    assert rc == 0, ra
+    assert _nhap(db, job) == {"kieu": ["105"], "huong_dan": ["103"],
+                              "nghi": ["101", "102", "104"]}
+    # Chỉ "101" bị ĐẨY ra khỏi một kiểu — "102" vốn đã ở nghi, không được đếm
+    # lại lần hai.
+    assert "caption lệch ⇒ nghi: 1" in ra
+
+
+def test_caption_khong_ro_hoac_false_khong_doi_gi(tmp_path):
+    """Đối chứng dương: không `caption_true` nào ⇒ kết quả y hệt lượt không
+    có luật caption (cùng dữ liệu, cùng `AgyGia` trừ cờ)."""
+    db, job = _kho(tmp_path, n=5, khong_anh=())
+    agy = AgyGia(the_chu={"103"})
+    rc, ra = _chay(tmp_path, db, "--luot", job, "--yes", agy=agy)
+    assert rc == 0, ra
+    assert _nhap(db, job) == {"kieu": ["101", "105"], "huong_dan": ["103"],
+                              "nghi": ["102", "104"]}
+    assert "caption lệch ⇒ nghi: 0" in ra
 
 
 def test_agy_chay_voi_cwd_la_scratch(tmp_path):

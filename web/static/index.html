@@ -154,7 +154,42 @@
 
 <div class="toast" id="toast" hidden></div>
 
+<!-- Màn duyệt nháp "tự chia cụm" (phase 3+4) — mở từ nút "Chia cụm" trên một
+     thẻ lượt tải (`chia-cum.js`), vẽ trọn vẹn từ GET /chia/{job_id} sau MỖI
+     thao tác. Sống ngoài `.app` vì nó che kín màn hình như một trang riêng,
+     không phải một phần cuộn chung với thư viện phía dưới. -->
+<div id="chia-view" hidden>
+  <div class="cc-topbar">
+    <button type="button" class="btn ghost" data-cc-action="back">← Video Desk</button>
+  </div>
+  <div class="card cc-luot">
+    <div>
+      <div class="cc-faint" id="cc-context"></div>
+      <h2 id="cc-tieude"></h2>
+      <div id="cc-trangthai"></div>
+      <div class="cc-fields" id="cc-fields"></div>
+    </div>
+    <div class="cc-nut" id="cc-nut"></div>
+  </div>
+  <div class="cc-layout">
+    <div class="card cc-rail" id="cc-rail"></div>
+    <div id="cc-main"></div>
+  </div>
+  <div class="cc-dock" id="cc-dock" hidden>
+    <span class="muted" id="cc-dachon">0 video đã chọn</span>
+    <span class="pop-wrap">
+      <div class="popover" id="cc-chuyen-popover" hidden></div>
+      <button type="button" class="btn" data-cc-action="dock-chuyen">Chuyển sang kiểu…</button>
+    </span>
+    <button type="button" class="btn" data-cc-action="dock-tach">Kiểu mới từ chọn</button>
+    <button type="button" class="btn" data-cc-action="dock-ngoai">Ngoài chủ đề</button>
+    <button type="button" class="btn" data-cc-action="dock-bo-chon">Bỏ chọn</button>
+  </div>
+  <div id="cc-modal"></div>
+</div>
+
 <script src="cookie-status-text.js"></script>
 <script src="app.js"></script>
+<script src="chia-cum.js"></script>
 </body>
 </html>

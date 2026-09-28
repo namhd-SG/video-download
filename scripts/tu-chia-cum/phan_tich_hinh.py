@@ -142,9 +142,14 @@ def _gan_nhan(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin, ou
 
 
 def _cham_caption(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin, out,
-                  thu_muc_prompt) -> None:
+                  thu_muc_prompt) -> dict[str, object]:
     """Cờ caption — caption rỗng là "không có bằng chứng", không gọi agy. Cờ
-    qua phép kiểm được lưu lên mini ngay."""
+    qua phép kiểm được lưu lên mini ngay.
+
+    Trả `{video_id: cờ}` cho MỌI video có ảnh (`kh.co_anh`) — cache (đã chấm
+    từ trước, đọc lại từ `v["caption"]`) CỘNG mới chấm ở lượt này — để
+    `chay_luot` áp luật "caption lệch chủ đề ⇒ nghi" trên đủ cả lượt, không
+    chỉ phần vừa chấm."""
     can_cap = kh.can_caption
     moi = {v["video_id"]: "khong_ro" for v in can_cap if not v["description"].strip()}
     co_chu = {v["video_id"]: v["description"] for v in can_cap if v["description"].strip()}
@@ -163,6 +168,9 @@ def _cham_caption(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin
                                   "nhan": {"caption_lech_chu_de": c}} for v, c in moi.items()])
     out(f"  caption: cache {len(kh.co_anh) - len(can_cap)} · rỗng⇒khong_ro "
         f"{len(can_cap) - len(co_chu)} · chấm mới {len(co_chu)} (đã lưu)")
+    cache = {v["video_id"]: v["caption"]["caption_lech_chu_de"]
+             for v in kh.co_anh if v["caption"] is not None}
+    return {**cache, **moi}
 
 
 def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: str,
@@ -180,7 +188,7 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
         + ("" if ten["loc_theo_insight"] else " (không lọc theo insight)"))
 
     nhan = _gan_nhan(m, kh, pb, scratch, chay_agy, agy_bin, out, thu_muc_prompt)
-    _cham_caption(m, kh, pb, scratch, chay_agy, agy_bin, out, thu_muc_prompt)
+    cap = _cham_caption(m, kh, pb, scratch, chay_agy, agy_bin, out, thu_muc_prompt)
 
     # Chuẩn hoá — thẻ chữ đi thẳng làn hướng dẫn, không qua agy.
     huong_dan = [v for v in ids if nhan[v].get("the_chu") is True]
@@ -201,6 +209,29 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
             f"{len(ids_chia)} video · 0 lỗi")
         nhoms, hd_them, nghi = chuyen_chia(obj, ids_chia)
         huong_dan += hd_them
+
+    # Caption lệch chủ đề (`caption_lech_chu_de` == True) CHỈ được ĐẨY video
+    # RA khỏi một kiểu vào làn nghi — không bao giờ ngược lại: `false`/
+    # `khong_ro` không đổi gì, và video đã ở "hướng dẫn"/"nghi" không bị đây
+    # đụng tới (vòng lặp chỉ soi `nhoms`, xem `phase-04` mục "Bổ sung trước
+    # thi công").
+    chuyen_nghi = 0
+    nhoms_con_video: list[dict] = []
+    for n in nhoms:
+        kieu_con_video = []
+        for k in n["kieu"]:
+            o_lai, day_nghi = [], []
+            for vid in k["video_ids"]:
+                (day_nghi if cap.get(vid) is True else o_lai).append(vid)
+            if day_nghi:
+                nghi.extend(day_nghi)
+                chuyen_nghi += len(day_nghi)
+            if o_lai:
+                kieu_con_video.append({"kieu": k["kieu"], "video_ids": o_lai})
+        if kieu_con_video:
+            nhoms_con_video.append({"nhom": n["nhom"], "kieu": kieu_con_video})
+    nhoms = nhoms_con_video
+    out(f"  caption lệch ⇒ nghi: {chuyen_nghi}")
 
     # Kiểm cả nháp rồi mới ghi.
     tat_ca = [v for n in nhoms for k in n["kieu"] for v in k["video_ids"]] + huong_dan + nghi
@@ -235,7 +266,10 @@ def chay_luot(m, kh: KeHoach, pb: PhienBan, scratch: Path, chay_agy, agy_bin: st
             f"{', '.join(v['video_id'] for v in kh.khong_anh)}")
     # Ảnh chỉ cần trong lúc chạy; lượt trượt thì GIỮ lại (in đường dẫn) để soi.
     shutil.rmtree(scratch / "anh", ignore_errors=True)
-    out(f"  đã dọn ảnh tạm: {scratch / 'anh'}")
+    # Prompt + kết quả (`nhan-*.jsonl`, `caption.json`, `chia.json`, `ghi.json`)
+    # KHÔNG bị dọn dù lượt THÀNH CÔNG — cố ý: đây là chỗ DUY NHẤT user tự soát
+    # được "vì sao video X vào kiểu Y" sau khi nháp đã ghi lên mini.
+    out(f"  đã dọn ảnh tạm: {scratch / 'anh'} — giữ prompt/kết quả để soát: {scratch}")
     return ket
 
 

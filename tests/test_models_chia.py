@@ -5,6 +5,7 @@ Gọi thẳng các hàm model, cùng khuôn `tests/test_web_cum.py`.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 
 import pytest
@@ -318,10 +319,11 @@ def test_thao_tac_khong_hop_le_bi_tu_choi_khong_ghi_nhat_ky(kho):
     assert _thao_tac(db, lan_id) == []
 
 
-def test_loai_thao_tac_la_tap_dong_11_gia_tri():
+def test_loai_thao_tac_la_tap_dong_gia_tri():
     assert models_chia.LOAI_THAO_TAC == (
         "chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
-        "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight")
+        "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight",
+        "tach", "gop_nhom", "doi_ten_nhom", "huy_luot")
 
 
 def test_ap_thao_tac_tu_choi_loai_khong_ro(kho):
@@ -413,6 +415,148 @@ def test_tra_ve_tu_choi_video_dang_o_mot_kieu(kho):
     ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["1"],
                                   den_cum_nhap_id=cartoon_id)
     assert ket == {"tu_choi": "khong_hop_le"}
+
+
+# --- video ĐÃ DUYỆT không được kéo lại nháp qua tach/chuyen/ngoai_chu_de/tra_ve --
+
+def test_op_tu_choi_video_da_duyet_khong_keo_lai_vao_nhap(kho):
+    """Video đã DUYỆT (vào `video_cum` thật) không được kéo lại nháp qua
+    `tach`/`chuyen`/`ngoai_chu_de` — hàng nháp của nó còn "mồ côi"
+    (`lan='kieu'`, `cum_nhap_id=NULL`, FK `ON DELETE SET NULL` chỉ xoá cột đó,
+    không đổi `lan`) nhưng KHÔNG còn thuộc phạm vi sửa của lượt này. Lý do
+    "đã ở cụm thật" mang mã RIÊNG (`video_da_o_cum_that` + `video_ids`) —
+    khác lý do chung "khong_hop_le" — để UI báo đúng lý do (xem route/UI)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    truoc = len(_thao_tac(db, lan_id))
+
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="n",
+                                   kieu="k") == {"tu_choi": "video_da_o_cum_that",
+                                                "video_ids": ["1"]}
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=["1"],
+                                   den_cum_nhap_id=cartoon_id) == {
+        "tu_choi": "video_da_o_cum_that", "video_ids": ["1"]}
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de",
+                                   video_ids=["1"]) == {"tu_choi": "video_da_o_cum_that",
+                                                        "video_ids": ["1"]}
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào"
+
+
+def test_tra_ve_tu_choi_video_da_duyet_du_dang_o_lan_nghi(kho):
+    """`tra_ve` cũng phải chặn video đã duyệt — kể cả khi hàng của nó đang
+    mang `lan='nghi'` (mô phỏng trạng thái còn sót lại từ trước khi có luật
+    lọc này, hoặc một đường ghi trực tiếp khác). Cùng lý do RIÊNG
+    `video_da_o_cum_that` (ưu tiên hơn lý do "đang ở nghi")."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "UPDATE video_cum_nhap SET lan = 'nghi' WHERE chia_lan_id = ? AND video_id = '1'",
+            (lan_id,))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["1"],
+                                  den_cum_nhap_id=cartoon_id)
+    assert ket == {"tu_choi": "video_da_o_cum_that", "video_ids": ["1"]}
+
+
+def test_ngoai_chu_de_tren_video_da_o_nghi_la_no_op_khong_ghi_log(kho):
+    """Nút cũ "Đúng, bỏ khỏi lượt" gọi `ngoai_chu_de` trên chính video ĐÃ ở
+    nghi — không có gì đổi (hợp đồng chỉ có MỘT trạng thái "nghi") nên phải
+    là no-op: không ghi log, và không chiếm mất lượt "Hoàn tác" của thao tác
+    TRƯỚC đó."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    models_chia.ap_thao_tac(db, lan_id, TOI, "xoa_kieu",
+                            cum_nhap_id=_nhom_id(db, lan_id, "cartoon"))
+    assert models_chia.lay_chia(db, lan_id, TOI)["nghi"] == ["3"]
+    truoc = len(_thao_tac(db, lan_id))
+
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=["3"])
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert len(_thao_tac(db, lan_id)) == truoc, "video đã ở nghi rồi ⇒ no-op, không ghi log"
+
+    ket2 = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket2["so_video"] == 1
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "cartoon" in [k["kieu"] for k in chia["kieu"]], \
+        "hoan_tac phải lùi đúng xoa_kieu, không bị dòng no-op chiếm mất"
+
+
+# --- danh sách TRỘN (vài video hợp lệ + vài không) bị từ chối CẢ yêu cầu ----
+
+def test_tach_danh_sach_tron_tu_choi_ca_yeu_cau_khong_tach_phan_hop_le(kho):
+    """`tach(['1' hợp lệ, '9' không thuộc lượt])` phải từ chối CẢ yêu cầu —
+    không tự lọc bỏ '9' rồi vẫn tách '1' sang kiểu mới."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1", "9"],
+                                  nhom="n", kieu="k")
+    assert ket == {"tu_choi": "khong_hop_le"}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "k" not in [k["kieu"] for k in chia["kieu"]], "không được tạo kiểu mới cho phần hợp lệ"
+    assert "1" in next(k["video_ids"] for k in chia["kieu"] if k["kieu"] == "couple"), \
+        "video '1' phải Ở NGUYÊN trong 'couple', không bị tách"
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào"
+
+
+def test_chuyen_danh_sach_tron_tu_choi_ca_yeu_cau_va_bao_dung_ly_do(kho):
+    """`chuyen(['1' đã duyệt, '3' hợp lệ])` phải từ chối CẢ yêu cầu, mang lý
+    do RIÊNG "video_da_o_cum_that" — không tự lọc bỏ '1' rồi vẫn chuyển '3'."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=["1", "3"],
+                                  den_cum_nhap_id=cartoon_id)
+    assert ket == {"tu_choi": "video_da_o_cum_that", "video_ids": ["1"]}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "3" in next(k["video_ids"] for k in chia["kieu"] if k["kieu"] == "cartoon"), \
+        "video '3' phải Ở NGUYÊN trong 'cartoon', không bị chuyển"
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào (ngoài duyệt)"
+
+
+def test_ngoai_chu_de_danh_sach_tron_tu_choi_ca_yeu_cau(kho):
+    """`ngoai_chu_de(['3' đã ở nghi, '1' hợp lệ])` phải từ chối CẢ yêu cầu —
+    không tự lọc bỏ '3' rồi vẫn đưa '1' sang nghi."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    models_chia.ap_thao_tac(db, lan_id, TOI, "xoa_kieu",
+                            cum_nhap_id=_nhom_id(db, lan_id, "cartoon"))
+    assert models_chia.lay_chia(db, lan_id, TOI)["nghi"] == ["3", "4"]
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=["3", "1"])
+    assert ket == {"tu_choi": "khong_hop_le"}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "1" in next(k["video_ids"] for k in chia["kieu"] if k["kieu"] == "couple"), \
+        "video '1' phải Ở NGUYÊN trong 'couple', không bị đưa sang nghi"
+    assert chia["nghi"] == ["3", "4"], "làn nghi không đổi"
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào (ngoài xoa_kieu)"
+
+
+def test_tra_ve_danh_sach_tron_tu_choi_ca_yeu_cau(kho):
+    """`tra_ve(['3' hợp lệ (nghi), '1' đang ở một kiểu — việc của chuyen])`
+    phải từ chối CẢ yêu cầu — không tự lọc bỏ '1' rồi vẫn trả '3' về."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "xoa_kieu",
+                            cum_nhap_id=_nhom_id(db, lan_id, "cartoon"))
+    assert models_chia.lay_chia(db, lan_id, TOI)["nghi"] == ["3", "4"]
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["3", "1"],
+                                  den_cum_nhap_id=couple_id)
+    assert ket == {"tu_choi": "khong_hop_le"}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["nghi"] == ["3", "4"], "video '3' phải Ở NGUYÊN trong nghi, không được trả về"
+    assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào (ngoài xoa_kieu)"
 
 
 def test_xoa_kieu_dua_video_ve_lan_nghi(kho):
@@ -809,6 +953,50 @@ def test_duyet_bao_lai_video_bi_loc_boi_thu_vien_o_bi_bo(kho):
     chia = models_chia.lay_chia(db, lan_id, TOI)
     assert chia["bi_bo"] == ["NOPE"], "`lay_chia` không được lặng lẽ giấu video mồ côi"
     assert chia["kieu"] == []
+
+
+# --- video đã có nhà THẬT (gán tay) phải ẩn khỏi mọi làn nháp, KHÔNG bi_bo ----
+
+def test_lay_chia_an_video_gan_tay_vao_cum_that_khoi_huong_dan(kho):
+    """Root fix C2: một video làn "hướng dẫn" gán TAY vào cụm thật (không qua
+    duyệt) phải biến khỏi `huong_dan` ngay — nó đã XONG, không phải "lạc" nên
+    KHÔNG được rơi vào `bi_bo`. Và nút "cả làn" (gọi `ngoai_chu_de` với đúng
+    danh sách `huong_dan` mà `lay_chia` vừa trả) phải chạy được cho phần còn
+    lại — trước bản vá này, video đã ở cụm thật vẫn kẹt trong `huong_dan`, làm
+    `_kiem_video_ids_thao_tac` chặn CẢ yêu cầu vì lý do `video_da_o_cum_that`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), huong_dan=["5", "6"])
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Motion", "Badaboum")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["5"])
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["huong_dan"] == ["6"], "'5' đã có nhà (cụm thật) — phải ẩn khỏi huong_dan"
+    assert chia["bi_bo"] == [], "không phải video lạc — KHÔNG được rơi vào bi_bo"
+    assert chia["kieu"][0]["video_ids"] == ["1", "2"], "làn kiểu không đổi"
+
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=chia["huong_dan"])
+    assert ket["so_video"] == 1 and ket["chi_tiet"]["video_ids"] == ["6"], \
+        "nút cả làn phải chạy được cho phần CÒN LẠI, không bị chặn vì '5' đã ở cụm thật"
+    assert len(_thao_tac(db, lan_id)) == truoc + 1
+
+    chia2 = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia2["huong_dan"] == [] and chia2["nghi"] == ["6"]
+    assert chia2["bi_bo"] == [], "'5' vẫn không phải bi_bo sau thao tác"
+
+
+def test_lay_chia_an_video_gan_tay_vao_cum_that_khoi_mot_kieu(kho):
+    """Cùng luật cho làn "kiểu" (khác nhánh mồ côi cũ, `cum_nhap_id` của hàng
+    này VẪN CÒN — video bị gán tay trong khi kiểu chứa nó chưa được duyệt)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Motion", "Badaboum")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["1"])
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    couple = next(k for k in chia["kieu"] if k["kieu"] == "couple")
+    assert couple["video_ids"] == ["2"], "'1' đã có nhà — phải ẩn khỏi kiểu 'couple'"
+    assert chia["bi_bo"] == []
 
 
 # --- một kiểu tên xấu không được làm sập cả "Duyệt tất cả" -------------------
@@ -1400,3 +1588,545 @@ def test_duyet_kieu_id_khong_thuoc_luot_khong_ghi_doi_insight(kho):
                             (job,)).fetchone() == (None, None)
         assert conn.execute("SELECT usecase, insight_goc FROM chia_lan WHERE id = ?",
                             (lan_id,)).fetchone() == (None, None)
+
+
+# --- tach: tạo kiểu MỚI từ video chọn tay (phase 3+4) --------------------------
+
+def test_tach_tao_kieu_moi_va_chuyen_video(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1", "3"],
+                                  nhom="mới", kieu="tách riêng")
+    assert ket["so_video"] == 2
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    moi = next(k for k in chia["kieu"] if k["kieu"] == "tách riêng")
+    assert sorted(moi["video_ids"]) == ["1", "3"] and moi["nhom"] == "mới"
+    couple = next(k for k in chia["kieu"] if k["kieu"] == "couple")
+    cartoon = next(k for k in chia["kieu"] if k["kieu"] == "cartoon")
+    assert couple["video_ids"] == ["2"] and cartoon["video_ids"] == ["4"]
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["tach"], "MỘT dòng nhật ký"
+
+
+def test_tach_tu_choi_video_ids_rong_hoac_kieu_rong(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    with pytest.raises(ValueError):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=[], nhom="n", kieu="k")
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="n", kieu="   ")
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert _thao_tac(db, lan_id) == []
+
+
+def test_hoan_tac_tach_xoa_hang_moi_va_tra_video_ve_cho_cu(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    truoc = _dem(db, "cum_nhap")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="mới", kieu="riêng")
+    assert _dem(db, "cum_nhap") == truoc + 1
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket["so_video"] == 1
+    assert _dem(db, "cum_nhap") == truoc, "hàng mới PHẢI bị xoá, không chỉ trống video"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "riêng" not in [k["kieu"] for k in chia["kieu"]]
+    assert sorted(next(k["video_ids"] for k in chia["kieu"] if k["cum_nhap_id"] == couple_id)) \
+        == ["1", "2"]
+
+
+# --- gop_nhom: gộp NHIỀU kiểu vào MỘT kiểu đích trong MỘT cú bấm (D15) --------
+
+def _de_xuat_3_kieu(db, job, chu=TOI):
+    lan_id = models_chia.tao_chia_lan(db, job, chu, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, chu, [
+        {"nhom": "n", "kieu": [
+            {"kieu": "a", "video_ids": ["1"]},
+            {"kieu": "b", "video_ids": ["2"]},
+            {"kieu": "c", "video_ids": ["3"]},
+        ]},
+    ])
+    return lan_id
+
+
+def test_gop_nhom_gop_nhieu_kieu_mot_dong_nhat_ky(kho):
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, b_id, c_id = (_nhom_id(db, lan_id, k) for k in ("a", "b", "c"))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                                  cum_nhap_ids=[a_id, b_id], den_cum_nhap_id=c_id)
+    assert ket["so_video"] == 2
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert [k["cum_nhap_id"] for k in chia["kieu"]] == [c_id]
+    assert sorted(chia["kieu"][0]["video_ids"]) == ["1", "2", "3"]
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["gop_nhom"], "MỘT dòng, không phải N"
+
+
+def test_gop_nhom_tu_choi_khi_mot_nguon_khong_thuoc_luot(kho):
+    """VALIDATE mọi nguồn TRƯỚC khi đổi bất cứ gì — một nguồn giả ⇒ từ chối CẢ
+    thao tác, không gộp phần còn lại."""
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, c_id = _nhom_id(db, lan_id, "a"), _nhom_id(db, lan_id, "c")
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                                  cum_nhap_ids=[a_id, 999999], den_cum_nhap_id=c_id)
+    assert ket == {"tu_choi": "khong_hop_le"}
+    assert _thao_tac(db, lan_id) == []
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert sorted(k["kieu"] for k in chia["kieu"]) == ["a", "b", "c"], "KHÔNG gộp một phần"
+
+
+def test_hoan_tac_gop_nhom_khoi_phuc_tat_ca(kho):
+    db, job = kho
+    lan_id = _de_xuat_3_kieu(db, job)
+    a_id, b_id, c_id = (_nhom_id(db, lan_id, k) for k in ("a", "b", "c"))
+    truoc = _dem(db, "cum_nhap")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "gop_nhom",
+                            cum_nhap_ids=[a_id, b_id], den_cum_nhap_id=c_id)
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket["so_video"] == 2
+    assert _dem(db, "cum_nhap") == truoc
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    nhoms = {k["kieu"]: sorted(k["video_ids"]) for k in chia["kieu"]}
+    assert nhoms == {"a": ["1"], "b": ["2"], "c": ["3"]}
+
+
+# --- doi_ten_nhom: đổi tên MỘT NHÓM (mọi kiểu của nó), atomic, MỘT dòng ------
+
+def test_doi_ten_nhom_doi_moi_hang_cua_nhom_mot_dong_nhat_ky(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                                  nhom_cu="trang phục", nhom_moi="Đồng phục")
+    assert ket["so_video"] == 4
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert {k["nhom"] for k in chia["kieu"]} == {"Đồng phục"}
+    assert [h["loai"] for h in _thao_tac(db, lan_id)] == ["doi_ten_nhom"], "MỘT dòng, không phải N"
+
+
+def test_doi_ten_nhom_khong_dung_den_ten_hang_ngoai_nhom(kho):
+    """D19: chỉ hàng của NHÓM bị đổi tên tính lại `ten_cum` — hàng của nhóm
+    khác giữ nguyên `nhom`/`ten_cum`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="khác nhóm", kieu="rieng")
+    truoc = next(k for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"] if k["kieu"] == "rieng")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                            nhom_cu="trang phục", nhom_moi="Đồng phục")
+    sau = next(k for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"] if k["kieu"] == "rieng")
+    assert (sau["nhom"], sau["ten_cum"]) == (truoc["nhom"], truoc["ten_cum"])
+
+
+def test_doi_ten_nhom_tu_choi_khi_khong_co_hang_khop_hoac_ten_rong(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                                  nhom_cu="không tồn tại", nhom_moi="x")
+    assert ket == {"tu_choi": "khong_hop_le"}
+    ket2 = models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                                   nhom_cu="trang phục", nhom_moi="   ")
+    assert ket2 == {"tu_choi": "khong_hop_le"}
+    assert _thao_tac(db, lan_id) == [], "không có dòng nhật ký nào khi từ chối"
+
+
+def test_doi_ten_nhom_so_dung_chinh_xac_khong_casefold(kho):
+    """`doi_ten_nhom` phải so ĐÚNG chuỗi tên nhóm — như trang JS gom nhóm
+    (`nhomsOf`: `k.nhom === nhom`), KHÔNG casefold. Nháp có hai nhóm "tp" và
+    "TP" (hai thẻ RIÊNG trên UI) — đổi tên "tp" không được đụng tới "TP"."""
+    db, job = kho
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "tp", "kieu": [{"kieu": "a", "video_ids": ["1", "2"]}]},
+        {"nhom": "TP", "kieu": [{"kieu": "b", "video_ids": ["3"]}]},
+    ])
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                                  nhom_cu="tp", nhom_moi="z")
+    assert ket["so_video"] == 2, "chỉ 2 video của nhóm 'tp' bị đổi, không phải cả 3"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    nhoms = {k["kieu"]: k["nhom"] for k in chia["kieu"]}
+    assert nhoms == {"a": "z", "b": "TP"}, "'TP' phải giữ nguyên, không bị gộp theo casefold"
+
+    ket2 = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket2["so_video"] == 2
+    chia2 = models_chia.lay_chia(db, lan_id, TOI)
+    nhoms2 = {k["kieu"]: k["nhom"] for k in chia2["kieu"]}
+    assert nhoms2 == {"a": "tp", "b": "TP"}, "hoan_tac phải trả lại đúng 'tp', không đụng 'TP'"
+
+
+def test_hoan_tac_doi_ten_nhom_khoi_phuc_tat_ca(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    truoc = {k["kieu"]: (k["nhom"], k["ten_cum"])
+             for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]}
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten_nhom",
+                            nhom_cu="trang phục", nhom_moi="Đồng phục")
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert ket["so_video"] == 4
+    sau = {k["kieu"]: (k["nhom"], k["ten_cum"])
+           for k in models_chia.lay_chia(db, lan_id, TOI)["kieu"]}
+    assert sau == truoc, "hoan_tac phải trả lại ĐÚNG nhom + ten_cum của MỌI hàng bị đổi"
+
+
+# --- huy_luot: huỷ lượt, KHÔNG hoàn tác được, cho phép cả sau duyệt một phần --
+
+def test_huy_luot_dat_trang_thai_huy_khong_hoan_tac_duoc(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "huy_luot")
+    assert ket["so_video"] == 0
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "huy"
+    with pytest.raises(ValueError, match="huy"):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+
+
+def test_huy_luot_cho_phep_sau_khi_duyet_mot_phan(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "de_xuat", "còn 'cartoon'"
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "huy_luot")
+    assert ket is not None
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "huy"
+
+
+def test_nhap_de_xuat_mo_luot_moi_sau_khi_huy(kho):
+    db, job = kho
+    lan1 = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan1, TOI, [
+        {"nhom": "n", "kieu": [{"kieu": "a", "video_ids": ["1"]}]}])
+    models_chia.ap_thao_tac(db, lan1, TOI, "huy_luot")
+    ket = models_chia.nhap_de_xuat(db, job, "p1", None,
+                                   [{"nhom": "n", "kieu": [{"kieu": "b", "video_ids": ["2"]}]}],
+                                   [], [], [])
+    assert ket["tao_moi"] is True and ket["chia_lan_id"] != lan1
+    chia_moi = models_chia.lay_chia(db, ket["chia_lan_id"], TOI)
+    assert [k["kieu"] for k in chia_moi["kieu"]] == ["b"]
+    assert models_chia.lay_chia(db, lan1, TOI)["trang_thai"] == "huy", "lượt cũ giữ nguyên"
+
+
+# --- duyet với gop_vao_cum_id: gộp vào cụm có sẵn TÊN KHÁC (D13 không bắt) ----
+
+def test_duyet_kieu_gop_vao_cum_id_chuyen_video_vao_cum_co_san(kho):
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    ket = models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum",
+                                 gop_vao_cum_id=cum_id)
+    assert ket["cum_id"] == cum_id and ket["da_co"] is True
+    assert sorted(ket["gan"]) == ["1", "2"]
+    with sqlite3.connect(db) as conn:
+        vc = {r[0] for r in conn.execute("SELECT video_id FROM video_cum WHERE cum_id = ?",
+                                         (cum_id,))}
+    assert vc == {"1", "2"}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert "couple" not in [k["kieu"] for k in chia["kieu"]]
+    hang = _thao_tac(db, lan_id)
+    assert hang[-1]["loai"] == "duyet_kieu"
+    assert json.loads(hang[-1]["chi_tiet_json"])["cum_id"] == cum_id, "id đích PHẢI có trong log"
+
+
+def test_duyet_gop_vao_cum_id_tu_choi_cum_khong_thuoc_chu(kho):
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, HO, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    with pytest.raises(ValueError, match="không phải của bạn"):
+        models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum",
+                               gop_vao_cum_id=cum_id)
+    assert _dem(db, "video_cum") == 0
+    assert _thao_tac(db, lan_id) == [], "không ghi dòng nào khi từ chối"
+
+
+def test_duyet_gop_vao_cum_id_van_400_khi_insight_trong(kho):
+    """D18 (ĐP-169): usecase/insight gốc trống chặn CẢ đường `gop_vao_cum_id`
+    y hệt đường thường — không nới lỏng riêng."""
+    db, job = kho
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Khac han", "khac")
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    with pytest.raises(ValueError, match="usecase/insight gốc"):
+        models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "", "", gop_vao_cum_id=cum_id)
+    assert _dem(db, "video_cum") == 0
+
+
+# --- so_thao_tac: bộ đếm nghiệm thu D15 trong GET /chia/{job_id} --------------
+
+def test_lay_chia_tra_so_thao_tac_dung_so_dong(kho):
+    """Bộ đếm D15 chỉ đếm dòng SỬA CÁCH CHIA còn "sống" (`da_lui = 0`) của
+    THẾ HỆ HIỆN TẠI — trước bản này nó đếm MỌI dòng nhật ký (`chap_nhan` từng
+    làm bộ đếm tăng); nay `chap_nhan`/`doi_insight` không tính, `doi_ten`
+    tính. `hoan_tac` KHÔNG tự tính — xem `test_so_thao_tac_gop_roi_hoan_tac`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "chap_nhan", cum_nhap_id=couple_id)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, "chap_nhan không đếm"
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_insight", usecase="Motion", insight_goc="Strom Ai")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, "doi_insight không đếm"
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, "doi_ten đếm"
+
+
+def test_so_thao_tac_khong_dem_duyet(kho):
+    """`duyet_kieu`/`duyet_het` ghi nhật ký nhưng KHÔNG tính vào D15 — duyệt
+    là chốt, không phải sửa cách chia (chia tay cũng phải duyệt)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, "duyet_kieu không đếm"
+    models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["so_thao_tac"] == 0, "duyet_het không đếm"
+    assert chia["trang_thai"] == "da_duyet"
+
+
+def test_so_thao_tac_gop_roi_hoan_tac_ve_0(kho):
+    """`gop` rồi `hoan_tac` ⇒ bộ đếm về 0 — `hoan_tac` không tự tính (nó
+    không nằm trong `_HOAN_TAC_DUOC`), và dòng `gop` bị nó đánh `da_lui = 1`
+    cũng rơi khỏi bộ đếm. `gop` lại sau đó ⇒ đếm lại từ 1 (dòng MỚI còn
+    sống)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "gop", tu_cum_nhap_id=couple_id,
+                            den_cum_nhap_id=cartoon_id)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+    models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, \
+        "hoan_tac không tự đếm, và gop bị nó lùi cũng không còn đếm"
+    models_chia.ap_thao_tac(db, lan_id, TOI, "gop", tu_cum_nhap_id=couple_id,
+                            den_cum_nhap_id=cartoon_id)
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, \
+        "gop lại sau khi hoàn tác vẫn đếm (dòng mới, còn sống)"
+
+
+def test_so_thao_tac_khong_dem_the_he_cu_sau_ghi_de_xuat(kho):
+    """Một `doi_ten` (sửa cách chia) ở thế hệ CŨ không được đếm sau khi
+    `ghi_de_xuat` mở thế hệ MỚI — bộ đếm chỉ soi thế hệ HIỆN TẠI (`the_he`),
+    không lùi xuyên thế hệ, đúng luật `hoan_tac` cũng phải theo."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "trang phục", "kieu": [{"kieu": "y", "video_ids": ["1", "2"]}]}])
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, \
+        "dòng của thế hệ cũ không được đếm sau khi ghi đề xuất mới"
+
+
+def test_so_thao_tac_khong_tut_ve_0_sau_duyet_mot_phan(kho):
+    """`so_thao_tac` KHÔNG được tụt về 0 sau khi duyệt MỘT PHẦN (khác thế hệ
+    cũ bị GHI ĐÈ ở test trên) — `duyet_kieu`/`duyet_het` bump `the_he` (để
+    khoá hoàn tác xuyên qua duyệt) nhưng KHÔNG bump `the_he_nhap` (không mở
+    nháp mới), nên công sửa TRƯỚC lúc duyệt vẫn phải còn được đếm."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+
+    models_chia.duyet_kieu(db, lan_id, cartoon_id, TOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, \
+        "duyệt MỘT kiểu KHÁC không được xoá công đã sửa ở kiểu còn lại"
+
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2, \
+        "sửa TRƯỚC + sửa SAU một lần duyệt một phần đều phải được đếm"
+
+
+def test_so_thao_tac_dem_du_sau_duyet_het_toan_bo(kho):
+    """3 lần sửa rồi `duyet_het` xong CẢ LƯỢT (không còn kiểu nào ở nháp,
+    `trang_thai` chuyển `da_duyet`) — bộ đếm vẫn phải giữ nguyên 3, không tụt
+    về 0 (đây là con số D15 hiển thị "N thao tác sửa" ở màn đã duyệt)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    y_id = _nhom_id(db, lan_id, "y")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=y_id, kieu="z")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 3
+
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert len(ket["cum"]) == 2, "cả hai kiểu còn lại (z + cartoon) phải được duyệt hết"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["trang_thai"] == "da_duyet"
+    assert chia["so_thao_tac"] == 3, "duyệt hết cả lượt không được xoá công đã sửa trước đó"
+
+
+def test_the_he_nhap_bump_cung_gia_tri_moi_voi_the_he_khi_ghi_de(kho):
+    """`ghi_de_xuat` (gọi TRỰC TIẾP — mô phỏng đường nhập đè nháp, khác
+    `test_so_thao_tac_khong_dem_the_he_cu_sau_ghi_de_xuat` ở chỗ test này đo
+    thêm CẢ giá trị cột lẫn công sửa SAU lần ghi đè): phải bump CẢ `the_he`
+    VÀ `the_he_nhap` lên CÙNG một giá trị mới — dòng sửa của thế hệ CŨ (trước
+    khi ghi đè) không còn được đếm sau đó dù `da_lui = 0`, và một sửa MỚI
+    (sau khi ghi đè) phải đếm lại từ 1."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1
+
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "trang phục", "kieu": [{"kieu": "moi", "video_ids": ["1", "2"]}]}])
+    with sqlite3.connect(db) as conn:
+        conn.row_factory = sqlite3.Row
+        hang = conn.execute("SELECT the_he, the_he_nhap FROM chia_lan WHERE id = ?",
+                            (lan_id,)).fetchone()
+    assert hang["the_he"] == hang["the_he_nhap"], \
+        "the_he_nhap phải bằng the_he NGAY sau khi ghi đè (cùng bump)"
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, \
+        "chưa có sửa nào ở thế hệ MỚI"
+
+    moi_id = _nhom_id(db, lan_id, "moi")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=moi_id, kieu="moi2")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 1, \
+        "sửa MỚI (sau ghi đè) đếm lại từ 1 — sửa CŨ không lẫn vào"
+
+
+def test_the_he_nhap_migration_tu_schema_cu_dem_dung_lich_su(kho):
+    """DB có sẵn dữ liệu TỪ TRƯỚC khi có cột `the_he_nhap` (mô phỏng: xoá cột
+    sau khi đã có nháp thật + 2 dòng sửa) — mở lại qua `init_db` (đường nâng
+    cấp bình thường mọi lần khởi động đều chạy) phải tự thêm cột với giá trị
+    MẶC ĐỊNH 0, và bộ đếm D15 phải đếm ĐÚNG toàn bộ lịch sử của nháp đó (nháp
+    chưa từng bị `ghi_de_xuat` ghi đè lần hai, nên đếm cả từ đầu là đúng)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    x_id = _nhom_id(db, lan_id, "x")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=x_id, kieu="y")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 2
+
+    with sqlite3.connect(db) as conn:
+        conn.execute("ALTER TABLE chia_lan DROP COLUMN the_he_nhap")
+        cot = {r[1] for r in conn.execute("PRAGMA table_info(chia_lan)")}
+        assert "the_he_nhap" not in cot, "phép mô phỏng phải thật sự bỏ cột trước khi nâng cấp lại"
+
+    models.init_db(db)   # đường nâng cấp bình thường — chạy mỗi lần khởi động
+    with sqlite3.connect(db) as conn:
+        cot = {r[1] for r in conn.execute("PRAGMA table_info(chia_lan)")}
+        assert "the_he_nhap" in cot, "init_db phải tự thêm lại cột"
+        gia_tri = conn.execute("SELECT the_he_nhap FROM chia_lan WHERE id = ?",
+                               (lan_id,)).fetchone()[0]
+        assert gia_tri == 0, "hàng có TỪ TRƯỚC khi có cột phải nhận mặc định 0"
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["so_thao_tac"] == 2, "mặc định 0 ⇒ đếm TOÀN BỘ lịch sử của nháp"
+
+
+# --- nhap_de_xuat: LOAI_CHAN_GHI_DE_NHAP (rộng + khác cách lọc bộ đếm D15) ---
+
+def test_nhap_de_xuat_chi_doi_insight_khong_chan_va_giu_nguyen_insight(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_insight", usecase="Motion",
+                            insight_goc="Strom Ai")
+    ket = models_chia.nhap_de_xuat(
+        db, job, "p2", None,
+        [{"nhom": "trang phục", "kieu": [{"kieu": "moi", "video_ids": ["1", "2"]}]}],
+        [], [], [])
+    assert ket is not None and ket["tao_moi"] is False and ket["chia_lan_id"] == lan_id
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert (chia["usecase"], chia["insight_goc"]) == ("Motion", "Strom Ai"), \
+        "insight đã điền qua doi_insight phải được GIỮ NGUYÊN khi ghi đè nháp"
+    assert [k["kieu"] for k in chia["kieu"]] == ["moi"], "nháp mới đã thay nháp cũ"
+
+
+def test_nhap_de_xuat_chan_khi_co_dong_sua_cach_chia(kho):
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    with pytest.raises(models_chia.NhapBiChan):
+        models_chia.nhap_de_xuat(db, job, "p2", None, [], [], [], [])
+
+
+def test_nhap_de_xuat_chan_khi_da_duyet_mot_phan(kho):
+    """Duyệt MỘT kiểu (kiểu khác còn ở lại nháp, không sửa gì khác) vẫn phải
+    chặn ghi đè — công duyệt là công người dùng đã bỏ ra, và `duyet_kieu`
+    luôn tự bump `the_he` ngay sau khi ghi nên KHÔNG được lọc theo thế hệ
+    hiện tại (khác bộ đếm D15) — lọc theo thế hệ sẽ bỏ sót đúng ca này."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.duyet_kieu(db, lan_id, couple_id, TOI, None, "Dance", "Badaboum")
+    with pytest.raises(models_chia.NhapBiChan):
+        models_chia.nhap_de_xuat(db, job, "p2", None, [], [], [], [])
+
+
+def test_nhap_de_xuat_chan_ngay_ca_khi_sua_da_bi_hoan_tac(kho):
+    """`tach` rồi `hoan_tac` lùi lại — vẫn phải chặn ghi đè: người dùng ĐÃ
+    sửa tay, không phải một nháp còn trắng — cửa chặn KHÔNG lọc `da_lui`
+    (khác bộ đếm D15, vốn coi dòng đã lùi là không còn sống)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["1"], nhom="mới", kieu="riêng")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert models_chia.lay_chia(db, lan_id, TOI)["so_thao_tac"] == 0, "đã lùi nên bộ đếm hiển thị = 0"
+    with pytest.raises(models_chia.NhapBiChan):
+        models_chia.nhap_de_xuat(db, job, "p2", None, [], [], [], [])
+
+
+def test_nhap_de_xuat_chan_dua_tren_dong_da_lui_du_khong_co_dong_hoan_tac_song(kho):
+    """Cô lập điều kiện `da_lui = 1` KHÔNG bị lọc bỏ ở cửa chặn: chèn thẳng
+    MỘT dòng `tach` đã bị đánh `da_lui = 1`, KHÔNG kèm dòng `hoan_tac` nào —
+    khác test trên (nơi dòng `hoan_tac` SỐNG cũng đủ tự chặn), test này buộc
+    quyết định phải dựa đúng vào việc dòng `da_lui = 1` có được tính hay
+    không."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "INSERT INTO thao_tac_duyet (chia_lan_id, chu, loai, so_video, chi_tiet_json, luc, "
+            "the_he, da_lui) VALUES (?, ?, 'tach', 1, '{}', '2020-01-01T00:00:00+00:00', 0, 1)",
+            (lan_id, TOI))
+    with pytest.raises(models_chia.NhapBiChan):
+        models_chia.nhap_de_xuat(db, job, "p2", None, [], [], [], [])
+
+
+def test_nhap_de_xuat_chan_khi_duyet_het_mot_phan_do_trung_cum_co_san(kho):
+    """`duyet_het` khi MỘT kiểu trùng tên một cụm THẬT có sẵn (chưa xác nhận
+    gộp): kiểu đó ở lại nháp (`trung_cum_co_san`), kiểu KIA vẫn được duyệt
+    bình thường — lượt vẫn `de_xuat`. Trước đây bỏ RIÊNG `duyet_het` khỏi
+    `LOAI_CHAN_GHI_DE_NHAP` không làm suite nào đỏ — ca thật này (đúng tình
+    huống mô tả ở đầu tuple) phải chặn `nhap_de_xuat`: đã có công duyệt thật
+    trên lượt, ghi đè nháp là xoá mất công đó."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    couple_id = _nhom_id(db, lan_id, "couple")
+    # Cụm THẬT có sẵn trùng tên với kiểu "couple" (insight_goc="Badaboum") —
+    # `duyet_het` sẽ hỏi gộp cho "couple" và để nó Ở LẠI nháp.
+    models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert [t["cum_nhap_id"] for t in ket["trung_cum_co_san"]] == [couple_id]
+    assert len(ket["cum"]) == 1, "kiểu 'cartoon' vẫn phải được duyệt bình thường"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["trang_thai"] == "de_xuat"
+    assert [k["kieu"] for k in chia["kieu"]] == ["couple"], "couple còn ở lại nháp chờ xác nhận gộp"
+    with pytest.raises(models_chia.NhapBiChan):
+        models_chia.nhap_de_xuat(db, job, "p2", None, [], [], [], [])
+
+
+def test_co_the_hoan_tac_chi_bat_khi_co_thao_tac_lui_duoc(kho):
+    """Nút "Hoàn tác" đọc cờ này: nhật ký có dòng (vd `doi_insight`) chưa
+    chắc có gì để lùi, nên cờ không được suy từ `so_thao_tac` — càng đúng nay
+    khi `doi_insight` không còn tính vào `so_thao_tac`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job)
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is False
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_insight", usecase="Motion", insight_goc="Strom Ai")
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["so_thao_tac"] == 0 and chia["co_the_hoan_tac"] is False
+    couple_id = _nhom_id(db, lan_id, "couple")
+    models_chia.ap_thao_tac(db, lan_id, TOI, "doi_ten", cum_nhap_id=couple_id, kieu="x")
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is True
+    models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is False

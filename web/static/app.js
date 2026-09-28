@@ -363,7 +363,8 @@
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
         ${queueLine(job)}
-        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}</div>
+        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}
+          · <button type="button" class="chia-link" data-chia="${job.id}">Chia cụm</button></div>
       </li>`;
   }
 

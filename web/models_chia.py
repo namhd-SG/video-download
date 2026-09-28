@@ -37,15 +37,56 @@ TRANG_THAI_CHIA_LAN = ("cho_hinh", "de_xuat", "da_duyet", "huy")
 LAN_VIDEO = ("kieu", "huong_dan", "nghi")
 # `duyet_kieu` = duyệt MỘT kiểu, `duyet_het` = "Duyệt tất cả" (một dòng cho
 # cả lượt gọi) — hai giá trị riêng để nhật ký phân biệt được hai cú bấm.
+# `tach` = tạo một kiểu MỚI từ video chọn tay (mirror `_op_doi_ten` cho tên
+# hàng mới); `gop_nhom` = gộp NHIỀU kiểu vào một kiểu đích trong MỘT cú bấm
+# (mirror `_op_gop` với danh sách nguồn); `doi_ten_nhom` = đổi tên MỘT nhóm
+# (mọi kiểu của nhóm đó) trong MỘT cú bấm, atomic — mirror `_op_doi_ten` áp
+# cho từng hàng của nhóm thay vì một hàng; `huy_luot` = huỷ lượt (không hoàn
+# tác được — xem `_HOAN_TAC_DUOC`).
 LOAI_THAO_TAC = ("chap_nhan", "duyet_het", "duyet_kieu", "gop", "doi_ten", "chuyen",
-                 "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight")
+                 "ngoai_chu_de", "tra_ve", "hoan_tac", "xoa_kieu", "doi_insight",
+                 "tach", "gop_nhom", "doi_ten_nhom", "huy_luot")
 
 # Loại có thể LÙI LẠI bằng `hoan_tac` — `chap_nhan` không đổi gì để lùi,
 # `doi_insight` đổi nhãn (không đổi cấu trúc video) nên không nằm trong luồng
-# hoàn tác cấu trúc này, `hoan_tac` không tự lùi chính nó, và hai loại duyệt
+# hoàn tác cấu trúc này, `hoan_tac` không tự lùi chính nó, hai loại duyệt
 # (`duyet_kieu`/`duyet_het`) không bao giờ lùi được (duyệt đã đi qua `cum`
-# thật — ngoài phạm vi "hoàn tác nháp").
-_HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kieu")
+# thật — ngoài phạm vi "hoàn tác nháp"), và `huy_luot` không lùi được (huỷ là
+# điểm dừng, không phải một bước có thể quay lại).
+_HOAN_TAC_DUOC = ("gop", "doi_ten", "chuyen", "ngoai_chu_de", "tra_ve", "xoa_kieu",
+                  "tach", "gop_nhom", "doi_ten_nhom")
+
+# Loại thao tác coi là SỬA CÁCH CHIA — dùng làm phần tử chung cho HAI câu hỏi
+# KHÁC NHAU dưới đây; đọc kỹ trước khi thêm/bớt một loại vào tuple này, vì hai
+# nơi dùng nó lọc THEO HAI CÁCH khác nhau (xem hai chỗ gọi):
+#   - bộ đếm HIỂN THỊ D15 (`lay_chia::so_thao_tac`) chỉ đếm những dòng còn
+#     "sống" kể từ lần `ghi_de_xuat` GẦN NHẤT — dùng `_HOAN_TAC_DUOC` (tuple
+#     này TRỪ `hoan_tac`, vì `hoan_tac` không tự lùi chính nó) CỘNG lọc
+#     `da_lui = 0 AND the_he >= the_he_nhap` (mốc `the_he_nhap` RIÊNG, chỉ
+#     bump lúc `ghi_de_xuat`, KHÔNG bump lúc duyệt — xem
+#     `web/models.py::init_db`);
+#   - cửa CHẶN ghi đè nháp (`nhap_de_xuat`/`NhapBiChan`, xem
+#     `LOAI_CHAN_GHI_DE_NHAP` dưới đây) dùng tuple này NGUYÊN VẸN (kể cả
+#     `hoan_tac`) CỘNG `duyet_kieu`/`duyet_het`, KHÔNG lọc `da_lui`/`the_he`.
+# Nhật ký (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất kể loại ở cả hai nơi —
+# hai bộ lọc trên chỉ đổi cách ĐẾM/CHẶN, không đổi cách GHI. `doi_insight`
+# (điền usecase/insight gốc), `chap_nhan` (xem qua, không đổi gì) và
+# `huy_luot` (bỏ lượt) đều KHÔNG nằm trong tuple này: chia tay cũng phải điền
+# insight/huỷ, nên đó không phải công sửa CÁCH CHIA.
+LOAI_SUA_CACH_CHIA = ("gop", "gop_nhom", "doi_ten", "doi_ten_nhom", "chuyen", "tach",
+                      "ngoai_chu_de", "tra_ve", "xoa_kieu", "hoan_tac")
+
+# Loại CHẶN ghi đè nháp (`nhap_de_xuat` — `NhapBiChan`) — RỘNG HƠN và ĐO
+# KHÁC bộ đếm hiển thị D15 ở trên:
+#   - rộng hơn ở TẬP LOẠI: cộng thêm `duyet_kieu`/`duyet_het` — duyệt MỘT
+#     PHẦN (còn kiểu khác ở lại nháp) vẫn là công người dùng đã bỏ ra, không
+#     được một lượt nhập đề xuất khác xoá mất;
+#   - khác ở CÁCH LỌC: KHÔNG lọc `da_lui`/`the_he` — một `tach` bị `hoan_tac`
+#     lùi lại vẫn phải chặn (người dùng ĐÃ sửa tay, không phải một nháp còn
+#     trắng), và một `duyet_kieu` một phần luôn nằm ở THẾ HỆ CŨ (nó tự bump
+#     `the_he` ngay sau khi ghi — xem `duyet_kieu`/`duyet_het`) nên lọc theo
+#     thế hệ hiện tại sẽ BỎ SÓT đúng ca cần chặn nhất.
+LOAI_CHAN_GHI_DE_NHAP = LOAI_SUA_CACH_CHIA + ("duyet_kieu", "duyet_het")
 
 
 def _lan_cua_toi(conn, chia_lan_id: int, chu: str):
@@ -180,9 +221,14 @@ def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
     # Bump `the_he`: một đề xuất MỚI mở một thế hệ mới — `hoan_tac` sau
     # đây (H2b) chỉ được lùi thao tác của thế hệ HIỆN TẠI, không được lùi
     # xuyên qua đề xuất vừa bị GHI ĐÈ ở trên (dữ liệu của thế hệ cũ đã bị
-    # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác).
+    # xoá bởi hai câu DELETE phía trên; hồi sinh nó là hồi sinh rác). Cũng bump
+    # `the_he_nhap` CÙNG giá trị mới (SQLite tính vế phải của MỌI cột trong
+    # một câu SET trên giá trị hàng TRƯỚC câu UPDATE, nên `the_he + 1` ở đây
+    # và ở `the_he` là CÙNG một số) — mốc RIÊNG cho bộ đếm D15, xem
+    # `web/models.py::init_db` (`the_he_nhap`).
     conn.execute(
-        "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1 WHERE id = ?",
+        "UPDATE chia_lan SET trang_thai = 'de_xuat', the_he = the_he + 1, "
+        "the_he_nhap = the_he + 1 WHERE id = ?",
         (chia_lan_id,))
     # Chốt tên hiển thị của MỌI kiểu vừa ghi — xem `_chot_ten_moi_kieu`.
     _chot_ten_moi_kieu(conn, chia_lan_id)
@@ -244,10 +290,14 @@ def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | 
     Người chia = người tạo job (chỉ chủ job chia được job của mình).
 
     Chọn lượt: lượt MỚI NHẤT của chủ job đang `cho_hinh`, hoặc đang `de_xuat`
-    mà CHƯA có dòng nhật ký nào ⇒ dùng lại (nháp mới thay nháp cũ). Đang
-    `de_xuat` và ĐÃ có nhật ký (người dùng đã sửa/duyệt một phần) ⇒
-    `NhapBiChan`. Không có lượt, hoặc lượt mới nhất đã `da_duyet`/`huy` ⇒ mở
-    lượt mới ("chia lại").
+    mà CHƯA có dòng nhật ký nào thuộc `LOAI_CHAN_GHI_DE_NHAP` ⇒ dùng lại
+    (nháp mới thay nháp cũ) — usecase/insight gốc đã điền trên lượt đó (qua
+    `doi_insight`) được GIỮ NGUYÊN vì đường dùng lại không đụng tới hai cột đó
+    (chỉ `phien_ban_prompt`/`truc`). Đang `de_xuat` và ĐÃ có dòng sửa/duyệt
+    (người dùng đã đổi tên/gộp/tách/duyệt một phần..., kể cả một sửa đã bị
+    `hoan_tac` lùi lại) ⇒ `NhapBiChan` — chỉ điền usecase/insight gốc không
+    nên khoá việc chạy lại tầng hình, mọi thứ khác thì có. Không có
+    lượt, hoặc lượt mới nhất đã `da_duyet`/`huy` ⇒ mở lượt mới ("chia lại").
 
     Id không thuộc job ⇒ `ValueError` (tệp sai, không phải chuyện lọc). Id của
     job nhưng bị `DIEU_KIEN_VAO_LUOT_CHIA` loại (vd vừa bị loại sau lúc liệt)
@@ -281,11 +331,20 @@ def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | 
             "ORDER BY tao_luc DESC, id DESC LIMIT 1", (job_id, chu)).fetchone()
         dung_lai = None
         if lan is not None and lan["trang_thai"] in ("cho_hinh", "de_xuat"):
-            so_thao_tac = conn.execute("SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ?",
-                                       (lan["id"],)).fetchone()[0]
-            if lan["trang_thai"] == "de_xuat" and so_thao_tac:
+            # Cửa CHẶN dùng `LOAI_CHAN_GHI_DE_NHAP` (RỘNG HƠN + KHÔNG lọc
+            # `da_lui`/`the_he` — xem comment tại định nghĩa nó): điền
+            # usecase/insight gốc (`doi_insight`) không được tính vào đây,
+            # nếu không user chỉ cần điền hai ô đó là script máy dev không
+            # chạy lại được nữa (phải `huy_luot`); nhưng một `tach` dù đã bị
+            # `hoan_tac` lùi lại, hay một `duyet_kieu` một phần, vẫn phải
+            # chặn — đó là công người dùng đã bỏ ra, không phải nháp trắng.
+            marks_chan = ",".join("?" * len(LOAI_CHAN_GHI_DE_NHAP))
+            so_sua = conn.execute(
+                f"SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN "
+                f"({marks_chan})", (lan["id"], *LOAI_CHAN_GHI_DE_NHAP)).fetchone()[0]
+            if lan["trang_thai"] == "de_xuat" and so_sua:
                 raise NhapBiChan(
-                    f"lượt {lan['id']} đã có {so_thao_tac} thao tác sửa/duyệt — không ghi đè nháp")
+                    f"lượt {lan['id']} đã có {so_sua} thao tác sửa/duyệt — không ghi đè nháp")
             dung_lai = int(lan["id"])
         if dung_lai is not None:
             chia_lan_id = dung_lai
@@ -324,28 +383,67 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         huong_dan: list[str] = []
         nghi: list[str] = []
         bi_bo: list[str] = []
-        # Cần phân biệt HAI ca cùng để lại một hàng "mồ côi" (`lan='kieu'`,
-        # `cum_nhap_id=NULL` sau khi FK `ON DELETE SET NULL` chạy lúc kiểu
-        # chứa nó được DUYỆT): video đã có NHÀ THẬT (`video_cum` — chính nó
-        # vừa được duyệt, hoặc đã ở đó từ một nháp song song khác, `da_o_cum`)
-        # thì im lặng bỏ qua (đã báo ở nơi khác, đúng lúc nó xảy ra); video
-        # KHÔNG có nhà nào (id giả, hoặc bị loại/đổi chủ sau khi đề xuất) mới
-        # là `bi_bo` thật — trước đây CẢ HAI ca lẫn lộn, rơi mất khỏi kết quả.
+        # Video đã có NHÀ THẬT (`video_cum` của chính `chu` lượt này — duyệt
+        # xong, hoặc gán TAY trong lúc nháp còn mở) coi như XONG: ẩn khỏi CẢ
+        # BA làn `kieu`/`huong_dan`/`nghi`, bất kể hàng `video_cum_nhap` của nó
+        # còn mang `lan` gì. Trước đây chỉ lọc cho hàng "mồ côi"
+        # (`lan='kieu'`, `cum_nhap_id=NULL` sau khi FK `ON DELETE SET NULL`
+        # chạy lúc kiểu chứa nó được duyệt) — một video gán tay vào cụm thật
+        # trong khi hàng nháp của nó còn mang `lan='huong_dan'`/`'nghi'` (chưa
+        # từng đi qua nhánh mồ côi) vẫn lọt vào làn cũ, khiến nút "cả làn"
+        # (vd `hd-ngoai-chu-de`) kéo theo nó và bị chặn ở
+        # `_kiem_video_ids_thao_tac` cho CẢ những video còn lại trong làn.
+        # KHÔNG đưa video này vào `bi_bo` — `bi_bo` nghĩa là "lạc, cần chú ý",
+        # còn video này đã có nhà, không lạc gì cả; chỉ ẩn, không báo riêng.
         video_cum_cua_chu = {r["video_id"] for r in conn.execute(
             "SELECT video_id FROM video_cum WHERE chu = ?", (lan["chu"],)).fetchall()}
         for r in conn.execute(
                 "SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
                 "WHERE chia_lan_id = ? ORDER BY video_id", (chia_lan_id,)).fetchall():
+            if r["video_id"] in video_cum_cua_chu:
+                continue
             if r["lan"] == "kieu" and r["cum_nhap_id"] in nhoms:
                 nhoms[r["cum_nhap_id"]]["video_ids"].append(r["video_id"])
             elif r["lan"] == "huong_dan":
                 huong_dan.append(r["video_id"])
             elif r["lan"] == "nghi":
                 nghi.append(r["video_id"])
-            elif r["video_id"] not in video_cum_cua_chu:
+            else:
                 bi_bo.append(r["video_id"])
+        # Bộ đếm nghiệm thu D15 — đếm dòng SỬA CÁCH CHIA còn "sống" (chưa bị
+        # `hoan_tac` lùi) kể từ lần `ghi_de_xuat` GẦN NHẤT (`the_he_nhap`,
+        # mốc RIÊNG — xem `web/models.py::init_db`): dùng `_HOAN_TAC_DUOC` (=
+        # `LOAI_SUA_CACH_CHIA` TRỪ `hoan_tac` — `hoan_tac` không tự lùi chính
+        # nó nên tự động không được đếm) CỘNG `da_lui = 0 AND the_he >=
+        # the_he_nhap`. `>=`, KHÔNG `=`: `duyet_kieu`/`duyet_het` bump
+        # `the_he` (để KHOÁ hoàn tác xuyên qua duyệt — xem `co_the_hoan_tac`
+        # ngay dưới, vẫn dùng `the_he` đúng nghĩa CŨ) nhưng KHÔNG bump
+        # `the_he_nhap` (không mở nháp mới) — lọc `the_he = the_he` (bằng)
+        # sẽ làm một dòng sửa TRƯỚC lúc duyệt một phần (nay mang `the_he` CŨ,
+        # nhỏ hơn `the_he` hiện tại) rơi khỏi bộ đếm dù công đó còn "sống".
+        # Ví dụ: `gop` ⇒ 1; `gop` rồi `hoan_tac` ⇒ 0 (dòng `gop` bị đánh
+        # `da_lui=1`); `gop`, `hoan_tac`, `gop` lại ⇒ 1 (dòng `gop` MỚI còn
+        # sống); `gop`, `doi_ten`, `duyet_kieu` MỘT kiểu khác (bump `the_he`,
+        # không bump `the_he_nhap`) ⇒ vẫn 2 (không tụt về 0 như trước khi có
+        # `the_he_nhap`). Nhật ký (`thao_tac_duyet`) vẫn ghi ĐỦ mọi dòng bất
+        # kể loại — chỉ cách ĐẾM đổi, không phải cách GHI. Xem
+        # `LOAI_CHAN_GHI_DE_NHAP` cho câu hỏi KHÁC ("có được ghi đè nháp
+        # không") — hai câu hỏi lọc khác nhau.
+        marks_sua = ",".join("?" * len(_HOAN_TAC_DUOC))
+        so_thao_tac = conn.execute(
+            f"SELECT COUNT(*) FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN ({marks_sua}) "
+            f"AND da_lui = 0 AND the_he >= ?",
+            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he_nhap"])).fetchone()[0]
+        # Cùng điều kiện chọn dòng của `_op_hoan_tac` — nút "Hoàn tác" chỉ bật
+        # khi bấm vào thật sự có thứ để lùi (không suy từ `so_thao_tac`:
+        # `doi_insight`/duyệt ghi nhật ký nhưng không lùi được).
+        marks = ",".join("?" * len(_HOAN_TAC_DUOC))
+        co_the_hoan_tac = conn.execute(
+            f"SELECT 1 FROM thao_tac_duyet WHERE chia_lan_id = ? AND loai IN ({marks}) "
+            f"AND da_lui = 0 AND the_he = ? LIMIT 1",
+            (chia_lan_id, *_HOAN_TAC_DUOC, lan["the_he"])).fetchone() is not None
     return {**dict(lan), "kieu": list(nhoms.values()), "huong_dan": huong_dan, "nghi": nghi,
-            "bi_bo": bi_bo}
+            "bi_bo": bi_bo, "so_thao_tac": so_thao_tac, "co_the_hoan_tac": co_the_hoan_tac}
 
 
 def lay_chia_theo_job(db_path: Path, job_id: int, chu: str, la_admin: bool = False) -> dict | None:
@@ -697,6 +795,63 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
             "gan": con_lai, "da_o_cum": da_o_cum, "bi_bo": bi_bo}
 
 
+def _giai_quyet_kieu_vao_cum(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
+                             chi_cua: str | None, cum_id_dich: int) -> dict:
+    """Duyệt MỘT kiểu bằng cách gộp video vào một cụm THẬT ĐÃ CÓ
+    (`gop_vao_cum_id` của `/duyet`) thay vì tạo/tìm cụm theo tên (D13/D16) —
+    dùng khi user tự chọn "gộp vào cụm có sẵn" mà tên không trùng (khác
+    `_giai_quyet_kieu`, hàm này KHÔNG bao giờ trả `{"trung": ...}`: đích đã
+    được người dùng CHỌN TAY, không cần hỏi lại).
+
+    Cụm đích PHẢI của CHÍNH `chu` (D17) — cụm của người khác ⇒ `ValueError`
+    (400). Video đã có cụm thật bị bỏ qua, y hệt `duyet_kieu` thường (D14).
+    `usecase`/`insight_goc` không trống (D18) đã được người GỌI kiểm TRƯỚC
+    khi gọi hàm này — không nới lỏng riêng cho đường này (ĐP-169)."""
+    nhom_row = conn.execute(
+        "SELECT * FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
+        (cum_nhap_id, chia_lan_id)).fetchone()
+    if nhom_row is None:
+        return {"loi": "khong_tim_thay"}
+    if conn.execute("SELECT 1 FROM cum WHERE id = ? AND chu = ?",
+                    (cum_id_dich, chu)).fetchone() is None:
+        raise ValueError(f"cụm {cum_id_dich} không tồn tại hoặc không phải của bạn")
+
+    video_ids = [r["video_id"] for r in conn.execute(
+        "SELECT video_id FROM video_cum_nhap WHERE chia_lan_id = ? "
+        "AND cum_nhap_id = ? AND lan = 'kieu'", (chia_lan_id, cum_nhap_id)).fetchall()]
+
+    # Cùng kiểm lại + cùng lọc thư viện mà `_giai_quyet_kieu` áp dụng — xem
+    # docstring ở đó.
+    da_o_cum, con_lai = [], []
+    for vid in video_ids:
+        if conn.execute("SELECT 1 FROM video_cum WHERE video_id = ? AND chu = ?",
+                        (vid, chu)).fetchone():
+            da_o_cum.append(vid)
+        else:
+            con_lai.append(vid)
+
+    bi_bo: list[str] = []
+    if con_lai:
+        marks = ",".join("?" * len(con_lai))
+        hop_le = {r["video_id"] for r in conn.execute(
+            f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
+            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"AND (? IS NULL OR j.nguoi_tao = ?)",
+            [*con_lai, chi_cua, chi_cua]).fetchall()}
+        bi_bo = [v for v in con_lai if v not in hop_le]
+        con_lai = [v for v in con_lai if v in hop_le]
+
+    if con_lai:
+        conn.executemany(
+            "INSERT INTO video_cum (video_id, chu, cum_id) VALUES (?, ?, ?) "
+            "ON CONFLICT(video_id, chu) DO UPDATE SET cum_id = excluded.cum_id",
+            [(vid, chu, cum_id_dich) for vid in con_lai])
+    conn.execute("DELETE FROM cum_nhap WHERE id = ?", (cum_nhap_id,))
+
+    return {"cum_nhap_id": cum_nhap_id, "cum_id": cum_id_dich, "da_co": True,
+            "gan": con_lai, "da_o_cum": da_o_cum, "bi_bo": bi_bo}
+
+
 def _chia_lan_xong_neu_het_kieu(conn, chia_lan_id: int, luc: str) -> None:
     con = conn.execute("SELECT COUNT(*) FROM cum_nhap WHERE chia_lan_id = ?",
                        (chia_lan_id,)).fetchone()[0]
@@ -733,12 +888,17 @@ def _kiem_insight_khong_trong(usecase: str | None, insight_goc: str | None) -> N
 def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
               chi_cua: str | None, usecase: str | None = None,
               insight_goc: str | None = None,
-              xac_nhan_gop: list[int] | None = None) -> dict | None:
+              xac_nhan_gop: list[int] | None = None,
+              gop_vao_cum_id: int | None = None) -> dict | None:
     """Duyệt MỘT kiểu nháp thành cụm thật (hoặc gộp vào cụm có sẵn) — lối DUY
     NHẤT từ nháp sang `cum`. `None` ⇒ lượt không phải của `chu`, hoặc
     `cum_nhap_id` không thuộc lượt (không ghi gì, kể cả `doi_insight`).
 
     `usecase`/`insight_goc` bỏ trống ⇒ dùng giá trị đã lưu ở `chia_lan`.
+
+    `gop_vao_cum_id`: user tự CHỌN TAY một cụm có sẵn (khác D13, vốn chỉ hỏi
+    khi TÊN trùng) — xem `_giai_quyet_kieu_vao_cum`. D18 (insight/usecase
+    không trống) áp TRƯỚC đường này y hệt đường thường, không nới lỏng riêng.
     """
     xac_nhan = set(xac_nhan_gop or [])
     with _connect(db_path) as conn:
@@ -755,7 +915,11 @@ def duyet_kieu(db_path: Path, chia_lan_id: int, cum_nhap_id: int, chu: str,
             return None
         u, g = _ap_doi_insight_neu_co(conn, chia_lan_id, chu, lan, usecase, insight_goc)
         _kiem_insight_khong_trong(u, g)
-        ket = _giai_quyet_kieu(conn, chia_lan_id, cum_nhap_id, chu, chi_cua, u, g, xac_nhan, {})
+        if gop_vao_cum_id is not None:
+            ket = _giai_quyet_kieu_vao_cum(conn, chia_lan_id, cum_nhap_id, chu, chi_cua,
+                                           gop_vao_cum_id)
+        else:
+            ket = _giai_quyet_kieu(conn, chia_lan_id, cum_nhap_id, chu, chi_cua, u, g, xac_nhan, {})
         if ket.get("loi"):
             return None
         if "trung" in ket:
@@ -889,6 +1053,88 @@ def _op_doi_ten(conn, chia_lan_id, chu, lan, cum_nhap_id: int, kieu: str,
               "sau": {"nhom": nhom_moi, "kieu": kieu_moi}, "ten_cum_truoc": ten_cum_truoc}
 
 
+def _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids, *, lan_khong_hop_le=()):
+    """Kiểm TRƯỚC KHI GHI cho bốn thao tác di chuyển video theo id
+    (`tach`/`chuyen`/`ngoai_chu_de`/`tra_ve`): MỌI video trong `video_ids`
+    phải hợp lệ, hay từ chối CẢ yêu cầu — trước đây mỗi hàm `_op_*` tự lọc
+    video không hợp lệ rồi âm thầm chạy tiếp trên phần còn lại, làm một danh
+    sách TRỘN (vài video hợp lệ + vài không) chỉ áp một phần mà người gọi
+    không biết (409 chỉ trả khi TOÀN BỘ danh sách bị lọc).
+
+    Video KHÔNG hợp lệ khi: (a) ĐÃ nằm trong một cụm THẬT của `chu`
+    (`video_cum` — duyệt hoặc gán tay; hàng nháp của nó có thể vẫn còn "mồ
+    côi" `lan='kieu'`, xem `_hang_video_cum_nhap`); (b) không có hàng
+    `video_cum_nhap` nào của LƯỢT NÀY (id giả, hoặc đã bị loại/đổi chủ sau
+    khi đề xuất); hoặc (c) mang `lan` nằm trong `lan_khong_hop_le` — tham số
+    này KHÁC NHAU theo op gọi: `ngoai_chu_de` truyền `("nghi",)` (đã ở nghi
+    rồi là SAI, không phải no-op im lặng nữa — hợp đồng chỉ có MỘT trạng
+    thái "nghi"); `tra_ve` truyền `("kieu",)` (đang ở một kiểu là việc của
+    `chuyen`, không phải `tra_ve`); `tach`/`chuyen` không truyền gì (mọi làn
+    đều là đích hợp lệ của hai op đó).
+
+    Trả `None` nếu MỌI video hợp lệ (không ghi gì — người gọi tự đọc lại
+    hàng để thao tác). Trả `{"tu_choi": "video_da_o_cum_that",
+    "video_ids": [...]}` (lý do RIÊNG, đủ để UI báo đúng — xem route/UI) nếu
+    CÓ video thuộc lý do (a), ngay cả khi danh sách còn lẫn lý do khác — đây
+    là lý do người dùng cần biết nhất, "sao không di chuyển được" trên video
+    còn đang hiện trong nháp. Trả `{"tu_choi": "khong_hop_le"}` (giữ nguyên
+    câu chữ cũ) cho lý do (b)/(c)."""
+    unique_ids = list(dict.fromkeys(video_ids or []))
+    if not unique_ids:
+        return None
+    marks = ",".join("?" * len(unique_ids))
+    trong_luot = {r["video_id"]: r["lan"] for r in conn.execute(
+        f"SELECT video_id, lan FROM video_cum_nhap WHERE chia_lan_id = ? "
+        f"AND video_id IN ({marks})", (chia_lan_id, *unique_ids)).fetchall()}
+    da_o_cum = {r["video_id"] for r in conn.execute(
+        f"SELECT video_id FROM video_cum WHERE chu = ? AND video_id IN ({marks})",
+        (chu, *unique_ids)).fetchall()}
+    da_o_cum_that = sorted(v for v in unique_ids if v in da_o_cum)
+    if da_o_cum_that:
+        return {"tu_choi": "video_da_o_cum_that", "video_ids": da_o_cum_that}
+    khong_hop_le = [v for v in unique_ids
+                    if v not in trong_luot or trong_luot[v] in lan_khong_hop_le]
+    if khong_hop_le:
+        return {"tu_choi": "khong_hop_le"}
+    return None
+
+
+def _op_tach(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, nhom: str, kieu: str,
+            **_):
+    """Tách các video (đang ở BẤT KỲ làn nào trong lượt, như `_op_chuyen`)
+    sang một `cum_nhap` MỚI (nhóm/kiểu chuẩn hoá bằng `chuan_hoa_chu`,
+    `thu_tu` sau hàng lớn nhất hiện có). Tên hàng mới tính NHƯ `_op_doi_ten`
+    (D19: chỉ hàng vừa tạo, không đụng tên hàng khác).
+
+    Danh sách TRỘN (vài video hợp lệ + vài không, xem
+    `_kiem_video_ids_thao_tac`) bị từ chối CẢ YÊU CẦU — không tách phần hợp
+    lệ rồi lặng lẽ bỏ phần còn lại."""
+    kieu_moi = models_cum.chuan_hoa_chu(kieu)
+    nhom_moi = models_cum.chuan_hoa_chu(nhom)
+    if not video_ids or not kieu_moi or not nhom_moi:
+        return None
+    tu_choi = _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids)
+    if tu_choi is not None:
+        return tu_choi
+    truoc = _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
+    if not truoc:
+        return None
+    thu_tu_max = conn.execute(
+        "SELECT MAX(thu_tu) FROM cum_nhap WHERE chia_lan_id = ?", (chia_lan_id,)).fetchone()[0]
+    cur = conn.execute(
+        "INSERT INTO cum_nhap (chia_lan_id, nhom, kieu, thu_tu) VALUES (?, ?, ?, ?)",
+        (chia_lan_id, nhom_moi, kieu_moi, (thu_tu_max if thu_tu_max is not None else -1) + 1))
+    cum_nhap_id = int(cur.lastrowid)
+    conn.executemany(
+        "UPDATE video_cum_nhap SET cum_nhap_id = ?, lan = 'kieu' "
+        "WHERE chia_lan_id = ? AND video_id = ?",
+        [(cum_nhap_id, chia_lan_id, r["video_id"]) for r in truoc])
+    # Tên hàng MỚI — chỉ hàng này, giống `_op_doi_ten` (D19).
+    _chot_ten_sau_doi_ten(conn, chia_lan_id, cum_nhap_id)
+    return len(truoc), {"cum_nhap_id": cum_nhap_id, "nhom": nhom_moi, "kieu": kieu_moi,
+                        "video_ids": [r["video_id"] for r in truoc], "truoc": truoc}
+
+
 def _op_gop(conn, chia_lan_id, chu, lan, tu_cum_nhap_id: int, den_cum_nhap_id: int, **_):
     """Gộp nhóm `tu_cum_nhap_id` vào `den_cum_nhap_id` — mọi video của nhóm
     nguồn chuyển sang nhóm đích, nhóm nguồn biến mất khỏi nháp."""
@@ -914,26 +1160,126 @@ def _op_gop(conn, chia_lan_id, chu, lan, tu_cum_nhap_id: int, den_cum_nhap_id: i
                             "tu_thu_tu": tu["thu_tu"], "tu_ten_cum": tu["ten_cum"]}
 
 
-def _hang_video_cum_nhap(conn, chia_lan_id, video_ids):
+def _op_gop_nhom(conn, chia_lan_id, chu, lan, cum_nhap_ids: list[int] | None,
+                den_cum_nhap_id: int, **_):
+    """Gộp NHIỀU kiểu (`cum_nhap_ids`) vào MỘT kiểu đích trong MỘT cú bấm =
+    MỘT dòng nhật ký (D15) — mirror `_op_gop` với danh sách nguồn thay vì
+    một. VALIDATE mọi nguồn tồn tại trước khi đổi bất cứ gì (mọi `_op_*` phải
+    vậy); một nguồn không thuộc lượt ⇒ từ chối CẢ thao tác, không gộp một
+    phần."""
+    ids = [i for i in dict.fromkeys(cum_nhap_ids or []) if i != den_cum_nhap_id]
+    if not ids:
+        return None
+    if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
+                    (den_cum_nhap_id, chia_lan_id)).fetchone() is None:
+        return None
+    hang = {}
+    for tu_id in ids:
+        row = conn.execute("SELECT * FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
+                           (tu_id, chia_lan_id)).fetchone()
+        if row is None:
+            return None
+        hang[tu_id] = row
+    nguon = []
+    tong = 0
+    for tu_id in ids:
+        row = hang[tu_id]
+        video_ids = [r["video_id"] for r in conn.execute(
+            "SELECT video_id FROM video_cum_nhap WHERE chia_lan_id = ? AND cum_nhap_id = ?",
+            (chia_lan_id, tu_id)).fetchall()]
+        conn.execute(
+            "UPDATE video_cum_nhap SET cum_nhap_id = ? WHERE chia_lan_id = ? AND cum_nhap_id = ?",
+            (den_cum_nhap_id, chia_lan_id, tu_id))
+        conn.execute("DELETE FROM cum_nhap WHERE id = ?", (tu_id,))
+        nguon.append({"cum_nhap_id": tu_id, "nhom": row["nhom"], "kieu": row["kieu"],
+                     "thu_tu": row["thu_tu"], "ten_cum": row["ten_cum"], "video_ids": video_ids})
+        tong += len(video_ids)
+    # KHÔNG tính lại tên kiểu nào (như `_op_gop`); mỗi nguồn giữ `ten_cum` của
+    # nó để `hoan_tac` hồi sinh đúng.
+    return tong, {"den_cum_nhap_id": den_cum_nhap_id, "nguon": nguon}
+
+
+def _op_doi_ten_nhom(conn, chia_lan_id, chu, lan, nhom_cu: str, nhom_moi: str, **_):
+    """Đổi tên MỘT NHÓM — đổi `nhom` của MỌI `cum_nhap` của lượt khớp
+    `nhom_cu` (so ĐÚNG chuỗi sau chuẩn hoá khoảng trắng — `chuan_hoa_chu`,
+    KHÔNG casefold — đúng cách trang JS gom nhóm: `nhomsOf`/bộ lọc dùng
+    `k.nhom === nhom`, so chuỗi CHÍNH XÁC) trong MỘT dòng nhật ký, MỘT
+    transaction (atomic — khác vòng lặp `doi_ten` phía client trước đây, N
+    request rời cho N kiểu của một nhóm, có thể trượt giữa chừng để lại nhóm
+    đổi tên một nửa).
+
+    So theo `_khoa_ten` (casefold) từng SAI trước đây: hai nhóm hiển thị
+    RIÊNG trên UI vì khác hoa/thường (vd "tp"/"TP", hai thẻ khác nhau trên
+    màn) lại bị server coi là MỘT khi đổi tên, đổi luôn cả nhóm "khác" mà
+    người dùng không hề chạm tới.
+
+    Tên từng hàng bị đổi tính lại NHƯ `_op_doi_ten` (D19: chỉ hàng của
+    NHÓM đó, không đụng tên hàng ngoài nhóm) — gọi `_chot_ten_sau_doi_ten`
+    cho từng hàng SAU KHI đã đổi `nhom` của CẢ nhóm, để hàng nào so trùng
+    "cùng kiểu" cũng thấy đúng `nhom` mới của các hàng anh em.
+
+    Không có hàng nào khớp `nhom_cu`, hoặc `nhom_moi` rỗng sau chuẩn hoá ⇒
+    `None` (cùng luật "khong_hop_le" các `_op_*` khác dùng)."""
+    nhom_moi_chuan = models_cum.chuan_hoa_chu(nhom_moi)
+    if not nhom_moi_chuan:
+        return None
+    nhom_cu_chuan = models_cum.chuan_hoa_chu(nhom_cu)
+    hang = conn.execute("SELECT id, nhom, ten_cum FROM cum_nhap WHERE chia_lan_id = ?",
+                        (chia_lan_id,)).fetchall()
+    khop = [r for r in hang if models_cum.chuan_hoa_chu(r["nhom"]) == nhom_cu_chuan]
+    if not khop:
+        return None
+    conn.executemany("UPDATE cum_nhap SET nhom = ? WHERE id = ?",
+                     [(nhom_moi_chuan, r["id"]) for r in khop])
+    # `truoc`: MỘT dòng cho MỖI hàng bị đổi — `nhom_truoc`/`ten_cum_truoc` để
+    # `hoan_tac` trả lại đúng của TỪNG hàng (không suy ngược từ `nhom_cu`, vì
+    # tên nhóm gốc trên mỗi hàng có thể lệch dấu cách/hoa-thường dù cùng khoá
+    # `_khoa_ten`).
+    truoc = []
+    for r in khop:
+        ten_cum_truoc = _chot_ten_sau_doi_ten(conn, chia_lan_id, r["id"])[str(r["id"])]
+        truoc.append({"cum_nhap_id": r["id"], "nhom_truoc": r["nhom"],
+                     "ten_cum_truoc": ten_cum_truoc})
+    marks = ",".join("?" * len(khop))
+    n = conn.execute(
+        f"SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? AND cum_nhap_id IN ({marks})",
+        (chia_lan_id, *[r["id"] for r in khop])).fetchone()[0]
+    return n, {"nhom_moi": nhom_moi_chuan, "truoc": truoc}
+
+
+def _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids):
+    """Hàng `video_cum_nhap` của các `video_ids` — BỎ những video ĐÃ nằm
+    trong một cụm THẬT của `chu` (`video_cum`), kể cả khi hàng nháp của nó
+    còn "mồ côi" (`lan = 'kieu'`, `cum_nhap_id = NULL` sau khi kiểu chứa nó
+    được DUYỆT — FK `ON DELETE SET NULL` chỉ lo cột `cum_nhap_id`, không tự
+    đổi `lan`). Không lọc thì `tach`/`chuyen`/`ngoai_chu_de` có thể kéo một
+    video ĐÃ DUYỆT trở lại nháp — dữ liệu `video_cum` không đổi, nhưng màn
+    nháp báo sai và ghi thêm một dòng nhật ký vô nghĩa cho một video không
+    còn thuộc phạm vi sửa của lượt này."""
     if not video_ids:
         return []
     marks = ",".join("?" * len(video_ids))
     return [dict(r) for r in conn.execute(
         f"SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
-        f"WHERE chia_lan_id = ? AND video_id IN ({marks})",
-        [chia_lan_id, *video_ids]).fetchall()]
+        f"WHERE chia_lan_id = ? AND video_id IN ({marks}) "
+        f"AND video_id NOT IN (SELECT video_id FROM video_cum WHERE chu = ?)",
+        [chia_lan_id, *video_ids, chu]).fetchall()]
 
 
 def _op_chuyen(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
               den_cum_nhap_id: int, **_):
     """Chuyển các video (đang ở BẤT KỲ làn nào trong lượt) sang kiểu
-    `den_cum_nhap_id`."""
+    `den_cum_nhap_id`. Danh sách TRỘN bị từ chối CẢ YÊU CẦU — xem
+    `_kiem_video_ids_thao_tac`."""
     if not video_ids:
         return None
     if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
                     (den_cum_nhap_id, chia_lan_id)).fetchone() is None:
         return None
-    truoc = _hang_video_cum_nhap(conn, chia_lan_id, video_ids)
+    tu_choi = _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids)
+    if tu_choi is not None:
+        return tu_choi
+    truoc = _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
     if not truoc:
         return None
     conn.executemany(
@@ -945,10 +1291,22 @@ def _op_chuyen(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
 
 
 def _op_ngoai_chu_de(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, **_):
-    """Đưa các video sang làn "nghi ngoài chủ đề" — bỏ khỏi mọi kiểu."""
+    """Đưa các video sang làn "nghi ngoài chủ đề" — bỏ khỏi mọi kiểu.
+
+    Video ĐÃ ở làn "nghi" rồi là KHÔNG HỢP LỆ cho chính op này — hợp đồng chỉ
+    có MỘT trạng thái "nghi" (`hop-dong-thao-tac.md`), không có trạng thái
+    "đã xác nhận bỏ khỏi lượt" riêng, nên gọi lại op này trên video đã ở
+    nghi không phải là một no-op im lặng mà là một yêu cầu SAI (`tu_choi`,
+    xem `_kiem_video_ids_thao_tac`, `lan_khong_hop_le=("nghi",)`) — và một
+    danh sách TRỘN (vài video hợp lệ + vài đã ở nghi) bị từ chối CẢ yêu cầu,
+    không âm thầm chỉ chuyển phần hợp lệ."""
     if not video_ids:
         return None
-    truoc = _hang_video_cum_nhap(conn, chia_lan_id, video_ids)
+    tu_choi = _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids,
+                                       lan_khong_hop_le=("nghi",))
+    if tu_choi is not None:
+        return tu_choi
+    truoc = _hang_video_cum_nhap(conn, chia_lan_id, chu, video_ids)
     if not truoc:
         return None
     conn.executemany(
@@ -961,17 +1319,28 @@ def _op_ngoai_chu_de(conn, chia_lan_id, chu, lan, video_ids: list[str] | None, *
 def _op_tra_ve(conn, chia_lan_id, chu, lan, video_ids: list[str] | None,
               den_cum_nhap_id: int, **_):
     """Trả video đang ở làn "hướng dẫn"/"nghi" VỀ một kiểu — khác `chuyen` ở
-    chỗ chỉ nhận video KHÔNG đang ở một kiểu nào (đó là việc của `chuyen`)."""
+    chỗ chỉ nhận video KHÔNG đang ở một kiểu nào (đó là việc của `chuyen`,
+    `lan_khong_hop_le=("kieu",)` ở `_kiem_video_ids_thao_tac`).
+
+    Cùng luật loại-trừ với `_hang_video_cum_nhap`: video ĐÃ nằm trong một cụm
+    THẬT của `chu` không được kéo trở lại nháp, dù hàng của nó đang mang
+    `lan='nghi'` (vd sau một `ngoai_chu_de` gọi TRÊN video đã duyệt trước khi
+    có luật lọc này). Danh sách TRỘN bị từ chối CẢ YÊU CẦU."""
     if not video_ids:
         return None
     if conn.execute("SELECT 1 FROM cum_nhap WHERE id = ? AND chia_lan_id = ?",
                     (den_cum_nhap_id, chia_lan_id)).fetchone() is None:
         return None
+    tu_choi = _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids,
+                                       lan_khong_hop_le=("kieu",))
+    if tu_choi is not None:
+        return tu_choi
     marks = ",".join("?" * len(video_ids))
     truoc = [dict(r) for r in conn.execute(
         f"SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap WHERE chia_lan_id = ? "
-        f"AND video_id IN ({marks}) AND lan != 'kieu'",
-        [chia_lan_id, *video_ids]).fetchall()]
+        f"AND video_id IN ({marks}) AND lan != 'kieu' "
+        f"AND video_id NOT IN (SELECT video_id FROM video_cum WHERE chu = ?)",
+        [chia_lan_id, *video_ids, chu]).fetchall()]
     if not truoc:
         return None
     conn.executemany(
@@ -1016,6 +1385,18 @@ def _op_doi_insight(conn, chia_lan_id, chu, lan, usecase: str | None = None,
     conn.execute("UPDATE jobs SET usecase = ?, insight_goc = ? WHERE id = ? AND nguoi_tao = ?",
                 (u, g, lan["job_id"], chu))
     return 0, {"usecase": u, "insight_goc": g}
+
+
+def _op_huy_luot(conn, chia_lan_id, chu, lan, **_):
+    """Huỷ lượt — cho phép NGAY CẢ KHI đã duyệt một phần (video đã thành cụm
+    thật đứng ngoài phạm vi của lượt: `DIEU_KIEN_VAO_LUOT_CHIA['da_o_cum']`
+    loại chúng khỏi lượt chia lại kế tiếp). KHÔNG hoàn tác được — không nằm
+    trong `_HOAN_TAC_DUOC` — vì `huy` là điểm dừng, không phải một bước có
+    thể quay lại (giống lý do `huy` không "sống lại" ở `ghi_de_xuat`).
+    `ap_thao_tac` đã tự khoá `trang_thai == 'de_xuat'` trước khi gọi hàm này,
+    nên không cần kiểm lại ở đây."""
+    conn.execute("UPDATE chia_lan SET trang_thai = 'huy' WHERE id = ?", (chia_lan_id,))
+    return 0, {}
 
 
 def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
@@ -1079,6 +1460,41 @@ def _op_hoan_tac(conn, chia_lan_id, chu, lan, **_):
             "WHERE chia_lan_id = ? AND video_id = ?",
             [(chi_tiet["cum_nhap_id"], chia_lan_id, vid) for vid in chi_tiet["video_ids"]])
         so = len(chi_tiet["video_ids"])
+    elif loai == "tach":
+        # `truoc` trả video về đúng {cum_nhap_id, lan} chúng có TRƯỚC khi bị
+        # tách (như `chuyen`/`ngoai_chu_de`/`tra_ve`) RỒI mới xoá hàng mới —
+        # thứ tự bắt buộc: xoá trước thì FK `ON DELETE SET NULL` sẽ ghi đè
+        # NULL lên chỗ vừa phục hồi.
+        conn.executemany(
+            "UPDATE video_cum_nhap SET cum_nhap_id = ?, lan = ? "
+            "WHERE chia_lan_id = ? AND video_id = ?",
+            [(r["cum_nhap_id"], r["lan"], chia_lan_id, r["video_id"])
+             for r in chi_tiet["truoc"]])
+        conn.execute("DELETE FROM cum_nhap WHERE id = ?", (chi_tiet["cum_nhap_id"],))
+        so = len(chi_tiet["truoc"])
+    elif loai == "gop_nhom":
+        so = 0
+        for ng in chi_tiet["nguon"]:
+            conn.execute(
+                "INSERT INTO cum_nhap (id, chia_lan_id, nhom, kieu, thu_tu, ten_cum) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (ng["cum_nhap_id"], chia_lan_id, ng["nhom"], ng["kieu"], ng["thu_tu"],
+                 ng.get("ten_cum")))
+            conn.executemany(
+                "UPDATE video_cum_nhap SET cum_nhap_id = ? WHERE chia_lan_id = ? AND video_id = ?",
+                [(ng["cum_nhap_id"], chia_lan_id, vid) for vid in ng["video_ids"]])
+            so += len(ng["video_ids"])
+    elif loai == "doi_ten_nhom":
+        conn.executemany("UPDATE cum_nhap SET nhom = ? WHERE id = ?",
+                         [(r["nhom_truoc"], r["cum_nhap_id"]) for r in chi_tiet["truoc"]])
+        conn.executemany(
+            "UPDATE cum_nhap SET ten_cum = ? WHERE id = ? AND chia_lan_id = ?",
+            [(r["ten_cum_truoc"], r["cum_nhap_id"], chia_lan_id) for r in chi_tiet["truoc"]])
+        marks = ",".join("?" * len(chi_tiet["truoc"]))
+        so = conn.execute(
+            f"SELECT COUNT(*) FROM video_cum_nhap WHERE chia_lan_id = ? "
+            f"AND cum_nhap_id IN ({marks})",
+            (chia_lan_id, *[r["cum_nhap_id"] for r in chi_tiet["truoc"]])).fetchone()[0]
     else:   # chuyen · ngoai_chu_de · tra_ve — đều lưu `truoc: [{video_id,cum_nhap_id,lan}]`
         conn.executemany(
             "UPDATE video_cum_nhap SET cum_nhap_id = ?, lan = ? "
@@ -1103,6 +1519,10 @@ _AP_THAO_TAC = {
     "xoa_kieu": _op_xoa_kieu,
     "doi_insight": _op_doi_insight,
     "hoan_tac": _op_hoan_tac,
+    "tach": _op_tach,
+    "gop_nhom": _op_gop_nhom,
+    "doi_ten_nhom": _op_doi_ten_nhom,
+    "huy_luot": _op_huy_luot,
 }
 
 # Trường BẮT BUỘC cho từng `loai` (hop-dong-thao-tac.md). Thiếu HẲN một
@@ -1110,9 +1530,10 @@ _AP_THAO_TAC = {
 # "thiếu" và "gửi None" là một) khiến hàm `_op_*` tương ứng thiếu tham số vị
 # trí bắt buộc ⇒ `TypeError` ⇒ 500 nếu không được chặn sớm. Kiểm ở đây, TRƯỚC
 # KHI mở transaction, biến nó thành `ValueError` (400) rõ ràng.
-# `video_ids` còn bị đòi khác-rỗng (hợp đồng: "≥1") vì hàm `_op_*` coi rỗng và
-# thiếu là một (`if not video_ids: return None` ⇒ 409 "đích không hợp lệ"),
-# nhưng ở TẦNG THAM SỐ thì rỗng và thiếu nên cùng là 400 "thiếu trường".
+# `video_ids`/`cum_nhap_ids` còn bị đòi khác-rỗng (hợp đồng: "≥1") vì hàm
+# `_op_*` coi rỗng và thiếu là một (`if not video_ids: return None` ⇒ 409
+# "đích không hợp lệ"), nhưng ở TẦNG THAM SỐ thì rỗng và thiếu nên cùng là 400
+# "thiếu trường".
 _TRUONG_BAT_BUOC: dict[str, tuple[str, ...]] = {
     "chap_nhan": ("cum_nhap_id",),
     "doi_ten": ("cum_nhap_id", "kieu"),
@@ -1123,13 +1544,19 @@ _TRUONG_BAT_BUOC: dict[str, tuple[str, ...]] = {
     "xoa_kieu": ("cum_nhap_id",),
     "doi_insight": (),
     "hoan_tac": (),
+    "tach": ("video_ids", "nhom", "kieu"),
+    "gop_nhom": ("cum_nhap_ids", "den_cum_nhap_id"),
+    "doi_ten_nhom": ("nhom_cu", "nhom_moi"),
+    "huy_luot": (),
 }
+# Trường DẠNG DANH SÁCH đòi khác-rỗng — xem chú thích trên `_TRUONG_BAT_BUOC`.
+_TRUONG_DANH_SACH_BAT_BUOC_KHAC_RONG = ("video_ids", "cum_nhap_ids")
 
 
 def _kiem_truong_bat_buoc(loai: str, tham_so: dict) -> None:
     for ten in _TRUONG_BAT_BUOC.get(loai, ()):
         gia_tri = tham_so.get(ten)
-        if gia_tri is None or (ten == "video_ids" and not gia_tri):
+        if gia_tri is None or (ten in _TRUONG_DANH_SACH_BAT_BUOC_KHAC_RONG and not gia_tri):
             raise ValueError(f"thao tác '{loai}' thiếu trường bắt buộc '{ten}'")
 
 
@@ -1147,6 +1574,12 @@ def ap_thao_tac(db_path: Path, chia_lan_id: int, chu: str, loai: str,
     hợp lệ, khi thiếu HẲN một trường bắt buộc, hoặc khi lượt không đang ở
     trạng thái `de_xuat` — ba ca này là lỗi YÊU CẦU, khác lỗi "đích không tồn
     tại" ở trên.
+
+    Một số `_op_*` (`tach`/`chuyen`/`ngoai_chu_de`/`tra_ve`, xem
+    `_kiem_video_ids_thao_tac`) tự trả THẲNG một dict `{"tu_choi": ...}` với
+    lý do RIÊNG (vd `"video_da_o_cum_that"` kèm `"video_ids"`) thay vì `None`
+    — hàm này chuyển tiếp NGUYÊN VẸN dict đó, không bọc lại thành câu chữ
+    chung `"khong_hop_le"`.
 
     `duyet_kieu`/`duyet_het` không được áp qua đường này — đó là việc của hai
     hàm cùng tên (đi qua `cum` thật), không phải một thao tác sửa nháp.
@@ -1168,6 +1601,8 @@ def ap_thao_tac(db_path: Path, chia_lan_id: int, chu: str, loai: str,
         ket = _AP_THAO_TAC[loai](conn, chia_lan_id, chu, lan, **tham_so)
         if ket is None:
             return {"tu_choi": "khong_hop_le"}
+        if isinstance(ket, dict) and "tu_choi" in ket:
+            return ket
         so_video, chi_tiet = ket
         conn.execute(
             "INSERT INTO thao_tac_duyet (chia_lan_id, chu, loai, so_video, "

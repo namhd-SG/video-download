@@ -837,17 +837,31 @@ def payload_lo_cum(cum_id: int, thu: int,
 # `OverflowError` ⇒ 500; chặn ở tầng request ⇒ 422 như mọi lỗi hình dạng khác.
 IdSqlite = Annotated[int, Field(ge=1, le=2 ** 63 - 1)]
 
+# Trần AN TOÀN cho `video_ids` của một thao tác sửa nháp (`tach`/`chuyen`/
+# `ngoai_chu_de`/`tra_ve`) — KHÔNG phải ngưỡng nghiệp vụ. Lượt tải THẬT lớn
+# nhất đo được trên máy mini (job 16) có 175 video (job 10/15/17 chỉ
+# 60/20/20); 500 ≈ 2,9× mức lớn nhất đã thấy, đủ dư để không chặn ca thật
+# nào, chỉ chặn payload cố tình phình to.
+MAX_VIDEO_IDS_THAO_TAC = 500
+
 
 class ThaoTacChiaRequest(BaseModel):
     loai: str
     cum_nhap_id: IdSqlite | None = None
     tu_cum_nhap_id: IdSqlite | None = None
     den_cum_nhap_id: IdSqlite | None = None
-    video_ids: list[str] | None = None
-    nhom: str | None = None
-    kieu: str | None = None
-    usecase: str | None = None
-    insight_goc: str | None = None
+    # Nhiều nguồn cho `gop_nhom` (gộp NHIỀU kiểu vào MỘT cú bấm) — khác
+    # `tu_cum_nhap_id` của `gop` (chỉ MỘT nguồn).
+    cum_nhap_ids: list[IdSqlite] | None = None
+    video_ids: list[str] | None = Field(default=None, max_length=MAX_VIDEO_IDS_THAO_TAC)
+    nhom: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    kieu: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    # `doi_ten_nhom` — đổi tên MỘT nhóm (mọi kiểu của nó) trong MỘT cú bấm,
+    # khác `nhom`/`kieu` ở trên (đích của `doi_ten`/`tach`, MỘT hàng).
+    nhom_cu: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    nhom_moi: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
+    usecase: str | None = Field(default=None, max_length=models_cum.USECASE_TOI_DA * 2)
+    insight_goc: str | None = Field(default=None, max_length=models_cum.INSIGHT_CON_TOI_DA * 2)
 
 
 class DuyetChiaRequest(BaseModel):
@@ -860,6 +874,10 @@ class DuyetChiaRequest(BaseModel):
     insight_goc: str | None = None
     # Id các cụm có sẵn người dùng đã XÁC NHẬN muốn gộp vào.
     xac_nhan_gop: list[IdSqlite] = []
+    # User tự CHỌN TAY một cụm có sẵn để gộp kiểu này vào — CHỈ hợp lệ kèm
+    # `cum_nhap_id` (một kiểu); khác `xac_nhan_gop` (chỉ dùng khi TÊN trùng,
+    # D13) — đường này dùng khi tên KHÔNG trùng nhưng user vẫn muốn gộp.
+    gop_vao_cum_id: IdSqlite | None = None
 
 
 @app.get("/chia/{job_id}")
@@ -889,8 +907,16 @@ def thao_tac_chia(chia_lan_id: int, body: ThaoTacChiaRequest,
         # lệ ở TRẠNG THÁI hiện tại, không phải xung đột với ai khác). Mọi
         # `tu_choi` khác ("đích không tồn tại/không thuộc lượt") giữ 409 —
         # hành vi đã pin bằng test trước đó, không đổi ở đây.
+        #
+        # Lý do RIÊNG (vd `"video_da_o_cum_that"`, xem
+        # `models_chia._kiem_video_ids_thao_tac`) mang thêm `video_ids` — cả
+        # dict được chuyển NGUYÊN VẸN vào `detail` để UI đọc được cả lý do
+        # lẫn danh sách; lý do chung `"khong_hop_le"` (không có trường nào
+        # khác) vẫn giữ `detail` là CHUỖI TRẦN, đúng hợp đồng cũ mọi bản gọi
+        # trước đây đã pin.
+        detail = ket if len(ket) > 1 else ket["tu_choi"]
         raise HTTPException(status_code=400 if body.loai == "hoan_tac" else 409,
-                            detail=ket["tu_choi"])
+                            detail=detail)
     return ket
 
 
@@ -899,6 +925,10 @@ def duyet_chia(chia_lan_id: int, body: DuyetChiaRequest,
               nguoi_tao: str = Depends(require_user)) -> dict:
     """Duyệt một kiểu (`cum_nhap_id` có giá trị) hoặc tất cả còn lại
     (`cum_nhap_id` bỏ trống) — lối DUY NHẤT từ nháp sang cụm THẬT."""
+    if body.gop_vao_cum_id is not None and body.cum_nhap_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="gop_vao_cum_id chỉ dùng được kèm cum_nhap_id (duyệt đúng một kiểu)")
     chi_cua = _pham_vi(nguoi_tao)
     try:
         if body.cum_nhap_id is None:
@@ -907,7 +937,7 @@ def duyet_chia(chia_lan_id: int, body: DuyetChiaRequest,
         else:
             ket = models_chia.duyet_kieu(DB_PATH, chia_lan_id, body.cum_nhap_id, nguoi_tao,
                                          chi_cua, body.usecase, body.insight_goc,
-                                         body.xac_nhan_gop)
+                                         body.xac_nhan_gop, body.gop_vao_cum_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if ket is None:
