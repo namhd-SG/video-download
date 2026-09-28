@@ -297,6 +297,64 @@ def test_duyet_het_trung_ten_van_duyet_phan_an_toan(kho):
     assert chia["trang_thai"] == "de_xuat", "còn kiểu chờ xác nhận ⇒ CHƯA da_duyet"
 
 
+def _dong_nhat_ky(db, lan_id, loai):
+    return [r for r in _thao_tac(db, lan_id) if r["loai"] == loai]
+
+
+def test_duyet_het_dong_luot_khi_da_xoa_kieu_cuoi(kho):
+    """Người dùng xoá kiểu cuối (vd kiểu rỗng vì video đã loại) ⇒ 0 `cum_nhap`.
+    "Duyệt tất cả" là cú bấm chốt: đóng lượt, ghi ĐÚNG 1 dòng `duyet_het`
+    (so_video 0), bump `the_he` — sau đó hoàn tác bị chặn như mọi lượt đã duyệt.
+    Trước đây lượt kẹt `de_xuat` với 0 kiểu mãi."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1",), b=("2",))
+    for kieu in ("couple", "cartoon"):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "xoa_kieu", cum_nhap_id=_nhom_id(db, lan_id, kieu))
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["kieu"] == [] and chia["trang_thai"] == "de_xuat" and chia["co_the_hoan_tac"]
+    the_he_truoc = chia["the_he"]
+    with pytest.raises(ValueError):   # vẫn đòi usecase/insight như mọi lần duyệt
+        models_chia.duyet_het(db, lan_id, TOI, None, "", "")
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert ket == {"cum": [], "trung_cum_co_san": [], "loi_ten": [], "da_dong": True}
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["trang_thai"] == "da_duyet" and chia["duyet_luc"]
+    assert chia["the_he"] == the_he_truoc + 1
+    dong = _dong_nhat_ky(db, lan_id, "duyet_het")
+    assert len(dong) == 1 and dong[0]["so_video"] == 0
+    with pytest.raises(ValueError):
+        models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
+    assert _dem(db, "cum") == 0, "không tạo cụm nào"
+
+
+def test_duyet_het_dong_luot_moi_khong_co_kieu_nao(kho):
+    """Máy đề xuất 0 kiểu (mọi video vào làn riêng) ⇒ Duyệt tất cả đóng lượt.
+    Video làn riêng vẫn ở thư viện (không vào cụm), gán tay được sau."""
+    db, job = kho
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [], huong_dan=["1"], nghi=["2"])
+    assert models_chia.lay_chia(db, lan_id, TOI)["kieu"] == []
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert ket["da_dong"] is True
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "da_duyet"
+    assert _dem(db, "video_cum") == 0
+
+
+def test_duyet_het_con_kieu_khong_duyet_duoc_thi_khong_dong(kho):
+    """Đối chứng: còn `cum_nhap` nhưng không kiểu nào duyệt được (trùng tên cụm
+    có sẵn, chưa xác nhận) ⇒ KHÔNG đóng, KHÔNG ghi dòng `duyet_het` — để người
+    dùng còn xác nhận/sửa. Chỉ ca 0 `cum_nhap` NGAY TỪ ĐẦU mới đóng."""
+    db, job = kho
+    models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
+    lan_id = models_chia.tao_chia_lan(db, job, TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan_id, TOI, [
+        {"nhom": "trang phục", "kieu": [{"kieu": "couple", "video_ids": ["1"]}]}])
+    ket = models_chia.duyet_het(db, lan_id, TOI, None, "Dance", "Badaboum")
+    assert ket["cum"] == [] and len(ket["trung_cum_co_san"]) == 1 and ket["da_dong"] is False
+    assert models_chia.lay_chia(db, lan_id, TOI)["trang_thai"] == "de_xuat"
+    assert _dong_nhat_ky(db, lan_id, "duyet_het") == []
+
+
 # --- video_de_loai / phạm vi thư viện (chi_cua) khi duyệt ---------------------
 
 def test_duyet_bo_qua_video_da_loai(kho):

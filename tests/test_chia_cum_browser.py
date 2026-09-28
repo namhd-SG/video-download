@@ -1024,6 +1024,65 @@ def test_chi_con_kieu_rong_thi_chi_sang_duyet_tat_ca_va_dong_duoc_luot(page, dul
         assert conn.execute("SELECT COUNT(*) FROM cum").fetchone()[0] == 0, "không tạo cụm rỗng nào"
 
 
+def _dien_insight(page):
+    page.fill('[data-cc-field="usecase"]', "Dance")
+    page.fill('[data-cc-field="insight_goc"]', "Badaboum")
+    page.locator('[data-cc-field="insight_goc"]').blur()
+    page.wait_for_load_state("networkidle")
+
+
+def _toast_dau_tien_sau(page, bam):
+    assert page.locator("#toast").is_hidden()
+    bam()
+    page.wait_for_function("!document.getElementById('toast').hidden")
+    return page.inner_text("#toast")
+
+
+def test_xoa_kieu_cuoi_roi_duyet_tat_ca_dong_luot(page, dulieu):
+    """Đã lỡ xoá kiểu cuối (lượt 0 kiểu): "Duyệt tất cả" giờ đóng lượt và nói
+    rõ — trước đây lượt kẹt `de_xuat` và toast báo "Đã duyệt 0 kiểu."."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    for vid in ids[0:6]:
+        _loai_o_thu_vien(db, vid)
+    _mo_lai(page, job)
+    _dien_insight(page)
+    for con in (2, 1, 0):
+        page.locator('[data-cc-kieu-rong] [data-cc-action="xoa-kieu"]').first.click()
+        page.wait_for_function(f"document.querySelectorAll('.cc-kieu').length === {con}")
+    # Chờ ô toast ẩn (nếu còn toast nào trước đó) để bắt đúng toast ĐẦU TIÊN
+    # của cú bấm Duyệt tất cả — xoá kiểu thành công không tự bật toast.
+    page.wait_for_function("document.getElementById('toast').hidden")
+    toast = _toast_dau_tien_sau(page, lambda: page.click('[data-cc-action="duyet-het"]'))
+    assert toast == "Đã đóng lượt — không còn kiểu nào để duyệt."
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert models_chia.lay_chia_theo_job(db, job, NGUOI)["trang_thai"] == "da_duyet"
+
+
+def test_duyet_tat_ca_chi_dem_kieu_that_su_gan_video(page, dulieu):
+    """3 kiểu, 1 rỗng ⇒ Duyệt tất cả ⇒ "Đã duyệt 2 kiểu." (không đếm mục `gan=[]`)."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _loai_o_thu_vien(db, ids[5])
+    _mo_lai(page, job)
+    _dien_insight(page)
+    toast = _toast_dau_tien_sau(page, lambda: page.click('[data-cc-action="duyet-het"]'))
+    assert toast == "Đã duyệt 2 kiểu."
+
+
+def test_tab_cu_gop_kieu_rong_vao_cum_co_san_bao_khong_gop_gi(page, dulieu):
+    """Gộp kiểu RỖNG vào cụm có sẵn: server trả `cum_id` của cụm đích nhưng
+    `gan=[]` ⇒ toast không được nói "đã gộp vào cụm có sẵn"."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    models_cum.tao_cum(db, NGUOI, "Dance", "Badaboum", "Đã có")
+    _mo_lai(page, job)
+    _dien_insight(page)
+    _loai_o_thu_vien(db, ids[5])   # sau lưng: tab này vẫn còn nút gộp của "Thể thao"
+    the_thao = page.locator(".cc-kieu", has=page.locator('input[value="Thể thao"]'))
+    the_thao.locator('[data-cc-action="toggle-gop"]').click()
+    muc = the_thao.locator('[data-cc-action="gop-vao-cum"]').first
+    toast = _toast_dau_tien_sau(page, muc.click)
+    assert toast == "Kiểu không còn video — không gộp gì."
+
+
 def test_tab_cu_duyet_kieu_rong_bao_khong_tao_cum(page, dulieu):
     """Tab mở trước khi video cuối của kiểu bị loại vẫn còn nút "Duyệt kiểu
     này"; server trả `cum_id=null` ⇒ toast không được nói "đã tạo cụm mới"."""

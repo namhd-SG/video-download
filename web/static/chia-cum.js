@@ -843,11 +843,23 @@
       render();
       return;
     }
-    // `cum_id == null`: kiểu không còn video (tab cũ còn nút duyệt) — server
-    // không tạo cụm nào, đừng báo "đã tạo cụm mới".
-    showToast(ket.cum_id == null ? "Kiểu không còn video — không tạo cụm."
+    // `gan` rỗng: kiểu không còn video (tab cũ còn nút duyệt) — server không
+    // gán video nào, đừng báo "đã tạo cụm mới". Xét `gan`, KHÔNG xét `cum_id`:
+    // duyệt kiểu rỗng trả `cum_id=null` nhưng gộp vào cụm có sẵn trả `cum_id`
+    // của cụm đích dù `gan=[]`.
+    showToast(!kieuCoGan(ket) ? "Kiểu không còn video — không tạo cụm."
       : ket.da_co ? "Đã duyệt — đã gộp vào cụm có sẵn." : "Đã duyệt — đã tạo cụm mới.");
     await refresh();
+  }
+
+  function kieuCoGan(ket) { return !!(ket && ket.gan && ket.gan.length); }
+
+  // Toast của "Duyệt tất cả": chỉ đếm kiểu THẬT SỰ gán video (kiểu rỗng về
+  // trong `cum` với `gan=[]`); lượt đóng mà không duyệt kiểu nào ⇒ nói rõ.
+  function tomTatDuyetHet(ket) {
+    const n = ket.cum.filter(kieuCoGan).length;
+    if (!n && ket.da_dong) return "Đã đóng lượt — không còn kiểu nào để duyệt.";
+    return `Đã duyệt ${n} kiểu.`;
   }
 
   async function duyetHet() {
@@ -861,7 +873,7 @@
     if (ket.loi_ten && ket.loi_ten.length) {
       showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`, true);
     } else {
-      showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
+      showToast(tomTatDuyetHet(ket));
     }
     await refresh();
   }
@@ -934,7 +946,7 @@
               render();
               return;
             }
-            showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
+            showToast(tomTatDuyetHet(ket));
           } else {
             await duyetKieu(cumNhapId, ids);
             return;
@@ -970,8 +982,8 @@
           const cumId = Number(btn.dataset.cumId);
           CC.popover = null;
           const ket = await duyet({ cum_nhap_id: cumNhapId, gop_vao_cum_id: cumId });
-          showToast("Đã duyệt — đã gộp vào cụm có sẵn.");
-          void ket;
+          showToast(kieuCoGan(ket) ? "Đã duyệt — đã gộp vào cụm có sẵn."
+            : "Kiểu không còn video — không gộp gì.");
           await refresh();
           return;
         }
