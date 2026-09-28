@@ -87,18 +87,30 @@
   }
 
   let toastTimer = null;
-  // Toast LỖI đang hiện thì toast thường đến sau được NỐI vào, không đè: vd
-  // lệnh dock bị từ chối (video vừa loại) rồi ngay sau đó "Đã loại N video"
-  // — đè thì người dùng không bao giờ đọc được lý do bị từ chối.
-  let toastLoiDangHien = false;
+  // Hai toast chạm nhau mà MỘT trong hai là lỗi thì NỐI lại, không đè — theo
+  // CẢ HAI chiều: vd lệnh dock bị từ chối (video vừa loại) và "Đã loại N
+  // video" về gần như cùng lúc, thứ tự không đảm bảo (GET làm mới của Loại
+  // không đi qua hàng đợi POST). Đè thì mất hoặc lý do từ chối, hoặc câu xác
+  // nhận của một thao tác KHÔNG lùi được. Giữ tối đa 2 phần (bỏ phần thường
+  // cũ nhất trước) để chuỗi không dài mãi. `toastDaGhi`: `app.js` cũng ghi
+  // vào `#toast` — chữ không phải của màn này thì coi như toast mới.
+  let toastPhan = [];
+  let toastDaGhi = "";
   function showToast(text, laLoi = false) {
     const el = document.getElementById("toast");
     if (!el) return;
-    if (!laLoi && toastLoiDangHien && !el.hidden) {
-      text = `${el.textContent} · ${text}`;
-      laLoi = true;   // vẫn giữ phần lỗi ở đầu cho các toast sau
+    const conHien = !el.hidden && el.textContent === toastDaGhi;
+    const coLoi = toastPhan.some((p) => p.loi);
+    if (conHien && (laLoi || coLoi)) {
+      toastPhan.push({ text, loi: laLoi });
+      while (toastPhan.length > 2) {
+        const i = toastPhan.findIndex((p) => !p.loi);
+        toastPhan.splice(i >= 0 ? i : 0, 1);
+      }
+    } else {
+      toastPhan = [{ text, loi: laLoi }];
     }
-    toastLoiDangHien = laLoi;
+    text = toastDaGhi = toastPhan.map((p) => p.text).join(" · ");
     el.textContent = text;
     el.hidden = false;
     clearTimeout(toastTimer);
@@ -705,7 +717,7 @@
   async function thaoTac(loai, tham) {
     const ket = await apiSend("POST", `/chia/${CC.data.id}/thao-tac`, { loai, ...tham });
     if (ket && ket.tu_choi) {
-      showToast(loai === "hoan_tac" ? "Không còn gì để hoàn tác." : "Thao tác không hợp lệ.");
+      showToast(loai === "hoan_tac" ? "Không còn gì để hoàn tác." : "Thao tác không hợp lệ.", true);
       return null;
     }
     await refresh();
@@ -768,7 +780,8 @@
     if (loi) phan.push(`dừng giữa chừng (${errorDetailText(loi)}) — còn ${conLai} video chưa gửi`);
     if (hetPhien && conLai > 0) phan.push(`phiên đăng nhập hết hạn — còn ${conLai} video chưa gửi`);
     if (loiTaiLai) phan.push("chưa tải lại được làn — tải lại trang để xem");
-    showToast(phan.join(" · "));
+    // Loại không trọn (trượt Drive, không phải của bạn, dừng giữa chừng) là LỖI.
+    showToast(phan.join(" · "), phan.length > 1);
     if (hetPhien) throw hetPhien;
   }
 
@@ -814,7 +827,7 @@
       return;
     }
     if (ket.loi_ten && ket.loi_ten.length) {
-      showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`);
+      showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`, true);
     } else {
       showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
     }
@@ -901,7 +914,7 @@
         if (action === "copy-cmd") {
           const cmd = btn.dataset.cmd || "";
           try { await navigator.clipboard.writeText(cmd); showToast("Đã chép lệnh."); }
-          catch (e) { showToast("Không chép được — chọn và copy tay."); }
+          catch (e) { showToast("Không chép được — chọn và copy tay.", true); }
           return;
         }
 
@@ -1005,7 +1018,7 @@
           // phải tự lọc ở đây thay vì rơi vào toast lỗi.
           const ids = [...CC.selected].filter((v) => !CC.data.nghi.includes(v));
           if (!ids.length) {
-            showToast("Video đã chọn đều đã ở làn ngoài chủ đề — không có gì để chuyển.");
+            showToast("Video đã chọn đều đã ở làn ngoài chủ đề — không có gì để chuyển.", true);
             return;
           }
           CC.selected = new Set();
@@ -1020,7 +1033,7 @@
         if (action === "confirm-tach") {
           const nhom = CC.modal.nhomMoi ? (CC.modal.nhom || "").trim() : (CC.modal.nhom || "");
           const kieu = (CC.modal.kieu || "").trim();
-          if (!nhom || !kieu) { showToast("Cần nhóm và tên kiểu."); return; }
+          if (!nhom || !kieu) { showToast("Cần nhóm và tên kiểu.", true); return; }
           const ids = [...CC.selected];
           CC.modal = null;
           CC.selected = new Set();

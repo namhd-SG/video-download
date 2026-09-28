@@ -880,18 +880,57 @@ def test_dock_tach_sau_luot_loai_dang_bay_bi_tu_choi_khong_sinh_kieu_rong(page, 
     page.click('[data-cc-action="confirm-tach"]')
     kieu_truoc = len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"])
     giu[0].continue_()
-    # Câu từ chối về TRƯỚC "Đã loại 1 video" (hàng đợi POST: loại → tách → GET
-    # làm mới). Toast CUỐI CÙNG người dùng đọc được phải còn nguyên lý do từ
-    # chối, không bị câu "Đã loại" đè mất.
-    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    # Câu từ chối và "Đã loại 1 video" về gần như cùng lúc, thứ tự KHÔNG đảm
+    # bảo (GET làm mới của Loại không đi qua hàng đợi POST). Toast CUỐI CÙNG
+    # người dùng đọc được phải còn CẢ HAI — thứ tự ngược ép riêng ở test dưới.
+    page.wait_for_function(
+        "(t => t.includes('Đã loại') && t.includes('đã bị loại khỏi thư viện'))"
+        "(document.getElementById('toast').textContent)")
     page.wait_for_load_state("networkidle")
     assert page.locator("#toast").is_visible()
-    assert page.inner_text("#toast") == (
-        "Video đã bị loại khỏi thư viện, không di chuyển được (1 video). · Đã loại 1 video")
+    assert set(page.inner_text("#toast").split(" · ")) == {
+        "Video đã bị loại khỏi thư viện, không di chuyển được (1 video).", "Đã loại 1 video"}
     with models._connect(db) as conn:
         nhap = conn.execute("SELECT lan FROM video_cum_nhap WHERE video_id = ?", (vid,)).fetchall()
     assert [r[0] for r in nhap] == ["nghi"], "hàng nháp giữ nguyên làn Nghi, không vào kiểu"
     assert len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"]) == kieu_truoc, "không sinh kiểu rỗng"
+
+
+def test_cau_tu_choi_ve_sau_khong_de_mat_cau_da_loai(page, dulieu):
+    """Thứ tự NGƯỢC, ép bằng route: "Đã loại 1 video" hiện TRƯỚC, câu từ chối
+    của lệnh tách về SAU. Câu xác nhận của một thao tác không lùi được (Drive →
+    Thùng rác) không được bị lỗi đến sau đè mất."""
+    _mo_chia(page, dulieu["job_full"])
+    giu_loai, giu_tach = [], []
+    page.route("**/videos/loai", lambda r: giu_loai.append(r))
+    page.route("**/thao-tac", lambda r: giu_tach.append(r))
+    page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t").nth(0).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.querySelector('[data-cc-loai-dang-gui]')")
+    page.click('[data-cc-action="dock-tach"]')
+    page.fill("[data-cc-tach-kieu]", "Kieu tu video da loai")
+    page.click('[data-cc-action="confirm-tach"]')
+    giu_loai[0].continue_()
+    page.wait_for_function("document.getElementById('toast').textContent === 'Đã loại 1 video'")
+    assert len(giu_tach) == 1, "lệnh tách vẫn đang bị giữ — câu từ chối chưa về"
+    giu_tach[0].continue_()
+    page.wait_for_function("document.getElementById('toast').textContent.includes('đã bị loại khỏi thư viện')")
+    page.wait_for_load_state("networkidle")
+    assert page.inner_text("#toast") == (
+        "Đã loại 1 video · Video đã bị loại khỏi thư viện, không di chuyển được (1 video).")
+
+
+def test_toast_loi_noi_toi_da_2_phan(page, dulieu):
+    """Lỗi lặp liền nhau (bấm "Tạo kiểu" 3 lần với tên rỗng) không được nối
+    thành chuỗi dài mãi — giữ tối đa 2 phần."""
+    _mo_chia(page, dulieu["job_full"])
+    page.locator(".cc-t").first.click()
+    page.click('#cc-dock [data-cc-action="dock-tach"]')
+    page.fill("[data-cc-tach-kieu]", "")
+    for _ in range(3):
+        page.click('[data-cc-action="confirm-tach"]')
+    assert page.inner_text("#toast") == "Cần nhóm và tên kiểu. · Cần nhóm và tên kiểu."
 
 
 def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):
