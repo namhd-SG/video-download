@@ -705,6 +705,9 @@ def test_loai_video_o_lan_nghi_sau_khi_duyet_bien_khoi_lan_va_bao_du_so(page, du
         page.click('[data-cc-action="confirm-loai"]')
     page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
     assert page.inner_text("#toast") == "Đã loại 2 video"
+    _nhin_thay(page, "#toast")
+    # Toast nổi trên cả lớp phủ màn chia (gồm hộp xác nhận) ⇒ không được bắt chuột.
+    assert page.evaluate("getComputedStyle(document.getElementById('toast')).pointerEvents") == "none"
     page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 0")
     with models._connect(db) as conn:
         da = {r[0] for r in conn.execute("SELECT video_id FROM videos WHERE da_loai_luc IS NOT NULL")}
@@ -763,6 +766,26 @@ def test_loai_55_video_chat_lo_50_va_dung_giua_chung_bao_con_bao_nhieu(page, dul
         assert toast == "Đã loại 55 video", toast
 
 
+def _nhin_thay(page, sel: str) -> None:
+    """Phần tử có THẬT SỰ lộ ra mắt người không — không phải chỉ `hidden=false`
+    và đúng chữ: điểm giữa của nó phải trúng chính nó (hoặc con của nó), không
+    trúng một lớp phủ nằm trên (ca `.toast` z 40 dưới `#chia-view` z 50)."""
+    trung = page.evaluate("""(sel) => {
+      const el = document.querySelector(sel);
+      if (!el || el.hidden) return "không hiện";
+      el.scrollIntoView({block: "nearest"});
+      const r = el.getBoundingClientRect();
+      // `.toast` cố ý `pointer-events: none` (không chặn nút bên dưới) mà
+      // elementFromPoint bỏ qua phần tử như thế — bật tạm để chỉ đo THỨ TỰ LỚP.
+      const cu = el.style.pointerEvents;
+      el.style.pointerEvents = "auto";
+      const o = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      el.style.pointerEvents = cu;
+      return o && el.contains(o) ? "trúng" : (o ? (o.id || o.className || o.tagName) : "null");
+    }""", sel)
+    assert trung == "trúng", f"{sel}: điểm giữa trúng {trung!r}"
+
+
 @pytest.mark.parametrize("get_cung_het_phien", [False, True])
 def test_loai_lo_2_het_phien_van_bao_da_loai_50_va_lam_moi_lan(page, dulieu, get_cung_het_phien):
     """Lô 1 đã loại 50 (không lùi được) rồi lô 2 hết phiên ⇒ vẫn phải báo
@@ -793,6 +816,36 @@ def test_loai_lo_2_het_phien_van_bao_da_loai_50_va_lam_moi_lan(page, dulieu, get
     assert page.inner_text("#toast") == "Đã loại 50 video · phiên đăng nhập hết hạn — còn 5 video chưa gửi"
     page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 5")
     assert page.locator("#session-expired").is_visible()
+    # Toast và băng phải LỘ RA trên lớp phủ màn chia, không chỉ "có trong DOM".
+    _nhin_thay(page, "#toast")
+    _nhin_thay(page, "#session-expired")
+    # Đóng màn chia: băng về lại luồng trang thư viện và vẫn thấy được.
+    page.click('#chia-view [data-cc-action="back"]')
+    page.wait_for_selector("#chia-view", state="hidden")
+    _nhin_thay(page, "#session-expired")
+
+
+def test_dang_gui_loai_thi_khoa_nut_khong_gui_lan_hai(page, dulieu):
+    """Bấm đôi: trong lúc lượt Loại đang bay, nút Loại phải bị khoá — nếu không
+    lượt hai gửi lại các id vừa loại và toast báo sai "N không phải của bạn"."""
+    _duyet_het_sau_lung(dulieu)
+    _mo_lai(page, dulieu["job_full"])
+    dang_giu = []
+    def giu(route):
+        dang_giu.append(route)   # giữ phản hồi lại, chưa cho server trả lời
+    page.route("**/videos/loai", giu)
+    nghi = page.locator(".cc-nhom.cc-lan").nth(1)
+    nghi.locator(".cc-t").nth(0).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.querySelector('[data-cc-loai-dang-gui=\"nghi\"]')")
+    assert page.locator('[data-cc-loai-dang-gui="nghi"]').is_disabled()
+    assert page.locator('[data-cc-action="loai-lan"]').count() == 0
+    assert len(dang_giu) == 1
+    dang_giu[0].continue_()
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert page.inner_text("#toast") == "Đã loại 1 video"
+    assert page.locator("[data-cc-loai-dang-gui]").count() == 0, "gửi xong thì mở khoá"
 
 
 def test_tran_lo_loai_chia_khop_backend():

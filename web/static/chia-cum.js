@@ -431,6 +431,11 @@
   /** Nút "Loại N video đã chọn…" của một làn (N = đã chọn ∩ video của làn). */
   function nutLoaiHtml(lan, videoIds) {
     const n = videoIds.filter((v) => CC.selected.has(v)).length;
+    // Đang gửi một lượt Loại: khoá nút — bấm lại lúc này sẽ gửi lần hai các id
+    // đã loại và server trả chúng là "không phải của bạn" (báo sai).
+    if (CC.dangLoai) {
+      return `<button type="button" class="btn danger" disabled data-cc-loai-dang-gui="${lan}">Đang loại…</button>`;
+    }
     return n
       ? `<button type="button" class="btn danger" data-cc-action="loai-lan" data-lan="${lan}">Loại ${n} video đã chọn…</button>`
       : `<button type="button" class="btn danger" disabled data-cc-loai-trong="${lan}">Chọn video để loại</button>`;
@@ -832,8 +837,14 @@
         if (action === "confirm-loai") {
           const ids = CC.modal.ids;
           CC.modal = null;
+          CC.dangLoai = true;
           render();
-          await loaiTheoLo(ids);
+          try {
+            await loaiTheoLo(ids);
+          } finally {
+            CC.dangLoai = false;
+            if (CC.open) render();
+          }
           return;
         }
         if (action === "confirm-huy") {
