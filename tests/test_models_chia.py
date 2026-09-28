@@ -451,11 +451,11 @@ def test_op_tu_choi_video_da_loai_khong_tao_kieu_rong(kho):
     `video_da_loai` — trước đây `tach` nhận nó và sinh một kiểu RỖNG trên UI.
     Danh sách trộn (một video còn sống + một đã loại) cũng bị từ chối trọn."""
     db, job = kho
-    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), nghi=["5", "6"])
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), huong_dan=["4"], nghi=["5", "6"])
     cartoon_id = _nhom_id(db, lan_id, "cartoon")
     with sqlite3.connect(db) as conn:
         conn.execute("UPDATE videos SET da_loai_luc = '2026-09-28T09:00:00+00:00' "
-                     "WHERE video_id = '5'")
+                     "WHERE video_id IN ('4', '5')")
     kieu_truoc, nhat_ky_truoc = _dem(db, "cum_nhap"), len(_thao_tac(db, lan_id))
     tu_choi = {"tu_choi": "video_da_loai", "video_ids": ["5"]}
 
@@ -465,6 +465,8 @@ def test_op_tu_choi_video_da_loai_khong_tao_kieu_rong(kho):
                                    den_cum_nhap_id=cartoon_id) == tu_choi
     assert models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["5"],
                                    den_cum_nhap_id=cartoon_id) == tu_choi
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=["4"]) == {
+        "tu_choi": "video_da_loai", "video_ids": ["4"]}
     assert _dem(db, "cum_nhap") == kieu_truoc, "không sinh kiểu nào"
     assert len(_thao_tac(db, lan_id)) == nhat_ky_truoc, "không ghi dòng nhật ký nào"
     chia = models_chia.lay_chia(db, lan_id, TOI)
@@ -473,6 +475,25 @@ def test_op_tu_choi_video_da_loai_khong_tao_kieu_rong(kho):
     # Đối chứng: video KHÔNG bị loại cùng làn vẫn tách được như cũ.
     ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["6"], nhom="n", kieu="k")
     assert ket and not ket.get("tu_choi")
+
+
+def test_op_khong_lo_video_da_loai_cua_nguoi_khac(kho):
+    """`da_loai_luc` là cột toàn cục: id video của người KHÁC (đã loại hay còn
+    sống) gửi vào lượt của mình phải nhận CÙNG câu trả lời `khong_hop_le` như
+    một id không tồn tại — không được dò ra "video X có trong kho và đã bị loại"."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",))
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    job_ho = models.create_job(db, "https://www.tiktok.com/tag/b", 2, HO)
+    for vid in ("h_loai", "h_song"):
+        models.record_video(db, job_id=job_ho, video_id=vid, url=f"u{vid}")
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET da_loai_luc = '2026-09-28T09:00:00+00:00' "
+                     "WHERE video_id = 'h_loai'")
+    tra_loi = {vid: models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=[vid],
+                                            den_cum_nhap_id=cartoon_id)
+               for vid in ("h_loai", "h_song", "khong_ton_tai")}
+    assert tra_loi == {vid: {"tu_choi": "khong_hop_le"} for vid in tra_loi}, tra_loi
 
 
 def test_tra_ve_tu_choi_video_da_duyet_du_dang_o_lan_nghi(kho):

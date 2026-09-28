@@ -114,10 +114,11 @@
 
   function errorDetailText(err) {
     // Lý do RIÊNG từ server (`detail` là một OBJECT, không phải chuỗi hay
-    // mảng lỗi validate) — hiện tại chỉ có `video_da_o_cum_that`
+    // mảng lỗi validate) — `video_da_o_cum_that` và `video_da_loai`
     // (`models_chia._kiem_video_ids_thao_tac`, route `/thao-tac`): video đã
-    // duyệt/gán tay vào cụm thật thì không di chuyển được nữa qua
-    // tách/chuyển/ngoài chủ đề/trả về. Câu chữ RÕ lý do thay vì mã lỗi trần.
+    // duyệt/gán tay vào cụm thật, hoặc đã bị loại khỏi thư viện, thì không di
+    // chuyển được nữa qua tách/chuyển/ngoài chủ đề/trả về. Câu chữ RÕ lý do
+    // thay vì mã lỗi trần.
     if (err.ma && typeof err.ma === "object" && !Array.isArray(err.ma)) {
       if (err.ma.tu_choi === "video_da_o_cum_that") {
         const n = Array.isArray(err.ma.video_ids) ? err.ma.video_ids.length : 0;

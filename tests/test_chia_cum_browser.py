@@ -886,7 +886,6 @@ def test_dock_tach_sau_luot_loai_dang_bay_bi_tu_choi_khong_sinh_kieu_rong(page, 
     giu[0].continue_()
     page.wait_for_function("window.__toasts.some((t) => t.includes('đã bị loại khỏi thư viện'))")
     toasts = page.evaluate("window.__toasts")
-    print("\nTOASTS", toasts)
     assert "Video đã bị loại khỏi thư viện, không di chuyển được (1 video)." in toasts, toasts
     with models._connect(db) as conn:
         nhap = conn.execute("SELECT lan FROM video_cum_nhap WHERE video_id = ?", (vid,)).fetchall()
