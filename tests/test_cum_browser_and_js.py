@@ -164,9 +164,9 @@ def test_da_mo_gui_kem_so_item_that_cua_payload():
 def test_nhan_so_video_chi_hien_x_tren_n_khi_biet_va_thieu():
     n = _node("cum-ban-giao.js")["nhan_so_video"]
     assert n == {"thieu": "3/4", "du": "4", "khong": "0/4",
-                 "lo_doi_sau_khi_mo": "6", "thieu_roi_lo_doi": "3/4",
+                 "lo_doi_sau_khi_mo": "4", "thieu_roi_lo_doi": "3/4",
                  "chua_biet": "4", "moc_cu_chi_tu_so": "4", "khong_moc": "4"}, \
-        "x/N chỉ từ CẶP lúc mở và khi x < N; đủ/chưa biết ⇒ số HIỆN TẠI trơn, không ghép tử số lúc mở với mẫu số hiện tại"
+        "biết cặp ⇒ số LÚC MỞ (x/N khi x < N, N khi đủ); chỉ chưa biết cặp mới dùng số hiện tại"
 
 
 def test_ban_giao_chon_tay_khong_co_nhan():
@@ -574,4 +574,5 @@ def test_lo_bi_bot_video_o_tab_khac_truoc_khi_mo_van_ghi_moc_va_khong_bia_x_tren
     assert [(m["thu"], m["so_item"], m["so_video"])
             for m in _cum_api(page)[0]["lo_mo"]] == [(1, 3, 3)]
     page.wait_for_function("document.querySelector('#cum-head .sent-line')")
-    assert "/4 video" not in page.inner_text("#cum-head .sent-line")
+    dong = page.inner_text("#cum-head .sent-line")
+    assert "(3 video)" in dong, f"đã gửi 3 trên lô 3 video lúc mở — không phải số đếm cũ của trang: {dong}"

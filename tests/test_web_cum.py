@@ -291,6 +291,18 @@ def test_inconsistent_or_partial_pair_still_records_the_mark_with_null_counts(kh
     assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (None, None)
 
 
+@pytest.mark.parametrize("body", [
+    {"so_item": -1, "so_video": 2}, {"so_item": 1, "so_video": -1},
+    {"so_item": True, "so_video": 2}, {"so_item": "2", "so_video": 2},
+    {"so_item": 2.0, "so_video": 2}, {"so_item": 1, "so_video": False},
+])
+def test_counts_must_be_real_non_negative_ints_at_the_request_shape(body):
+    """`StrictInt` + `ge=0`: số âm, bool, chuỗi số, số thực bị chặn ngay khi
+    dựng request — ép kiểu ngầm từng biến `true` thành 1."""
+    with pytest.raises(ValidationError):
+        app_mod.DaMoLoRequest(**body)
+
+
 def test_a_batch_outside_the_cluster_is_refused(kho):
     a = _tao()["id"]
     with pytest.raises(HTTPException) as e:   # cụm rỗng ⇒ 0 lô

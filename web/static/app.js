@@ -1148,12 +1148,14 @@
   // Nhãn "x/N" từ mốc đã mở `m`: `so_item` = số item THẬT đã gửi, `so_video`
   // = số video của lô LÚC ĐÓ (cùng một response payload, xem `moLoCum`). Chỉ
   // hiện "x/N" khi biết cả hai và x < N — video bị lọc vì chưa lên Drive/thiếu
-  // link gốc hợp lệ. Còn lại (đủ, chưa biết, mốc cũ/client cũ) ⇒ `nHienTai`
-  // (số video HIỆN TẠI của lô) trơn, KHÔNG bịa "n/n" và KHÔNG ghép tử số lúc mở
-  // với mẫu số hiện tại (lô đổi sau khi mở thì hai số không cùng nghĩa).
+  // link gốc hợp lệ; biết cả hai và x == N ⇒ N trơn CỦA LÚC MỞ (không bịa
+  // "n/n"). Chỉ khi CHƯA biết cặp (mốc cũ/client cũ) mới rơi về `nHienTai`
+  // (số video hiện tại của lô) — đếm phía trang có thể cũ hoặc lô đã đổi sau
+  // khi mở, nên không bao giờ ghép nó với số đã gửi.
   function nhanSoVideo(m, nHienTai) {
     const x = m && m.so_item, n = m && m.so_video;
-    return (typeof x === "number" && typeof n === "number" && x < n) ? `${x}/${n}` : `${nHienTai}`;
+    if (typeof x !== "number" || typeof n !== "number") return `${nHienTai}`;
+    return x < n ? `${x}/${n}` : `${n}`;
   }
 
   // Khoá so trùng cụm: trim + gộp khoảng trắng + không phân biệt hoa/thường.
