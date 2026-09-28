@@ -952,6 +952,97 @@ def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):
     assert [nut.nth(i).is_disabled() for i in range(4)] == [True] * 4
 
 
+def _loai_o_thu_vien(db, vid: str) -> None:
+    """Như bấm Loại ở thư viện / tab khác: chỉ đánh dấu video, nháp chia giữ nguyên hàng."""
+    with models._connect(db) as conn:
+        conn.execute("UPDATE videos SET da_loai_luc = '2026-09-28T11:00:00+00:00' WHERE video_id = ?", (vid,))
+
+
+def test_kieu_rong_sau_khi_video_cuoi_bi_loai_o_thu_vien(page, dulieu):
+    """Kiểu "Thể thao" chỉ có 1 video; loại video đó ở thư viện ⇒ kiểu RỖNG:
+    không còn nút duyệt/gộp/tạo bộ, có dòng báo + "Xoá kiểu"; tiêu đề, khối
+    nhóm và rail không đếm nó; xoá được và hoàn tác được."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _loai_o_thu_vien(db, ids[5])
+    _mo_lai(page, job)
+    rong = page.locator("[data-cc-kieu-rong]")
+    assert rong.count() == 1
+    assert "Kiểu này không còn video (đã loại hoặc đã vào cụm) — bấm Xoá kiểu." in rong.inner_text()
+    for nut in ("duyet-kieu", "toggle-gop"):
+        assert rong.locator(f'[data-cc-action="{nut}"]').count() == 0
+    assert "Tạo bộ tự tìm" not in rong.inner_text()
+    assert page.inner_text("#cc-tieude").startswith("Hệ đã chia thành 2 nhóm · 2 kiểu + làn riêng")
+    dong_phuc = page.locator('[data-cc-nhom="Đồng phục"] .cc-nhom-h')
+    assert "2 video · 1 kiểu" in dong_phuc.inner_text()
+    # Chỉ còn 1 kiểu có video ⇒ không có gì để "Gộp cả nhóm" (trước đây nút
+    # vẫn hiện và có thể gộp kiểu thật VÀO kiểu rỗng, mang tên kiểu rỗng).
+    assert dong_phuc.locator('[data-cc-action="gop-nhom"]').count() == 0
+    assert "Thể thao" not in page.inner_text("#cc-rail")
+    # Kiểu có video vẫn đủ nút như cũ (đối chứng).
+    assert page.locator('.cc-kieu:not([data-cc-kieu-rong]) [data-cc-action="duyet-kieu"]').count() == 2
+    rong.locator('[data-cc-action="xoa-kieu"]').click()
+    page.wait_for_function("!document.querySelector('[data-cc-kieu-rong]')")
+    page.click('[data-cc-action="hoan-tac"]')
+    page.wait_for_selector("[data-cc-kieu-rong]")
+
+
+def test_nhom_chi_con_kieu_rong_van_hien_va_tieu_de_khop_so_the(page, dulieu):
+    """Loại hết 3 video của "Mặc vest" ⇒ nhóm "Âu phục" chỉ còn kiểu rỗng. Thẻ
+    nhóm vẫn hiện (để bấm Xoá kiểu), nên tiêu đề đếm đúng số thẻ nhóm đang vẽ
+    (2), còn số kiểu chỉ đếm kiểu còn video (Học sinh + Thể thao = 2)."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    for vid in ids[0:3]:
+        _loai_o_thu_vien(db, vid)
+    _mo_lai(page, job)
+    assert page.locator(".cc-nhom:not(.cc-lan)").count() == 2
+    assert page.inner_text("#cc-tieude").startswith("Hệ đã chia thành 2 nhóm · 2 kiểu + làn riêng")
+    assert "0 video · 0 kiểu" in page.locator('[data-cc-nhom="Âu phục"] .cc-nhom-h').inner_text()
+    # Nhóm còn 2 kiểu có video thì vẫn gộp được (đối chứng cho nút gộp nhóm).
+    assert page.locator('[data-cc-nhom="Đồng phục"] [data-cc-action="gop-nhom"]').count() == 1
+
+
+def test_chi_con_kieu_rong_thi_chi_sang_duyet_tat_ca_va_dong_duoc_luot(page, dulieu):
+    """Loại hết video của cả 3 kiểu ⇒ mọi kiểu còn lại đều rỗng. Xoá kiểu cuối
+    sẽ để lượt kẹt ở `de_xuat` với 0 kiểu, nên dòng báo chỉ sang "Duyệt tất
+    cả" — nút đó còn bật, và bấm vào thì lượt đóng (`da_duyet`)."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    for vid in ids[0:6]:
+        _loai_o_thu_vien(db, vid)
+    _mo_lai(page, job)
+    rong = page.locator("[data-cc-kieu-rong]")
+    assert rong.count() == 3
+    for i in range(3):
+        assert "Các kiểu còn lại không còn video — bấm Duyệt tất cả để đóng lượt." in rong.nth(i).inner_text()
+    page.fill('[data-cc-field="usecase"]', "Dance")
+    page.fill('[data-cc-field="insight_goc"]', "Badaboum")
+    page.locator('[data-cc-field="insight_goc"]').blur()
+    page.wait_for_function("!document.querySelector('[data-cc-action=\"duyet-het\"]').disabled")
+    page.click('[data-cc-action="duyet-het"]')
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert models_chia.lay_chia_theo_job(db, job, NGUOI)["trang_thai"] == "da_duyet"
+    with models._connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM cum").fetchone()[0] == 0, "không tạo cụm rỗng nào"
+
+
+def test_tab_cu_duyet_kieu_rong_bao_khong_tao_cum(page, dulieu):
+    """Tab mở trước khi video cuối của kiểu bị loại vẫn còn nút "Duyệt kiểu
+    này"; server trả `cum_id=null` ⇒ toast không được nói "đã tạo cụm mới"."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _mo_chia(page, job)
+    page.fill('[data-cc-field="usecase"]', "Dance")
+    page.fill('[data-cc-field="insight_goc"]', "Badaboum")
+    page.locator('[data-cc-field="insight_goc"]').blur()
+    page.wait_for_load_state("networkidle")
+    _loai_o_thu_vien(db, ids[5])
+    the_thao = page.locator(".cc-kieu", has=page.locator('input[value="Thể thao"]'))
+    assert page.locator("#toast").is_hidden()
+    the_thao.locator('[data-cc-action="duyet-kieu"]').click()
+    page.wait_for_function("!document.getElementById('toast').hidden")
+    assert page.inner_text("#toast") == "Kiểu không còn video — không tạo cụm."
+    with models._connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM cum").fetchone()[0] == 0
+
+
 def test_tran_lo_loai_chia_khop_backend():
     import re
     src = (Path(__file__).resolve().parent.parent / "web" / "static" / "chia-cum.js").read_text()

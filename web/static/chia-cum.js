@@ -344,10 +344,14 @@
     if (empty) {
       tieude.textContent = "Chưa chia cụm";
     } else {
+      // Kiểu rỗng (xem `kieuBlockHtml`) không tính vào số kiểu đã chia. Số
+      // nhóm vẫn đếm mọi nhóm đang vẽ thẻ — nhóm chỉ còn kiểu rỗng vẫn hiện
+      // (để bấm "Xoá kiểu"), nên tiêu đề phải khớp số thẻ trên màn.
+      const kieuCoVideo = data.kieu.filter((k) => k.video_ids.length);
       const nNhom = new Set(nhomsOf(data)).size;
       const hau = data.trang_thai === "da_duyet" ? "— đã duyệt" : "— bản nháp";
       tieude.textContent =
-        `Hệ đã chia thành ${nNhom} nhóm · ${data.kieu.length} kiểu + làn riêng ` +
+        `Hệ đã chia thành ${nNhom} nhóm · ${kieuCoVideo.length} kiểu + làn riêng ` +
         `(thẻ chữ ${data.huong_dan.length} · nghi ${data.nghi.length}) ${hau}`;
     }
 
@@ -424,6 +428,7 @@
         const tong = ks.reduce((s, k) => s + k.video_ids.length, 0);
         r += `<div class="cc-ri"><span>${escapeHtml(nhom)}</span><span class="cc-n">${tong}</span></div>`;
         for (const k of ks) {
+          if (!k.video_ids.length) continue;   // kiểu rỗng: không có gì để dẫn tới
           r += `<div class="cc-ri cc-sub"><span>${escapeHtml(k.kieu)}</span>` +
                `<span class="cc-n">${k.video_ids.length}</span></div>`;
         }
@@ -487,6 +492,29 @@
           <span class="cc-faint">${k.video_ids.length} video · tên cụm: ${tenCumHien(k)}</span>
         </div>
         ${thumbsHtml(k.video_ids)}
+      </div>`;
+    }
+    // Kiểu RỖNG: mọi video của nó đã bị loại hoặc đã vào cụm thật (lọc ở
+    // `models_chia.lay_chia`). Duyệt nó không tạo cụm nào (server trả
+    // `cum_id=null`) ⇒ không vẽ duyệt/gộp/tạo bộ, chỉ còn đường "Xoá kiểu"
+    // (hoàn tác được).
+    if (!k.video_ids.length) {
+      // MỌI kiểu còn lại đều rỗng: xoá kiểu cuối để lượt kẹt ở `de_xuat` với 0
+      // kiểu (server không tự đóng lượt khi xoá). "Duyệt tất cả" lúc kiểu rỗng
+      // còn đó thì đóng lượt đúng ⇒ chỉ sang nút đó thay vì "Xoá kiểu".
+      const toanRong = CC.data.kieu.every((x) => !x.video_ids.length);
+      const bao = toanRong
+        ? "Các kiểu còn lại không còn video — bấm Duyệt tất cả để đóng lượt."
+        : "Kiểu này không còn video (đã loại hoặc đã vào cụm) — bấm Xoá kiểu.";
+      return `
+      <div class="cc-kieu" data-cum-nhap-id="${k.cum_nhap_id}" data-cc-kieu-rong>
+        <div class="cc-kieu-h">
+          <b class="cc-ten">${escapeHtml(k.kieu)}</b>
+          <span class="cc-faint">${bao}</span>
+          <span class="cc-sp"></span>
+          <button type="button" class="btn ghost" data-cc-action="xoa-kieu"
+            data-cum-nhap-id="${k.cum_nhap_id}">Xoá kiểu</button>
+        </div>
       </div>`;
     }
     return `
@@ -554,9 +582,9 @@
           ${duyet ? `<b class="cc-ten">${escapeHtml(nhom)}</b>`
             : `<input class="cc-ten" data-cc-nhom-rename data-cc-nhom-cur="${escapeHtml(nhom)}" value="${escapeHtml(nhom)}">
           <span class="chip cc-chip-nhap">đề xuất</span>`}
-          <span class="muted">${tong} video · ${ks.length} kiểu</span>
+          <span class="muted">${tong} video · ${ks.filter((k) => k.video_ids.length).length} kiểu</span>
           <span class="cc-sp"></span>
-          ${!duyet && ks.length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
+          ${!duyet && ks.filter((k) => k.video_ids.length).length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
             `data-nhom="${escapeHtml(nhom)}">Gộp cả nhóm thành 1 kiểu</button>` : ""}
         </div>
         ${ks.map(kieuBlockHtml).join("")}
@@ -815,7 +843,10 @@
       render();
       return;
     }
-    showToast(ket.da_co ? "Đã duyệt — đã gộp vào cụm có sẵn." : "Đã duyệt — đã tạo cụm mới.");
+    // `cum_id == null`: kiểu không còn video (tab cũ còn nút duyệt) — server
+    // không tạo cụm nào, đừng báo "đã tạo cụm mới".
+    showToast(ket.cum_id == null ? "Kiểu không còn video — không tạo cụm."
+      : ket.da_co ? "Đã duyệt — đã gộp vào cụm có sẵn." : "Đã duyệt — đã tạo cụm mới.");
     await refresh();
   }
 
@@ -946,7 +977,9 @@
         }
         if (action === "gop-nhom") {
           const nhom = btn.dataset.nhom;
-          const ks = CC.data.kieu.filter((k) => k.nhom === nhom);
+          // Chỉ gộp kiểu CÒN video — kiểu rỗng không được làm ĐÍCH (kiểu thật
+          // sẽ mang tên nó) và cũng không cần kéo theo (nó chờ "Xoá kiểu").
+          const ks = CC.data.kieu.filter((k) => k.nhom === nhom && k.video_ids.length);
           if (ks.length < 2) return;
           const [den, ...tu] = ks;
           await thaoTac("gop_nhom", {
