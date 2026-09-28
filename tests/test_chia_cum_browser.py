@@ -921,16 +921,21 @@ def test_cau_tu_choi_ve_sau_khong_de_mat_cau_da_loai(page, dulieu):
         "Đã loại 1 video · Video đã bị loại khỏi thư viện, không di chuyển được (1 video).")
 
 
-def test_toast_loi_noi_toi_da_2_phan(page, dulieu):
-    """Lỗi lặp liền nhau (bấm "Tạo kiểu" 3 lần với tên rỗng) không được nối
-    thành chuỗi dài mãi — giữ tối đa 2 phần."""
+def test_toast_giu_cau_da_loai_qua_hai_loi_lien_tiep(page, dulieu):
+    """Thành công → lỗi → lỗi trong cùng lúc toast còn hiện: "Đã loại 1 video"
+    (thao tác không lùi được) phải còn, và lỗi lặp chỉ hiện MỘT lần (tối đa 2
+    phần: một câu thường + lỗi mới nhất) — không nuốt câu thường, không dài mãi."""
     _mo_chia(page, dulieu["job_full"])
-    page.locator(".cc-t").first.click()
+    page.locator(".cc-nhom.cc-lan").nth(0).locator(".cc-t").first.click()
+    page.click('[data-cc-action="loai-lan"][data-lan="huong_dan"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.getElementById('toast').textContent === 'Đã loại 1 video'")
+    page.locator(".cc-kieu .cc-t").first.click()
     page.click('#cc-dock [data-cc-action="dock-tach"]')
     page.fill("[data-cc-tach-kieu]", "")
-    for _ in range(3):
+    for _ in range(2):
         page.click('[data-cc-action="confirm-tach"]')
-    assert page.inner_text("#toast") == "Cần nhóm và tên kiểu. · Cần nhóm và tên kiểu."
+    assert page.inner_text("#toast") == "Đã loại 1 video · Cần nhóm và tên kiểu."
 
 
 def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):

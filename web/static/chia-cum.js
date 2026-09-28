@@ -91,8 +91,8 @@
   // CẢ HAI chiều: vd lệnh dock bị từ chối (video vừa loại) và "Đã loại N
   // video" về gần như cùng lúc, thứ tự không đảm bảo (GET làm mới của Loại
   // không đi qua hàng đợi POST). Đè thì mất hoặc lý do từ chối, hoặc câu xác
-  // nhận của một thao tác KHÔNG lùi được. Giữ tối đa 2 phần (bỏ phần thường
-  // cũ nhất trước) để chuỗi không dài mãi. `toastDaGhi`: `app.js` cũng ghi
+  // nhận của một thao tác KHÔNG lùi được. Giữ tối đa 2 phần (một lỗi, một câu
+  // thường) để chuỗi không dài mãi. `toastDaGhi`: `app.js` cũng ghi
   // vào `#toast` — chữ không phải của màn này thì coi như toast mới.
   let toastPhan = [];
   let toastDaGhi = "";
@@ -102,11 +102,12 @@
     const conHien = !el.hidden && el.textContent === toastDaGhi;
     const coLoi = toastPhan.some((p) => p.loi);
     if (conHien && (laLoi || coLoi)) {
+      // Tối đa MỘT lỗi + MỘT câu thường, mỗi loại giữ bản MỚI NHẤT: phần mới
+      // thay phần cũ CÙNG loại — không bao giờ nuốt câu thường vừa tới (vd
+      // "Đã loại N video") chỉ vì đã có hai lỗi.
+      const cu = toastPhan.findIndex((p) => p.loi === laLoi);
+      if (cu >= 0) toastPhan.splice(cu, 1);
       toastPhan.push({ text, loi: laLoi });
-      while (toastPhan.length > 2) {
-        const i = toastPhan.findIndex((p) => !p.loi);
-        toastPhan.splice(i >= 0 ? i : 0, 1);
-      }
     } else {
       toastPhan = [{ text, loi: laLoi }];
     }
