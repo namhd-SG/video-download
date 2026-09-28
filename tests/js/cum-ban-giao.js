@@ -74,7 +74,8 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
   const apiSend = async (method, path, body) => {
     nhatKy.push(`${method} ${path}`);
     thanGui.push(body === undefined ? null : body);
-    return { mo_luc: "2026-09-23T10:42:00+00:00", so_item: body?.so_item ?? null };
+    return { mo_luc: "2026-09-23T10:42:00+00:00", so_item: body?.so_item ?? null,
+             so_video: body?.so_video ?? null };
   };
   class PhienHetHan extends Error {}
   // Giả lập `GET /cum/{id}/lo/{thu}/payload` — cắt lô ĐÚNG thứ tự
@@ -97,6 +98,7 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
     const muc = cacLo[Number(m[2]) - 1] || [];
     return {
       v: 1,
+      so_video: muc.length,   // như server: số video của lô TRƯỚC lọc Drive
       items: muc.filter((v) => v.drive_file_id).map(itemBanGiao),
       nhan: { usecase: cum.usecase, insight: cum.insight, template: "Goc", cum_id: cum.id,
              lo: { thu: Number(m[2]), tong: cacLo.length } },
@@ -218,9 +220,16 @@ async function chayMoHetLoCumHetPhienGiuaChung() {
     mot_lo: await chay({ soVideo: 12, thu: 1, popupBiChan: false }),
     // Lô 4 video, 1 chưa lên Drive ⇒ payload 3 item ⇒ gửi kèm so_item = 3.
     thieu_drive: await chay({ soVideo: 4, thu: 1, popupBiChan: false, thieuDrive: 1 }),
+    // nhanSoVideo(mốc, số video HIỆN TẠI): cặp lúc mở quyết định "x/N".
     nhan_so_video: {
-      thieu: nhanSoVideo(3, 4), du: nhanSoVideo(4, 4), khong: nhanSoVideo(0, 4),
-      chua_biet_null: nhanSoVideo(null, 4), chua_biet_undef: nhanSoVideo(undefined, 4),
+      thieu: nhanSoVideo({ so_item: 3, so_video: 4 }, 4),
+      du: nhanSoVideo({ so_item: 4, so_video: 4 }, 4),
+      khong: nhanSoVideo({ so_item: 0, so_video: 4 }, 4),
+      lo_doi_sau_khi_mo: nhanSoVideo({ so_item: 4, so_video: 4 }, 6),
+      thieu_roi_lo_doi: nhanSoVideo({ so_item: 3, so_video: 4 }, 6),
+      chua_biet: nhanSoVideo({ so_item: null, so_video: null }, 4),
+      moc_cu_chi_tu_so: nhanSoVideo({ so_item: 3 }, 4),
+      khong_moc: nhanSoVideo(undefined, 4),
     },
     bi_chan: await chay({ soVideo: 12, thu: 1, popupBiChan: true }),
     // Fetch payload trượt vì lý do KHÔNG PHẢI hết phiên (vd 400 "lô ngoài

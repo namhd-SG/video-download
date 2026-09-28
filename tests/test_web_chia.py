@@ -621,10 +621,14 @@ def test_payload_server_khop_byte_voi_ban_js_cu_tren_cung_cum(kho):
     cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Badaboum", "couple")
     models_cum.gan_video(db, cum_id, TOI, TOI, [f"v{i}" for i in range(34)])
 
-    for thu in (1, 2):
+    for thu, so_video in ((1, 30), (2, 4)):
         cu = _payload_kieu_cu_qua_js_that(db, cum_id, TOI, thu, models_cum.LO_TOI_DA)
-        moi = _py_json_compact(app_mod.payload_lo_cum(cum_id, thu, nguoi_tao=TOI))
-        assert moi == cu, f"lô {thu}: payload server phải byte-equal với bản JS cũ"
+        tra_ve = app_mod.payload_lo_cum(cum_id, thu, nguoi_tao=TOI)
+        # `so_video` là mẫu số nhãn "x/N" cho chính Video Desk; `app.js::moLoCum`
+        # tách nó ra TRƯỚC khi mã hoá URL ⇒ phần GỬI Creative Desk phải y hệt cũ.
+        assert tra_ve.pop("so_video") == so_video, f"lô {thu}: so_video = số video của lô trước lọc Drive"
+        moi = _py_json_compact(tra_ve)
+        assert moi == cu, f"lô {thu}: phần gửi Creative Desk phải byte-equal với bản JS cũ"
 
 
 # --- id số nguyên ngoài miền SQLite ⇒ 422, không 500 --------------------------

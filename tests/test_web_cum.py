@@ -233,56 +233,62 @@ def test_marking_a_batch_opened_is_recorded_per_batch(kho):
     a = _tao()["id"]
     _gan(a, ["1", "2"])
     out = app_mod.ghi_lo_da_mo(a, 1, nguoi_tao=TOI)
-    assert out["thu"] == 1 and out["mo_luc"] and out["so_item"] is None
+    assert out["thu"] == 1 and out["mo_luc"] and out["so_item"] is None and out["so_video"] is None
     lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": out["mo_luc"], "so_item": None}]
+    assert lo == [{"thu": 1, "mo_luc": out["mo_luc"], "so_item": None, "so_video": None}]
 
     lai = app_mod.ghi_lo_da_mo(a, 1, nguoi_tao=TOI)   # "Mở lại" làm mới mốc
     lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": lai["mo_luc"], "so_item": None}]
+    assert lo == [{"thu": 1, "mo_luc": lai["mo_luc"], "so_item": None, "so_video": None}]
     assert lai["mo_luc"] >= out["mo_luc"]
 
 
-def test_so_item_missing_body_stores_null_present_body_stores_and_updates(kho):
-    """Client cũ không gửi `body` ⇒ NULL (đã kiểm ở test trên); client mới gửi
-    `so_item` (số item THẬT gửi sang Creative Desk, có thể < số video của lô
-    vì video chưa lên Drive bị lọc) ⇒ ghi vào cột, và "Mở lại" GHI ĐÈ giá trị
-    mới, không cộng dồn/giữ giá trị cũ."""
+def _mo(cum_id: int, **body) -> dict:
+    return app_mod.ghi_lo_da_mo(cum_id, 1, app_mod.DaMoLoRequest(**body), nguoi_tao=TOI)
+
+
+def _lo_mo_dau() -> dict:
+    return app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"][0]
+
+
+def test_so_item_and_so_video_are_stored_together_and_reopen_overwrites_both(kho):
+    """Hai số từ CÙNG một response payload ⇒ lưu nguyên cặp; "Mở lại" GHI ĐÈ
+    cả cặp, không giữ giá trị lần mở trước."""
     a = _tao()["id"]
-    _gan(a, ["1", "2"])   # lô 2 video ⇒ so_item hợp lệ 0..2 (1 video không lên Drive)
-    out = app_mod.ghi_lo_da_mo(a, 1, app_mod.DaMoLoRequest(so_item=1), nguoi_tao=TOI)
-    assert out["so_item"] == 1
-    lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": out["mo_luc"], "so_item": 1}]
-
-    lai = app_mod.ghi_lo_da_mo(a, 1, app_mod.DaMoLoRequest(so_item=2), nguoi_tao=TOI)
-    assert lai["so_item"] == 2
-    lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": lai["mo_luc"], "so_item": 2}], \
-        "Mở lại phải GHI ĐÈ so_item, không giữ giá trị lần mở trước"
+    _gan(a, ["1", "2"])
+    out = _mo(a, so_item=1, so_video=2)
+    assert (out["so_item"], out["so_video"]) == (1, 2)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (1, 2)
+    _mo(a, so_item=2, so_video=2)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (2, 2), \
+        "Mở lại phải GHI ĐÈ cả cặp"
 
 
-def test_so_item_bounds_are_0_to_number_of_videos_in_the_batch(kho):
+def test_server_does_not_recount_the_batch_so_pair_from_payload_time_is_kept(kho):
+    """Lô đổi SAU khi dựng payload (tab khác gỡ video) — server KHÔNG đếm lại:
+    cặp (4, 4) lúc dựng payload vẫn được ghi dù lô giờ chỉ còn 2 video. Đếm lại
+    sẽ ghép tử số của lúc đó với mẫu số của lúc này (và bản cũ còn trả 400 ⇒
+    mất mốc)."""
     a = _tao()["id"]
-    _gan(a, ["1", "2"])   # lô có đúng 2 video
-    # hai biên hợp lệ đều ghi được
-    assert app_mod.ghi_lo_da_mo(a, 1, app_mod.DaMoLoRequest(so_item=0),
-                                nguoi_tao=TOI)["so_item"] == 0
-    assert app_mod.ghi_lo_da_mo(a, 1, app_mod.DaMoLoRequest(so_item=2),
-                                nguoi_tao=TOI)["so_item"] == 2
-    # ngoài biên trên ⇒ 400, và mốc đã ghi trước đó KHÔNG bị đổi
-    with pytest.raises(HTTPException) as e:
-        app_mod.ghi_lo_da_mo(a, 1, app_mod.DaMoLoRequest(so_item=3), nguoi_tao=TOI)
-    assert e.value.status_code == 400
-    lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": lo[0]["mo_luc"], "so_item": 2}]
+    _gan(a, ["1", "2"])
+    out = _mo(a, so_item=4, so_video=4)
+    assert out["mo_luc"] and (out["so_item"], out["so_video"]) == (4, 4)
 
 
-def test_so_item_negative_is_rejected_at_the_request_shape(kho):
-    """`Field(ge=0)` chặn số âm ngay khi dựng request, trước khi vào route —
-    biên DƯỚI không cần route tự kiểm thêm."""
-    with pytest.raises(ValidationError):
-        app_mod.DaMoLoRequest(so_item=-1)
+@pytest.mark.parametrize("body", [
+    {"so_item": 3, "so_video": 2},   # không nhất quán
+    {"so_item": 2},                  # client cũ: chỉ có tử số
+    {"so_video": 2},                 # thiếu tử số
+])
+def test_inconsistent_or_partial_pair_still_records_the_mark_with_null_counts(kho, body):
+    """Không bao giờ 400 vì hai số: tab Creative Desk ĐÃ mở thật, mất mốc thì
+    trang giục bấm lại ⇒ tab thứ hai. Lưu NULL cả hai = "chưa biết", không bịa."""
+    a = _tao()["id"]
+    _gan(a, ["1", "2"])
+    out = _mo(a, **body)
+    assert out["mo_luc"]
+    assert (out["so_item"], out["so_video"]) == (None, None)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (None, None)
 
 
 def test_a_batch_outside_the_cluster_is_refused(kho):
