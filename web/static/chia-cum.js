@@ -87,9 +87,31 @@
   }
 
   let toastTimer = null;
-  function showToast(text) {
+  // Hai toast chạm nhau mà MỘT trong hai là lỗi thì NỐI lại, không đè — theo
+  // CẢ HAI chiều: vd lệnh dock bị từ chối (video vừa loại) và "Đã loại N
+  // video" về gần như cùng lúc, thứ tự không đảm bảo (GET làm mới của Loại
+  // không đi qua hàng đợi POST). Đè thì mất hoặc lý do từ chối, hoặc câu xác
+  // nhận của một thao tác KHÔNG lùi được. Giữ tối đa 2 phần (một lỗi, một câu
+  // thường) để chuỗi không dài mãi. `toastDaGhi`: `app.js` cũng ghi
+  // vào `#toast` — chữ không phải của màn này thì coi như toast mới.
+  let toastPhan = [];
+  let toastDaGhi = "";
+  function showToast(text, laLoi = false) {
     const el = document.getElementById("toast");
     if (!el) return;
+    const conHien = !el.hidden && el.textContent === toastDaGhi;
+    const coLoi = toastPhan.some((p) => p.loi);
+    if (conHien && (laLoi || coLoi)) {
+      // Tối đa MỘT lỗi + MỘT câu thường, mỗi loại giữ bản MỚI NHẤT: phần mới
+      // thay phần cũ CÙNG loại — không bao giờ nuốt câu thường vừa tới (vd
+      // "Đã loại N video") chỉ vì đã có hai lỗi.
+      const cu = toastPhan.findIndex((p) => p.loi === laLoi);
+      if (cu >= 0) toastPhan.splice(cu, 1);
+      toastPhan.push({ text, loi: laLoi });
+    } else {
+      toastPhan = [{ text, loi: laLoi }];
+    }
+    text = toastDaGhi = toastPhan.map((p) => p.text).join(" · ");
     el.textContent = text;
     el.hidden = false;
     clearTimeout(toastTimer);
@@ -150,7 +172,7 @@
       await fn();
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-      showToast(errorDetailText(err));
+      showToast(errorDetailText(err), true);
       if (!CC.open) return;
       // Server báo lượt KHÔNG còn là nháp (tab mở từ trước khi duyệt/huỷ) —
       // chỉ vẽ lại thì mọi nút sửa nháp còn nguyên và mỗi cú bấm sau lại 400.
@@ -594,6 +616,11 @@
     const n = CC.selected.size;
     dock.hidden = chuaCoNhap() || daDuyet();
     document.getElementById("cc-dachon").textContent = `${n} video đã chọn`;
+    // Chưa chọn gì thì 4 nút không làm gì (mọi nhánh `dock-*` thoát ngay khi
+    // tập chọn rỗng) — làm xám cho thấy rõ, thay vì nút bấm không ăn.
+    // Chỉ 4 nút của dock — không đụng nút chọn kiểu trong popover "Chuyển sang".
+    dock.querySelectorAll(":scope > button, :scope > .pop-wrap > button")
+      .forEach((b) => { b.disabled = n === 0; });
     const chuyenPop = document.getElementById("cc-chuyen-popover");
     if (chuyenPop) {
       chuyenPop.innerHTML = CC.data ? kieuPickerPopoverHtml("chuyen-den", CC.data) : "";
@@ -691,7 +718,7 @@
   async function thaoTac(loai, tham) {
     const ket = await apiSend("POST", `/chia/${CC.data.id}/thao-tac`, { loai, ...tham });
     if (ket && ket.tu_choi) {
-      showToast(loai === "hoan_tac" ? "Không còn gì để hoàn tác." : "Thao tác không hợp lệ.");
+      showToast(loai === "hoan_tac" ? "Không còn gì để hoàn tác." : "Thao tác không hợp lệ.", true);
       return null;
     }
     await refresh();
@@ -754,7 +781,8 @@
     if (loi) phan.push(`dừng giữa chừng (${errorDetailText(loi)}) — còn ${conLai} video chưa gửi`);
     if (hetPhien && conLai > 0) phan.push(`phiên đăng nhập hết hạn — còn ${conLai} video chưa gửi`);
     if (loiTaiLai) phan.push("chưa tải lại được làn — tải lại trang để xem");
-    showToast(phan.join(" · "));
+    // Loại không trọn (trượt Drive, không phải của bạn, dừng giữa chừng) là LỖI.
+    showToast(phan.join(" · "), phan.length > 1);
     if (hetPhien) throw hetPhien;
   }
 
@@ -800,7 +828,7 @@
       return;
     }
     if (ket.loi_ten && ket.loi_ten.length) {
-      showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`);
+      showToast(`${ket.loi_ten.length} kiểu tên chưa hợp lệ, vẫn ở lại nháp.`, true);
     } else {
       showToast(`Đã duyệt ${ket.cum.length} kiểu.`);
     }
@@ -887,7 +915,7 @@
         if (action === "copy-cmd") {
           const cmd = btn.dataset.cmd || "";
           try { await navigator.clipboard.writeText(cmd); showToast("Đã chép lệnh."); }
-          catch (e) { showToast("Không chép được — chọn và copy tay."); }
+          catch (e) { showToast("Không chép được — chọn và copy tay.", true); }
           return;
         }
 
@@ -991,7 +1019,7 @@
           // phải tự lọc ở đây thay vì rơi vào toast lỗi.
           const ids = [...CC.selected].filter((v) => !CC.data.nghi.includes(v));
           if (!ids.length) {
-            showToast("Video đã chọn đều đã ở làn ngoài chủ đề — không có gì để chuyển.");
+            showToast("Video đã chọn đều đã ở làn ngoài chủ đề — không có gì để chuyển.", true);
             return;
           }
           CC.selected = new Set();
@@ -1006,7 +1034,7 @@
         if (action === "confirm-tach") {
           const nhom = CC.modal.nhomMoi ? (CC.modal.nhom || "").trim() : (CC.modal.nhom || "");
           const kieu = (CC.modal.kieu || "").trim();
-          if (!nhom || !kieu) { showToast("Cần nhóm và tên kiểu."); return; }
+          if (!nhom || !kieu) { showToast("Cần nhóm và tên kiểu.", true); return; }
           const ids = [...CC.selected];
           CC.modal = null;
           CC.selected = new Set();
