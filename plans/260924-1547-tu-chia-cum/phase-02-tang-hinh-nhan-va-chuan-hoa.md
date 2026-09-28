@@ -86,3 +86,20 @@ Plan tự chia cụm dừng ở vòng agy `tu-chia-cum-kehoach-R11-TREO` (KHÔNG
 3. **Khung thiếu:** `so_khung` = số ảnh có thật (1–3); video không có ảnh nào ⇒ KHÔNG gán nhãn, lượt vẫn đi với N−k video, in rõ k id bị bỏ + lý do; phép kiểm "đủ id" so với N−k (tập đã lọc), không phải N (agy R2 — trượt cả lượt vì 1 video thiếu ảnh sẽ kẹt lượt ở `cho_hinh`).
 4. **Lọc video vào lượt chia:** bỏ video `da_loai_luc IS NOT NULL` ngay trong script (không đẩy ảnh video đã loại sang agy) — `ghi_de_xuat::loc` vẫn bỏ video đã ở cụm thật (D14). Khi plan dọn video (`~/plans/260926-2110-video-desk-don-video-da-vao-bo/plan.md` §8.2b) lên, plan đó thêm lọc `drive_don_luc` vào CẢ script lẫn `ghi_de_xuat::loc` kèm đột biến — phase này để sẵn một hàm lọc duy nhất để chỗ thêm là một dòng.
 5. **Ảnh rời máy (R1):** script từ chối job có nguồn không phải TikTok công khai — kiểm `jobs.url` khớp `https://www.tiktok.com/`; 17/17 job hiện tại khớp tiền tố đó (đo 22:3x, `url LIKE "https://www.tiktok.com/%"`).
+
+## Kết quả chạy thật (27/09, mini `1935ddb`, #23)
+
+| | job 10 | job 17 |
+|---|---|---|
+| giờ | 08:31 → 08:41 | 08:41 → 08:50 |
+| video → vào lượt | 60 → 54 (1 đã loại · 5 đã ở cụm "Mặc vest") | 20 → 20 |
+| ảnh | 54 (poster) | 60 (3 khung) |
+| lượt agy thật / ước tính | **4 / 4** | **3 / 3** |
+| nhãn | 20+20+14, 0 lỗi | 20 trong 1 lượt (62 `view_file`, ~3 phút), 0 lỗi |
+| caption | 54 rỗng ⇒ `khong_ro`, 0 chấm | 20 chấm, cả 20 = `false` |
+| nháp (`de_xuat`, chưa duyệt) | 5 nhóm / 8 kiểu · 41 kiểu + 9 hướng dẫn + 4 nghi | 2 nhóm / 3 kiểu · 11 kiểu + 6 hướng dẫn + 3 nghi |
+| trùng cụm thật | 0 | 0 |
+
+- So R8 mù (6 nhóm / 12 kiểu, cùng 54 poster): 36/54 cùng nhóm tương ứng, 9/9 hướng dẫn khớp; lệch lớn nhất 5 "Trang phục vest" + 5 "Truyền thống" nay vào "Đồng phục".
+- Soát transcript agy 7 lượt: mọi đường dẫn và cwd trong scratch; mỗi lượt chỉ ghi tệp kết quả của nó; không lệnh đổi môi trường.
+- Thấy khi chạy thật, ĐƯA SANG phase 3+4 (không sửa nóng): (a) tên NHÓM không ổn định giữa lượt — cùng kiểu có sẵn "Mặc vest" ra nhóm "Âu phục" (job 10) và "Áo vest" (job 17), vì tên có sẵn chỉ ghim mức kiểu; (b) thành công chỉ dọn `anh/`, còn giữ prompt + kết quả trong `$TMPDIR/phan-tich-hinh-*` (64K, 612K) — không có ghi chú giữ là cố ý.

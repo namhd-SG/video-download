@@ -49,9 +49,9 @@ Thứ tự THI CÔNG (sửa theo agy kehoach-R2 câu 4, 6): **1 → 5 → 2 → 
 
 | # | Phase | PR | Phụ thuộc | Status |
 |---|-------|----|-----------|--------|
-| 1 | [Bảng nháp + nhật ký + đường duyệt duy nhất + payload `nhan` ở server](./phase-01-nhap-nhat-ky-chan-server.md) | p1 | — | Pending |
-| 5 | [Ô usecase/insight gốc lúc tạo job](./phase-05-o-insight-luc-tao-job.md) | p2 | 1 | Pending |
-| 2 | [Tầng hình: nhãn vision + chuẩn hoá 2 tầng (máy dev) → ghi nháp qua ssh](./phase-02-tang-hinh-nhan-va-chuan-hoa.md) | p3 | 1, 5 | Pending |
+| 1 | [Bảng nháp + nhật ký + đường duyệt duy nhất + payload `nhan` ở server](./phase-01-nhap-nhat-ky-chan-server.md) | p1 | — | Done #21 |
+| 5 | [Ô usecase/insight gốc lúc tạo job](./phase-05-o-insight-luc-tao-job.md) | p2 | 1 | Done #22 |
+| 2 | [Tầng hình: nhãn vision + chuẩn hoá 2 tầng (máy dev) → ghi nháp qua ssh](./phase-02-tang-hinh-nhan-va-chuan-hoa.md) | p3 | 1, 5 | Done #23, chạy thật 27/09 |
 | 3+4 | [UI nháp](./phase-03-ui-nhap-gop-duyet.md) **cùng** [làn thẻ chữ + làn nghi](./phase-04-lan-the-chu-va-nghi-ngoai-chu-de.md) — một PR | p4 | 1, 2 | Pending |
 
 Vì sao: phase 2 đọc `insight_goc` của lượt (phase 5 tạo); UI ship thiếu hai làn thì video ở làn `huong_dan`/`nghi` nằm trong DB mà không hiện, và "Duyệt tất cả" xử lý mù.
@@ -72,6 +72,8 @@ Vì sao: phase 2 đọc `insight_goc` của lượt (phase 5 tạo); UI ship thi
 ## Câu chưa chốt
 
 - Trình duyệt user dùng cho Video Desk: CHƯA ĐO (hỏi khi user nghiệm thu mắt). Bàn giao đã đổi sang mở tab đồng bộ nên không phụ thuộc trình duyệt (ĐP-21).
+
+- Lượt chia thật: ĐÃ ĐO 27/09 — job 10 (54 video, 4 lượt agy = ước tính) và job 17 (20 video, 3 = ước tính), số ở `phase-02` mục "Kết quả chạy thật". Hai nháp để nguyên chờ UI duyệt (phase 3+4), không duyệt thay user.
 
 - Không còn. (Câu nút tầng hình ⇒ D12.) Ghi nhận: poster/khung gửi agy rời máy (Google) — chỉ video TikTok công khai, không data khách (ranh giới R1).
 

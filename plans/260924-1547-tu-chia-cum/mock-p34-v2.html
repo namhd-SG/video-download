@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MOCK v2 — Video Desk · duyệt nháp chia cụm</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>/* Token + bố cục chép NGUYÊN từ mock v1 (~/plans 3db42fd). v2 chỉ thêm các màn đổi theo vòng agy tuchiacum-p34-plan KHÉP R4. */
+/* Token màu + font lấy NGUYÊN từ mock v2 đã duyệt (260923-1103 mock-tai-theo-cum-v2.html = app.css 40f5293). */
+:root{--bg:#f3f6f4;--surface:#fff;--surface-alt:#e7ede9;--border:#d5ded9;--border-strong:#b4c2bb;--text:#14201d;--text-muted:#4c5a56;--text-faint:#7d8b86;--accent:#0d5c55;--accent-soft:#d8eae6;--accent-ink:#fff;--success:#1d6b3f;--success-bg:#dcefe2;--warn:#8a5a00;--warn-bg:#f7ecd6;--danger:#a33;--danger-bg:#f7dede;--radius:7px;--shadow:0 1px 2px rgba(20,32,29,.06),0 10px 28px rgba(20,32,29,.06);--display:"Bricolage Grotesque","Trebuchet MS",sans-serif;--body:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0e1413;--surface:#161e1c;--surface-alt:#1e2926;--border:#293430;--border-strong:#3a4844;--text:#e7efec;--text-muted:#a6b4af;--text-faint:#74827d;--accent:#5ecdbf;--accent-soft:#12302c;--accent-ink:#04100e;--success:#63c48c;--success-bg:#14301f;--warn:#e0b872;--warn-bg:#2e2415;--danger:#e08a8a;--danger-bg:#3a1c1c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#0e1413;--surface:#161e1c;--surface-alt:#1e2926;--border:#293430;--border-strong:#3a4844;--text:#e7efec;--text-muted:#a6b4af;--text-faint:#74827d;--accent:#5ecdbf;--accent-soft:#12302c;--accent-ink:#04100e;--success:#63c48c;--success-bg:#14301f;--warn:#e0b872;--warn-bg:#2e2415;--danger:#e08a8a;--danger-bg:#3a1c1c;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:var(--body);font-size:14px}
+.mockbar{background:var(--warn-bg);color:var(--warn);padding:8px 16px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12px;font-weight:600}
+.mockbar button{font:inherit;font-weight:500;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);border-radius:5px;padding:3px 9px;cursor:pointer}
+.mockbar button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 90px}
+h1{font-family:var(--display);font-weight:800;font-size:18px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+h1::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--accent)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow)}
+.luot{padding:14px 16px;display:grid;grid-template-columns:1fr auto;gap:10px 16px;align-items:start}
+.luot h2{font-family:var(--display);font-size:17px;margin:0}.muted{color:var(--text-muted)}.faint{color:var(--text-faint);font-size:12px}
+.mono{font-family:var(--mono);font-size:12px}
+.chip{display:inline-flex;gap:4px;align-items:center;background:var(--surface-alt);border-radius:99px;padding:3px 10px;font-size:12px;margin:6px 6px 0 0}
+.chip b{font-weight:600}.chip.nhap{background:var(--warn-bg);color:var(--warn)}.chip.ok{background:var(--success-bg);color:var(--success)}
+.btn{font:inherit;font-size:13px;border:1px solid var(--border-strong);background:var(--surface);color:var(--text);border-radius:6px;padding:6px 12px;cursor:pointer;white-space:nowrap}
+.btn.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--accent);padding:4px 6px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.fields{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}.fields label{font-size:12px;color:var(--text-muted);display:flex;flex-direction:column;gap:3px}
+.fields input,.ten{font:inherit;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:5px;padding:5px 8px}
+.layout{display:grid;grid-template-columns:250px 1fr;gap:16px;margin-top:16px}
+.rail{padding:12px;position:sticky;top:12px;align-self:start}
+.rail h3{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin:4px 4px 8px}
+.ri{display:flex;justify-content:space-between;padding:5px 8px;border-radius:5px;font-size:13px;cursor:pointer}.ri:hover{background:var(--surface-alt)}
+.ri.sub{padding-left:22px;color:var(--text-muted)}.ri .n{color:var(--text-faint);font-family:var(--mono);font-size:12px}
+.ri.lan{color:var(--warn)}.sep{border-top:1px solid var(--border);margin:8px 0}
+.nhom{margin-bottom:14px;overflow:hidden}
+.nhom-h{display:flex;gap:10px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--border);flex-wrap:wrap}
+.nhom-h .ten{font-family:var(--display);font-weight:700;font-size:15px;min-width:180px}
+.nhom-h .sp{flex:1}
+.kieu{padding:10px 14px 14px;border-bottom:1px dashed var(--border)}.kieu:last-child{border-bottom:0}
+.kieu-h{display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap}
+.kieu-h .ten{font-weight:600;min-width:150px}
+.luoi{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.t{position:relative;aspect-ratio:200/356;border-radius:4px;overflow:hidden;background:var(--surface-alt);border:2px solid transparent}
+.t img{width:100%;height:100%;object-fit:cover;display:block}
+.t .g{position:absolute;left:3px;top:3px;background:rgba(0,0,0,.65);color:#fff;font-size:9px;font-family:var(--mono);padding:1px 4px;border-radius:3px}
+.t.sel{border-color:var(--accent)}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--surface-alt);color:var(--text-muted)}
+.tag.nhap{background:var(--warn-bg);color:var(--warn)}.tag.ok{background:var(--success-bg);color:var(--success)}
+.note{font-size:12px;color:var(--text-muted);background:var(--surface-alt);border-radius:5px;padding:7px 10px;margin:8px 14px 0}
+.lan{margin-bottom:14px}.lan .nhom-h{background:var(--warn-bg)}
+.pop{position:absolute;right:14px;top:46px;background:var(--surface);border:1px solid var(--border-strong);border-radius:6px;box-shadow:var(--shadow);padding:6px;z-index:5;min-width:250px;font-size:13px}
+.pop div{padding:6px 8px;border-radius:4px}.pop div:hover{background:var(--surface-alt)}
+.dock{position:sticky;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:10px 16px;display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap}
+.empty{padding:40px 20px;text-align:center}
+.lock{font-size:12px;color:var(--danger);background:var(--danger-bg);border-radius:5px;padding:6px 10px;margin:8px 14px 0}
+@media (max-width:760px){.layout{grid-template-columns:1fr}.rail{position:static}.luot{grid-template-columns:1fr}}
+
+.why{font-size:12px;color:var(--warn);background:var(--warn-bg);border-radius:5px;padding:6px 10px;max-width:300px;text-align:right}
+.fields input.trong{border-color:var(--warn);background:var(--warn-bg)}
+.modal-bg{position:fixed;inset:0;background:rgba(10,20,18,.45);display:flex;align-items:flex-start;justify-content:center;padding-top:90px;z-index:20}
+.modal{width:min(460px,calc(100vw - 32px));padding:16px 18px}.modal h3{font-family:var(--display);margin:0 0 8px;font-size:16px}
+.modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
+.modal label{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text-muted);margin-top:8px}
+.cmd{display:flex;gap:6px;align-items:center;background:var(--surface-alt);border-radius:5px;padding:6px 8px;margin-top:8px;overflow-x:auto}
+.cmd code{font-family:var(--mono);font-size:12px;flex:1;min-width:0}.cmd code span{white-space:nowrap}
+.mini-luoi{display:flex;gap:4px;margin-top:8px}.mini-luoi .t{width:34px}
+</style></head><body>
+<div class="mockbar">MOCK v2 — nháp THẬT lượt 1 (job 10, mini 27/09) · poster ở ~/plans/260924-1031-tu-chia-cum-video-desk/posters/
+  <button data-s="trong">Insight trống</button><button data-s="nhap">Đã điền insight</button><button data-s="tach">Tách</button>
+  <button data-s="gop">Gộp vào cụm có sẵn</button><button data-s="huy">Hủy lượt / chia lại</button><button data-s="chua_hinh">Chưa phân tích hình</button><button data-s="da_duyet">Đã duyệt</button><button id="theme">Sáng / tối</button>
+</div>
+<div class="wrap">
+  <h1>Video Desk</h1>
+  <div class="card luot">
+    <div>
+      <div class="faint">Lượt tải #10 · 60 video · 54 vào lượt chia (1 đã loại · 5 đã ở cụm “Strom Ai Mặc vest”)</div>
+      <h2 id="tieude"></h2>
+      <div id="trangthai"></div>
+      <div class="fields" id="fields"></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;align-items:flex-end" id="nut"></div>
+  </div>
+  <div class="layout"><div class="card rail" id="rail"></div><div id="main"></div></div>
+</div>
+<div class="dock" id="dock"><span class="muted" id="dachon">0 video đã chọn</span>
+  <button class="btn">Chuyển sang kiểu…</button><button class="btn" id="tach-btn">Kiểu mới từ chọn</button><button class="btn">Ngoài chủ đề</button><button class="btn">Bỏ chọn</button></div>
+<div id="modal"></div>
+<script>
+const V = [{"id": "7686170723815083285", "lan": "nghi", "nhom": "", "kieu": "", "cn": null, "dd": "khong co dam dong"}, {"id": "7686838102446411015", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "ao vest mau trang dong bo"}, {"id": "7686843006581837074", "lan": "nghi", "nhom": "", "kieu": "", "cn": null, "dd": "ao toi mau mo ao"}, {"id": "7686921736331332896", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "khong co dam dong"}, {"id": "7687570893253463328", "lan": "nghi", "nhom": "", "kieu": "", "cn": null, "dd": "ao ke soc trang diem he"}, {"id": "7687812097203277076", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "ao thun trang non bao hiem"}, {"id": "7687817736050756878", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "dong phuc dau kiem trang"}, {"id": "7687844626786553109", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "ao vest mau xam"}, {"id": "7687956979574131998", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "vest den va ao so mi"}, {"id": "7687970699100572944", "lan": "nghi", "nhom": "", "kieu": "", "cn": null, "dd": "khong co dam dong"}, {"id": "7688041508334882080", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "ao so mi trang va ao den"}, {"id": "7688041956261350688", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "trang phuc truyen thong va vest den"}, {"id": "7688105630527261959", "lan": "huong_dan", "nhom": "", "kieu": "", "cn": null, "dd": "khong co dam dong"}, {"id": "7686380269934333202", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "dong phuc trang dong bo"}, {"id": "7686405805490408725", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "ao vest den deo kinh ram"}, {"id": "7686579808486116629", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "trang phuc den dong bo"}, {"id": "7686694825210662152", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "ao vest den cai hoa do"}, {"id": "7686827157439515922", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "ao vest den deo kinh ram"}, {"id": "7687000380877671713", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "bo vest den ca vat den"}, {"id": "7687702661428235538", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "bo vest mau xam va kem"}, {"id": "7687906080608898311", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "ao thun den va vest den"}, {"id": "7687988188853472535", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "vest den dong phuc"}, {"id": "7688046268425293087", "lan": "kieu", "nhom": "Âu phục", "kieu": "Mặc vest", "cn": 1, "dd": "vest den va ao khoac den"}, {"id": "7687207711628479751", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "dong phuc mau do do"}, {"id": "7687458202195103006", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "dong phuc hoc sinh vest den"}, {"id": "7687924168012139790", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "ao phan quang va dong phuc xam"}, {"id": "7687997278975577374", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "ao blazer xanh la va vest den"}, {"id": "7688000680983842061", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "ao thun den va dong phuc hoc sinh"}, {"id": "7688273667091942686", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Học sinh", "cn": 2, "dd": "dong phuc ghi le va ao trang"}, {"id": "7687261960915684638", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Thể thao", "cn": 3, "dd": "dong phuc bong bau duc"}, {"id": "7687323486506781972", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Thể thao", "cn": 3, "dd": "ao the thao nhieu mau"}, {"id": "7687965285998923039", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Thể thao", "cn": 3, "dd": "dong phuc bong chay mau vang"}, {"id": "7687990418155375885", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Thể thao", "cn": 3, "dd": "ao the thao va ao truyen thong"}, {"id": "7687991048236207390", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Thể thao", "cn": 3, "dd": "vest den va quan ao the thao"}, {"id": "7686941575322045717", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Quân phục", "cn": 4, "dd": "quan phuc ran ri quan doi"}, {"id": "7687493146506300690", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Quân phục", "cn": 4, "dd": "quan phuc mau den"}, {"id": "7687685379742272789", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Quân phục", "cn": 4, "dd": "trang phuc linh co trang"}, {"id": "7687924644233350431", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Quân phục", "cn": 4, "dd": "ao truyen thong den va quan phuc"}, {"id": "7686331164444953876", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Đồ bảo hộ", "cn": 5, "dd": "ao phan quang mu bao ho"}, {"id": "7687556707928575253", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Đồ bảo hộ", "cn": 5, "dd": "do bao ho mau trang"}, {"id": "7687675428072410382", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Đồ bảo hộ", "cn": 5, "dd": "dong phuc cuu hoa mau vang"}, {"id": "7687934866813357325", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Đồ bảo hộ", "cn": 5, "dd": "ao phan quang va ao blouse trang"}, {"id": "7688046245121740045", "lan": "kieu", "nhom": "Đồng phục", "kieu": "Đồ bảo hộ", "cn": 5, "dd": "dong phuc cuu hoa va ao phan quang"}, {"id": "7686475023606910215", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "bo lien than do deo mat na"}, {"id": "7686573852385611016", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "ao vest den deo mat na"}, {"id": "7686672955144801537", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "trang phuc den doi mu trang"}, {"id": "7686887835638484240", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "ao vest den deo mat na trang"}, {"id": "7687086121490173185", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "ao vest den mat na trang"}, {"id": "7687315024196537630", "lan": "kieu", "nhom": "Hóa trang", "kieu": "Đeo mặt nạ", "cn": 6, "dd": "ao choang mau do mat na"}, {"id": "7686280242817731871", "lan": "kieu", "nhom": "Truyền thống", "kieu": "Đồ truyền thống", "cn": 7, "dd": "trang phuc truyen thong mau trang"}, {"id": "7687806395353238805", "lan": "kieu", "nhom": "Truyền thống", "kieu": "Đồ truyền thống", "cn": 7, "dd": "hanbok truyen thong mau trang"}, {"id": "7687998056603634957", "lan": "kieu", "nhom": "Truyền thống", "kieu": "Đồ truyền thống", "cn": 7, "dd": "trang phuc truyen thong va giap trang"}, {"id": "7687455712745655573", "lan": "kieu", "nhom": "Thường phục", "kieu": "Áo thun", "cn": 8, "dd": "ao thun mau trang"}, {"id": "7688002125003099400", "lan": "kieu", "nhom": "Thường phục", "kieu": "Áo thun", "cn": 8, "dd": "ao thun trang in chu do"}];
+const COSAN = [{ten:"Strom Ai Mặc vest", n:5}];
+const trungCoSan = k => coInsight() && k.kieu==="Mặc vest";
+let S = "trong";
+const $ = (s, r=document) => r.querySelector(s);
+const kieuDs = []; const byK = {};
+V.filter(v=>v.lan==="kieu").forEach(v=>{ if(!byK[v.cn]){byK[v.cn]=[]; kieuDs.push({cn:v.cn,nhom:v.nhom,kieu:v.kieu});} byK[v.cn].push(v); });
+const nhoms = [...new Set(kieuDs.map(k=>k.nhom))];
+const hd = V.filter(v=>v.lan==="huong_dan"), nghi = V.filter(v=>v.lan==="nghi");
+const coInsight = () => !["trong","chua_hinh"].includes(S);
+const soThaoTac = () => ({trong:0,nhap:1,tach:3,gop:3,huy:3,chua_hinh:0,da_duyet:4})[S];
+function thumbs(ds, sel){ return `<div class="luoi">${ds.map((v,i)=>`<div class="t${sel&&i<sel?" sel":""}" title="${v.dd||""}"><img src="posters/${v.id}.webp" alt=""></div>`).join("")}</div>`; }
+function tenCum(k){ return coInsight() ? `Strom Ai ${k.kieu}` : `<i class="faint">(insight gốc) ${k.kieu}</i>`; }
+function render(){
+  const ch = S==="chua_hinh";
+  $("#tieude").innerHTML = ch ? "Chưa chia cụm" : `Hệ đã chia thành ${nhoms.length} nhóm · ${kieuDs.length} kiểu + làn riêng (thẻ chữ ${hd.length} · nghi ${nghi.length}) — ${S==="da_duyet"?"đã duyệt":"bản nháp"}`;
+  $("#trangthai").innerHTML = ch ? '<span class="chip nhap">Chưa phân tích hình — tầng hình chạy từ máy dev, người dùng bấm tay (không 24/7).</span>'
+    : S==="da_duyet" ? `<span class="chip ok"><b>Đã duyệt</b> ${kieuDs.length} kiểu → ${kieuDs.length-1} cụm mới + gộp “Mặc vest” vào cụm có sẵn “Strom Ai Mặc vest” (bạn đã xác nhận)</span>`
+    : '<span class="chip nhap"><b>Nháp</b> chưa vào taxonomy · “Tạo bộ” khoá tới khi duyệt</span><span class="chip">phân tích hình 27/09 08:41 · 4 lượt agy · trục: trang phục đám đông</span>';
+  const tr = !coInsight();
+  $("#fields").innerHTML = `<label>Usecase<input class="${tr?"trong":""}" placeholder="vd Motion" value="${tr?"":"Motion"}"></label>
+    <label>Insight gốc<input class="${tr?"trong":""}" placeholder="vd Strom Ai" value="${tr?"":"Strom Ai"}"></label>
+    <label>Chia theo<select class="ten" disabled title="Đổi trục = chia lại (Hủy lượt)"><option>Trang phục đám đông</option></select></label>`;
+  $("#nut").innerHTML = ch ? "" : S==="da_duyet" ? `<span class="faint mono">4 thao tác sửa · so với 54 nếu chia tay</span>`
+    : `<button class="btn pri" ${tr?"disabled":""}>Duyệt tất cả còn lại</button>
+       ${tr?`<div class="why">Điền <b>usecase</b> và <b>insight gốc</b> để duyệt — tên cụm = “&lt;insight gốc&gt; &lt;kiểu&gt;”.</div>`:""}
+       <button class="btn" id="huy-btn">Hủy lượt để chia lại…</button><button class="btn ghost">Hoàn tác</button>
+       <span class="faint mono">${soThaoTac()} thao tác sửa · so với 54 nếu chia tay</span>`;
+  let r = `<h3>Lượt này</h3>`;
+  if (ch) r += `<div class="ri"><span>Chưa vào cụm</span><span class="n">54</span></div>`;
+  else { for (const n of nhoms){ const ks=kieuDs.filter(k=>k.nhom===n); r += `<div class="ri"><span>${n}</span><span class="n">${ks.reduce((s,k)=>s+byK[k.cn].length,0)}</span></div>`; ks.forEach(k=> r+=`<div class="ri sub"><span>${k.kieu}</span><span class="n">${byK[k.cn].length}</span></div>`); }
+    r += `<div class="sep"></div><h3>Làn riêng</h3><div class="ri lan"><span>Hướng dẫn / thẻ chữ</span><span class="n">${hd.length}</span></div><div class="ri lan"><span>Nghi ngoài chủ đề</span><span class="n">${nghi.length}</span></div>`; }
+  r += `<div class="sep"></div><h3>Cụm của tôi (đã có)</h3>${COSAN.map(c=>`<div class="ri"><span>${c.ten}</span><span class="n">${S==="da_duyet"?c.n+10:c.n}</span></div>`).join("")}`;
+  $("#rail").innerHTML = r;
+  if (ch){ $("#main").innerHTML = `<div class="card empty"><h2 style="font-family:var(--display)">Chưa phân tích hình</h2>
+     <p class="muted">54 video đã tải. Hệ chưa chia cụm vì tầng hình chưa chạy. Chạy lệnh này trên máy dev (thử khô trước, thêm <code>--yes</code> để làm thật):</p>
+     <div class="cmd" style="max-width:560px;margin:0 auto"><code><span>bash</span> <span>scripts/phan-tich-hinh.sh</span> <span>--luot</span> <span>10</span></code><button class="btn ghost">Chép</button></div>
+     <p class="faint">Không có nút chạy ở đây: máy chủ không tự gọi được tầng hình.</p></div>`; $("#modal").innerHTML=""; return; }
+  let m = "";
+  for (const n of nhoms){
+    const ks = kieuDs.filter(k=>k.nhom===n); const tong = ks.reduce((s,k)=>s+byK[k.cn].length,0);
+    m += `<div class="card nhom" style="position:relative"><div class="nhom-h"><input class="ten" value="${n}"> <span class="tag ${S==="da_duyet"?"ok":"nhap"}">${S==="da_duyet"?"đã duyệt":"đề xuất"}</span><span class="muted">${tong} video · ${ks.length} kiểu</span><span class="sp"></span>
+      ${ks.length>1&&S!=="da_duyet"?`<button class="btn">Gộp cả nhóm thành 1 kiểu</button>`:""}</div>`;
+    for (const k of ks){
+      const pop = S==="gop" && k.kieu==="Học sinh";
+      m += `<div class="kieu" style="position:relative"><div class="kieu-h"><input class="ten" value="${k.kieu}"><span class="faint">${byK[k.cn].length} video · ${S==="da_duyet"&&k.kieu==="Mặc vest"?"<b>đã gộp vào “Strom Ai Mặc vest”</b> (cụm có sẵn)":"tên cụm: "+tenCum(k)}</span>${trungCoSan(k)&&S!=="da_duyet"?`<span class="tag nhap" title="D13: server hỏi trước khi gộp">trùng cụm có sẵn — duyệt sẽ hỏi gộp</span>`:""}<span class="sp" style="flex:1"></span>
+        ${S==="da_duyet"?"":`<button class="btn ghost" ${tr?"disabled title=\"Điền insight gốc trước (D18)\"":""}>Gộp vào cụm có sẵn ▾</button><button class="btn ghost">Xoá kiểu</button><button class="btn" ${tr?"disabled title=\"Điền insight gốc trước\"":""}>Duyệt kiểu này</button>`}
+        <button class="btn" ${S==="da_duyet"?"":"disabled title=\"Nháp chưa duyệt: server từ chối\""}>Tạo bộ tự tìm (${byK[k.cn].length})</button></div>
+        ${pop?`<div class="pop" style="top:40px"><div class="faint">Duyệt “${k.kieu}” bằng cách gộp ${byK[k.cn].length} video vào một cụm có sẵn của bạn (khác tên vẫn được):</div>${COSAN.map(c=>`<div><b>${c.ten}</b> <span class="faint">· ${c.n} video</span></div>`).join("")}<div class="faint">Video đã ở cụm khác của bạn được giữ nguyên chỗ. Không hoàn tác được — như mọi lần duyệt.</div></div>`:""}
+        ${thumbs(byK[k.cn], S==="tach"&&k.kieu==="Mặc vest"?3:0)}</div>`;
+    }
+    m += `</div>`;
+  }
+  {
+  m += `<div class="card nhom lan"><div class="nhom-h"><b>Hướng dẫn / thẻ chữ</b><span class="muted">${hd.length} video</span><span class="sp"></span><button class="btn">Thành kiểu “Hướng dẫn”</button><button class="btn">Đánh dấu ngoài chủ đề</button></div><div class="kieu">${thumbs(hd)}</div></div>`;
+  m += `<div class="card nhom lan"><div class="nhom-h"><b>Nghi ngoài chủ đề</b><span class="muted">${nghi.length} video · không xoá, không ẩn, không bao giờ vào bộ</span><span class="sp"></span><button class="btn">Đúng, bỏ khỏi lượt</button><button class="btn">Không, trả về kiểu…</button></div>
+    <div class="note">Vì sao nghi: tầng hình xếp “không có đám đông / không thuộc kiểu nào”, hoặc caption lệch chủ đề. Caption chỉ được TĂNG nghi, không gỡ nghi.</div><div class="kieu">${thumbs(nghi)}</div></div>`; }
+  $("#main").innerHTML = m;
+  $("#dachon").textContent = S==="tach" ? "3 video đã chọn" : "0 video đã chọn";
+  const mv = byK[kieuDs[0].cn];
+  $("#modal").innerHTML = S==="tach" ? `<div class="modal-bg"><div class="card modal"><h3>Kiểu mới từ 3 video đã chọn</h3>
+      <div class="mini-luoi">${mv.slice(0,3).map(v=>`<div class="t"><img src="posters/${v.id}.webp" alt=""></div>`).join("")}</div>
+      <label>Nhóm<select class="ten"><option>${kieuDs[0].nhom}</option>${nhoms.slice(1).map(n=>`<option>${n}</option>`).join("")}<option>+ nhóm mới…</option></select></label>
+      <label>Tên kiểu<input class="ten" value="Vest trắng"></label>
+      <div class="faint" style="margin-top:6px">Tên cụm khi duyệt: “Strom Ai Vest trắng”. Hoàn tác được.</div>
+      <div class="row"><button class="btn">Huỷ</button><button class="btn pri">Tạo kiểu</button></div></div></div>`
+    : S==="huy" ? `<div class="modal-bg"><div class="card modal"><h3>Hủy lượt này để chia lại?</h3>
+      <p class="muted" style="margin:0">Lượt có <b>3 thao tác sửa</b> — nhật ký vẫn được giữ, nhưng nháp này thôi hiệu lực. Kiểu đã duyệt (nếu có) vẫn là cụm thật, không bị chia lại.</p>
+      <label>Chia lại theo<select class="ten"><option>Trang phục đám đông</option><option>Trang phục người chính</option><option>Bối cảnh</option></select></label>
+      <div class="faint" style="margin-top:8px">Sau khi hủy, chạy trên máy dev (thử khô, thêm <code>--yes</code> để làm thật):</div>
+      <div class="cmd"><code><span>bash</span> <span>scripts/phan-tich-hinh.sh</span> <span>--luot</span> <span>10</span> <span>--truc</span> <span>trang_phuc_dam_dong</span></code><button class="btn ghost">Chép</button></div>
+      <div class="row"><button class="btn">Giữ nháp</button><button class="btn pri" style="background:var(--danger);border-color:var(--danger)">Hủy lượt</button></div></div></div>` : "";
+}
+document.querySelectorAll(".mockbar [data-s]").forEach(b => b.onclick = () => { S = b.dataset.s; mark(); render(); });
+function mark(){ document.querySelectorAll(".mockbar [data-s]").forEach(x=>x.classList.toggle("on", x.dataset.s===S)); }
+$("#theme").onclick = () => { const r=document.documentElement; r.dataset.theme = r.dataset.theme==="dark" ? "light" : "dark"; };
+const q = new URLSearchParams(location.search); if (q.get("s")) S = q.get("s"); if (q.get("theme")) document.documentElement.dataset.theme = q.get("theme");
+if (q.get("chup")) $("#dock").style.display = "none";
+mark(); render();
+</script></body></html>
