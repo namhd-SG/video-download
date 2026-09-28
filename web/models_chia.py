@@ -1000,7 +1000,17 @@ def duyet_het(db_path: Path, chia_lan_id: int, chu: str, chi_cua: str | None,
                 continue
             chi_tiet.append(ket)
             tong_gan += len(ket["gan"])
-        if chi_tiet:
+        # Lượt KHÔNG còn kiểu nháp nào NGAY TỪ ĐẦU (người dùng đã xoá kiểu
+        # cuối, hoặc máy đề xuất 0 kiểu — mọi video vào làn riêng): bấm "Duyệt
+        # tất cả" là cú bấm CHỐT ⇒ đóng lượt, như lần duyệt thường, kèm một
+        # dòng nhật ký (mỗi bấm = một dòng) và bump `the_he` (khoá hoàn tác).
+        # Trước đây nhánh dưới đòi `chi_tiet` ⇒ lượt kẹt `de_xuat` với 0 kiểu
+        # mãi (và chặn `nhap_de_xuat` vì đã có thao tác sửa). Còn `cum_nhap`
+        # mà không kiểu nào duyệt được (trùng/lỗi tên) thì KHÔNG đóng — để
+        # người dùng còn sửa. Video làn riêng vẫn ở thư viện, gán tay được.
+        # Không đua: `nhom_ids` đọc TRONG `BEGIN IMMEDIATE`, mọi đường ghi
+        # nháp cũng `BEGIN IMMEDIATE` ⇒ thao tác đến sau thấy `da_duyet`.
+        if chi_tiet or not nhom_ids:
             luc = _now()
             conn.execute(
                 "INSERT INTO thao_tac_duyet (chia_lan_id, chu, loai, so_video, "
@@ -1015,7 +1025,11 @@ def duyet_het(db_path: Path, chia_lan_id: int, chu: str, chi_cua: str | None,
             # còn `trung_cum_co_san` hoặc `loi_ten`) của cùng lượt.
             conn.execute("UPDATE chia_lan SET the_he = the_he + 1 WHERE id = ?", (chia_lan_id,))
             _chia_lan_xong_neu_het_kieu(conn, chia_lan_id, luc)
-    return {"cum": chi_tiet, "trung_cum_co_san": trung, "loi_ten": loi_ten}
+        # `da_dong`: lượt đã sang `da_duyet` sau lượt gọi này — UI không suy
+        # được từ ba danh sách (kiểu `loi` bị bỏ qua không vào danh sách nào).
+        da_dong = conn.execute("SELECT trang_thai FROM chia_lan WHERE id = ?",
+                               (chia_lan_id,)).fetchone()["trang_thai"] == "da_duyet"
+    return {"cum": chi_tiet, "trung_cum_co_san": trung, "loi_ten": loi_ten, "da_dong": da_dong}
 
 
 # ---------------------------------------------------------------------------
