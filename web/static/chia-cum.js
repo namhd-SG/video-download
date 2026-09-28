@@ -146,10 +146,22 @@
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
       showToast(errorDetailText(err));
+      if (!CC.open) return;
+      // Server báo lượt KHÔNG còn là nháp (tab mở từ trước khi duyệt/huỷ) —
+      // chỉ vẽ lại thì mọi nút sửa nháp còn nguyên và mỗi cú bấm sau lại 400.
+      // Tải lại dữ liệu để trang tự chuyển sang chế độ chỉ đọc.
+      if (typeof err.ma === "string" && /^lượt đang '/.test(err.ma)) {
+        try {
+          await refresh();
+        } catch (e) {
+          if (e instanceof PhienHetHan) baoPhienHetHan();
+        }
+        return;
+      }
       // Thao tác trượt có thể đã xoá `CC.selected` (dock) TRƯỚC khi gửi POST
       // (vd `dock-ngoai`/`dock-chuyen`) — vẽ lại để số hiện trên dock khớp
       // với `CC.selected` thật, không còn treo số cũ.
-      if (CC.open) render();
+      render();
     }
   }
 
@@ -677,10 +689,17 @@
   // khuôn `app.js::loaiDaChon`: cộng đủ ba con số, dừng ở lô đầu trượt và nói
   // rõ còn bao nhiêu chưa gửi. Mỗi id độc lập ở server (trash trượt ⇒ id đó
   // không ghi mốc) nên dừng giữa chừng không để lại trạng thái nửa vời.
+  //
+  // Loại là KHÔNG lùi được (Drive → Thùng rác), nên các lô đã gửi xong luôn
+  // phải được báo số và làn luôn phải vẽ lại — kể cả khi một lô sau hết phiên
+  // hay lượt tải lại làn trượt. Hết phiên chỉ được ném tiếp (để `guard` bật
+  // băng hết phiên) SAU khi đã báo tóm tắt.
   async function loaiTheoLo(ids) {
     const tong = { da_loai: 0, drive_truot: 0, khong_phai_cua_ban: 0 };
     let daGui = 0;
     let loi = null;
+    let hetPhien = null;
+    const daLoai = new Set();
     for (let i = 0; i < ids.length; i += LOAI_TOI_DA_MOI_LUOT) {
       const lo = ids.slice(i, i + LOAI_TOI_DA_MOI_LUOT);
       try {
@@ -688,20 +707,41 @@
         tong.da_loai += res.da_loai.length;
         tong.drive_truot += res.drive_truot.length;
         tong.khong_phai_cua_ban += res.khong_phai_cua_ban.length;
-        res.da_loai.forEach((v) => CC.selected.delete(v));
+        res.da_loai.forEach((v) => { CC.selected.delete(v); daLoai.add(v); });
         daGui += lo.length;
       } catch (err) {
-        if (err instanceof PhienHetHan) throw err;
-        loi = err;
+        if (err instanceof PhienHetHan) hetPhien = err;
+        else loi = err;
         break;
       }
     }
-    if (daGui > 0) await refresh();
+    let loiTaiLai = false;
+    if (daGui > 0) {
+      try {
+        await refresh();
+      } catch (err) {
+        if (err instanceof PhienHetHan) hetPhien = hetPhien || err;
+        else loiTaiLai = true;
+        // Không tải lại được (thường là cùng lúc hết phiên): tự bỏ video đã
+        // loại khỏi 2 làn tại chỗ, để làn không còn hiện video đã vào Thùng rác.
+        if (CC.data) {
+          CC.data.nghi = CC.data.nghi.filter((v) => !daLoai.has(v));
+          CC.data.huong_dan = CC.data.huong_dan.filter((v) => !daLoai.has(v));
+          render();
+        }
+      }
+    }
+    // Chưa gửi được lô nào mà đã hết phiên: không có gì để báo ngoài băng hết phiên.
+    if (hetPhien && daGui === 0) throw hetPhien;
+    const conLai = ids.length - daGui;
     const phan = [`Đã loại ${tong.da_loai} video`];
     if (tong.drive_truot) phan.push(`${tong.drive_truot} chưa bỏ được khỏi Drive — vẫn còn trong làn, bấm lại`);
     if (tong.khong_phai_cua_ban) phan.push(`${tong.khong_phai_cua_ban} không phải của bạn`);
-    if (loi) phan.push(`dừng giữa chừng (${errorDetailText(loi)}) — còn ${ids.length - daGui} video chưa gửi`);
+    if (loi) phan.push(`dừng giữa chừng (${errorDetailText(loi)}) — còn ${conLai} video chưa gửi`);
+    if (hetPhien && conLai > 0) phan.push(`phiên đăng nhập hết hạn — còn ${conLai} video chưa gửi`);
+    if (loiTaiLai) phan.push("chưa tải lại được làn — tải lại trang để xem");
     showToast(phan.join(" · "));
+    if (hetPhien) throw hetPhien;
   }
 
   async function duyet(body) {

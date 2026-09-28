@@ -652,6 +652,10 @@ def test_tab_cu_bam_nut_sua_sau_khi_da_duyet_toast_noi_tieng_nguoi(page, dulieu)
     toast = page.inner_text("#toast")
     assert toast == "Lượt này đã duyệt — không sửa nháp được nữa. Video đã vào cụm; sửa ở “Cụm của tôi”.", toast
     assert "da_duyet" not in toast and "de_xuat" not in toast
+    # Trang tự tải lại sang chế độ chỉ đọc — không còn nút nào để bấm tiếp mà 400
+    # lần nữa (ca thật: 8 cú bấm liền).
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
 
 
 
@@ -757,6 +761,38 @@ def test_loai_55_video_chat_lo_50_va_dung_giua_chung_bao_con_bao_nhieu(page, dul
         page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 5")
     else:
         assert toast == "Đã loại 55 video", toast
+
+
+@pytest.mark.parametrize("get_cung_het_phien", [False, True])
+def test_loai_lo_2_het_phien_van_bao_da_loai_50_va_lam_moi_lan(page, dulieu, get_cung_het_phien):
+    """Lô 1 đã loại 50 (không lùi được) rồi lô 2 hết phiên ⇒ vẫn phải báo
+    "Đã loại 50", làn không còn hiện 50 video đó, rồi mới bật băng hết phiên.
+    `get_cung_het_phien`: lượt tải lại làn cũng bị đẩy về trang đăng nhập (ca
+    hết phiên thật) ⇒ làn phải tự bỏ 50 video tại chỗ."""
+    job = _job_nghi_55(dulieu["db"])
+    _mo_lai(page, job)
+    goi = []
+    def ve_dang_nhap(route):
+        route.fulfill(status=302, headers={"Location": "/login"}, body="")
+    def chan(route):
+        goi.append(len(route.request.post_data_json["video_ids"]))
+        if len(goi) == 2:
+            if get_cung_het_phien:
+                page.route(f"**/chia/{job}", ve_dang_nhap)
+            ve_dang_nhap(route)
+        else:
+            route.continue_()
+    page.route("**/videos/loai", chan)
+    thumbs = page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t")
+    for i in range(55):
+        thumbs.nth(i).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert goi == [50, 5]
+    assert page.inner_text("#toast") == "Đã loại 50 video · phiên đăng nhập hết hạn — còn 5 video chưa gửi"
+    page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 5")
+    assert page.locator("#session-expired").is_visible()
 
 
 def test_tran_lo_loai_chia_khop_backend():
