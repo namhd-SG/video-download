@@ -658,6 +658,20 @@ def test_tab_cu_bam_nut_sua_sau_khi_da_duyet_toast_noi_tieng_nguoi(page, dulieu)
     assert page.locator(_NUT_SUA_NHAP).count() == 0
 
 
+def test_tab_cu_dang_mo_hop_huy_luot_thi_hop_dong_sau_khi_bao(page, dulieu):
+    """Tab cũ đang mở hộp "Hủy lượt" thì lượt được duyệt ở nơi khác: bấm xác
+    nhận ⇒ server 400 ⇒ trang sang chỉ đọc VÀ hộp phải đóng, không để lại nút
+    xác nhận bấm mãi vẫn 400."""
+    _mo_chia(page, dulieu["job_full"])
+    page.click('[data-cc-action="mo-huy"]')
+    assert page.locator('[data-cc-action="confirm-huy"]').count() == 1
+    _duyet_het_sau_lung(dulieu)
+    page.click('[data-cc-action="confirm-huy"]')
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator('#cc-modal [data-cc-action]').count() == 0
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
+
+
 
 # --- loại video ở làn Hướng dẫn / Nghi (thao tác THƯ VIỆN, chạy cả khi đã duyệt) ---
 

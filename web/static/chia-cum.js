@@ -151,6 +151,10 @@
       // chỉ vẽ lại thì mọi nút sửa nháp còn nguyên và mỗi cú bấm sau lại 400.
       // Tải lại dữ liệu để trang tự chuyển sang chế độ chỉ đọc.
       if (typeof err.ma === "string" && /^lượt đang '/.test(err.ma)) {
+        // Hộp xác nhận sửa nháp đang mở (vd Huỷ lượt) cũng phải đóng — nếu
+        // không nút xác nhận của nó còn đó và mỗi cú bấm lại 400.
+        CC.modal = null;
+        CC.popover = null;
         try {
           await refresh();
         } catch (e) {
