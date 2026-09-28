@@ -974,6 +974,9 @@ def test_kieu_rong_sau_khi_video_cuoi_bi_loai_o_thu_vien(page, dulieu):
     assert page.inner_text("#cc-tieude").startswith("Hệ đã chia thành 2 nhóm · 2 kiểu + làn riêng")
     dong_phuc = page.locator('[data-cc-nhom="Đồng phục"] .cc-nhom-h')
     assert "2 video · 1 kiểu" in dong_phuc.inner_text()
+    # Chỉ còn 1 kiểu có video ⇒ không có gì để "Gộp cả nhóm" (trước đây nút
+    # vẫn hiện và có thể gộp kiểu thật VÀO kiểu rỗng, mang tên kiểu rỗng).
+    assert dong_phuc.locator('[data-cc-action="gop-nhom"]').count() == 0
     assert "Thể thao" not in page.inner_text("#cc-rail")
     # Kiểu có video vẫn đủ nút như cũ (đối chứng).
     assert page.locator('.cc-kieu:not([data-cc-kieu-rong]) [data-cc-action="duyet-kieu"]').count() == 2
@@ -981,6 +984,21 @@ def test_kieu_rong_sau_khi_video_cuoi_bi_loai_o_thu_vien(page, dulieu):
     page.wait_for_function("!document.querySelector('[data-cc-kieu-rong]')")
     page.click('[data-cc-action="hoan-tac"]')
     page.wait_for_selector("[data-cc-kieu-rong]")
+
+
+def test_nhom_chi_con_kieu_rong_van_hien_va_tieu_de_khop_so_the(page, dulieu):
+    """Loại hết 3 video của "Mặc vest" ⇒ nhóm "Âu phục" chỉ còn kiểu rỗng. Thẻ
+    nhóm vẫn hiện (để bấm Xoá kiểu), nên tiêu đề đếm đúng số thẻ nhóm đang vẽ
+    (2), còn số kiểu chỉ đếm kiểu còn video (Học sinh + Thể thao = 2)."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    for vid in ids[0:3]:
+        _loai_o_thu_vien(db, vid)
+    _mo_lai(page, job)
+    assert page.locator(".cc-nhom:not(.cc-lan)").count() == 2
+    assert page.inner_text("#cc-tieude").startswith("Hệ đã chia thành 2 nhóm · 2 kiểu + làn riêng")
+    assert "0 video · 0 kiểu" in page.locator('[data-cc-nhom="Âu phục"] .cc-nhom-h').inner_text()
+    # Nhóm còn 2 kiểu có video thì vẫn gộp được (đối chứng cho nút gộp nhóm).
+    assert page.locator('[data-cc-nhom="Đồng phục"] [data-cc-action="gop-nhom"]').count() == 1
 
 
 def test_tab_cu_duyet_kieu_rong_bao_khong_tao_cum(page, dulieu):

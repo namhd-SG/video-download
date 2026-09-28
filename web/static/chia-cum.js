@@ -344,9 +344,11 @@
     if (empty) {
       tieude.textContent = "Chưa chia cụm";
     } else {
-      // Kiểu rỗng (xem `kieuBlockHtml`) không tính vào số nhóm/kiểu đã chia.
+      // Kiểu rỗng (xem `kieuBlockHtml`) không tính vào số kiểu đã chia. Số
+      // nhóm vẫn đếm mọi nhóm đang vẽ thẻ — nhóm chỉ còn kiểu rỗng vẫn hiện
+      // (để bấm "Xoá kiểu"), nên tiêu đề phải khớp số thẻ trên màn.
       const kieuCoVideo = data.kieu.filter((k) => k.video_ids.length);
-      const nNhom = new Set(kieuCoVideo.map((k) => k.nhom)).size;
+      const nNhom = new Set(nhomsOf(data)).size;
       const hau = data.trang_thai === "da_duyet" ? "— đã duyệt" : "— bản nháp";
       tieude.textContent =
         `Hệ đã chia thành ${nNhom} nhóm · ${kieuCoVideo.length} kiểu + làn riêng ` +
@@ -575,7 +577,7 @@
           <span class="chip cc-chip-nhap">đề xuất</span>`}
           <span class="muted">${tong} video · ${ks.filter((k) => k.video_ids.length).length} kiểu</span>
           <span class="cc-sp"></span>
-          ${!duyet && ks.length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
+          ${!duyet && ks.filter((k) => k.video_ids.length).length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
             `data-nhom="${escapeHtml(nhom)}">Gộp cả nhóm thành 1 kiểu</button>` : ""}
         </div>
         ${ks.map(kieuBlockHtml).join("")}
@@ -968,7 +970,9 @@
         }
         if (action === "gop-nhom") {
           const nhom = btn.dataset.nhom;
-          const ks = CC.data.kieu.filter((k) => k.nhom === nhom);
+          // Chỉ gộp kiểu CÒN video — kiểu rỗng không được làm ĐÍCH (kiểu thật
+          // sẽ mang tên nó) và cũng không cần kéo theo (nó chờ "Xoá kiểu").
+          const ks = CC.data.kieu.filter((k) => k.nhom === nhom && k.video_ids.length);
           if (ks.length < 2) return;
           const [den, ...tu] = ks;
           await thaoTac("gop_nhom", {
