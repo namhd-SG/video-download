@@ -499,11 +499,18 @@
     // `cum_id=null`) ⇒ không vẽ duyệt/gộp/tạo bộ, chỉ còn đường "Xoá kiểu"
     // (hoàn tác được).
     if (!k.video_ids.length) {
+      // MỌI kiểu còn lại đều rỗng: xoá kiểu cuối để lượt kẹt ở `de_xuat` với 0
+      // kiểu (server không tự đóng lượt khi xoá). "Duyệt tất cả" lúc kiểu rỗng
+      // còn đó thì đóng lượt đúng ⇒ chỉ sang nút đó thay vì "Xoá kiểu".
+      const toanRong = CC.data.kieu.every((x) => !x.video_ids.length);
+      const bao = toanRong
+        ? "Các kiểu còn lại không còn video — bấm Duyệt tất cả để đóng lượt."
+        : "Kiểu này không còn video (đã loại hoặc đã vào cụm) — bấm Xoá kiểu.";
       return `
       <div class="cc-kieu" data-cum-nhap-id="${k.cum_nhap_id}" data-cc-kieu-rong>
         <div class="cc-kieu-h">
           <b class="cc-ten">${escapeHtml(k.kieu)}</b>
-          <span class="cc-faint">Kiểu này không còn video (đã loại hoặc đã vào cụm) — bấm Xoá kiểu.</span>
+          <span class="cc-faint">${bao}</span>
           <span class="cc-sp"></span>
           <button type="button" class="btn ghost" data-cc-action="xoa-kieu"
             data-cum-nhap-id="${k.cum_nhap_id}">Xoá kiểu</button>
