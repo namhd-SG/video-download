@@ -594,3 +594,60 @@ def test_refresh_bo_qua_phan_hoi_cu_ve_muon_hon(page, dulieu):
 
     assert page.input_value('[data-cc-field="usecase"]') == "Moi", \
         "GET #1 (cũ, giao SAU) về SAU nhưng phải bị BỎ theo seq — không được ghi đè lại giá trị MỚI"
+
+
+# --- lượt đã duyệt: không vẽ nút sửa nháp nào (server từ chối tất cả) ------
+
+_NUT_SUA_NHAP = ", ".join([
+    '[data-cc-action="hd-thanh-kieu"]', '[data-cc-action="hd-ngoai-chu-de"]',
+    '[data-cc-action="toggle-tra-ve"]', '[data-cc-action="gop-nhom"]',
+    '[data-cc-action="toggle-gop"]', '[data-cc-action="xoa-kieu"]',
+    '[data-cc-action="duyet-kieu"]', '[data-cc-action="duyet-het"]',
+    '[data-cc-action="hoan-tac"]', "[data-cc-kieu-rename]", "[data-cc-nhom-rename]",
+])
+
+
+def _duyet_het_sau_lung(dulieu) -> None:
+    """Duyệt hết lượt thẳng ở server (như một tab khác vừa bấm "Duyệt tất cả")."""
+    db, job = dulieu["db"], dulieu["job_full"]
+    lan = models_chia.lay_chia_theo_job(db, job, NGUOI)
+    models_chia.duyet_het(db, lan["id"], NGUOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia_theo_job(db, job, NGUOI)["trang_thai"] == "da_duyet"
+
+
+def test_luot_da_duyet_khong_con_nut_sua_nhap_va_bao_ro(page, dulieu):
+    """Ca thật 28/09 14:49: user duyệt tất cả lượt #10 rồi bấm "Thành kiểu
+    ‘Hướng dẫn’" 8 lần, cả 8 bị server chặn (400). Lượt đã duyệt thì trang
+    không được vẽ nút sửa nháp nào; ô usecase/insight chỉ đọc; không chọn
+    thumb được; có một dòng nói rõ sửa ở đâu."""
+    _mo_chia(page, dulieu["job_full"])
+    assert page.locator(_NUT_SUA_NHAP).count() > 0, "đối chứng: nháp còn mở thì PHẢI có nút sửa"
+
+    _duyet_het_sau_lung(dulieu)
+    page.reload()
+    page.wait_for_selector("#queue-list li")
+    _mo_chia(page, dulieu["job_full"])
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
+    assert "Lượt đã duyệt — video đã vào cụm; sửa ở “Cụm của tôi”." in page.inner_text("#cc-main")
+    assert page.locator('[data-cc-field="usecase"]').is_disabled()
+    assert page.locator('[data-cc-field="insight_goc"]').is_disabled()
+    # Làn Hướng dẫn/Nghi vẫn hiện video, nhưng bấm thumb không mở dock.
+    assert page.locator(".cc-t").count() == 4
+    page.locator(".cc-t").first.click()
+    assert page.locator("#cc-dock").is_hidden()
+    assert page.locator(".cc-t.sel").count() == 0, "không được hiện dấu 'đã chọn' khi không còn thao tác nào"
+
+
+def test_tab_cu_bam_nut_sua_sau_khi_da_duyet_toast_noi_tieng_nguoi(page, dulieu):
+    """Tab mở TRƯỚC khi lượt được duyệt vẫn còn nút cũ — bấm thì server trả
+    câu kỹ thuật "lượt đang 'da_duyet' …"; toast phải là câu người đọc được."""
+    _mo_chia(page, dulieu["job_full"])
+    _duyet_het_sau_lung(dulieu)
+    page.click('[data-cc-action="hd-thanh-kieu"]')
+    page.wait_for_function(
+        "!document.getElementById('toast').hidden && "
+        "document.getElementById('toast').textContent.includes('đã duyệt')")
+    toast = page.inner_text("#toast")
+    assert toast == "Lượt này đã duyệt — không sửa nháp được nữa. Video đã vào cụm; sửa ở “Cụm của tôi”.", toast
+    assert "da_duyet" not in toast and "de_xuat" not in toast

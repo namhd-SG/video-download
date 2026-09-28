@@ -123,7 +123,15 @@
         return TU_CHOI_TEXT[err.ma.tu_choi] || "Thao tác không hợp lệ.";
       }
     }
-    if (typeof err.ma === "string") return TU_CHOI_TEXT[err.ma] || err.ma;
+    if (typeof err.ma === "string") {
+      // `_kiem_trang_thai_de_xuat` trả CÂU (không phải mã) — tab mở từ trước
+      // khi lượt được duyệt vẫn còn nút sửa và chạm vào đây.
+      if (/^lượt đang 'da_duyet'/.test(err.ma)) {
+        return "Lượt này đã duyệt — không sửa nháp được nữa. Video đã vào cụm; sửa ở “Cụm của tôi”.";
+      }
+      if (/^lượt đang '/.test(err.ma)) return "Lượt này không còn là bản nháp — tải lại trang để xem trạng thái mới.";
+      return TU_CHOI_TEXT[err.ma] || err.ma;
+    }
     if (Array.isArray(err.ma)) return err.ma.map((e) => e.msg || JSON.stringify(e)).join("; ");
     return err.message || "Thao tác không thực hiện được";
   }
@@ -204,6 +212,14 @@
   // ==========================================================================
   function chuaCoNhap() {
     return !CC.data || CC.data.trang_thai === "cho_hinh" || CC.data.trang_thai === "huy";
+  }
+
+  // Lượt đã duyệt: server từ chối MỌI thao tác sửa nháp (`models_chia.
+  // _kiem_trang_thai_de_xuat`, có chủ ý — sửa sau duyệt hồi sinh nháp trong một
+  // lượt đã chốt). Trang không vẽ bất kỳ nút/ô sửa nháp nào ở trạng thái này:
+  // một nút chắc chắn bị từ chối chỉ để người dùng bấm hoài vào lỗi 400.
+  function daDuyet() {
+    return !!CC.data && CC.data.trang_thai === "da_duyet";
   }
 
   function insightTrong() {
@@ -319,11 +335,13 @@
       fields.innerHTML = "";
     } else {
       const axisLabel = AXIS_LABEL[data.truc] || data.truc || "(chưa đặt)";
+      // Đã duyệt ⇒ ô chỉ đọc: đổi ở đây là một `doi_insight` mà server từ chối.
+      const khoa = daDuyet() ? ' disabled title="Lượt đã duyệt — tên cụm đã chốt"' : "";
       fields.innerHTML = `
         <label>Usecase<input type="text" class="${tr ? "cc-trong" : ""}" data-cc-field="usecase"
-          placeholder="vd Motion" value="${escapeHtml(data.usecase || "")}"></label>
+          placeholder="vd Motion" value="${escapeHtml(data.usecase || "")}"${khoa}></label>
         <label>Insight gốc<input type="text" class="${tr ? "cc-trong" : ""}" data-cc-field="insight_goc"
-          placeholder="vd Strom Ai" value="${escapeHtml(data.insight_goc || "")}"></label>
+          placeholder="vd Strom Ai" value="${escapeHtml(data.insight_goc || "")}"${khoa}></label>
         <label>Chia theo<select disabled title="Đổi trục = chia lại (Hủy lượt)">
           <option>${escapeHtml(axisLabel)}</option></select></label>`;
     }
@@ -380,8 +398,11 @@
 
   function thumbsHtml(videoIds) {
     if (videoIds.length === 0) return "";
+    // Đã duyệt ⇒ không chọn được (không còn thao tác nào trên tập chọn).
+    const chonDuoc = !daDuyet();
     return `<div class="cc-luoi">` + videoIds.map((vid) =>
-      `<div class="cc-t${CC.selected.has(vid) ? " sel" : ""}" data-cc-video="${escapeHtml(vid)}">` +
+      `<div class="cc-t${chonDuoc && CC.selected.has(vid) ? " sel" : ""}"` +
+      (chonDuoc ? ` data-cc-video="${escapeHtml(vid)}"` : "") + `>` +
       `<img src="/thumbs/${escapeHtml(vid)}" loading="lazy" alt=""></div>`
     ).join("") + `</div>`;
   }
@@ -393,6 +414,16 @@
       ? `<span class="cc-tag cc-tag-nhap" title="D13: server hỏi trước khi gộp">trùng cụm có sẵn — duyệt sẽ hỏi gộp</span>`
       : "";
     const popKey = `gop-${k.cum_nhap_id}`;
+    if (daDuyet()) {
+      return `
+      <div class="cc-kieu" data-cum-nhap-id="${k.cum_nhap_id}">
+        <div class="cc-kieu-h">
+          <b class="cc-ten">${escapeHtml(k.kieu)}</b>
+          <span class="cc-faint">${k.video_ids.length} video · tên cụm: ${tenCumHien(k)}</span>
+        </div>
+        ${thumbsHtml(k.video_ids)}
+      </div>`;
+    }
     return `
       <div class="cc-kieu" data-cum-nhap-id="${k.cum_nhap_id}">
         <div class="cc-kieu-h">
@@ -446,17 +477,21 @@
       return;
     }
     const data = CC.data;
-    let m = "";
+    const duyet = daDuyet();
+    let m = duyet
+      ? `<div class="card cc-note" data-cc-da-duyet>Lượt đã duyệt — video đã vào cụm; sửa ở “Cụm của tôi”.</div>`
+      : "";
     for (const nhom of nhomsOf(data)) {
       const ks = data.kieu.filter((k) => k.nhom === nhom);
       const tong = ks.reduce((s, k) => s + k.video_ids.length, 0);
       m += `<div class="card cc-nhom" data-cc-nhom="${escapeHtml(nhom)}">
         <div class="cc-nhom-h">
-          <input class="cc-ten" data-cc-nhom-rename data-cc-nhom-cur="${escapeHtml(nhom)}" value="${escapeHtml(nhom)}">
-          <span class="chip cc-chip-nhap">đề xuất</span>
+          ${duyet ? `<b class="cc-ten">${escapeHtml(nhom)}</b>`
+            : `<input class="cc-ten" data-cc-nhom-rename data-cc-nhom-cur="${escapeHtml(nhom)}" value="${escapeHtml(nhom)}">
+          <span class="chip cc-chip-nhap">đề xuất</span>`}
           <span class="muted">${tong} video · ${ks.length} kiểu</span>
           <span class="cc-sp"></span>
-          ${ks.length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
+          ${!duyet && ks.length > 1 ? `<button type="button" class="btn" data-cc-action="gop-nhom" ` +
             `data-nhom="${escapeHtml(nhom)}">Gộp cả nhóm thành 1 kiểu</button>` : ""}
         </div>
         ${ks.map(kieuBlockHtml).join("")}
@@ -465,8 +500,8 @@
     m += `<div class="card cc-nhom cc-lan">
       <div class="cc-nhom-h"><b>Hướng dẫn / thẻ chữ</b><span class="muted">${data.huong_dan.length} video</span>
         <span class="cc-sp"></span>
-        <button type="button" class="btn" data-cc-action="hd-thanh-kieu">Thành kiểu “Hướng dẫn”</button>
-        <button type="button" class="btn" data-cc-action="hd-ngoai-chu-de">Đánh dấu ngoài chủ đề</button>
+        ${duyet ? "" : `<button type="button" class="btn" data-cc-action="hd-thanh-kieu">Thành kiểu “Hướng dẫn”</button>
+        <button type="button" class="btn" data-cc-action="hd-ngoai-chu-de">Đánh dấu ngoài chủ đề</button>`}
       </div>
       ${thumbsHtml(data.huong_dan)}
     </div>`;
@@ -474,10 +509,10 @@
       <div class="cc-nhom-h"><b>Nghi ngoài chủ đề</b>
         <span class="muted">${data.nghi.length} video · không xoá, không ẩn, không bao giờ vào bộ</span>
         <span class="cc-sp"></span>
-        <span class="pop-wrap">
+        ${duyet ? "" : `<span class="pop-wrap">
           <div class="popover" data-cc-popover="traVe" hidden></div>
           <button type="button" class="btn" data-cc-action="toggle-tra-ve">Không, trả về kiểu…</button>
-        </span>
+        </span>`}
       </div>
       <div class="cc-note">Video ở làn này không vào cụm nào khi duyệt. Vì sao nghi: tầng hình xếp ` +
         `“không có đám đông / không thuộc kiểu nào”, hoặc caption lệch chủ đề. Caption chỉ được TĂNG ` +
@@ -512,7 +547,7 @@
   function renderDock() {
     const dock = document.getElementById("cc-dock");
     const n = CC.selected.size;
-    dock.hidden = chuaCoNhap();
+    dock.hidden = chuaCoNhap() || daDuyet();
     document.getElementById("cc-dachon").textContent = `${n} video đã chọn`;
     const chuyenPop = document.getElementById("cc-chuyen-popover");
     if (chuyenPop) {
