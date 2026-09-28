@@ -1049,7 +1049,9 @@ def test_xoa_kieu_cuoi_roi_duyet_tat_ca_dong_luot(page, dulieu):
     for con in (2, 1, 0):
         page.locator('[data-cc-kieu-rong] [data-cc-action="xoa-kieu"]').first.click()
         page.wait_for_function(f"document.querySelectorAll('.cc-kieu').length === {con}")
-    page.wait_for_timeout(3400)   # để toast của lần xoá cuối tự ẩn
+    # Chờ ô toast ẩn (nếu còn toast nào trước đó) để bắt đúng toast ĐẦU TIÊN
+    # của cú bấm Duyệt tất cả — xoá kiểu thành công không tự bật toast.
+    page.wait_for_function("document.getElementById('toast').hidden")
     toast = _toast_dau_tien_sau(page, lambda: page.click('[data-cc-action="duyet-het"]'))
     assert toast == "Đã đóng lượt — không còn kiểu nào để duyệt."
     page.wait_for_selector("[data-cc-da-duyet]")
