@@ -952,6 +952,56 @@ def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):
     assert [nut.nth(i).is_disabled() for i in range(4)] == [True] * 4
 
 
+def _loai_o_thu_vien(db, vid: str) -> None:
+    """Như bấm Loại ở thư viện / tab khác: chỉ đánh dấu video, nháp chia giữ nguyên hàng."""
+    with models._connect(db) as conn:
+        conn.execute("UPDATE videos SET da_loai_luc = '2026-09-28T11:00:00+00:00' WHERE video_id = ?", (vid,))
+
+
+def test_kieu_rong_sau_khi_video_cuoi_bi_loai_o_thu_vien(page, dulieu):
+    """Kiểu "Thể thao" chỉ có 1 video; loại video đó ở thư viện ⇒ kiểu RỖNG:
+    không còn nút duyệt/gộp/tạo bộ, có dòng báo + "Xoá kiểu"; tiêu đề, khối
+    nhóm và rail không đếm nó; xoá được và hoàn tác được."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _loai_o_thu_vien(db, ids[5])
+    _mo_lai(page, job)
+    rong = page.locator("[data-cc-kieu-rong]")
+    assert rong.count() == 1
+    assert "Kiểu này không còn video (đã loại hoặc đã vào cụm) — bấm Xoá kiểu." in rong.inner_text()
+    for nut in ("duyet-kieu", "toggle-gop"):
+        assert rong.locator(f'[data-cc-action="{nut}"]').count() == 0
+    assert "Tạo bộ tự tìm" not in rong.inner_text()
+    assert page.inner_text("#cc-tieude").startswith("Hệ đã chia thành 2 nhóm · 2 kiểu + làn riêng")
+    dong_phuc = page.locator('[data-cc-nhom="Đồng phục"] .cc-nhom-h')
+    assert "2 video · 1 kiểu" in dong_phuc.inner_text()
+    assert "Thể thao" not in page.inner_text("#cc-rail")
+    # Kiểu có video vẫn đủ nút như cũ (đối chứng).
+    assert page.locator('.cc-kieu:not([data-cc-kieu-rong]) [data-cc-action="duyet-kieu"]').count() == 2
+    rong.locator('[data-cc-action="xoa-kieu"]').click()
+    page.wait_for_function("!document.querySelector('[data-cc-kieu-rong]')")
+    page.click('[data-cc-action="hoan-tac"]')
+    page.wait_for_selector("[data-cc-kieu-rong]")
+
+
+def test_tab_cu_duyet_kieu_rong_bao_khong_tao_cum(page, dulieu):
+    """Tab mở trước khi video cuối của kiểu bị loại vẫn còn nút "Duyệt kiểu
+    này"; server trả `cum_id=null` ⇒ toast không được nói "đã tạo cụm mới"."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _mo_chia(page, job)
+    page.fill('[data-cc-field="usecase"]', "Dance")
+    page.fill('[data-cc-field="insight_goc"]', "Badaboum")
+    page.locator('[data-cc-field="insight_goc"]').blur()
+    page.wait_for_load_state("networkidle")
+    _loai_o_thu_vien(db, ids[5])
+    the_thao = page.locator(".cc-kieu", has=page.locator('input[value="Thể thao"]'))
+    assert page.locator("#toast").is_hidden()
+    the_thao.locator('[data-cc-action="duyet-kieu"]').click()
+    page.wait_for_function("!document.getElementById('toast').hidden")
+    assert page.inner_text("#toast") == "Kiểu không còn video — không tạo cụm."
+    with models._connect(db) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM cum").fetchone()[0] == 0
+
+
 def test_tran_lo_loai_chia_khop_backend():
     import re
     src = (Path(__file__).resolve().parent.parent / "web" / "static" / "chia-cum.js").read_text()
