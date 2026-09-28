@@ -594,3 +594,276 @@ def test_refresh_bo_qua_phan_hoi_cu_ve_muon_hon(page, dulieu):
 
     assert page.input_value('[data-cc-field="usecase"]') == "Moi", \
         "GET #1 (cũ, giao SAU) về SAU nhưng phải bị BỎ theo seq — không được ghi đè lại giá trị MỚI"
+
+
+# --- lượt đã duyệt: không vẽ nút sửa nháp nào (server từ chối tất cả) ------
+
+_NUT_SUA_NHAP = ", ".join([
+    '[data-cc-action="hd-thanh-kieu"]', '[data-cc-action="hd-ngoai-chu-de"]',
+    '[data-cc-action="toggle-tra-ve"]', '[data-cc-action="gop-nhom"]',
+    '[data-cc-action="toggle-gop"]', '[data-cc-action="xoa-kieu"]',
+    '[data-cc-action="duyet-kieu"]', '[data-cc-action="duyet-het"]',
+    '[data-cc-action="hoan-tac"]', "[data-cc-kieu-rename]", "[data-cc-nhom-rename]",
+])
+
+
+def _duyet_het_sau_lung(dulieu) -> None:
+    """Duyệt hết lượt thẳng ở server (như một tab khác vừa bấm "Duyệt tất cả")."""
+    db, job = dulieu["db"], dulieu["job_full"]
+    lan = models_chia.lay_chia_theo_job(db, job, NGUOI)
+    models_chia.duyet_het(db, lan["id"], NGUOI, None, "Dance", "Badaboum")
+    assert models_chia.lay_chia_theo_job(db, job, NGUOI)["trang_thai"] == "da_duyet"
+
+
+def test_luot_da_duyet_khong_con_nut_sua_nhap_va_bao_ro(page, dulieu):
+    """Ca thật 28/09 14:49: user duyệt tất cả lượt #10 rồi bấm "Thành kiểu
+    ‘Hướng dẫn’" 8 lần, cả 8 bị server chặn (400). Lượt đã duyệt thì trang
+    không được vẽ nút sửa nháp nào; ô usecase/insight chỉ đọc; không chọn
+    thumb được; có một dòng nói rõ sửa ở đâu."""
+    _mo_chia(page, dulieu["job_full"])
+    assert page.locator(_NUT_SUA_NHAP).count() > 0, "đối chứng: nháp còn mở thì PHẢI có nút sửa"
+
+    _duyet_het_sau_lung(dulieu)
+    page.reload()
+    page.wait_for_selector("#queue-list li")
+    _mo_chia(page, dulieu["job_full"])
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
+    assert "Lượt đã duyệt — video đã vào cụm; sửa ở “Cụm của tôi”." in page.inner_text("#cc-main")
+    assert page.locator('[data-cc-field="usecase"]').is_disabled()
+    assert page.locator('[data-cc-field="insight_goc"]').is_disabled()
+    assert page.locator('#cc-fields select').is_disabled(), "'Chia theo' chỉ hiển thị"
+    # Làn Hướng dẫn/Nghi vẫn hiện video (chọn được để LOẠI — test riêng bên dưới),
+    # nhưng dock sửa nháp không bao giờ hiện.
+    assert page.locator(".cc-t").count() == 4
+    page.locator(".cc-t").first.click()
+    assert page.locator("#cc-dock").is_hidden()
+
+
+def test_tab_cu_bam_nut_sua_sau_khi_da_duyet_toast_noi_tieng_nguoi(page, dulieu):
+    """Tab mở TRƯỚC khi lượt được duyệt vẫn còn nút cũ — bấm thì server trả
+    câu kỹ thuật "lượt đang 'da_duyet' …"; toast phải là câu người đọc được."""
+    _mo_chia(page, dulieu["job_full"])
+    _duyet_het_sau_lung(dulieu)
+    page.click('[data-cc-action="hd-thanh-kieu"]')
+    page.wait_for_function(
+        "!document.getElementById('toast').hidden && "
+        "document.getElementById('toast').textContent.includes('đã duyệt')")
+    toast = page.inner_text("#toast")
+    assert toast == "Lượt này đã duyệt — không sửa nháp được nữa. Video đã vào cụm; sửa ở “Cụm của tôi”.", toast
+    assert "da_duyet" not in toast and "de_xuat" not in toast
+    # Trang tự tải lại sang chế độ chỉ đọc — không còn nút nào để bấm tiếp mà 400
+    # lần nữa (ca thật: 8 cú bấm liền).
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
+
+
+def test_tab_cu_dang_mo_hop_huy_luot_thi_hop_dong_sau_khi_bao(page, dulieu):
+    """Tab cũ đang mở hộp "Hủy lượt" thì lượt được duyệt ở nơi khác: bấm xác
+    nhận ⇒ server 400 ⇒ trang sang chỉ đọc VÀ hộp phải đóng, không để lại nút
+    xác nhận bấm mãi vẫn 400."""
+    _mo_chia(page, dulieu["job_full"])
+    page.click('[data-cc-action="mo-huy"]')
+    assert page.locator('[data-cc-action="confirm-huy"]').count() == 1
+    _duyet_het_sau_lung(dulieu)
+    page.click('[data-cc-action="confirm-huy"]')
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator('#cc-modal [data-cc-action]').count() == 0
+    assert page.locator(_NUT_SUA_NHAP).count() == 0
+
+
+
+# --- loại video ở làn Hướng dẫn / Nghi (thao tác THƯ VIỆN, chạy cả khi đã duyệt) ---
+
+def _dat_trang_thai(db, job, trang_thai: str) -> None:
+    lan = models_chia.lay_chia_theo_job(db, job, NGUOI)
+    with models._connect(db) as conn:
+        conn.execute("UPDATE chia_lan SET trang_thai = ? WHERE id = ?", (trang_thai, lan["id"]))
+
+
+def _mo_lai(page, job) -> None:
+    page.reload()
+    page.wait_for_selector("#queue-list li")
+    _mo_chia(page, job)
+
+
+def test_luot_da_duyet_chi_lan_huong_dan_nghi_chon_duoc_kieu_thuong_thi_khong(page, dulieu):
+    """Chéo (i)×(ii): lượt đã duyệt ⇒ thumb của KIỂU THƯỜNG không chọn được
+    (không còn thao tác sửa nháp), còn thumb ở 2 làn Hướng dẫn/Nghi chọn được
+    (để loại) và có ô tích + nút đếm đúng."""
+    db, job = dulieu["db"], dulieu["job_full"]
+    _dat_trang_thai(db, job, "da_duyet")   # giữ nguyên video trong kiểu để có thumb kiểu thường
+    _mo_lai(page, job)
+    page.wait_for_selector("[data-cc-da-duyet]")
+    assert page.locator(".cc-kieu .cc-t").count() == 6
+    assert page.locator(".cc-kieu .cc-t[data-cc-video]").count() == 0
+    assert page.locator(".cc-nhom.cc-lan .cc-t[data-cc-video]").count() == 4
+    assert page.locator(".cc-nhom.cc-lan .cc-chk").count() == 4
+    assert page.locator('[data-cc-loai-trong="nghi"]').is_disabled()
+    page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t").first.click()
+    assert page.locator(".cc-nhom.cc-lan .cc-t.sel").count() == 1
+    assert page.inner_text('[data-cc-action="loai-lan"][data-lan="nghi"]') == "Loại 1 video đã chọn…"
+
+
+def test_loai_video_o_lan_nghi_sau_khi_duyet_bien_khoi_lan_va_bao_du_so(page, dulieu):
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    _duyet_het_sau_lung(dulieu)
+    _mo_lai(page, job)
+    nghi = page.locator(".cc-nhom.cc-lan").nth(1)
+    nghi.locator(".cc-t").nth(0).click()
+    nghi.locator(".cc-t").nth(1).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    assert "Loại 2 video khỏi thư viện?" in page.inner_text("#cc-modal")
+    assert "Không có nút khôi phục" in page.inner_text("#cc-modal")
+    with page.expect_response(lambda r: r.url.endswith("/videos/loai")):
+        page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert page.inner_text("#toast") == "Đã loại 2 video"
+    _nhin_thay(page, "#toast")
+    # Toast nổi trên cả lớp phủ màn chia (gồm hộp xác nhận) ⇒ không được bắt chuột.
+    assert page.evaluate("getComputedStyle(document.getElementById('toast')).pointerEvents") == "none"
+    page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 0")
+    with models._connect(db) as conn:
+        da = {r[0] for r in conn.execute("SELECT video_id FROM videos WHERE da_loai_luc IS NOT NULL")}
+    assert da == set(ids[8:10]), "đúng 2 video làn Nghi, không đụng video khác"
+    assert page.locator(".cc-nhom.cc-lan").nth(0).locator(".cc-t").count() == 2, "làn Hướng dẫn không đổi"
+
+
+def test_huy_hop_xac_nhan_khong_loai_gi(page, dulieu):
+    _mo_chia(page, dulieu["job_full"])
+    goi = []
+    page.on("request", lambda r: goi.append(r.url) if r.url.endswith("/videos/loai") else None)
+    page.locator(".cc-nhom.cc-lan").nth(0).locator(".cc-t").first.click()
+    page.click('[data-cc-action="loai-lan"][data-lan="huong_dan"]')
+    page.click('#cc-modal [data-cc-action="modal-close"]')
+    page.wait_for_timeout(300)
+    assert goi == []
+    assert page.locator(".cc-nhom.cc-lan").nth(0).locator(".cc-t").count() == 2
+
+
+def _job_nghi_55(db) -> int:
+    job = _job_voi_video(db, 57)
+    ids = [f"77{job:03d}{i:04d}" for i in range(57)]
+    nhoms = [{"nhom": "Âu phục", "kieu": [{"kieu": "Mặc vest", "video_ids": ids[:2]}]}]
+    ket = models_chia.nhap_de_xuat(db, job, "vision:v1", "trang_phuc_dam_dong", nhoms, [], ids[2:], [])
+    assert ket is not None and not ket["bo_vi_loc"]
+    return job
+
+
+@pytest.mark.parametrize("lo2_loi", [False, True])
+def test_loai_55_video_chat_lo_50_va_dung_giua_chung_bao_con_bao_nhieu(page, dulieu, lo2_loi):
+    """55 video ở làn Nghi ⇒ 2 lượt gọi (50 + 5), vì server chặn cứng 50 id.
+    Lượt 2 trượt ⇒ dừng, báo đã loại 50 + còn 5 chưa gửi; làn còn 5."""
+    job = _job_nghi_55(dulieu["db"])
+    _mo_lai(page, job)
+    goi = []
+    def chan(route):
+        goi.append(len(route.request.post_data_json["video_ids"]))
+        if lo2_loi and len(goi) == 2:
+            route.fulfill(status=500, body="{}", content_type="application/json")
+        else:
+            route.continue_()
+    page.route("**/videos/loai", chan)
+    thumbs = page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t")
+    assert thumbs.count() == 55
+    for i in range(55):
+        thumbs.nth(i).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert goi == [50, 5]
+    toast = page.inner_text("#toast")
+    if lo2_loi:
+        assert toast.startswith("Đã loại 50 video") and "còn 5 video chưa gửi" in toast, toast
+        page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 5")
+    else:
+        assert toast == "Đã loại 55 video", toast
+
+
+def _nhin_thay(page, sel: str) -> None:
+    """Phần tử có THẬT SỰ lộ ra mắt người không — không phải chỉ `hidden=false`
+    và đúng chữ: điểm giữa của nó phải trúng chính nó (hoặc con của nó), không
+    trúng một lớp phủ nằm trên (ca `.toast` z 40 dưới `#chia-view` z 50)."""
+    trung = page.evaluate("""(sel) => {
+      const el = document.querySelector(sel);
+      if (!el || el.hidden) return "không hiện";
+      el.scrollIntoView({block: "nearest"});
+      const r = el.getBoundingClientRect();
+      // `.toast` cố ý `pointer-events: none` (không chặn nút bên dưới) mà
+      // elementFromPoint bỏ qua phần tử như thế — bật tạm để chỉ đo THỨ TỰ LỚP.
+      const cu = el.style.pointerEvents;
+      el.style.pointerEvents = "auto";
+      const o = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      el.style.pointerEvents = cu;
+      return o && el.contains(o) ? "trúng" : (o ? (o.id || o.className || o.tagName) : "null");
+    }""", sel)
+    assert trung == "trúng", f"{sel}: điểm giữa trúng {trung!r}"
+
+
+@pytest.mark.parametrize("get_cung_het_phien", [False, True])
+def test_loai_lo_2_het_phien_van_bao_da_loai_50_va_lam_moi_lan(page, dulieu, get_cung_het_phien):
+    """Lô 1 đã loại 50 (không lùi được) rồi lô 2 hết phiên ⇒ vẫn phải báo
+    "Đã loại 50", làn không còn hiện 50 video đó, rồi mới bật băng hết phiên.
+    `get_cung_het_phien`: lượt tải lại làn cũng bị đẩy về trang đăng nhập (ca
+    hết phiên thật) ⇒ làn phải tự bỏ 50 video tại chỗ."""
+    job = _job_nghi_55(dulieu["db"])
+    _mo_lai(page, job)
+    goi = []
+    def ve_dang_nhap(route):
+        route.fulfill(status=302, headers={"Location": "/login"}, body="")
+    def chan(route):
+        goi.append(len(route.request.post_data_json["video_ids"]))
+        if len(goi) == 2:
+            if get_cung_het_phien:
+                page.route(f"**/chia/{job}", ve_dang_nhap)
+            ve_dang_nhap(route)
+        else:
+            route.continue_()
+    page.route("**/videos/loai", chan)
+    thumbs = page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t")
+    for i in range(55):
+        thumbs.nth(i).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert goi == [50, 5]
+    assert page.inner_text("#toast") == "Đã loại 50 video · phiên đăng nhập hết hạn — còn 5 video chưa gửi"
+    page.wait_for_function("document.querySelectorAll('.cc-nhom.cc-lan')[1].querySelectorAll('.cc-t').length === 5")
+    assert page.locator("#session-expired").is_visible()
+    # Toast và băng phải LỘ RA trên lớp phủ màn chia, không chỉ "có trong DOM".
+    _nhin_thay(page, "#toast")
+    _nhin_thay(page, "#session-expired")
+    # Đóng màn chia: băng về lại luồng trang thư viện và vẫn thấy được.
+    page.click('#chia-view [data-cc-action="back"]')
+    page.wait_for_selector("#chia-view", state="hidden")
+    _nhin_thay(page, "#session-expired")
+
+
+def test_dang_gui_loai_thi_khoa_nut_khong_gui_lan_hai(page, dulieu):
+    """Bấm đôi: trong lúc lượt Loại đang bay, nút Loại phải bị khoá — nếu không
+    lượt hai gửi lại các id vừa loại và toast báo sai "N không phải của bạn"."""
+    _duyet_het_sau_lung(dulieu)
+    _mo_lai(page, dulieu["job_full"])
+    dang_giu = []
+    def giu(route):
+        dang_giu.append(route)   # giữ phản hồi lại, chưa cho server trả lời
+    page.route("**/videos/loai", giu)
+    nghi = page.locator(".cc-nhom.cc-lan").nth(1)
+    nghi.locator(".cc-t").nth(0).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.querySelector('[data-cc-loai-dang-gui=\"nghi\"]')")
+    assert page.locator('[data-cc-loai-dang-gui="nghi"]').is_disabled()
+    assert page.locator('[data-cc-action="loai-lan"]').count() == 0
+    assert len(dang_giu) == 1
+    dang_giu[0].continue_()
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    assert page.inner_text("#toast") == "Đã loại 1 video"
+    assert page.locator("[data-cc-loai-dang-gui]").count() == 0, "gửi xong thì mở khoá"
+
+
+def test_tran_lo_loai_chia_khop_backend():
+    import re
+    src = (Path(__file__).resolve().parent.parent / "web" / "static" / "chia-cum.js").read_text()
+    m = re.search(r"const LOAI_TOI_DA_MOI_LUOT = (\d+);", src)
+    assert m and int(m.group(1)) == app_mod.MAX_VIDEO_LOAI

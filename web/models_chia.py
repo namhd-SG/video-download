@@ -397,10 +397,16 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         # còn video này đã có nhà, không lạc gì cả; chỉ ẩn, không báo riêng.
         video_cum_cua_chu = {r["video_id"] for r in conn.execute(
             "SELECT video_id FROM video_cum WHERE chu = ?", (lan["chu"],)).fetchall()}
+        # Video người dùng đã LOẠI khỏi thư viện (`/videos/loai`, kể cả bấm từ
+        # chính màn này) cũng biến khỏi mọi làn — cùng luật với
+        # `DIEU_KIEN_VAO_LUOT_CHIA` cho lượt mới; lượt đã có thì lọc lúc đọc.
+        da_loai = {r["video_id"] for r in conn.execute(
+            "SELECT vcn.video_id FROM video_cum_nhap vcn JOIN videos v ON v.video_id = vcn.video_id "
+            "WHERE vcn.chia_lan_id = ? AND v.da_loai_luc IS NOT NULL", (chia_lan_id,)).fetchall()}
         for r in conn.execute(
                 "SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
                 "WHERE chia_lan_id = ? ORDER BY video_id", (chia_lan_id,)).fetchall():
-            if r["video_id"] in video_cum_cua_chu:
+            if r["video_id"] in video_cum_cua_chu or r["video_id"] in da_loai:
                 continue
             if r["lan"] == "kieu" and r["cum_nhap_id"] in nhoms:
                 nhoms[r["cum_nhap_id"]]["video_ids"].append(r["video_id"])
