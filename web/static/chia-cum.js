@@ -104,6 +104,10 @@
   // Bảng câu tiếng Việt cho MỌI mã `tu_choi` server có thể trả
   // (`models_chia._kiem_video_ids_thao_tac`/`_op_hoan_tac`) — không bao giờ để
   // lọt một mã snake_case trần ra toast.
+  // Bằng `web/app.py::MAX_VIDEO_LOAI` (test `test_tran_lo_loai_chia_khop_backend`
+  // đối chiếu) — lô lớn hơn là 422 và KHÔNG video nào được loại.
+  const LOAI_TOI_DA_MOI_LUOT = 50;
+
   const TU_CHOI_TEXT = {
     khong_hop_le: "Có video không thuộc đúng làn cho thao tác này — không thay đổi gì.",
   };
@@ -396,15 +400,28 @@
     rail.innerHTML = r;
   }
 
-  function thumbsHtml(videoIds) {
+  // `laLanLoai`: làn Hướng dẫn / Nghi — nơi DUY NHẤT người dùng loại video
+  // (user chốt 28/09). Làn này chọn được cả khi lượt đã duyệt (loại là thao
+  // tác THƯ VIỆN, không phải sửa nháp) và có ô tích rõ; mọi nơi khác, lượt đã
+  // duyệt ⇒ không chọn được (không còn thao tác nào trên tập chọn).
+  function thumbsHtml(videoIds, laLanLoai = false) {
     if (videoIds.length === 0) return "";
-    // Đã duyệt ⇒ không chọn được (không còn thao tác nào trên tập chọn).
-    const chonDuoc = !daDuyet();
-    return `<div class="cc-luoi">` + videoIds.map((vid) =>
-      `<div class="cc-t${chonDuoc && CC.selected.has(vid) ? " sel" : ""}"` +
-      (chonDuoc ? ` data-cc-video="${escapeHtml(vid)}"` : "") + `>` +
-      `<img src="/thumbs/${escapeHtml(vid)}" loading="lazy" alt=""></div>`
-    ).join("") + `</div>`;
+    const chonDuoc = laLanLoai || !daDuyet();
+    return `<div class="cc-luoi">` + videoIds.map((vid) => {
+      const sel = chonDuoc && CC.selected.has(vid);
+      return `<div class="cc-t${sel ? " sel" : ""}${laLanLoai ? " cc-t-loai" : ""}"` +
+        (chonDuoc ? ` data-cc-video="${escapeHtml(vid)}"` : "") + `>` +
+        `<img src="/thumbs/${escapeHtml(vid)}" loading="lazy" alt="">` +
+        (laLanLoai ? `<span class="cc-chk" aria-hidden="true">${sel ? "✓" : ""}</span>` : "") + `</div>`;
+    }).join("") + `</div>`;
+  }
+
+  /** Nút "Loại N video đã chọn…" của một làn (N = đã chọn ∩ video của làn). */
+  function nutLoaiHtml(lan, videoIds) {
+    const n = videoIds.filter((v) => CC.selected.has(v)).length;
+    return n
+      ? `<button type="button" class="btn danger" data-cc-action="loai-lan" data-lan="${lan}">Loại ${n} video đã chọn…</button>`
+      : `<button type="button" class="btn danger" disabled data-cc-loai-trong="${lan}">Chọn video để loại</button>`;
   }
 
   function kieuBlockHtml(k) {
@@ -502,22 +519,24 @@
         <span class="cc-sp"></span>
         ${duyet ? "" : `<button type="button" class="btn" data-cc-action="hd-thanh-kieu">Thành kiểu “Hướng dẫn”</button>
         <button type="button" class="btn" data-cc-action="hd-ngoai-chu-de">Đánh dấu ngoài chủ đề</button>`}
+        ${nutLoaiHtml("huong_dan", data.huong_dan)}
       </div>
-      ${thumbsHtml(data.huong_dan)}
+      ${thumbsHtml(data.huong_dan, true)}
     </div>`;
     m += `<div class="card cc-nhom cc-lan">
       <div class="cc-nhom-h"><b>Nghi ngoài chủ đề</b>
-        <span class="muted">${data.nghi.length} video · không xoá, không ẩn, không bao giờ vào bộ</span>
+        <span class="muted">${data.nghi.length} video · máy không tự xoá, không tự ẩn · không bao giờ vào bộ</span>
         <span class="cc-sp"></span>
         ${duyet ? "" : `<span class="pop-wrap">
           <div class="popover" data-cc-popover="traVe" hidden></div>
           <button type="button" class="btn" data-cc-action="toggle-tra-ve">Không, trả về kiểu…</button>
         </span>`}
+        ${nutLoaiHtml("nghi", data.nghi)}
       </div>
       <div class="cc-note">Video ở làn này không vào cụm nào khi duyệt. Vì sao nghi: tầng hình xếp ` +
         `“không có đám đông / không thuộc kiểu nào”, hoặc caption lệch chủ đề. Caption chỉ được TĂNG ` +
         `nghi, không gỡ nghi.</div>
-      ${thumbsHtml(data.nghi)}
+      ${thumbsHtml(data.nghi, true)}
     </div>`;
     main.innerHTML = m;
 
@@ -585,6 +604,22 @@
       </div></div>`;
       return;
     }
+    if (modal.type === "loai") {
+      const n = modal.ids.length;
+      host.innerHTML = `<div class="cc-modal-bg"><div class="card cc-modal">
+        <h3>Loại ${n} video khỏi thư viện?</h3>
+        <div class="cc-mini-luoi">${modal.ids.slice(0, 3).map((vid) =>
+          `<div class="cc-t"><img src="/thumbs/${escapeHtml(vid)}" alt=""></div>`).join("")}</div>
+        <p style="font-size:.82rem; margin:10px 0 6px">Video sẽ <b>biến khỏi thư viện của bạn</b> và tệp trên Drive ` +
+          `được đưa vào <b>Thùng rác</b>. Người khác quét trúng cùng video vẫn tải lại được.</p>
+        <p class="muted" style="font-size:.78rem; margin:0">Không có nút khôi phục trong Video Desk.</p>
+        <div class="cc-row">
+          <button type="button" class="btn primary" data-cc-action="modal-close" autofocus>Huỷ</button>
+          <button type="button" class="btn danger" data-cc-action="confirm-loai">Loại ${n} video</button>
+        </div>
+      </div></div>`;
+      return;
+    }
     if (modal.type === "tach") {
       const nhoms = CC.data ? nhomsOf(CC.data) : [];
       const first = nhoms[0] || "";
@@ -635,6 +670,38 @@
     }
     await refresh();
     return ket;
+  }
+
+  // Loại video (thao tác THƯ VIỆN `/videos/loai`, không phải sửa nháp — chạy
+  // được cả khi lượt đã duyệt). Tuần tự theo lô ≤ LOAI_TOI_DA_MOI_LUOT, cùng
+  // khuôn `app.js::loaiDaChon`: cộng đủ ba con số, dừng ở lô đầu trượt và nói
+  // rõ còn bao nhiêu chưa gửi. Mỗi id độc lập ở server (trash trượt ⇒ id đó
+  // không ghi mốc) nên dừng giữa chừng không để lại trạng thái nửa vời.
+  async function loaiTheoLo(ids) {
+    const tong = { da_loai: 0, drive_truot: 0, khong_phai_cua_ban: 0 };
+    let daGui = 0;
+    let loi = null;
+    for (let i = 0; i < ids.length; i += LOAI_TOI_DA_MOI_LUOT) {
+      const lo = ids.slice(i, i + LOAI_TOI_DA_MOI_LUOT);
+      try {
+        const res = await apiSend("POST", "/videos/loai", { video_ids: lo });
+        tong.da_loai += res.da_loai.length;
+        tong.drive_truot += res.drive_truot.length;
+        tong.khong_phai_cua_ban += res.khong_phai_cua_ban.length;
+        res.da_loai.forEach((v) => CC.selected.delete(v));
+        daGui += lo.length;
+      } catch (err) {
+        if (err instanceof PhienHetHan) throw err;
+        loi = err;
+        break;
+      }
+    }
+    if (daGui > 0) await refresh();
+    const phan = [`Đã loại ${tong.da_loai} video`];
+    if (tong.drive_truot) phan.push(`${tong.drive_truot} chưa bỏ được khỏi Drive — vẫn còn trong làn, bấm lại`);
+    if (tong.khong_phai_cua_ban) phan.push(`${tong.khong_phai_cua_ban} không phải của bạn`);
+    if (loi) phan.push(`dừng giữa chừng (${errorDetailText(loi)}) — còn ${ids.length - daGui} video chưa gửi`);
+    showToast(phan.join(" · "));
   }
 
   async function duyet(body) {
@@ -714,6 +781,21 @@
         if (action === "hoan-tac") { await thaoTac("hoan_tac", {}); return; }
         if (action === "modal-close") { CC.modal = null; render(); return; }
 
+        if (action === "loai-lan") {
+          const lanIds = btn.dataset.lan === "nghi" ? CC.data.nghi : CC.data.huong_dan;
+          const ids = lanIds.filter((v) => CC.selected.has(v));
+          if (!ids.length) return;
+          CC.modal = { type: "loai", ids };
+          render();
+          return;
+        }
+        if (action === "confirm-loai") {
+          const ids = CC.modal.ids;
+          CC.modal = null;
+          render();
+          await loaiTheoLo(ids);
+          return;
+        }
         if (action === "confirm-huy") {
           await thaoTac("huy_luot", {});
           CC.modal = null;

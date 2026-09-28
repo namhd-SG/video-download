@@ -2131,3 +2131,20 @@ def test_co_the_hoan_tac_chi_bat_khi_co_thao_tac_lui_duoc(kho):
     assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is True
     models_chia.ap_thao_tac(db, lan_id, TOI, "hoan_tac")
     assert models_chia.lay_chia(db, lan_id, TOI)["co_the_hoan_tac"] is False
+
+
+def test_lay_chia_an_video_da_loai_khoi_moi_lan(kho):
+    """Video người dùng đã LOẠI khỏi thư viện (`/videos/loai`, kể cả bấm từ làn
+    Nghi/Hướng dẫn của màn chia) phải biến khỏi mọi làn của lượt ĐÃ có — cùng
+    luật `DIEU_KIEN_VAO_LUOT_CHIA` áp cho lượt mới."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), huong_dan=["5", "6"])
+    truoc = models_chia.lay_chia(db, lan_id, TOI)
+    assert truoc["huong_dan"] == ["5", "6"] and truoc["kieu"][0]["video_ids"] == ["1", "2"]   # đối chứng
+
+    models.danh_dau_da_loai(db, "5", TOI)
+    models.danh_dau_da_loai(db, "1", TOI)
+    sau = models_chia.lay_chia(db, lan_id, TOI)
+    assert sau["huong_dan"] == ["6"]
+    assert sau["kieu"][0]["video_ids"] == ["2"]
+    assert sau["bi_bo"] == [], "đã loại không phải 'lạc'"
