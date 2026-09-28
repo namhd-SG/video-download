@@ -87,9 +87,18 @@
   }
 
   let toastTimer = null;
-  function showToast(text) {
+  // Toast LỖI đang hiện thì toast thường đến sau được NỐI vào, không đè: vd
+  // lệnh dock bị từ chối (video vừa loại) rồi ngay sau đó "Đã loại N video"
+  // — đè thì người dùng không bao giờ đọc được lý do bị từ chối.
+  let toastLoiDangHien = false;
+  function showToast(text, laLoi = false) {
     const el = document.getElementById("toast");
     if (!el) return;
+    if (!laLoi && toastLoiDangHien && !el.hidden) {
+      text = `${el.textContent} · ${text}`;
+      laLoi = true;   // vẫn giữ phần lỗi ở đầu cho các toast sau
+    }
+    toastLoiDangHien = laLoi;
     el.textContent = text;
     el.hidden = false;
     clearTimeout(toastTimer);
@@ -150,7 +159,7 @@
       await fn();
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-      showToast(errorDetailText(err));
+      showToast(errorDetailText(err), true);
       if (!CC.open) return;
       // Server báo lượt KHÔNG còn là nháp (tab mở từ trước khi duyệt/huỷ) —
       // chỉ vẽ lại thì mọi nút sửa nháp còn nguyên và mỗi cú bấm sau lại 400.
@@ -594,6 +603,11 @@
     const n = CC.selected.size;
     dock.hidden = chuaCoNhap() || daDuyet();
     document.getElementById("cc-dachon").textContent = `${n} video đã chọn`;
+    // Chưa chọn gì thì 4 nút không làm gì (mọi nhánh `dock-*` thoát ngay khi
+    // tập chọn rỗng) — làm xám cho thấy rõ, thay vì nút bấm không ăn.
+    // Chỉ 4 nút của dock — không đụng nút chọn kiểu trong popover "Chuyển sang".
+    dock.querySelectorAll(":scope > button, :scope > .pop-wrap > button")
+      .forEach((b) => { b.disabled = n === 0; });
     const chuyenPop = document.getElementById("cc-chuyen-popover");
     if (chuyenPop) {
       chuyenPop.innerHTML = CC.data ? kieuPickerPopoverHtml("chuyen-den", CC.data) : "";

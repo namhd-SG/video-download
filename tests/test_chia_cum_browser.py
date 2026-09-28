@@ -879,18 +879,33 @@ def test_dock_tach_sau_luot_loai_dang_bay_bi_tu_choi_khong_sinh_kieu_rong(page, 
     page.fill("[data-cc-tach-kieu]", "Kieu tu video da loai")
     page.click('[data-cc-action="confirm-tach"]')
     kieu_truoc = len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"])
-    # Ghi MỌI câu toast: "Đã loại 1 video" và câu từ chối về gần như cùng lúc.
-    page.evaluate("""() => { window.__toasts = [];
-      new MutationObserver(() => window.__toasts.push(document.getElementById('toast').textContent))
-        .observe(document.getElementById('toast'), {childList: true, characterData: true, subtree: true}); }""")
     giu[0].continue_()
-    page.wait_for_function("window.__toasts.some((t) => t.includes('đã bị loại khỏi thư viện'))")
-    toasts = page.evaluate("window.__toasts")
-    assert "Video đã bị loại khỏi thư viện, không di chuyển được (1 video)." in toasts, toasts
+    # Câu từ chối về TRƯỚC "Đã loại 1 video" (hàng đợi POST: loại → tách → GET
+    # làm mới). Toast CUỐI CÙNG người dùng đọc được phải còn nguyên lý do từ
+    # chối, không bị câu "Đã loại" đè mất.
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã loại')")
+    page.wait_for_load_state("networkidle")
+    assert page.locator("#toast").is_visible()
+    assert page.inner_text("#toast") == (
+        "Video đã bị loại khỏi thư viện, không di chuyển được (1 video). · Đã loại 1 video")
     with models._connect(db) as conn:
         nhap = conn.execute("SELECT lan FROM video_cum_nhap WHERE video_id = ?", (vid,)).fetchall()
     assert [r[0] for r in nhap] == ["nghi"], "hàng nháp giữ nguyên làn Nghi, không vào kiểu"
     assert len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"]) == kieu_truoc, "không sinh kiểu rỗng"
+
+
+def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):
+    """Lượt nháp: dock luôn hiện, nhưng chưa chọn video nào thì 4 nút đều
+    `disabled` (trước đây bấm được mà không làm gì); chọn 1 video ⇒ bật lại."""
+    _mo_chia(page, dulieu["job_full"])
+    nut = page.locator("#cc-dock > button, #cc-dock > .pop-wrap > button")
+    assert nut.count() == 4
+    assert page.locator("#cc-dock").is_visible()
+    assert [nut.nth(i).is_disabled() for i in range(4)] == [True] * 4
+    page.locator(".cc-t").first.click()
+    assert [nut.nth(i).is_disabled() for i in range(4)] == [False] * 4
+    page.click('#cc-dock [data-cc-action="dock-bo-chon"]')
+    assert [nut.nth(i).is_disabled() for i in range(4)] == [True] * 4
 
 
 def test_tran_lo_loai_chia_khop_backend():
