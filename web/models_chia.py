@@ -1631,6 +1631,25 @@ def _item_hop_le_ben_nhan(drive_file_id, url) -> bool:
             is not None and isinstance(url, str) and _LINK_GOC_BEN_NHAN.match(url) is not None)
 
 
+def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) -> list[dict]:
+    """Video của lô `thu` (TRƯỚC khi lọc Drive).
+
+    Thứ tự cắt lô PHẢI khớp `app.js::videoCuaCum` + `chiaLo` (video CŨ nhất
+    trước, cắt block `LO_TOI_DA`, RỒI mới lọc video chưa lên Drive) — xem
+    ghi chú đầy đủ ở `xay_payload_lo`.
+    """
+    rows = conn.execute(
+        "SELECT v.video_id, v.title, v.url, v.drive_file_id FROM video_cum vc "
+        "JOIN videos v ON v.video_id = vc.video_id "
+        "LEFT JOIN jobs j ON j.id = v.job_id "
+        "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+        "AND vc.chu = ? AND vc.cum_id = ? "
+        "ORDER BY v.tao_luc ASC, v.video_id ASC",
+        (chi_cua, chi_cua, chu, cum["id"])).fetchall()
+    toan_bo = [dict(r) for r in rows]
+    return toan_bo[(thu - 1) * models_cum.LO_TOI_DA: thu * models_cum.LO_TOI_DA]
+
+
 def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
                    thu: int) -> dict:
     """Dựng `{v, items, nhan}` cho lô `thu` của cụm THẬT `cum` — hợp đồng
@@ -1658,18 +1677,12 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     sai làm bên nhận bỏ cả lô.
     """
     with _connect(db_path) as conn:
-        rows = conn.execute(
-            "SELECT v.video_id, v.title, v.url, v.drive_file_id FROM video_cum vc "
-            "JOIN videos v ON v.video_id = vc.video_id "
-            "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
-            "AND vc.chu = ? AND vc.cum_id = ? "
-            "ORDER BY v.tao_luc ASC, v.video_id ASC",
-            (chi_cua, chi_cua, chu, cum["id"])).fetchall()
-    toan_bo = [dict(r) for r in rows]
-    lo = toan_bo[(thu - 1) * models_cum.LO_TOI_DA: thu * models_cum.LO_TOI_DA]
+        lo = _video_trong_lo(conn, cum, chu, chi_cua, thu)
     items = [{"f": v["drive_file_id"], "n": v["title"] or v["video_id"], "u": v["url"]}
              for v in lo if _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
     nhan = {"usecase": cum["usecase"], "insight": cum["insight"], "template": "Goc",
             "cum_id": cum["id"], "lo": {"thu": thu, "tong": cum["so_lo"]}}
-    return {"v": 1, "items": items, "nhan": nhan}
+    # `so_video` = số video của lô TRƯỚC khi lọc, đếm cùng lượt với `items` —
+    # mẫu số của nhãn "x/N" phải cùng thời điểm với tử số. KHÔNG thuộc hợp
+    # đồng gửi Creative Desk: `app.js::moLoCum` tách nó ra trước khi mã hoá URL.
+    return {"v": 1, "items": items, "nhan": nhan, "so_video": len(lo)}

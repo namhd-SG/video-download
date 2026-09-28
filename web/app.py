@@ -20,7 +20,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
@@ -714,6 +714,15 @@ class GanVideoCumRequest(BaseModel):
     bo: bool = False
 
 
+class DaMoLoRequest(BaseModel):
+    """Body của `POST .../da-mo` — tuỳ chọn (client cũ không gửi kèm vẫn phải
+    chạy được). Hai số lấy từ CÙNG một response payload: `so_item` =
+    `items.length`, `so_video` = số video của lô lúc dựng payload. StrictInt:
+    `true`/`"2"`/`3.0` không được lọt thành số."""
+    so_item: StrictInt | None = Field(default=None, ge=0)
+    so_video: StrictInt | None = Field(default=None, ge=0)
+
+
 def _pham_vi(nguoi_tao: str) -> str | None:
     """Phạm vi thư viện để đếm/gán video: None = admin (cả kho)."""
     return None if _la_admin(nguoi_tao) else nguoi_tao
@@ -798,18 +807,31 @@ def gan_video_cum(cum_id: int, body: GanVideoCumRequest,
 
 
 @app.post("/cum/{cum_id}/lo/{thu}/da-mo")
-def ghi_lo_da_mo(cum_id: int, thu: int,
+def ghi_lo_da_mo(cum_id: int, thu: int, body: DaMoLoRequest | None = None,
                  nguoi_tao: str = Depends(require_user)) -> dict:
     """Ghi mốc "đã mở Creative Desk" cho lô `thu`. Trang chỉ gọi SAU khi
-    `window.open` trả một tab thật; mốc không bao giờ nghĩa là "đã tạo bộ"."""
+    `window.open` trả một tab thật; mốc không bao giờ nghĩa là "đã tạo bộ".
+
+    `body.so_item`/`body.so_video` (tuỳ chọn) là số item THẬT đã gửi kèm và
+    số video của lô, cả hai lấy từ CÙNG response payload nên cùng một thời
+    điểm. Server KHÔNG đếm lại lô ở đây: lô có thể đã đổi từ lúc dựng payload,
+    và đếm lại sẽ ghép tử số của lúc đó với mẫu số của lúc này. Thiếu một
+    trong hai, hoặc `so_item > so_video` ⇒ vẫn GHI MỐC (tab đã mở thật) nhưng
+    lưu cả hai NULL — "chưa biết", không bịa, không bao giờ 400 vì hai số lệch
+    (400 ở đây từng làm mất mốc và giục người dùng mở tab Creative Desk thứ hai)."""
     cum = _cum_hoac_404(cum_id, nguoi_tao)
     if not (1 <= thu <= cum["so_lo"]):
         raise HTTPException(status_code=400,
                             detail=f"lô phải trong khoảng 1..{cum['so_lo']}")
-    mo_luc = models_cum.ghi_lo_da_mo(DB_PATH, cum_id, nguoi_tao, thu)
+    so_item = body.so_item if body is not None else None
+    so_video = body.so_video if body is not None else None
+    if so_item is None or so_video is None or so_item > so_video:
+        so_item = so_video = None
+    mo_luc = models_cum.ghi_lo_da_mo(DB_PATH, cum_id, nguoi_tao, thu, so_item, so_video)
     if mo_luc is None:
         raise HTTPException(status_code=404, detail="cụm không tồn tại")
-    return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc}
+    return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc,
+            "so_item": so_item, "so_video": so_video}
 
 
 @app.get("/cum/{cum_id}/lo/{thu}/payload")

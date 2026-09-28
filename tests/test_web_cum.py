@@ -10,6 +10,7 @@ import sqlite3
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from web import app as app_mod
 from web import models, models_cum
@@ -232,14 +233,74 @@ def test_marking_a_batch_opened_is_recorded_per_batch(kho):
     a = _tao()["id"]
     _gan(a, ["1", "2"])
     out = app_mod.ghi_lo_da_mo(a, 1, nguoi_tao=TOI)
-    assert out["thu"] == 1 and out["mo_luc"]
+    assert out["thu"] == 1 and out["mo_luc"] and out["so_item"] is None and out["so_video"] is None
     lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": out["mo_luc"]}]
+    assert lo == [{"thu": 1, "mo_luc": out["mo_luc"], "so_item": None, "so_video": None}]
 
     lai = app_mod.ghi_lo_da_mo(a, 1, nguoi_tao=TOI)   # "Mở lại" làm mới mốc
     lo = app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"]
-    assert lo == [{"thu": 1, "mo_luc": lai["mo_luc"]}]
+    assert lo == [{"thu": 1, "mo_luc": lai["mo_luc"], "so_item": None, "so_video": None}]
     assert lai["mo_luc"] >= out["mo_luc"]
+
+
+def _mo(cum_id: int, **body) -> dict:
+    return app_mod.ghi_lo_da_mo(cum_id, 1, app_mod.DaMoLoRequest(**body), nguoi_tao=TOI)
+
+
+def _lo_mo_dau() -> dict:
+    return app_mod.liet_ke_cum(nguoi_tao=TOI)["cum"][0]["lo_mo"][0]
+
+
+def test_so_item_and_so_video_are_stored_together_and_reopen_overwrites_both(kho):
+    """Hai số từ CÙNG một response payload ⇒ lưu nguyên cặp; "Mở lại" GHI ĐÈ
+    cả cặp, không giữ giá trị lần mở trước."""
+    a = _tao()["id"]
+    _gan(a, ["1", "2"])
+    out = _mo(a, so_item=1, so_video=2)
+    assert (out["so_item"], out["so_video"]) == (1, 2)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (1, 2)
+    _mo(a, so_item=2, so_video=2)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (2, 2), \
+        "Mở lại phải GHI ĐÈ cả cặp"
+
+
+def test_server_does_not_recount_the_batch_so_pair_from_payload_time_is_kept(kho):
+    """Lô đổi SAU khi dựng payload (tab khác gỡ video) — server KHÔNG đếm lại:
+    cặp (4, 4) lúc dựng payload vẫn được ghi dù lô giờ chỉ còn 2 video. Đếm lại
+    sẽ ghép tử số của lúc đó với mẫu số của lúc này (và bản cũ còn trả 400 ⇒
+    mất mốc)."""
+    a = _tao()["id"]
+    _gan(a, ["1", "2"])
+    out = _mo(a, so_item=4, so_video=4)
+    assert out["mo_luc"] and (out["so_item"], out["so_video"]) == (4, 4)
+
+
+@pytest.mark.parametrize("body", [
+    {"so_item": 3, "so_video": 2},   # không nhất quán
+    {"so_item": 2},                  # client cũ: chỉ có tử số
+    {"so_video": 2},                 # thiếu tử số
+])
+def test_inconsistent_or_partial_pair_still_records_the_mark_with_null_counts(kho, body):
+    """Không bao giờ 400 vì hai số: tab Creative Desk ĐÃ mở thật, mất mốc thì
+    trang giục bấm lại ⇒ tab thứ hai. Lưu NULL cả hai = "chưa biết", không bịa."""
+    a = _tao()["id"]
+    _gan(a, ["1", "2"])
+    out = _mo(a, **body)
+    assert out["mo_luc"]
+    assert (out["so_item"], out["so_video"]) == (None, None)
+    assert (_lo_mo_dau()["so_item"], _lo_mo_dau()["so_video"]) == (None, None)
+
+
+@pytest.mark.parametrize("body", [
+    {"so_item": -1, "so_video": 2}, {"so_item": 1, "so_video": -1},
+    {"so_item": True, "so_video": 2}, {"so_item": "2", "so_video": 2},
+    {"so_item": 2.0, "so_video": 2}, {"so_item": 1, "so_video": False},
+])
+def test_counts_must_be_real_non_negative_ints_at_the_request_shape(body):
+    """`StrictInt` + `ge=0`: số âm, bool, chuỗi số, số thực bị chặn ngay khi
+    dựng request — ép kiểu ngầm từng biến `true` thành 1."""
+    with pytest.raises(ValidationError):
+        app_mod.DaMoLoRequest(**body)
 
 
 def test_a_batch_outside_the_cluster_is_refused(kho):

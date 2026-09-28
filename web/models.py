@@ -410,6 +410,15 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "bo_qua", "INTEGER NOT NULL DEFAULT 0")
+        # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
+        # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
+        # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
+        # gửi được). NULL: hàng ghi trước khi cột này tồn tại, hoặc client cũ
+        # không gửi kèm — "chưa biết", không phải "0".
+        _add_column_if_missing(conn, "cum_lo_mo", "so_item", "INTEGER")
+        # Số video của lô LÚC mở (mẫu số cùng thời điểm với `so_item`) — lấy từ
+        # CÙNG response payload. NULL cùng lúc với `so_item` khi chưa biết.
+        _add_column_if_missing(conn, "cum_lo_mo", "so_video", "INTEGER")
 
 
 def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:

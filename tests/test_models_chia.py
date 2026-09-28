@@ -698,6 +698,7 @@ def test_xay_payload_lo_chi_gom_video_co_drive_va_dung_thu_tu(kho):
     assert payload["v"] == 1
     assert [i["f"] for i in payload["items"]] == [_drive("1"), _drive("3")], \
         "video không có drive_file_id bị bỏ"
+    assert payload["so_video"] == 3, "so_video đếm lô TRƯỚC khi lọc Drive (3 video, 2 item)"
     assert payload["nhan"] == {"usecase": "Dance", "insight": "Badaboum couple",
                                "template": "Goc", "cum_id": cum_id, "lo": {"thu": 1, "tong": 1}}
 

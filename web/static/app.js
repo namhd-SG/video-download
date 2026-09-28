@@ -1145,6 +1145,19 @@
     return ra;
   }
 
+  // Nhãn "x/N" từ mốc đã mở `m`: `so_item` = số item THẬT đã gửi, `so_video`
+  // = số video của lô LÚC ĐÓ (cùng một response payload, xem `moLoCum`). Chỉ
+  // hiện "x/N" khi biết cả hai và x < N — video bị lọc vì chưa lên Drive/thiếu
+  // link gốc hợp lệ; biết cả hai và x == N ⇒ N trơn CỦA LÚC MỞ (không bịa
+  // "n/n"). Chỉ khi CHƯA biết cặp (mốc cũ/client cũ) mới rơi về `nHienTai`
+  // (số video hiện tại của lô) — đếm phía trang có thể cũ hoặc lô đã đổi sau
+  // khi mở, nên không bao giờ ghép nó với số đã gửi.
+  function nhanSoVideo(m, nHienTai) {
+    const x = m && m.so_item, n = m && m.so_video;
+    if (typeof x !== "number" || typeof n !== "number") return `${nHienTai}`;
+    return x < n ? `${x}/${n}` : `${n}`;
+  }
+
   // Khoá so trùng cụm: trim + gộp khoảng trắng + không phân biệt hoa/thường.
   function khoaNhan(s) {
     return String(s || "").split(/\s+/).filter(Boolean).join(" ").toLowerCase();
@@ -1242,18 +1255,21 @@
     const tong = lo.length;
     const n = lo.reduce((a, l) => a + l.length, 0);
     // Chỉ VẼ mốc của lô còn tồn tại (`thu ≤ số lô`); mốc cũ vẫn nằm trong DB.
-    const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m.mo_luc]));
+    // Giữ NGUYÊN hàng (không chỉ `mo_luc`) — cần cả `so_item` cho nhãn "x/N".
+    const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m]));
     const nut = tong === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
       : tong === 1 ? `<button type="button" class="btn primary" data-mo-lo="1">Tạo bộ tự tìm từ cụm này (${n})</button>`
       : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map((l) => l.length).join(" + ")})</button>`;
     const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
       const m = moLuc.get(i + 1);
-      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${l.length} video</span>` +
-        `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m)}` : "chưa mở"}</span><span class="grow"></span>` +
+      const nhanN = nhanSoVideo(m, l.length);
+      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${nhanN} video</span>` +
+        `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m.mo_luc)}` : "chưa mở"}</span><span class="grow"></span>` +
         `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
     }).join("")}</div>` : "";
     const mot = tong === 1 && moLuc.get(1)
-      ? `<div class="sent-line">Đã mở Creative Desk cho cụm này lúc ${fmtDateTime(moLuc.get(1))} (${n} video). ` +
+      ? `<div class="sent-line">Đã mở Creative Desk cho cụm này lúc ${fmtDateTime(moLuc.get(1).mo_luc)} ` +
+        `(${nhanSoVideo(moLuc.get(1), n)} video). ` +
         `Video Desk <b>không biết</b> bộ bên đó đã được tạo hay chưa.</div>` : "";
     head.innerHTML =
       `<div><div class="crumb">${escapeHtml(cum.usecase)} › ${escapeHtml(cum.insight_goc)} ›</div>` +
@@ -1340,18 +1356,26 @@
     // ghi "đã mở Creative Desk" (`POST .../da-mo`) cho một tab người dùng
     // vừa đóng là NÓI DỐI — kiểm `tab.closed` NGAY trước khi điều hướng.
     if (tab.closed) return "dong";
-    if (!payload.items.length) {
+    // `so_video` (số video của lô lúc server dựng payload) là mẫu số của nhãn
+    // "x/N", CÙNG thời điểm với `items` — không thuộc hợp đồng v:1 gửi Creative
+    // Desk nên tách ra TRƯỚC khi mã hoá URL. Server cũ không trả ⇒ rơi về độ
+    // dài lô phía trang cho toast, và không gửi kèm (mốc ghi NULL).
+    const { so_video: soVideoLo, ...guiDi } = payload;
+    const soVideo = typeof soVideoLo === "number" ? soVideoLo : muc.length;
+    if (!guiDi.items.length) {
       tab.close();
       showToast("Video của bộ này chưa lên Drive hoặc thiếu link gốc hợp lệ — chưa có gì để gửi sang Creative Desk.");
       return "rong";
     }
-    if (payload.items.length < muc.length) {
-      showToast(`${muc.length - payload.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
+    if (guiDi.items.length < soVideo) {
+      showToast(`${soVideo - guiDi.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
     }
-    dieuHuongTab(tab, urlBanGiao(payload));
+    dieuHuongTab(tab, urlBanGiao(guiDi));
     try {
-      const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`);
-      cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu).concat([{ thu, mo_luc: res.mo_luc }]);
+      const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`,
+        { so_item: guiDi.items.length, so_video: soVideoLo });
+      cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu)
+        .concat([{ thu, mo_luc: res.mo_luc, so_item: res.so_item, so_video: res.so_video }]);
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
       showToast("Đã mở Creative Desk nhưng không ghi được mốc “đã mở” — bấm lại nếu cần.");

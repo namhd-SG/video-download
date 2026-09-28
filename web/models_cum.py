@@ -102,10 +102,12 @@ def liet_ke_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
             (chi_cua, chi_cua, chu)).fetchall()}
         mo: dict[int, list[dict]] = {}
         for r in conn.execute(
-                "SELECT m.cum_id, m.thu, m.mo_luc FROM cum_lo_mo m "
+                "SELECT m.cum_id, m.thu, m.mo_luc, m.so_item, m.so_video FROM cum_lo_mo m "
                 "JOIN cum c ON c.id = m.cum_id WHERE c.chu = ? ORDER BY m.cum_id, m.thu",
                 (chu,)).fetchall():
-            mo.setdefault(r["cum_id"], []).append({"thu": r["thu"], "mo_luc": r["mo_luc"]})
+            mo.setdefault(r["cum_id"], []).append(
+                {"thu": r["thu"], "mo_luc": r["mo_luc"],
+                 "so_item": r["so_item"], "so_video": r["so_video"]})
     return [_dang_ra(r, dem.get(r["id"], 0), mo.get(r["id"], [])) for r in rows]
 
 
@@ -264,17 +266,23 @@ def cum_cho_videos(db_path: Path, video_ids: list[str], chu: str) -> dict[str, i
     return {r["video_id"]: r["cum_id"] for r in rows}
 
 
-def ghi_lo_da_mo(db_path: Path, cum_id: int, chu: str, thu: int) -> str | None:
+def ghi_lo_da_mo(db_path: Path, cum_id: int, chu: str, thu: int,
+                 so_item: int | None = None, so_video: int | None = None) -> str | None:
     """Ghi (hoặc làm mới — "Mở lại") mốc đã mở Creative Desk cho lô `thu`.
 
     Người gọi chỉ được gọi SAU khi tab đã mở thật. Trả mốc đã ghi; None ⇒
     cụm không phải của người này. `thu` ngoài 1..số lô do route kiểm.
+
+    `so_item`/`so_video` = số item THẬT đã gửi kèm và số video của lô, cùng
+    một response payload (route đã bảo đảm cả hai có mặt và `so_item <=
+    so_video`, hoặc cả hai None). None ghi NULL — "chưa biết", không phải "0".
     """
     luc = _now()
     with _connect(db_path) as conn:
         cur = conn.execute(
-            "INSERT INTO cum_lo_mo (cum_id, thu, mo_luc) "
-            "SELECT c.id, ?, ? FROM cum c WHERE c.id = ? AND c.chu = ? "
-            "ON CONFLICT(cum_id, thu) DO UPDATE SET mo_luc = excluded.mo_luc",
-            (thu, luc, cum_id, chu))
+            "INSERT INTO cum_lo_mo (cum_id, thu, mo_luc, so_item, so_video) "
+            "SELECT c.id, ?, ?, ?, ? FROM cum c WHERE c.id = ? AND c.chu = ? "
+            "ON CONFLICT(cum_id, thu) DO UPDATE SET mo_luc = excluded.mo_luc, "
+            "so_item = excluded.so_item, so_video = excluded.so_video",
+            (thu, luc, so_item, so_video, cum_id, chu))
         return luc if cur.rowcount == 1 else None
