@@ -445,6 +445,36 @@ def test_op_tu_choi_video_da_duyet_khong_keo_lai_vao_nhap(kho):
     assert len(_thao_tac(db, lan_id)) == truoc, "không ghi thêm dòng nhật ký nào"
 
 
+def test_op_tu_choi_video_da_loai_khong_tao_kieu_rong(kho):
+    """Video đã LOẠI khỏi thư viện (Thùng rác) vẫn còn hàng `video_cum_nhap`
+    của lượt. Mọi op di chuyển theo id phải từ chối CẢ yêu cầu với mã riêng
+    `video_da_loai` — trước đây `tach` nhận nó và sinh một kiểu RỖNG trên UI.
+    Danh sách trộn (một video còn sống + một đã loại) cũng bị từ chối trọn."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), nghi=["5", "6"])
+    cartoon_id = _nhom_id(db, lan_id, "cartoon")
+    with sqlite3.connect(db) as conn:
+        conn.execute("UPDATE videos SET da_loai_luc = '2026-09-28T09:00:00+00:00' "
+                     "WHERE video_id = '5'")
+    kieu_truoc, nhat_ky_truoc = _dem(db, "cum_nhap"), len(_thao_tac(db, lan_id))
+    tu_choi = {"tu_choi": "video_da_loai", "video_ids": ["5"]}
+
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["5"], nhom="n",
+                                   kieu="k") == tu_choi
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "chuyen", video_ids=["1", "5"],
+                                   den_cum_nhap_id=cartoon_id) == tu_choi
+    assert models_chia.ap_thao_tac(db, lan_id, TOI, "tra_ve", video_ids=["5"],
+                                   den_cum_nhap_id=cartoon_id) == tu_choi
+    assert _dem(db, "cum_nhap") == kieu_truoc, "không sinh kiểu nào"
+    assert len(_thao_tac(db, lan_id)) == nhat_ky_truoc, "không ghi dòng nhật ký nào"
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert next(k for k in chia["kieu"] if k["kieu"] == "couple")["video_ids"] == ["1", "2"], \
+        "video còn sống trong danh sách trộn không bị chuyển"
+    # Đối chứng: video KHÔNG bị loại cùng làn vẫn tách được như cũ.
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "tach", video_ids=["6"], nhom="n", kieu="k")
+    assert ket and not ket.get("tu_choi")
+
+
 def test_tra_ve_tu_choi_video_da_duyet_du_dang_o_lan_nghi(kho):
     """`tra_ve` cũng phải chặn video đã duyệt — kể cả khi hàng của nó đang
     mang `lan='nghi'` (mô phỏng trạng thái còn sót lại từ trước khi có luật

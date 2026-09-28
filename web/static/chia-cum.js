@@ -123,6 +123,10 @@
         const n = Array.isArray(err.ma.video_ids) ? err.ma.video_ids.length : 0;
         return `Video đã ở cụm thật, không di chuyển được (${n} video).`;
       }
+      if (err.ma.tu_choi === "video_da_loai") {
+        const n = Array.isArray(err.ma.video_ids) ? err.ma.video_ids.length : 0;
+        return `Video đã bị loại khỏi thư viện, không di chuyển được (${n} video).`;
+      }
       if (typeof err.ma.tu_choi === "string") {
         return TU_CHOI_TEXT[err.ma.tu_choi] || "Thao tác không hợp lệ.";
       }
