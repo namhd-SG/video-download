@@ -383,25 +383,32 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         huong_dan: list[str] = []
         nghi: list[str] = []
         bi_bo: list[str] = []
-        # Cần phân biệt HAI ca cùng để lại một hàng "mồ côi" (`lan='kieu'`,
-        # `cum_nhap_id=NULL` sau khi FK `ON DELETE SET NULL` chạy lúc kiểu
-        # chứa nó được DUYỆT): video đã có NHÀ THẬT (`video_cum` — chính nó
-        # vừa được duyệt, hoặc đã ở đó từ một nháp song song khác, `da_o_cum`)
-        # thì im lặng bỏ qua (đã báo ở nơi khác, đúng lúc nó xảy ra); video
-        # KHÔNG có nhà nào (id giả, hoặc bị loại/đổi chủ sau khi đề xuất) mới
-        # là `bi_bo` thật — trước đây CẢ HAI ca lẫn lộn, rơi mất khỏi kết quả.
+        # Video đã có NHÀ THẬT (`video_cum` của chính `chu` lượt này — duyệt
+        # xong, hoặc gán TAY trong lúc nháp còn mở) coi như XONG: ẩn khỏi CẢ
+        # BA làn `kieu`/`huong_dan`/`nghi`, bất kể hàng `video_cum_nhap` của nó
+        # còn mang `lan` gì. Trước đây chỉ lọc cho hàng "mồ côi"
+        # (`lan='kieu'`, `cum_nhap_id=NULL` sau khi FK `ON DELETE SET NULL`
+        # chạy lúc kiểu chứa nó được duyệt) — một video gán tay vào cụm thật
+        # trong khi hàng nháp của nó còn mang `lan='huong_dan'`/`'nghi'` (chưa
+        # từng đi qua nhánh mồ côi) vẫn lọt vào làn cũ, khiến nút "cả làn"
+        # (vd `hd-ngoai-chu-de`) kéo theo nó và bị chặn ở
+        # `_kiem_video_ids_thao_tac` cho CẢ những video còn lại trong làn.
+        # KHÔNG đưa video này vào `bi_bo` — `bi_bo` nghĩa là "lạc, cần chú ý",
+        # còn video này đã có nhà, không lạc gì cả; chỉ ẩn, không báo riêng.
         video_cum_cua_chu = {r["video_id"] for r in conn.execute(
             "SELECT video_id FROM video_cum WHERE chu = ?", (lan["chu"],)).fetchall()}
         for r in conn.execute(
                 "SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
                 "WHERE chia_lan_id = ? ORDER BY video_id", (chia_lan_id,)).fetchall():
+            if r["video_id"] in video_cum_cua_chu:
+                continue
             if r["lan"] == "kieu" and r["cum_nhap_id"] in nhoms:
                 nhoms[r["cum_nhap_id"]]["video_ids"].append(r["video_id"])
             elif r["lan"] == "huong_dan":
                 huong_dan.append(r["video_id"])
             elif r["lan"] == "nghi":
                 nghi.append(r["video_id"])
-            elif r["video_id"] not in video_cum_cua_chu:
+            else:
                 bi_bo.append(r["video_id"])
         # Bộ đếm nghiệm thu D15 — đếm dòng SỬA CÁCH CHIA còn "sống" (chưa bị
         # `hoan_tac` lùi) kể từ lần `ghi_de_xuat` GẦN NHẤT (`the_he_nhap`,

@@ -271,23 +271,31 @@ def test_duyet_gui_kem_usecase_insight_hien_tai(page, dulieu):
 
 
 def test_toast_video_da_o_cum_that_hien_ro_ly_do(page, dulieu):
-    """Video gán TAY vào một cụm THẬT (`POST /cum/{id}/video`) trong lúc
-    nháp còn mở vẫn hiện trong dock (C3) — chạm nó qua `ngoai_chu_de` phải
-    báo toast RÕ lý do, không phải mã lỗi trần hay câu chung chung."""
+    """Video gán TAY vào một cụm THẬT (`POST /cum/{id}/video`) NGAY SAU khi đã
+    chọn trong dock (trước lượt `refresh()` kế tiếp) — root fix C2 khiến
+    `lay_chia` ẩn video này khỏi mọi làn từ lượt vẽ SAU, nhưng dock (bộ nhớ
+    chọn phía client) không tự biết cho tới lượt đó, nên lựa chọn cũ vẫn được
+    gửi đi trong cửa sổ hẹp này — chạm nó qua `ngoai_chu_de` phải báo toast RÕ
+    lý do, không phải mã lỗi trần hay câu chung chung. C1(c): `guard()` phải
+    vẽ lại sau lỗi để số hiện trên dock khớp `CC.selected` thật (đã bị dock-
+    ngoai xoá TRƯỚC khi gửi) — không treo số "1" cũ."""
     db = dulieu["db"]
     video_id = dulieu["ids"][0]
-    cum_id, _ = models_cum.tao_cum(db, NGUOI, "Motion", "Strom", "Vest")
-    models_cum.gan_video(db, cum_id, NGUOI, None, [video_id])
     _mo_chia(page, dulieu["job_full"])
-
     page.locator(f'.cc-t[data-cc-video="{video_id}"]').click()
     assert page.inner_text("#cc-dachon") == "1 video đã chọn"
+
+    cum_id, _ = models_cum.tao_cum(db, NGUOI, "Motion", "Strom", "Vest")
+    models_cum.gan_video(db, cum_id, NGUOI, None, [video_id])
+
     page.click('[data-cc-action="dock-ngoai"]')
     page.wait_for_function(
         "!document.getElementById('toast').hidden && "
         "document.getElementById('toast').textContent.length > 0")
     toast = page.inner_text("#toast")
     assert toast == "Video đã ở cụm thật, không di chuyển được (1 video).", toast
+    assert page.inner_text("#cc-dachon") == "0 video đã chọn", \
+        "guard() phải vẽ lại sau lỗi — dock không được treo số chọn cũ"
 
 
 def test_doi_insight_hai_thay_doi_lien_tiep_khong_mat_ban_go_du_mang_cham(page, dulieu, monkeypatch):
@@ -441,3 +449,148 @@ def test_huy_lenh_moi_token_khong_ngat_dong_390(page, dulieu):
     for i in range(n):
         assert spans.nth(i).evaluate("el => el.getClientRects().length") == 1, \
             f"token {i} bị ngắt giữa chừng ở 390px"
+
+
+# --- C1: dock "Ngoài chủ đề" với lựa chọn TRỘN (kiểu + đã ở nghi) -----------
+
+def test_dock_ngoai_loc_video_da_o_nghi_truoc_khi_gui(page, dulieu):
+    """C1(a): chọn trộn 1 video ở một KIỂU + 1 video ĐÃ ở "nghi" rồi bấm
+    "Ngoài chủ đề" — hợp đồng server chỉ có MỘT trạng thái "nghi" nên từ chối
+    CẢ yêu cầu nếu danh sách còn lẫn video đã ở nghi. UI phải tự lọc bỏ video
+    đã ở nghi (giống `tra-ve-den`) TRƯỚC khi gửi: video ở kiểu vẫn chuyển sang
+    nghi, không toast lỗi, dock về 0 — đây là thao tác tự nhiên khi người dùng
+    muốn dồn hết lựa chọn vào nghi."""
+    db = dulieu["db"]
+    job = dulieu["job_full"]
+    ids = dulieu["ids"]
+    kieu_vid, nghi_vid = ids[0], ids[8]
+    _mo_chia(page, job)
+
+    page.locator(f'.cc-t[data-cc-video="{kieu_vid}"]').click()
+    page.locator(f'.cc-t[data-cc-video="{nghi_vid}"]').click()
+    assert page.inner_text("#cc-dachon") == "2 video đã chọn"
+
+    with page.expect_response(lambda r: "/thao-tac" in r.url) as resp:
+        page.click('[data-cc-action="dock-ngoai"]')
+    than = resp.value.request.post_data_json
+    assert than["video_ids"] == [kieu_vid], "phải lọc bỏ video đã ở nghi trước khi gửi"
+    assert resp.value.ok, "danh sách đã lọc sạch phải được server chấp nhận"
+
+    page.wait_for_function(
+        "document.getElementById('cc-dachon').textContent === '0 video đã chọn'")
+    assert page.is_hidden("#toast"), "không được có toast lỗi"
+
+    chia = models_chia.lay_chia_theo_job(db, job, NGUOI)
+    assert kieu_vid in chia["nghi"] and nghi_vid in chia["nghi"]
+    assert kieu_vid not in [v for k in chia["kieu"] for v in k["video_ids"]]
+
+
+def test_toast_rejection_khong_bao_gio_hien_ma_tran(page, dulieu):
+    """C1(b): mọi mã `tu_choi` phải map sang câu tiếng Việt trong
+    `errorDetailText`, không bao giờ lộ mã snake_case trần. Ép `khong_hop_le`
+    qua nút "Hoàn tác" khi server không còn gì để lùi — gỡ `disabled` bằng tay
+    để mô phỏng đúng dạng lỗi spec gọi là "API mismatch" (client tưởng bật
+    được, server từ chối vì trạng thái thật không cho): nút này không tự kiểm
+    `co_the_hoan_tac` lần hai trong handler, nên gỡ `disabled` là đủ để bấm
+    chạm thẳng tới nhánh `tu_choi` thật của server."""
+    _mo_chia(page, dulieu["job_full"])
+    assert page.locator('[data-cc-action="hoan-tac"]').is_disabled(), \
+        "chưa có thao tác sửa nào ⇒ nút phải khoá lúc mở nháp"
+    page.evaluate(
+        "document.querySelector('[data-cc-action=\"hoan-tac\"]').removeAttribute('disabled')")
+    page.click('[data-cc-action="hoan-tac"]')
+    page.wait_for_function(
+        "!document.getElementById('toast').hidden && "
+        "document.getElementById('toast').textContent.length > 0")
+    toast = page.inner_text("#toast")
+    assert toast == "Có video không thuộc đúng làn cho thao tác này — không thay đổi gì.", toast
+    assert "_" not in toast, "không được lộ mã snake_case trần"
+
+
+# --- C2: video gán TAY vào cụm thật không được chặn nút "cả làn" ------------
+
+def test_hd_ngoai_chu_de_thanh_cong_cho_phan_con_lai_sau_khi_gan_tay(page, dulieu):
+    """Root fix C2: một video làn "hướng dẫn" gán TAY vào cụm thật (không qua
+    duyệt) trong lúc nháp còn mở phải ẩn khỏi `huong_dan` ngay (`lay_chia`),
+    không kẹt ở đó mãi. Nút cả làn "hd-ngoai-chu-de" phải thành công cho phần
+    còn lại — trước bản vá, video đã ở cụm thật vẫn nằm trong `huong_dan`,
+    khiến `_kiem_video_ids_thao_tac` chặn CẢ yêu cầu vì lý do
+    `video_da_o_cum_that`, và phần còn lại không bao giờ chuyển được bằng nút
+    này nữa."""
+    db = dulieu["db"]
+    job = dulieu["job_full"]
+    ids = dulieu["ids"]
+    gan_vid, con_lai_vid = ids[6], ids[7]
+    cum_id, _ = models_cum.tao_cum(db, NGUOI, "Motion", "Strom", "Vest")
+    models_cum.gan_video(db, cum_id, NGUOI, None, [gan_vid])
+    _mo_chia(page, job)
+
+    tieude = page.inner_text("#cc-tieude")
+    assert "thẻ chữ 1" in tieude, "video đã gán tay phải ẩn khỏi 'hướng dẫn' ngay khi mở nháp"
+
+    with page.expect_response(lambda r: "/thao-tac" in r.url) as resp:
+        page.click('[data-cc-action="hd-ngoai-chu-de"]')
+    than = resp.value.request.post_data_json
+    assert than["video_ids"] == [con_lai_vid], "chỉ video CÒN LẠI mới được gửi đi"
+    assert resp.value.ok, "phần còn lại phải thành công, không bị chặn vì video kia đã ở cụm thật"
+
+    page.wait_for_function("document.getElementById('cc-tieude').textContent.includes('thẻ chữ 0')")
+    assert page.is_hidden("#toast"), "không được có toast lỗi"
+    chia = models_chia.lay_chia_theo_job(db, job, NGUOI)
+    assert chia["huong_dan"] == [] and con_lai_vid in chia["nghi"]
+    assert chia["bi_bo"] == [], "video gán tay không phải video lạc — KHÔNG rơi vào bi_bo"
+
+
+# --- C3: refresh() (GET) không có seq — phản hồi CŨ về SAU phải bị bỏ ------
+
+def test_refresh_bo_qua_phan_hoi_cu_ve_muon_hon(page, dulieu):
+    """`refresh()` xếp GET job/chia/cum chạy `Promise.all` mỗi lượt gọi,
+    nhưng KHÔNG xếp các LƯỢT GỌI `refresh()` vào hàng đợi như POST
+    (`apiQueueDuoi` chỉ xếp POST — xem `apiSend`). Một GET `/chia/{job_id}` bị
+    mạng làm chậm có thể về SAU một GET mới hơn; không có `seq` để bỏ phản hồi
+    cũ, DOM sẽ bị ghi ĐÈ NGƯỢC bằng dữ liệu CŨ khi phản hồi chậm cuối cùng
+    cũng tới.
+
+    Dùng `page.route` để tự tay kiểm SOÁT THỨ TỰ GIAO (đúng cách spec cho
+    phép khi không tái hiện được thứ tự thật bằng mạng): request #1 chạm
+    server THẬT ngay lập tức (`route.fetch()`) — đọc đúng usecase CŨ tại
+    THỜI ĐIỂM ĐÓ — nhưng route KHÔNG `fulfill()` ngay, giữ lại response đó
+    trong tay test. Request #2 (sau khi đã đổi usecase) được giao ngay. Chỉ
+    SAU KHI DOM đã vẽ xong theo request #2 mới tự tay `fulfill()` response
+    CŨ đã giữ của request #1 — mô phỏng đúng "phản hồi cũ về sau". (KHÔNG
+    `time.sleep()` bên trong route handler: nó chạy trên cùng driver đồng bộ
+    dùng chung cho MỌI lệnh Playwright khác của test — đo được `sleep` ở đó
+    khoá luôn `page.wait_for_timeout()` gọi sau, phồng lên đúng bằng thời
+    gian ngủ, che mất thứ tự cần đo)."""
+    db = dulieu["db"]
+    job = dulieu["job_full"]
+    goc = models_chia.lay_chia_theo_job
+    dem = {"n": 0}
+    giu: dict = {}
+
+    def _chan(route):
+        if dem["n"] == 0:
+            dem["n"] += 1
+            # Chạm server NGAY — đọc usecase CŨ — nhưng KHÔNG giao ngay.
+            giu["route"], giu["resp"] = route, route.fetch()
+            return
+        route.fulfill(response=route.fetch())
+
+    page.route(f"**/chia/{job}", _chan)
+
+    page.click(f'[data-chia="{job}"]')   # refresh #1 — server đã trả lời (usecase CŨ), CHƯA giao cho JS
+    page.wait_for_timeout(150)   # đủ để route.fetch() (đồng bộ, nhanh) của request #1 chạy xong ở trên
+
+    lan_id = goc(db, job, NGUOI)["id"]
+    models_chia.ap_thao_tac(db, lan_id, NGUOI, "doi_insight", usecase="Moi", insight_goc="Sau")
+
+    page.evaluate(f"() => {{ window.chiaCum.open({job}); }}")   # refresh #2 — chạm server SAU, giao NGAY (usecase MỚI)
+    page.wait_for_function(
+        "document.querySelector('[data-cc-field=\"usecase\"]') && "
+        "document.querySelector('[data-cc-field=\"usecase\"]').value === 'Moi'")
+
+    giu["route"].fulfill(response=giu["resp"])   # giờ mới giao phản hồi CŨ của request #1 — về SAU
+    page.wait_for_timeout(200)   # đủ cho refresh() xử lý phản hồi vừa giao (nếu nó không bị bỏ)
+
+    assert page.input_value('[data-cc-field="usecase"]') == "Moi", \
+        "GET #1 (cũ, giao SAU) về SAU nhưng phải bị BỎ theo seq — không được ghi đè lại giá trị MỚI"

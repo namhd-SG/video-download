@@ -955,6 +955,50 @@ def test_duyet_bao_lai_video_bi_loc_boi_thu_vien_o_bi_bo(kho):
     assert chia["kieu"] == []
 
 
+# --- video đã có nhà THẬT (gán tay) phải ẩn khỏi mọi làn nháp, KHÔNG bi_bo ----
+
+def test_lay_chia_an_video_gan_tay_vao_cum_that_khoi_huong_dan(kho):
+    """Root fix C2: một video làn "hướng dẫn" gán TAY vào cụm thật (không qua
+    duyệt) phải biến khỏi `huong_dan` ngay — nó đã XONG, không phải "lạc" nên
+    KHÔNG được rơi vào `bi_bo`. Và nút "cả làn" (gọi `ngoai_chu_de` với đúng
+    danh sách `huong_dan` mà `lay_chia` vừa trả) phải chạy được cho phần còn
+    lại — trước bản vá này, video đã ở cụm thật vẫn kẹt trong `huong_dan`, làm
+    `_kiem_video_ids_thao_tac` chặn CẢ yêu cầu vì lý do `video_da_o_cum_that`."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3",), huong_dan=["5", "6"])
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Motion", "Badaboum")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["5"])
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia["huong_dan"] == ["6"], "'5' đã có nhà (cụm thật) — phải ẩn khỏi huong_dan"
+    assert chia["bi_bo"] == [], "không phải video lạc — KHÔNG được rơi vào bi_bo"
+    assert chia["kieu"][0]["video_ids"] == ["1", "2"], "làn kiểu không đổi"
+
+    truoc = len(_thao_tac(db, lan_id))
+    ket = models_chia.ap_thao_tac(db, lan_id, TOI, "ngoai_chu_de", video_ids=chia["huong_dan"])
+    assert ket["so_video"] == 1 and ket["chi_tiet"]["video_ids"] == ["6"], \
+        "nút cả làn phải chạy được cho phần CÒN LẠI, không bị chặn vì '5' đã ở cụm thật"
+    assert len(_thao_tac(db, lan_id)) == truoc + 1
+
+    chia2 = models_chia.lay_chia(db, lan_id, TOI)
+    assert chia2["huong_dan"] == [] and chia2["nghi"] == ["6"]
+    assert chia2["bi_bo"] == [], "'5' vẫn không phải bi_bo sau thao tác"
+
+
+def test_lay_chia_an_video_gan_tay_vao_cum_that_khoi_mot_kieu(kho):
+    """Cùng luật cho làn "kiểu" (khác nhánh mồ côi cũ, `cum_nhap_id` của hàng
+    này VẪN CÒN — video bị gán tay trong khi kiểu chứa nó chưa được duyệt)."""
+    db, job = kho
+    lan_id = _de_xuat_2_kieu(db, job, a=("1", "2"), b=("3", "4"))
+    cum_id, _ = models_cum.tao_cum(db, TOI, "Dance", "Motion", "Badaboum")
+    models_cum.gan_video(db, cum_id, TOI, TOI, ["1"])
+
+    chia = models_chia.lay_chia(db, lan_id, TOI)
+    couple = next(k for k in chia["kieu"] if k["kieu"] == "couple")
+    assert couple["video_ids"] == ["2"], "'1' đã có nhà — phải ẩn khỏi kiểu 'couple'"
+    assert chia["bi_bo"] == []
+
+
 # --- một kiểu tên xấu không được làm sập cả "Duyệt tất cả" -------------------
 
 def test_duyet_het_bo_qua_kieu_ten_qua_dai_van_duyet_kieu_con_lai(kho):

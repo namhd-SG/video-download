@@ -101,6 +101,13 @@
     if (el) el.hidden = false;
   }
 
+  // Bảng câu tiếng Việt cho MỌI mã `tu_choi` server có thể trả
+  // (`models_chia._kiem_video_ids_thao_tac`/`_op_hoan_tac`) — không bao giờ để
+  // lọt một mã snake_case trần ra toast.
+  const TU_CHOI_TEXT = {
+    khong_hop_le: "Có video không thuộc đúng làn cho thao tác này — không thay đổi gì.",
+  };
+
   function errorDetailText(err) {
     // Lý do RIÊNG từ server (`detail` là một OBJECT, không phải chuỗi hay
     // mảng lỗi validate) — hiện tại chỉ có `video_da_o_cum_that`
@@ -112,9 +119,11 @@
         const n = Array.isArray(err.ma.video_ids) ? err.ma.video_ids.length : 0;
         return `Video đã ở cụm thật, không di chuyển được (${n} video).`;
       }
-      if (typeof err.ma.tu_choi === "string") return err.ma.tu_choi;
+      if (typeof err.ma.tu_choi === "string") {
+        return TU_CHOI_TEXT[err.ma.tu_choi] || "Thao tác không hợp lệ.";
+      }
     }
-    if (typeof err.ma === "string") return err.ma;
+    if (typeof err.ma === "string") return TU_CHOI_TEXT[err.ma] || err.ma;
     if (Array.isArray(err.ma)) return err.ma.map((e) => e.msg || JSON.stringify(e)).join("; ");
     return err.message || "Thao tác không thực hiện được";
   }
@@ -125,6 +134,10 @@
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
       showToast(errorDetailText(err));
+      // Thao tác trượt có thể đã xoá `CC.selected` (dock) TRƯỚC khi gửi POST
+      // (vd `dock-ngoai`/`dock-chuyen`) — vẽ lại để số hiện trên dock khớp
+      // với `CC.selected` thật, không còn treo số cũ.
+      if (CC.open) render();
     }
   }
 
@@ -150,12 +163,23 @@
     document.body.classList.remove("cc-lock-scroll");
   }
 
+  // Số thứ tự lượt `refresh()` — MỖI GET (job/chia/cum) không tự có thứ tự
+  // phản hồi đảm bảo (khác hàng đợi POST ở `apiSend`, cố ý không xếp GET vào
+  // đó vì GET không đổi dữ liệu). Không có `seq` thì lượt GET cũ có thể về
+  // SAU lượt GET mới hơn và ghi đè `CC.data` bằng bản CŨ — DOM vẽ lại giá trị
+  // cũ, và lần `doi_insight` kế tiếp (gửi CẢ hai ô từ DOM) ghi giá trị cũ đó
+  // lên server (lost update). `seq` tăng ở ĐẦU mỗi lượt refresh(); lượt nào
+  // về mà không còn là lượt MỚI NHẤT vừa bắt đầu thì bỏ, không ghi state.
+  let refreshSeq = 0;
+
   async function refresh() {
+    const seq = ++refreshSeq;
     const [job, data, cumRes] = await Promise.all([
       apiGet(`/jobs/${CC.jobId}`),
       apiGet(`/chia/${CC.jobId}`),
       apiGet("/cum"),
     ]);
+    if (seq !== refreshSeq) return;  // một refresh() mới hơn đã bắt đầu — bỏ kết quả cũ này
     CC.job = job;
     CC.data = data;
     CC.cums = (cumRes && cumRes.cum) || [];
@@ -783,7 +807,16 @@
         }
         if (action === "dock-ngoai") {
           if (!CC.selected.size) return;
-          const ids = [...CC.selected];
+          // Lọc bỏ video ĐÃ ở nghi trước khi gửi — giống `tra-ve-den`. Server
+          // từ chối CẢ yêu cầu nếu danh sách còn lẫn video đã ở nghi (hợp
+          // đồng chỉ có MỘT trạng thái "nghi"), nên "chọn cả kiểu lẫn nghi rồi
+          // bấm Ngoài chủ đề" — thao tác tự nhiên khi muốn dồn hết vào nghi —
+          // phải tự lọc ở đây thay vì rơi vào toast lỗi.
+          const ids = [...CC.selected].filter((v) => !CC.data.nghi.includes(v));
+          if (!ids.length) {
+            showToast("Video đã chọn đều đã ở làn ngoài chủ đề — không có gì để chuyển.");
+            return;
+          }
           CC.selected = new Set();
           await thaoTac("ngoai_chu_de", { video_ids: ids });
           return;
