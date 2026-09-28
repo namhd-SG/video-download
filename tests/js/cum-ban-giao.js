@@ -32,10 +32,13 @@ const CUM_TEN = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "coup
 const CUM = { id: 12, usecase: "Dance", insight_goc: "Badaboum", kieu: "couple",
               insight: "INSIGHT-TU-SERVER", lo_mo: [] };
 
+// `thieuDrive`: số video CŨ NHẤT (⇒ rơi vào lô 1) chưa lên Drive
+// — payload lọc chúng đi, nên `payload.items` NGẮN hơn số video của lô.
 function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
-                hetPhien = false, dongTabTruocDieuHuong = false }) {
+                hetPhien = false, dongTabTruocDieuHuong = false, thieuDrive = 0 }) {
   const nhatKy = [];
   const toast = [];
+  const thanGui = [];
   let baoPhien = false;
   const state = {
     cums: [JSON.parse(JSON.stringify(cum))],
@@ -43,6 +46,8 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
       video_id: `v${i}`, drive_file_id: `d${i}`, title: `t${i}`, url: `u${i}`, cum_id: cum.id,
     })),
   };
+  // `videoCuaCum` đảo thứ tự (cũ nhất trước) ⇒ video CUỐI mảng là cũ nhất.
+  for (let k = 0; k < thieuDrive; k++) state.videos[soVideo - 1 - k].drive_file_id = null;
   const showToast = (m) => toast.push(m);
   const baoPhienHetHan = () => { baoPhien = true; };
   const renderCumHead = () => nhatKy.push("ve");
@@ -64,8 +69,13 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
       return tab;
     },
   };
-  const apiSend = async (method, path) => { nhatKy.push(`${method} ${path}`);
-                                            return { mo_luc: "2026-09-23T10:42:00+00:00" }; };
+  // Trả `so_item` NHƯ server (lặp lại giá trị nhận được, thiếu ⇒ null) — để
+  // `lo_mo` phía trang phản ánh đúng thứ client đã gửi đi.
+  const apiSend = async (method, path, body) => {
+    nhatKy.push(`${method} ${path}`);
+    thanGui.push(body === undefined ? null : body);
+    return { mo_luc: "2026-09-23T10:42:00+00:00", so_item: body?.so_item ?? null };
+  };
   class PhienHetHan extends Error {}
   // Giả lập `GET /cum/{id}/lo/{thu}/payload` — cắt lô ĐÚNG thứ tự
   // `videoCuaCum`+`chiaLo` (video cũ nhất trước) rồi lọc `drive_file_id`,
@@ -101,7 +111,7 @@ function chay({ soVideo, thu, popupBiChan, cum = CUM, loiPayload = null,
   const moTabTrongGoc = moTabTrong;
   moTabTrong = () => { tabHienTai = moTabTrongGoc(); return tabHienTai; };
   return moLoCum(cum.id, thu).then((kq) => ({
-    kq, nhatKy: [...nhatKy], toast, baoPhien,
+    kq, nhatKy: [...nhatKy], toast, baoPhien, thanGui,
     payload: diaChiCuoi ? giaiMa(diaChiCuoi) : null,
     lo_mo: state.cums[0].lo_mo,
   }));
@@ -194,7 +204,7 @@ async function chayMoHetLoCumHetPhienGiuaChung() {
 }
 
 (async () => {
-  eval(["chiaLo", "khoaNhan", "timCumTrung", "xemTruocTen"].map(grab).join("\n"));
+  eval(["chiaLo", "khoaNhan", "timCumTrung", "xemTruocTen", "nhanSoVideo"].map(grab).join("\n"));
   const dai = (n) => chiaLo(Array.from({ length: n }, (_, i) => i), HANDOFF_MAX).map((l) => l.length);
   const out = {
     HANDOFF_MAX, GAN_CUM_TOI_DA,
@@ -206,6 +216,12 @@ async function chayMoHetLoCumHetPhienGiuaChung() {
     lo2: await chay({ soVideo: 64, thu: 2, popupBiChan: false }),
     lo3: await chay({ soVideo: 64, thu: 3, popupBiChan: false }),
     mot_lo: await chay({ soVideo: 12, thu: 1, popupBiChan: false }),
+    // Lô 4 video, 1 chưa lên Drive ⇒ payload 3 item ⇒ gửi kèm so_item = 3.
+    thieu_drive: await chay({ soVideo: 4, thu: 1, popupBiChan: false, thieuDrive: 1 }),
+    nhan_so_video: {
+      thieu: nhanSoVideo(3, 4), du: nhanSoVideo(4, 4), khong: nhanSoVideo(0, 4),
+      chua_biet_null: nhanSoVideo(null, 4), chua_biet_undef: nhanSoVideo(undefined, 4),
+    },
     bi_chan: await chay({ soVideo: 12, thu: 1, popupBiChan: true }),
     // Fetch payload trượt vì lý do KHÔNG PHẢI hết phiên (vd 400 "lô ngoài
     // khoảng" — một tab khác vừa đổi số video của cụm) ⇒ đóng tab trống đã

@@ -143,6 +143,26 @@ def test_tab_bi_dong_truoc_khi_dieu_huong_khong_ghi_da_mo():
     assert dong["lo_mo"] == []
 
 
+def test_da_mo_gui_kem_so_item_that_cua_payload():
+    """Lô 4 video, 1 chưa lên Drive ⇒ payload 3 item ⇒ POST da-mo phải mang
+    `so_item` = 3 (số item THẬT đã gửi, không phải số video của lô), và
+    `lo_mo` phía trang giữ đúng số đó cho nhãn "3/4"."""
+    d = _node("cum-ban-giao.js")
+    t = d["thieu_drive"]
+    assert t["kq"] == "mo" and len(t["payload"]["items"]) == 3
+    assert t["thanGui"] == [{"so_item": 3}], "da-mo phải gửi kèm payload.items.length"
+    assert t["lo_mo"] == [{"thu": 1, "mo_luc": "2026-09-23T10:42:00+00:00", "so_item": 3}]
+    # control: đủ Drive ⇒ so_item = số video của lô.
+    assert d["mot_lo"]["thanGui"] == [{"so_item": 12}]
+
+
+def test_nhan_so_video_chi_hien_x_tren_n_khi_biet_va_thieu():
+    n = _node("cum-ban-giao.js")["nhan_so_video"]
+    assert n == {"thieu": "3/4", "du": "4", "khong": "0/4",
+                 "chua_biet_null": "4", "chua_biet_undef": "4"}, \
+        "chỉ hiện x/N khi biết so_item và nó < N; đủ hoặc chưa biết ⇒ N trơn, không bịa n/n"
+
+
 def test_ban_giao_chon_tay_khong_co_nhan():
     d = _node("chon-sau-ban-giao.js")
     t = d["ack"]["tin"]
@@ -303,7 +323,63 @@ def test_tao_cum_dua_3_video_vao_va_ban_giao_mo_tab_dung_nhan(page):
     page.wait_for_function("document.querySelector('#cum-head .sent-line')")
     assert "Đã mở Creative Desk cho cụm này lúc" in page.inner_text("#cum-head")
     assert "đã tạo" not in page.inner_text("#cum-head").lower()
-    assert [m["thu"] for m in _cum_api(page)[0]["lo_mo"]] == [1]
+    # Đủ Drive ⇒ nhãn N trơn (không "3/3").
+    dong = page.inner_text("#cum-head .sent-line")
+    assert "(3 video)" in dong and "/3 video" not in dong, dong
+    assert [(m["thu"], m["so_item"]) for m in _cum_api(page)[0]["lo_mo"]] == [(1, 3)]
+
+
+def _bo_drive(db: Path, video_ids: list[str]) -> dict[str, str]:
+    """Gỡ `drive_file_id` của vài video (mô phỏng "chưa lên Drive"); trả giá
+    trị cũ để test TRẢ LẠI — 86 video mồi dùng chung cho cả module."""
+    with models._connect(db) as conn:
+        cu = {r["video_id"]: r["drive_file_id"] for r in conn.execute(
+            f"SELECT video_id, drive_file_id FROM videos WHERE video_id IN "
+            f"({','.join('?' * len(video_ids))})", video_ids)}
+        conn.executemany("UPDATE videos SET drive_file_id = NULL WHERE video_id = ?",
+                         [(v,) for v in video_ids])
+    return cu
+
+
+def _tra_drive(db: Path, cu: dict[str, str]) -> None:
+    with models._connect(db) as conn:
+        conn.executemany("UPDATE videos SET drive_file_id = ? WHERE video_id = ?",
+                         [(d, v) for v, d in cu.items()])
+
+
+def _video_cua_cum(db: Path, cum_id: int) -> list[str]:
+    with models._connect(db) as conn:
+        return [r["video_id"] for r in conn.execute(
+            "SELECT vc.video_id FROM video_cum vc JOIN videos v ON v.video_id = vc.video_id "
+            "WHERE vc.cum_id = ? ORDER BY v.tao_luc, v.video_id", (cum_id,))]
+
+
+def test_lo_co_video_chua_len_drive_hien_so_item_that_tren_so_video(page, may_chu):
+    """Ca thật: dòng ghi "(4 video)" mà Creative Desk chỉ nhận 3. Sau khi mở,
+    dòng phải ghi "(3/4 video)" và DB giữ so_item = 3."""
+    _, db = may_chu
+    _chon(page, 4)
+    _dua_vao_cum_moi(page, "Strom", "Portrait", "vest")
+    cum_id = _cum_api(page)[0]["id"]
+    cu = _bo_drive(db, _video_cua_cum(db, cum_id)[:1])
+    try:
+        with page.context.expect_page() as tab_moi:
+            with page.expect_response(lambda r: "/da-mo" in r.url):
+                page.click("#cum-head [data-mo-lo='1']")
+        tab_moi.value.wait_for_load_state()
+        assert len(_giai_ma(tab_moi.value.url)["items"]) == 3
+        page.wait_for_function("document.querySelector('#cum-head .sent-line')")
+        dong = page.inner_text("#cum-head .sent-line")
+        assert "(3/4 video)" in dong, dong
+        assert [(m["thu"], m["so_item"]) for m in _cum_api(page)[0]["lo_mo"]] == [(1, 3)]
+        # Tải lại trang: nhãn đọc từ DB, không chỉ từ trạng thái JS vừa ghi.
+        page.reload()
+        page.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+        page.click(f"#cum-rail [data-cum-loc='{cum_id}']")
+        page.wait_for_function("document.querySelector('#cum-head .sent-line')")
+        assert "(3/4 video)" in page.inner_text("#cum-head .sent-line")
+    finally:
+        _tra_drive(db, cu)
 
 
 def test_popup_bi_chan_thi_khong_ghi_moc(page):
@@ -345,7 +421,35 @@ def test_cum_hon_30_tach_lo_va_moi_lo_mot_moc(page):
     dong = {i: page.inner_text(f"#cum-head .bo-row[data-lo='{i}']") for i in (1, 2, 3)}
     assert "chưa mở" in dong[1] and "chưa mở" in dong[3]
     assert "đã mở Creative Desk lúc" in dong[2] and "Mở lại" in dong[2]
+    assert "30 video" in dong[2] and "/30 video" not in dong[2], "đủ Drive ⇒ N trơn"
     page.evaluate("localStorage.removeItem('videodl-per-page')")
+
+
+def test_nhieu_lo_lo_co_video_chua_len_drive_hien_x_tren_n_dung_dong(page, may_chu):
+    """Cụm 86 video ⇒ 3 lô (30/30/26). Gỡ Drive của 1 video trong lô 2 ⇒ mở
+    lô 2 ghi "29/30 video" ở ĐÚNG dòng lô 2; lô 1/3 chưa mở giữ số video trơn."""
+    _, db = may_chu
+    page.click("#so-moi-trang [data-so='100']")
+    page.click("#chon-trang")
+    _dua_vao_cum_moi(page, "Badaboum", "Dance", "cartoon")
+    cum_id = _cum_api(page)[0]["id"]
+    cu = _bo_drive(db, _video_cua_cum(db, cum_id)[30:31])   # video đầu của lô 2
+    try:
+        with page.context.expect_page() as tab_moi:
+            with page.expect_response(lambda r: "/lo/2/da-mo" in r.url):
+                page.click("#cum-head .bo-row[data-lo='2'] [data-mo-lo]")
+        tab_moi.value.wait_for_load_state()
+        assert len(_giai_ma(tab_moi.value.url)["items"]) == 29
+        page.wait_for_function(
+            "document.querySelector(\"#cum-head .bo-row[data-lo='2']\").innerText.includes('đã mở')")
+        dong = {i: page.inner_text(f"#cum-head .bo-row[data-lo='{i}']") for i in (1, 2, 3)}
+        assert "29/30 video" in dong[2], dong[2]
+        assert "30 video" in dong[1] and "/30" not in dong[1], dong[1]
+        assert "26 video" in dong[3] and "/26" not in dong[3], dong[3]
+        assert [(m["thu"], m["so_item"]) for m in _cum_api(page)[0]["lo_mo"]] == [(2, 29)]
+    finally:
+        _tra_drive(db, cu)
+        page.evaluate("localStorage.removeItem('videodl-per-page')")
 
 
 def test_popover_trung_ten_dung_lai_cum_co_san(page):
