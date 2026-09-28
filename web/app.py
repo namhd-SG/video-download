@@ -714,6 +714,13 @@ class GanVideoCumRequest(BaseModel):
     bo: bool = False
 
 
+class DaMoLoRequest(BaseModel):
+    """Body của `POST .../da-mo` — tuỳ chọn (client cũ không gửi kèm vẫn phải
+    chạy được). Trần trên là số video của lô, kiểm TRONG route (đọc `so_lo`/
+    `models_chia.so_video_trong_lo`) vì nó đổi theo từng cụm/lô."""
+    so_item: int | None = Field(default=None, ge=0)
+
+
 def _pham_vi(nguoi_tao: str) -> str | None:
     """Phạm vi thư viện để đếm/gán video: None = admin (cả kho)."""
     return None if _la_admin(nguoi_tao) else nguoi_tao
@@ -798,18 +805,29 @@ def gan_video_cum(cum_id: int, body: GanVideoCumRequest,
 
 
 @app.post("/cum/{cum_id}/lo/{thu}/da-mo")
-def ghi_lo_da_mo(cum_id: int, thu: int,
+def ghi_lo_da_mo(cum_id: int, thu: int, body: DaMoLoRequest | None = None,
                  nguoi_tao: str = Depends(require_user)) -> dict:
     """Ghi mốc "đã mở Creative Desk" cho lô `thu`. Trang chỉ gọi SAU khi
-    `window.open` trả một tab thật; mốc không bao giờ nghĩa là "đã tạo bộ"."""
+    `window.open` trả một tab thật; mốc không bao giờ nghĩa là "đã tạo bộ".
+
+    `body.so_item` (tuỳ chọn) là số item THẬT client đã gửi kèm
+    (`payload.items.length`, sau khi lọc video chưa lên Drive) — kiểm
+    0..số video của lô TRƯỚC khi ghi; ngoài khoảng ⇒ 400. Thiếu body (client
+    cũ) ⇒ ghi NULL, không chặn."""
     cum = _cum_hoac_404(cum_id, nguoi_tao)
     if not (1 <= thu <= cum["so_lo"]):
         raise HTTPException(status_code=400,
                             detail=f"lô phải trong khoảng 1..{cum['so_lo']}")
-    mo_luc = models_cum.ghi_lo_da_mo(DB_PATH, cum_id, nguoi_tao, thu)
+    so_item = body.so_item if body is not None else None
+    if so_item is not None:
+        toi_da = models_chia.so_video_trong_lo(DB_PATH, cum, nguoi_tao, _pham_vi(nguoi_tao), thu)
+        if not (0 <= so_item <= toi_da):
+            raise HTTPException(status_code=400,
+                                detail=f"so_item phải trong khoảng 0..{toi_da}")
+    mo_luc = models_cum.ghi_lo_da_mo(DB_PATH, cum_id, nguoi_tao, thu, so_item)
     if mo_luc is None:
         raise HTTPException(status_code=404, detail="cụm không tồn tại")
-    return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc}
+    return {"cum_id": cum_id, "thu": thu, "mo_luc": mo_luc, "so_item": so_item}
 
 
 @app.get("/cum/{cum_id}/lo/{thu}/payload")

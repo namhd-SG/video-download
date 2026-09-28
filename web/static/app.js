@@ -1145,6 +1145,16 @@
     return ra;
   }
 
+  // Nhãn "x/N" khi biết số item THẬT đã gửi (`soItem`) và nó NHỎ HƠN tổng số
+  // video của lô (`n`) — video bị lọc vì chưa lên Drive/thiếu link gốc hợp lệ
+  // (server trả `payload.items` ngắn hơn số video của lô, xem `moLoCum`).
+  // `soItem == n` hoặc chưa biết (`null`/`undefined`, mốc ghi trước khi cột
+  // này tồn tại, hoặc client cũ không gửi kèm) ⇒ chỉ hiện `n` trơn, KHÔNG bịa
+  // "n/n" — con số cũ chỉ đếm số VIDEO chưa từng phân biệt với số ITEM gửi được.
+  function nhanSoVideo(soItem, n) {
+    return (typeof soItem === "number" && soItem < n) ? `${soItem}/${n}` : `${n}`;
+  }
+
   // Khoá so trùng cụm: trim + gộp khoảng trắng + không phân biệt hoa/thường.
   function khoaNhan(s) {
     return String(s || "").split(/\s+/).filter(Boolean).join(" ").toLowerCase();
@@ -1242,18 +1252,21 @@
     const tong = lo.length;
     const n = lo.reduce((a, l) => a + l.length, 0);
     // Chỉ VẼ mốc của lô còn tồn tại (`thu ≤ số lô`); mốc cũ vẫn nằm trong DB.
-    const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m.mo_luc]));
+    // Giữ NGUYÊN hàng (không chỉ `mo_luc`) — cần cả `so_item` cho nhãn "x/N".
+    const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m]));
     const nut = tong === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
       : tong === 1 ? `<button type="button" class="btn primary" data-mo-lo="1">Tạo bộ tự tìm từ cụm này (${n})</button>`
       : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map((l) => l.length).join(" + ")})</button>`;
     const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
       const m = moLuc.get(i + 1);
-      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${l.length} video</span>` +
-        `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m)}` : "chưa mở"}</span><span class="grow"></span>` +
+      const nhanN = m ? nhanSoVideo(m.so_item, l.length) : `${l.length}`;
+      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${nhanN} video</span>` +
+        `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m.mo_luc)}` : "chưa mở"}</span><span class="grow"></span>` +
         `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
     }).join("")}</div>` : "";
     const mot = tong === 1 && moLuc.get(1)
-      ? `<div class="sent-line">Đã mở Creative Desk cho cụm này lúc ${fmtDateTime(moLuc.get(1))} (${n} video). ` +
+      ? `<div class="sent-line">Đã mở Creative Desk cho cụm này lúc ${fmtDateTime(moLuc.get(1).mo_luc)} ` +
+        `(${nhanSoVideo(moLuc.get(1).so_item, n)} video). ` +
         `Video Desk <b>không biết</b> bộ bên đó đã được tạo hay chưa.</div>` : "";
     head.innerHTML =
       `<div><div class="crumb">${escapeHtml(cum.usecase)} › ${escapeHtml(cum.insight_goc)} ›</div>` +
@@ -1350,8 +1363,10 @@
     }
     dieuHuongTab(tab, urlBanGiao(payload));
     try {
-      const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`);
-      cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu).concat([{ thu, mo_luc: res.mo_luc }]);
+      const res = await apiSend("POST", `/cum/${cumId}/lo/${thu}/da-mo`,
+        { so_item: payload.items.length });
+      cum.lo_mo = cum.lo_mo.filter((m) => m.thu !== thu)
+        .concat([{ thu, mo_luc: res.mo_luc, so_item: res.so_item }]);
     } catch (err) {
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
       showToast("Đã mở Creative Desk nhưng không ghi được mốc “đã mở” — bấm lại nếu cần.");
