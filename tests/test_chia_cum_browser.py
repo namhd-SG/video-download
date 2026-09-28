@@ -862,6 +862,37 @@ def test_dang_gui_loai_thi_khoa_nut_khong_gui_lan_hai(page, dulieu):
     assert page.locator("[data-cc-loai-dang-gui]").count() == 0, "gửi xong thì mở khoá"
 
 
+def test_dock_tach_sau_luot_loai_dang_bay_bi_tu_choi_khong_sinh_kieu_rong(page, dulieu):
+    """Ca đo 28/09: trong lúc Loại đang gửi, dock vẫn hiện và tập chọn còn video
+    đó; bấm "Kiểu mới từ chọn" ⇒ POST xếp hàng SAU Loại, tới server khi video đã
+    vào Thùng rác. Server phải từ chối (không sinh kiểu rỗng) và toast nói rõ."""
+    db, job, ids = dulieu["db"], dulieu["job_full"], dulieu["ids"]
+    vid = ids[8]
+    _mo_chia(page, job)
+    giu = []
+    page.route("**/videos/loai", lambda r: giu.append(r))
+    page.locator(".cc-nhom.cc-lan").nth(1).locator(".cc-t").nth(0).click()
+    page.click('[data-cc-action="loai-lan"][data-lan="nghi"]')
+    page.click('[data-cc-action="confirm-loai"]')
+    page.wait_for_function("document.querySelector('[data-cc-loai-dang-gui]')")
+    page.click('[data-cc-action="dock-tach"]')
+    page.fill("[data-cc-tach-kieu]", "Kieu tu video da loai")
+    page.click('[data-cc-action="confirm-tach"]')
+    kieu_truoc = len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"])
+    # Ghi MỌI câu toast: "Đã loại 1 video" và câu từ chối về gần như cùng lúc.
+    page.evaluate("""() => { window.__toasts = [];
+      new MutationObserver(() => window.__toasts.push(document.getElementById('toast').textContent))
+        .observe(document.getElementById('toast'), {childList: true, characterData: true, subtree: true}); }""")
+    giu[0].continue_()
+    page.wait_for_function("window.__toasts.some((t) => t.includes('đã bị loại khỏi thư viện'))")
+    toasts = page.evaluate("window.__toasts")
+    assert "Video đã bị loại khỏi thư viện, không di chuyển được (1 video)." in toasts, toasts
+    with models._connect(db) as conn:
+        nhap = conn.execute("SELECT lan FROM video_cum_nhap WHERE video_id = ?", (vid,)).fetchall()
+    assert [r[0] for r in nhap] == ["nghi"], "hàng nháp giữ nguyên làn Nghi, không vào kiểu"
+    assert len(models_chia.lay_chia_theo_job(db, job, NGUOI)["kieu"]) == kieu_truoc, "không sinh kiểu rỗng"
+
+
 def test_tran_lo_loai_chia_khop_backend():
     import re
     src = (Path(__file__).resolve().parent.parent / "web" / "static" / "chia-cum.js").read_text()

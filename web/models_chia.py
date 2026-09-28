@@ -1071,20 +1071,23 @@ def _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids, *, lan_khong_hop
     (`video_cum` — duyệt hoặc gán tay; hàng nháp của nó có thể vẫn còn "mồ
     côi" `lan='kieu'`, xem `_hang_video_cum_nhap`); (b) không có hàng
     `video_cum_nhap` nào của LƯỢT NÀY (id giả, hoặc đã bị loại/đổi chủ sau
-    khi đề xuất); hoặc (c) mang `lan` nằm trong `lan_khong_hop_le` — tham số
+    khi đề xuất); (c) mang `lan` nằm trong `lan_khong_hop_le` — tham số
     này KHÁC NHAU theo op gọi: `ngoai_chu_de` truyền `("nghi",)` (đã ở nghi
     rồi là SAI, không phải no-op im lặng nữa — hợp đồng chỉ có MỘT trạng
     thái "nghi"); `tra_ve` truyền `("kieu",)` (đang ở một kiểu là việc của
     `chuyen`, không phải `tra_ve`); `tach`/`chuyen` không truyền gì (mọi làn
-    đều là đích hợp lệ của hai op đó).
+    đều là đích hợp lệ của hai op đó); hoặc (d) THUỘC lượt này nhưng đã bị
+    LOẠI khỏi thư viện (`videos.da_loai_luc`) — chỉ xét id thuộc lượt, để id
+    của người khác không bao giờ nhận mã riêng này.
 
     Trả `None` nếu MỌI video hợp lệ (không ghi gì — người gọi tự đọc lại
     hàng để thao tác). Trả `{"tu_choi": "video_da_o_cum_that",
     "video_ids": [...]}` (lý do RIÊNG, đủ để UI báo đúng — xem route/UI) nếu
     CÓ video thuộc lý do (a), ngay cả khi danh sách còn lẫn lý do khác — đây
     là lý do người dùng cần biết nhất, "sao không di chuyển được" trên video
-    còn đang hiện trong nháp. Trả `{"tu_choi": "khong_hop_le"}` (giữ nguyên
-    câu chữ cũ) cho lý do (b)/(c)."""
+    còn đang hiện trong nháp. Sau đó `{"tu_choi": "video_da_loai",
+    "video_ids": [...]}` cho lý do (d). Trả `{"tu_choi": "khong_hop_le"}`
+    (giữ nguyên câu chữ cũ) cho lý do (b)/(c)."""
     unique_ids = list(dict.fromkeys(video_ids or []))
     if not unique_ids:
         return None
@@ -1098,6 +1101,19 @@ def _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids, *, lan_khong_hop
     da_o_cum_that = sorted(v for v in unique_ids if v in da_o_cum)
     if da_o_cum_that:
         return {"tu_choi": "video_da_o_cum_that", "video_ids": da_o_cum_that}
+    # (d) Video đã bị LOẠI khỏi thư viện (Drive → Thùng rác) vẫn còn hàng
+    # `video_cum_nhap` của lượt — `lay_chia` chỉ ẨN nó khỏi mọi làn. Không chặn
+    # ở đây thì một lệnh dock đến SAU lượt Loại (tab cũ, hoặc bấm trong lúc Loại
+    # đang gửi) vẫn chuyển/tách nó vào kiểu ⇒ sinh một kiểu RỖNG trên UI mà duyệt
+    # xong chỉ báo `bi_bo`.
+    # CHỈ id thuộc lượt này (`trong_luot`): `da_loai_luc` là cột toàn cục, báo
+    # mã riêng cho id của người khác sẽ cho bất kỳ ai dò "video X có trong kho
+    # và đã bị loại". Id ngoài lượt rơi xuống `khong_hop_le` như mọi id lạ.
+    da_loai = sorted(r["video_id"] for r in conn.execute(
+        f"SELECT video_id FROM videos WHERE da_loai_luc IS NOT NULL "
+        f"AND video_id IN ({marks})", unique_ids).fetchall() if r["video_id"] in trong_luot)
+    if da_loai:
+        return {"tu_choi": "video_da_loai", "video_ids": da_loai}
     khong_hop_le = [v for v in unique_ids
                     if v not in trong_luot or trong_luot[v] in lan_khong_hop_le]
     if khong_hop_le:
