@@ -222,7 +222,7 @@ def test_nguon_da_mat_khong_bi_an(kho):
     them_video(db, job, 1)
     d = DriveGia()
     d.dat_ten_thu_muc("BO1", "N.2809C - x")
-    d.them_ban("ban1", fid(1))       # có bản có dấu nhưng nguồn 404
+    d.them_ban("ban1", fid(1), md5="M1", size="1000")   # có bản có dấu nhưng nguồn 404
     kq = chay_luot_kiem(db, d)
     assert (kq.da_an, kq.nguon_mat) == (0, 1)
     assert hang_vao_bo(db) == ([], [])

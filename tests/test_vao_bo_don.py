@@ -30,6 +30,12 @@ def luc(ngay_truoc: float) -> str:
     return (BAY_GIO - timedelta(days=ngay_truoc)).isoformat()
 
 
+@pytest.fixture(autouse=True)
+def don_ngay7_bat(monkeypatch):
+    """Các test dưới đây bàn về hành vi KHI BẬT; ca TẮT có test riêng và tự `delenv`."""
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
+
+
 @pytest.fixture
 def kho(tmp_path):
     db = tmp_path / "jobs.db"
@@ -41,7 +47,7 @@ def kho(tmp_path):
 def an_video(db, job, i, *, ngay=8, bang_chung="properties", ma_bo="N.2809C"):
     """Video `v{i}` đã ẩn `ngay` ngày trước, có một bản sao `ban{i}` ghi trong sổ."""
     models.record_video(db, job_id=job, video_id=f"v{i}", url=f"https://t.co/{i}",
-                        drive_file_id=fid(i), tao_luc=f"2026-09-01T00:00:0{i}+00:00")
+                        drive_file_id=fid(i), tao_luc=f"2026-09-01T00:{i // 60:02d}:{i % 60:02d}+00:00")
     models_vao_bo.ghi_da_vao_bo(
         db, f"v{i}", TOI,
         [{"ban_copy_id": f"ban{i}", "folder_id": "BO1", "ma_bo": ma_bo, "bang_chung": bang_chung}],
@@ -319,3 +325,122 @@ def test_khong_co_files_delete_o_bat_ky_dau():
 def test_giao_dien_drive_khong_co_ham_xoa():
     from web.vao_bo_drive import DriveThat
     assert not [n for n in dir(DriveThat) if "delete" in n.lower() or "xoa" in n.lower()]
+
+
+# --- Q1: bằng chứng ÂM + nguồn đã chết ⇒ HIỆN LẠI + báo động MỖI lượt ---------------------------
+
+def _bao_dong(caplog, ly_do):
+    return [r for r in caplog.records if r.levelno == logging.ERROR and ly_do in r.getMessage()]
+
+
+def test_am_va_nguon_o_thung_rac_hien_lai_va_bao_dong_moi_lan(kho, caplog):
+    from web.vao_bo_kiem import LY_DO_NGUON_O_THUNG_RAC, chay_luot_kiem
+    db, job = kho
+    an_video(db, job, 1)
+    d = DriveGia()
+    d.them_nguon(fid(1), trashed=True)          # nguồn trong Thùng rác, KHÔNG còn bản sao
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq.nguon_chet == 1 and kq.hien_lai == 1 and da_trash(d) == []
+    assert len(_bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)) == 1
+    assert fid(1) in _bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)[0].getMessage(), "mang id nguồn"
+    r = hang(db, "v1")
+    assert r["an_luc"] is None and r["loi_cuoi"] == LY_DO_NGUON_O_THUNG_RAC and r["so_lan_truot"] == 1
+    assert {v["video_id"] for v in models.list_videos(db, TOI)} == {"v1"}, "video hiện lại ở lưới"
+    # Lượt kiểm ẩn sau đó: điều kiện còn đúng ⇒ báo LẠI ở MỖI lượt (không dedupe).
+    caplog.clear()
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        chay_luot_kiem(db, d)
+        chay_luot_kiem(db, d)
+    assert len(_bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)) == 2
+    assert hang(db, "v1")["so_lan_truot"] == 3 and hang(db, "v1")["an_luc"] is None
+    assert [h["video_id"] for h in models_vao_bo.hang_don_loi(db)] == ["v1"]
+
+
+def test_am_va_nguon_404_co_ly_do_rieng(kho, caplog):
+    from web.vao_bo_kiem import LY_DO_NGUON_404, LY_DO_NGUON_O_THUNG_RAC
+    db, job = kho
+    an_video(db, job, 1)
+    d = DriveGia()                               # nguồn không có trong kho ⇒ 404, không bản sao
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq.nguon_chet == 1 and kq.hien_lai == 1
+    assert len(_bao_dong(caplog, LY_DO_NGUON_404)) == 1
+    assert _bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC) == []
+    assert hang(db, "v1")["loi_cuoi"] == LY_DO_NGUON_404
+
+
+def test_am_ma_nguon_con_song_khong_bao_dong_loai_nay(kho, caplog):
+    db, job = kho
+    an_video(db, job, 1)
+    d = DriveGia()
+    d.them_nguon(fid(1))
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq.hien_lai == 1 and kq.nguon_chet == 0
+    assert [r for r in caplog.records if r.levelno >= logging.ERROR] == []
+    assert hang(db, "v1") is None and models_vao_bo.hang_don_loi(db) == []
+
+
+def test_hang_bao_dong_khong_lam_video_bien_khoi_luoi_va_khong_la_ung_vien_don(kho):
+    db, job = kho
+    an_video(db, job, 1)
+    d = DriveGia()
+    d.them_nguon(fid(1), trashed=True)
+    chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert models_vao_bo.ung_vien_don(db, BAY_GIO) == []
+    assert models_vao_bo.vao_bo_cho_videos(db, ["v1"]) == {}
+
+
+# --- S4: công tắc mặc định TẮT + trần 50 lần trash mỗi lượt ---------------------------------------
+
+def test_don_ngay7_mac_dinh_tat_khong_goi_drive_khong_ghi_moc_va_log_so_hang(kho, caplog, monkeypatch):
+    monkeypatch.delenv("VIDEODL_BAT_DON_NGAY7", raising=False)
+    db, job = kho
+    an_video(db, job, 1)
+    an_video(db, job, 2)
+    an_video(db, job, 3)
+    models.danh_dau_da_loai(db, "v3", TOI)          # đường da_loai cũng bị cổng chặn
+    d = drive_dat_bang_chung(1, 2, 3)
+    with caplog.at_level(logging.WARNING, logger="videodl.web.vao_bo"):
+        kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq.dang_tat is True and kq.dang_cho == 3
+    assert d.goi == [], "0 lời gọi Drive khi tắt"
+    assert all(hang(db, f"v{i}")["drive_don_luc"] is None and hang(db, f"v{i}")["so_lan_truot"] == 0
+               for i in (1, 2, 3)), "không ghi mốc nào"
+    assert any("dọn ngày 7 đang TẮT, 3 hàng đủ hạn đang chờ" in r.getMessage()
+               for r in caplog.records)
+
+
+@pytest.mark.parametrize("gia_tri", ["", "0", "no", "false", "bat"])
+def test_chi_cac_gia_tri_bat_ro_rang_moi_bat_don(kho, monkeypatch, gia_tri):
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", gia_tri)
+    db, job = kho
+    an_video(db, job, 1)
+    d = drive_dat_bang_chung(1)
+    assert chay_luot_don(db, d, bay_gio=BAY_GIO).dang_tat is True and d.goi == []
+
+
+def test_don_ngay7_bat_thi_chay(kho):
+    db, job = kho
+    an_video(db, job, 1)
+    kq = chay_luot_don(db, drive_dat_bang_chung(1), bay_gio=BAY_GIO)
+    assert kq.dang_tat is False and kq.da_bo_thung_rac == 1
+
+
+def test_tran_50_lan_trash_moi_luot_hang_du_sang_luot_sau_khong_mat(kho):
+    from web.vao_bo_don import TOI_DA_TRASH_MOI_LUOT
+    assert TOI_DA_TRASH_MOI_LUOT == 50
+    db, job = kho
+    d = DriveGia()
+    d.dat_ten_thu_muc("BO1", "N.2809C - x")
+    for i in range(1, 121):
+        an_video(db, job, i)
+        d.them_nguon(fid(i))
+        d.them_ban(f"ban{i}", fid(i), folder="BO1")
+    xong = []
+    for _ in range(3):
+        xong.append(chay_luot_don(db, d, bay_gio=BAY_GIO).da_bo_thung_rac)
+    assert xong == [50, 50, 20]
+    assert len(da_trash(d)) == 120 and len(set(da_trash(d))) == 120, "mỗi nguồn đúng một lần"
+    assert chay_luot_don(db, d, bay_gio=BAY_GIO).ung_vien == 0

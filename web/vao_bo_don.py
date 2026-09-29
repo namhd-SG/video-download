@@ -23,6 +23,7 @@ cờ khoá "đang dọn".
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -30,7 +31,8 @@ from typing import Callable
 
 from web import models_vao_bo
 from web.vao_bo_drive import DriveVaoBo, id_drive_hop_le
-from web.vao_bo_kiem import AM, KHONG_DO_DUOC, do_bang_chung
+from web.vao_bo_kiem import (AM, KHONG_DO_DUOC, bao_dong_nguon_chet, do_bang_chung,
+                             ly_do_nguon_chet)
 
 log = logging.getLogger("videodl.web.vao_bo")
 
@@ -38,6 +40,20 @@ LY_DO_DA_LOAI = "da_loai"
 LY_DO_DA_O_THUNG_RAC = "da_o_thung_rac"
 LY_DO_KHONG_CON = "khong_con"
 LY_DO_DA_DON = "da_don"
+
+# CÔNG TẮC dọn ngày 7, MẶC ĐỊNH TẮT. Bật bằng biến môi trường này (`1`/`true`/`yes`/`on`).
+# Khi tắt, `chay_luot_don` không gọi Drive và không ghi mốc nào — chỉ log số hàng đủ hạn
+# đang chờ. Cổng này phủ MỌI đường dọn: hàng do backfill lẫn hàng do bộ kiểm ẩn.
+ENV_BAT_DON_NGAY7 = "VIDEODL_BAT_DON_NGAY7"
+
+# Trần số lần gọi `trash_file` MỖI LƯỢT; hàng vượt trần để lượt sau, không bao giờ bị bỏ.
+# ⚠ 50 CHƯA hiệu chỉnh — không có phép đo nào về tốc độ/hạn ngạch Drive đứng sau con số
+# này; nó được chọn theo chiều AN TOÀN (lượt đầu sau khi bật chỉ đụng tối đa 50 tệp).
+TOI_DA_TRASH_MOI_LUOT = 50
+
+
+def don_ngay7_dang_bat() -> bool:
+    return os.environ.get(ENV_BAT_DON_NGAY7, "").strip().lower() in ("1", "true", "yes", "on")
 
 
 @dataclass
@@ -50,6 +66,10 @@ class KetQuaLuotDon:
     hien_lai: int = 0
     khong_do_duoc: int = 0
     trash_truot: int = 0
+    nguon_chet: int = 0
+    dang_tat: bool = False              # công tắc tắt: không làm gì, chỉ đếm hàng đang chờ
+    dang_cho: int = 0                   # số hàng đủ hạn khi công tắc tắt
+    so_lan_trash: int = 0                   # số lần gọi trash (tính vào trần)
     truot: list = field(default_factory=list)      # [(video_id, so_lan_truot, loi)]
 
 
@@ -61,12 +81,26 @@ def _bao_dong(db_path: Path, kq: KetQuaLuotDon, video_id: str, loi: str, viec: s
               "lượt sau thử lại", video_id, viec, so_lan, loi)
 
 
+def _bo_thung_rac(drive: DriveVaoBo, nguon_id: str) -> tuple[bool, str]:
+    """MỘT chỗ duy nhất gọi Thùng rác cho tệp nguồn: `(ok, lỗi)`. Không ném."""
+    try:
+        return (True, "") if drive.bo_vao_thung_rac(nguon_id) else (False, "trash_file không ok")
+    except Exception as exc:  # noqa: BLE001
+        return False, type(exc).__name__
+
+
 def chay_luot_don(db_path: Path, drive: DriveVaoBo, *, bay_gio: datetime | None = None,
                   dung: Callable[[], bool] = lambda: False) -> KetQuaLuotDon:
     kq = KetQuaLuotDon()
-    for u in models_vao_bo.ung_vien_don(db_path, bay_gio):
-        if dung():
-            break
+    ung_vien = models_vao_bo.ung_vien_don(db_path, bay_gio)
+    if not don_ngay7_dang_bat():
+        kq.dang_tat, kq.dang_cho = True, len(ung_vien)
+        log.warning("dọn ngày 7 đang TẮT, %d hàng đủ hạn đang chờ (bật bằng %s=1)",
+                    len(ung_vien), ENV_BAT_DON_NGAY7)
+        return kq
+    for u in ung_vien:
+        if dung() or kq.so_lan_trash >= TOI_DA_TRASH_MOI_LUOT:
+            break               # hàng còn lại sang lượt sau (không mất: vẫn là ứng viên)
         kq.ung_vien += 1
         vid, nguon_id = u["video_id"], u["drive_file_id"]
         if u["da_loai"]:
@@ -85,7 +119,12 @@ def chay_luot_don(db_path: Path, drive: DriveVaoBo, *, bay_gio: datetime | None 
             _bao_dong(db_path, kq, vid, do.loi or "loi", "kiểm lại bằng chứng")
             continue
         if do.trang_thai == AM:
-            if models_vao_bo.bo_an(db_path, vid, u["an_luc"]):
+            ly_do = ly_do_nguon_chet(do)
+            if ly_do:
+                # Bản trong Thùng rác / đã mất là bản DUY NHẤT: hiện lại video và báo động.
+                bao_dong_nguon_chet(vid, nguon_id, ly_do)
+                kq.nguon_chet += 1
+            if models_vao_bo.bo_an(db_path, vid, u["an_luc"], giu_bao_dong=ly_do):
                 kq.hien_lai += 1
             continue
         if do.nguon_khong_con:
@@ -96,11 +135,8 @@ def chay_luot_don(db_path: Path, drive: DriveVaoBo, *, bay_gio: datetime | None 
             if models_vao_bo.ghi_don_drive(db_path, vid, LY_DO_DA_O_THUNG_RAC):
                 kq.da_o_thung_rac += 1
             continue
-        try:
-            ok = drive.bo_vao_thung_rac(nguon_id)
-            loi = "trash_file không ok"
-        except Exception as exc:  # noqa: BLE001
-            ok, loi = False, type(exc).__name__
+        kq.so_lan_trash += 1
+        ok, loi = _bo_thung_rac(drive, nguon_id)
         if not ok:
             kq.trash_truot += 1
             _bao_dong(db_path, kq, vid, loi, "bỏ vào Thùng rác")

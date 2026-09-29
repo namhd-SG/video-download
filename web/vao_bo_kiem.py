@@ -29,6 +29,27 @@ log = logging.getLogger("videodl.web.vao_bo")
 
 DAT, AM, KHONG_DO_DUOC = "dat", "am", "khong_do_duoc"
 
+# Bằng chứng ÂM mà tệp nguồn cũng đã chết: bản trong Thùng rác (hoặc đã mất) là bản DUY
+# NHẤT còn lại, và Drive dọn Thùng rác sau ~30 ngày. Video được HIỆN LẠI (để ai đó khôi
+# phục được) và báo động Ở MỌI LƯỢT khi điều này còn đúng — không dedupe.
+LY_DO_NGUON_O_THUNG_RAC = "nguon_o_thung_rac_khong_ban_sao"
+LY_DO_NGUON_404 = "nguon_404_khong_ban_sao"
+
+
+def ly_do_nguon_chet(do: "KetQuaBangChung") -> str | None:
+    """Mã lý do nếu nguồn đã chết (404 / trong Thùng rác); None nếu nguồn còn sống."""
+    if do.nguon_khong_con:
+        return LY_DO_NGUON_404
+    if do.nguon is not None and do.nguon.get("trashed"):
+        return LY_DO_NGUON_O_THUNG_RAC
+    return None
+
+
+def bao_dong_nguon_chet(video_id: str, nguon_id: str, ly_do: str) -> None:
+    log.error("BÁO ĐỘNG %s: video %s, tệp nguồn %s đã chết và không còn bản sao nào — "
+              "video được hiện lại để khôi phục kịp trước khi Drive dọn Thùng rác",
+              ly_do, video_id, nguon_id)
+
 
 @dataclass(frozen=True)
 class KetQuaBangChung:
@@ -76,6 +97,7 @@ class KetQuaLuotKiem:
     khong_do_duoc: int = 0
     id_sai: int = 0
     nguon_mat: int = 0
+    bao_dong: int = 0
 
 
 def _dong_ban(drive: DriveVaoBo, nguon: dict | None, ban_hop_le_: tuple,
@@ -115,13 +137,19 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         if do.trang_thai == KHONG_DO_DUOC:
             kq.khong_do_duoc += 1
             continue
-        if do.nguon is None:
-            # Nguồn đã mất: không đủ để so md5/size/parents ⇒ không ẩn (dọn ngày 7 mới
-            # dùng bằng chứng một phần cho ca này).
-            kq.nguon_mat += 1
-            continue
         if do.trang_thai == AM:
+            ly_do = ly_do_nguon_chet(do)
+            if ly_do:
+                # Nguồn đã chết mà không có bản sao: báo ở MỌI lượt còn đúng.
+                bao_dong_nguon_chet(u["video_id"], nguon_id, ly_do)
+                models_vao_bo.ghi_bao_dong(db_path, u["video_id"], u["chu"], ly_do)
+                kq.bao_dong += 1
             kq.chua_co_bang_chung += 1
+            continue
+        if do.nguon is None:
+            # Nguồn đã mất nhưng có bản sao: không đủ để so md5/size/parents ⇒ không ẩn
+            # (dọn ngày 7 mới dùng bằng chứng một phần cho ca này).
+            kq.nguon_mat += 1
             continue
         try:
             dong = _dong_ban(drive, do.nguon, do.ban, ten_cache)

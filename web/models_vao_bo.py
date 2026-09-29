@@ -36,6 +36,11 @@ def ngay_se_don(an_luc: str) -> str:
     return (_doc_luc(an_luc) + timedelta(days=SO_NGAY_DEN_KHI_DON)).isoformat()
 
 
+def het_han_giu_nguon(an_luc: str, bay_gio: datetime) -> bool:
+    """Đã đủ 7 ngày kể từ `an_luc` (tệp nguồn sắp/đã bị lượt dọn lấy đi)."""
+    return _doc_luc(an_luc) + timedelta(days=SO_NGAY_DEN_KHI_DON) <= bay_gio
+
+
 def ung_vien_can_kiem(db_path: Path) -> list[dict]:
     """Video còn sống, có tệp nguồn trên Drive và CHƯA bị ẩn: `[{video_id,
     drive_file_id, chu}]`, mới nhất trước (video vừa tải là video vừa được
@@ -67,7 +72,8 @@ def ghi_da_vao_bo(db_path: Path, video_id: str, chu: str | None, ban: list[dict]
         cur = conn.execute(
             "INSERT INTO video_vao_bo (video_id, chu, an_luc) VALUES (?, ?, ?) "
             "ON CONFLICT(video_id) DO UPDATE SET an_luc = excluded.an_luc, "
-            "chu = COALESCE(video_vao_bo.chu, excluded.chu) "
+            "chu = COALESCE(video_vao_bo.chu, excluded.chu), "
+            "so_lan_truot = 0, loi_cuoi = NULL "
             "WHERE video_vao_bo.an_luc IS NULL AND video_vao_bo.drive_don_luc IS NULL",
             (video_id, chu, luc))
         da_dat_moc = cur.rowcount == 1
@@ -82,17 +88,28 @@ def ghi_da_vao_bo(db_path: Path, video_id: str, chu: str | None, ban: list[dict]
     return da_dat_moc
 
 
-def bo_an(db_path: Path, video_id: str, an_luc_da_doc: str) -> bool:
-    """Bằng chứng ĐO RA ÂM ở ngày 7 ⇒ hiện lại video: xoá hàng sổ + các bản sao.
+def bo_an(db_path: Path, video_id: str, an_luc_da_doc: str,
+          giu_bao_dong: str | None = None) -> bool:
+    """Bằng chứng ĐO RA ÂM ở ngày 7 ⇒ hiện lại video: xoá các bản sao và gỡ mốc ẩn.
 
-    Chỉ xoá khi mốc ẩn vẫn đúng giá trị lượt này đã đọc và chưa dọn — nếu lượt
+    Chỉ gỡ khi mốc ẩn vẫn đúng giá trị lượt này đã đọc và chưa dọn — nếu lượt
     khác đã dọn/đổi trong lúc đo thì không đụng.
+
+    Mặc định xoá cả hàng sổ. `giu_bao_dong` (mã lý do) ⇒ GIỮ hàng với `an_luc = NULL`,
+    `loi_cuoi = <lý do>` và `so_lan_truot + 1`, để trang quản trị còn thấy ca này (tệp
+    nguồn đã chết mà không còn bản sao nào) — xem `hang_don_loi`.
     """
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
-        cur = conn.execute(
-            "DELETE FROM video_vao_bo WHERE video_id = ? AND an_luc = ? "
-            "AND drive_don_luc IS NULL", (video_id, an_luc_da_doc))
+        if giu_bao_dong:
+            cur = conn.execute(
+                "UPDATE video_vao_bo SET an_luc = NULL, so_lan_truot = so_lan_truot + 1, "
+                "loi_cuoi = ? WHERE video_id = ? AND an_luc = ? AND drive_don_luc IS NULL",
+                (giu_bao_dong, video_id, an_luc_da_doc))
+        else:
+            cur = conn.execute(
+                "DELETE FROM video_vao_bo WHERE video_id = ? AND an_luc = ? "
+                "AND drive_don_luc IS NULL", (video_id, an_luc_da_doc))
         if cur.rowcount != 1:
             return False
         conn.execute("DELETE FROM video_vao_bo_ban WHERE video_id = ?", (video_id,))
@@ -171,3 +188,31 @@ def ghi_truot_don(db_path: Path, video_id: str, loi: str) -> int:
             "SELECT so_lan_truot FROM video_vao_bo WHERE video_id = ? "
             "AND drive_don_luc IS NULL", (video_id,)).fetchone()
     return int(row["so_lan_truot"]) if row else 0
+
+
+def ghi_bao_dong(db_path: Path, video_id: str, chu: str | None, loi: str) -> int:
+    """Ghi một ca BÁO ĐỘNG cho video CHƯA ẩn (nguồn đã chết, không còn bản sao): tăng
+    `so_lan_truot`, lưu mã lý do. Tạo hàng sổ với `an_luc = NULL` nếu chưa có — hàng
+    đó KHÔNG ẩn video (mọi vị từ chỉ nhìn `an_luc IS NOT NULL`). Trả số lần sau khi tăng."""
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "INSERT INTO video_vao_bo (video_id, chu, so_lan_truot, loi_cuoi) "
+            "VALUES (?, ?, 1, ?) ON CONFLICT(video_id) DO UPDATE SET "
+            "so_lan_truot = so_lan_truot + 1, loi_cuoi = excluded.loi_cuoi "
+            "WHERE video_vao_bo.drive_don_luc IS NULL", (video_id, chu, loi[:200]))
+        row = conn.execute(
+            "SELECT so_lan_truot FROM video_vao_bo WHERE video_id = ?", (video_id,)).fetchone()
+    return int(row["so_lan_truot"])
+
+
+def hang_don_loi(db_path: Path) -> list[dict]:
+    """Các hàng dọn ĐANG LỖI: chưa dọn xong mà `so_lan_truot > 0` hoặc có `loi_cuoi`
+    (dọn trượt, đo trượt, hoặc ca nguồn-chết-không-bản-sao). Cho trang quản trị."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT b.video_id, b.chu, b.an_luc, b.so_lan_truot, b.loi_cuoi, v.drive_file_id "
+            "FROM video_vao_bo b LEFT JOIN videos v ON v.video_id = b.video_id "
+            "WHERE b.drive_don_luc IS NULL AND (b.so_lan_truot > 0 OR b.loi_cuoi IS NOT NULL) "
+            "ORDER BY b.so_lan_truot DESC, b.video_id").fetchall()
+    return [dict(r) for r in rows]

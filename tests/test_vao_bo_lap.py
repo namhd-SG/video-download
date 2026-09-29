@@ -71,6 +71,7 @@ def test_lifespan_khoi_va_dung_thread_va_env_tat_duoc(tmp_path, monkeypatch):
     for k in ("DATA_DIR", "DOWNLOADS_DIR", "COOKIES_DIR", "COOKIE_TMP_DIR"):
         monkeypatch.setattr(app_mod, k, tmp_path / k.lower())
     monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+    monkeypatch.delenv(app_mod.ENV_TAT_LAP_VAO_BO, raising=False)    # conftest đặt mặc định
 
     async def chay():
         async with app_mod._lifespan(app_mod.app):
@@ -84,7 +85,27 @@ def test_lifespan_khoi_va_dung_thread_va_env_tat_duoc(tmp_path, monkeypatch):
     assert khoi == []
 
 
-def test_mot_luot_tron_an_roi_don_roi_xoa_anh(tmp_path):
+def test_moi_truong_test_mac_dinh_khong_khoi_thread(tmp_path, monkeypatch):
+    """`conftest.py` đặt `VIDEODL_TAT_LAP_VAO_BO=1` từ lúc pytest khởi động ⇒ mọi app thật
+    trong suite (kể cả fixture module của test trình duyệt) KHÔNG khởi bộ kiểm định kỳ."""
+    import asyncio
+    khoi = []
+    monkeypatch.setattr(LapVaoBo, "start", lambda self: khoi.append("start"))
+    monkeypatch.setattr(app_mod.worker, "start", lambda: None)
+    monkeypatch.setattr(app_mod.worker, "stop", lambda: None)
+    for k in ("DATA_DIR", "DOWNLOADS_DIR", "COOKIES_DIR", "COOKIE_TMP_DIR"):
+        monkeypatch.setattr(app_mod, k, tmp_path / k.lower())
+    monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+
+    async def chay():
+        async with app_mod._lifespan(app_mod.app):
+            pass
+    asyncio.run(chay())
+    assert khoi == [], "không được khởi thread khi chạy dưới pytest"
+
+
+def test_mot_luot_tron_an_roi_don_roi_xoa_anh(tmp_path, monkeypatch):
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
     """Một lượt trọn theo đúng thứ tự: video có bản sao → ẩn (lượt kiểm), video đã ẩn đủ
     7 ngày → nguồn vào Thùng rác + ảnh bị xoá (lượt dọn), trong CÙNG một `chay_mot_luot`."""
     from datetime import datetime, timedelta, timezone
