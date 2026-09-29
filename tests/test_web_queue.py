@@ -2009,3 +2009,29 @@ def test_job_cu_co_nghi_su_co_hang_loat_null(tmp_path):
     models.init_db(db_path)
     job_id = models.create_job(db_path, "u", 1, "a")
     assert models.get_job(db_path, job_id)["nghi_su_co_hang_loat"] is None
+
+
+def test_cau_dao_dem_truoc_ghi_loi_nen_van_bat_khi_ghi_db_no(tmp_path, monkeypatch, caplog):
+    """Chốt THỨ TỰ: bộ đếm cầu dao chạy TRƯỚC `_ghi_loi`. `increment_job_counts`
+    ném ở mỗi lần ⇒ cầu dao vẫn bật, đúng một dòng ERROR.
+
+    Đột biến ĐỎ: chuyển `_theo_doi_hang_loat` ra SAU `_ghi_loi`.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 5, "a")
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(5)]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+
+    def _no(*a, **kw):
+        raise RuntimeError("DB đang khoá")
+
+    monkeypatch.setattr(models, "increment_job_counts", _no)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        for _ in range(5):
+            try:
+                progress.note("failed", _RF)
+            except RuntimeError:
+                pass   # `note` để lỗi DB nổi lên; cầu dao đã đếm xong trước đó
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
