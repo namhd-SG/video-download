@@ -1822,3 +1822,65 @@ def test_bo_qua_duoc_them_vao_DB_cu_khong_co_cot(tmp_path):
 
     with sqlite3.connect(db) as conn:
         assert "bo_qua" in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+
+
+# ---------------------------------------------------------------------------
+# Lỗi từng video có tên: `loi` = tổng, `loi_tiktok` = phần TikTok không cho tải.
+# Đột biến ĐỎ: `phan_loai_loi` luôn `he_thong` · bỏ cộng `loi_tiktok`.
+# ---------------------------------------------------------------------------
+
+def _job_mot_video(tmp_path):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    ref = VideoRef(video_id="1", url="https://www.tiktok.com/@x/video/1")
+    return db_path, job_id, ref
+
+
+def test_loi_requested_format_tinh_vao_loi_tiktok(tmp_path):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _JobProgress(db_path, job_id, [ref], tmp_path / "out", lambda **kw: None)
+    progress.note("failed", {"loi": "ERROR: Requested format is not available"})
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+
+
+def test_loi_khong_ro_ly_do_la_he_thong(tmp_path):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _JobProgress(db_path, job_id, [ref], tmp_path / "out", lambda **kw: None)
+    progress.note("failed")   # người gọi cũ không kèm info
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 0)
+
+
+def test_loi_drive_khong_tinh_vao_loi_tiktok(tmp_path, monkeypatch):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_FAILED, monkeypatch, verified=True)
+    progress.note("downloaded")
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 0)
+
+
+def test_bai_anh_khong_luong_video_tinh_vao_loi_tiktok(tmp_path, monkeypatch):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_OK, monkeypatch, verified=False)
+    progress.note("downloaded")
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+
+
+def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
+    """DB có từ trước khi có cột: `init_db` cộng cột với mặc định 0."""
+    import sqlite3
+    db_path = tmp_path / "cu.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL,"
+                     " trang_thai TEXT NOT NULL DEFAULT 'pending', tong INTEGER NOT NULL DEFAULT 0,"
+                     " xong INTEGER NOT NULL DEFAULT 0, loi INTEGER NOT NULL DEFAULT 0,"
+                     " tao_luc TEXT NOT NULL, nguoi_tao TEXT NOT NULL DEFAULT 'khach')")
+        conn.execute("INSERT INTO jobs (url, tao_luc) VALUES ('u', '2026-09-01T00:00:00+00:00')")
+    models.init_db(db_path)
+    assert models.get_job(db_path, 1)["loi_tiktok"] == 0
+    assert models.list_jobs(db_path, None)[0]["loi_tiktok"] == 0

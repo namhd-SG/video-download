@@ -18,6 +18,7 @@ from typing import Callable, Protocol
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO, phan_loai_loi
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
@@ -381,9 +382,34 @@ class _JobProgress:
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         self._job_id, ref.video_id, type(exc).__name__)
 
+    def _ghi_loi(self, ref: VideoRef, ly_do: object, *, loai: str | None = None,
+                 da_log: bool = False) -> None:
+        """Đếm một video lỗi: `loi` luôn +1, `loi_tiktok` +1 khi TikTok không
+        cho tải. `loai=None` ⇒ tự phân loại theo `ly_do`; truyền `"he_thong"`
+        để ép (lỗi Drive không bao giờ được xếp vào phía TikTok).
+
+        Lỗi phía TikTok chỉ WARNING — ERROR dành cho lỗi hệ thống thật.
+        `da_log=True` khi thư viện `downloader.py` đã log đúng mức cho lỗi tải
+        này, để không ghi thêm một dòng trùng.
+        """
+        loai = loai or phan_loai_loi(ly_do)
+        la_tiktok = loai == "tiktok"
+        if da_log:
+            pass
+        elif la_tiktok:
+            log.warning("job %s: video %s lỗi phía TikTok (%s)", self._job_id, ref.video_id, ly_do)
+        else:
+            log.error("job %s: video %s lỗi hệ thống (%s)", self._job_id, ref.video_id, ly_do)
+        models.increment_job_counts(self._db_path, self._job_id, loi_delta=1,
+                                    loi_tiktok_delta=1 if la_tiktok else 0)
+
     def note(self, kind: str, info: dict | None = None) -> None:
         ref = self._refs[self._idx]
         self._idx += 1
+        if kind == "failed":
+            # `info` của nhánh lỗi chỉ mang lý do, không phải metadata yt-dlp.
+            self._ghi_loi(ref, (info or {}).get("loi", ""), da_log=True)
+            return
         ref = _bo_sung_metadata(ref, info)
         if kind == "downloaded":
             path = self._output_dir / ref.filename
@@ -407,13 +433,10 @@ class _JobProgress:
                         " — tính là lỗi, không tính là xong",
                         self._job_id, ref.filename, result.outcome.value, result.reason,
                     )
-                    models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
+                    self._ghi_loi(ref, f"{result.outcome.value}: {result.reason}",
+                                  loai="he_thong", da_log=True)
             else:
-                log.warning("job %s: %s downloaded but carries no video stream",
-                            self._job_id, ref.filename)
-                models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
-        elif kind == "failed":
-            models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
+                self._ghi_loi(ref, LOI_KHONG_CO_LUONG_VIDEO)
         # "skipped" = file already on disk from an earlier partial run; it was
         # never verified by *this* run, so it counts toward neither xong nor
         # loi here — `tong` already accounts for it.

@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     ly_do_dung TEXT,
     so_trang INTEGER NOT NULL DEFAULT 0,
     tim_thay INTEGER NOT NULL DEFAULT 0,
-    bo_qua INTEGER NOT NULL DEFAULT 0
+    bo_qua INTEGER NOT NULL DEFAULT 0,
+    loi_tiktok INTEGER NOT NULL DEFAULT 0
 )
 """
 
@@ -410,6 +411,9 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "bo_qua", "INTEGER NOT NULL DEFAULT 0")
+        # Trong `loi` (tổng), bao nhiêu video là do TikTok không cho tải
+        # (bài ảnh, video gỡ). `loi - loi_tiktok` = lỗi hệ thống.
+        _add_column_if_missing(conn, "jobs", "loi_tiktok", "INTEGER NOT NULL DEFAULT 0")
         # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
         # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
         # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
@@ -814,11 +818,14 @@ def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
 
 
 def increment_job_counts(db_path: Path, job_id: int, xong_delta: int = 0,
-                          loi_delta: int = 0) -> None:
+                          loi_delta: int = 0, loi_tiktok_delta: int = 0) -> None:
+    """`loi_tiktok_delta` là phần CỦA `loi_delta` do TikTok không cho tải —
+    người gọi phải tự bảo đảm nó không vượt `loi_delta`."""
     with _connect(db_path) as conn:
         conn.execute(
-            "UPDATE jobs SET xong = xong + ?, loi = loi + ? WHERE id = ?",
-            (xong_delta, loi_delta, job_id),
+            "UPDATE jobs SET xong = xong + ?, loi = loi + ?, loi_tiktok = loi_tiktok + ? "
+            "WHERE id = ?",
+            (xong_delta, loi_delta, loi_tiktok_delta, job_id),
         )
 
 

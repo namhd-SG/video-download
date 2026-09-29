@@ -17,6 +17,7 @@ from tenacity import (
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+from tiktok_music_downloader.phan_loai_loi import phan_loai_loi
 from tiktok_music_downloader.utils import (
     JitterThrottle,
     VideoRef,
@@ -269,6 +270,7 @@ def download_all(
 
             throttle.wait()
             outcome: str | None = None
+            note_info: dict | None = None
             try:
                 # FB Ads Library refs carry a signed FBCDN MP4 URL — yt-dlp
                 # can't authenticate them, so use a direct HTTP stream.
@@ -286,11 +288,19 @@ def download_all(
                 since_rest += 1
                 failure_streak = 0
                 outcome = "downloaded"
+                note_info = info
                 log.info("✓ %s", ref.filename)
             except (DownloadError, RetryError, Exception) as exc:  # noqa: BLE001
                 failed.append(ref.video_id)
                 outcome = "failed"
-                log.error("✗ %s: %s", ref.video_id, exc)
+                # Lỗi do TikTok không cho tải (bài ảnh, video gỡ) là ca bình
+                # thường của việc quét nguồn — WARNING, để ERROR dành cho lỗi
+                # thật của hệ thống. Không rõ loại nào thì mặc định ERROR.
+                if phan_loai_loi(exc) == "tiktok":
+                    log.warning("✗ %s: %s", ref.video_id, exc)
+                else:
+                    log.error("✗ %s: %s", ref.video_id, exc)
+                note_info = {"loi": str(exc)}
                 if _looks_like_rate_limit(exc):
                     failure_streak += 1
                     cool = adaptive_backoff(failure_streak)
@@ -302,7 +312,7 @@ def download_all(
                     time.sleep(cool)
             finally:
                 if outcome:
-                    _note(outcome, info if outcome == "downloaded" else None)
+                    _note(outcome, note_info)
                 if progress is not None:
                     progress.update(1)
     finally:
