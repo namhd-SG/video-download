@@ -94,6 +94,7 @@ def may_chu():
     # (hàng sổ KHÔNG ẩn video: `an_luc` NULL).
     models.moi_admin_tu_env(db, [NGUOI])
     models_vao_bo.ghi_bao_dong(db, _id(68), NGUOI, "nguon_o_thung_rac_khong_ban_sao")
+    models_vao_bo.ghi_tap_thu_lai(db, {_id(68): 4, _id(69): 1})     # 2 id đo lỗi lặp, lâu nhất 4
     _mo_thumb_gia(tmp)
     with socket.socket() as so:
         so.bind(("127.0.0.1", 0))
@@ -246,3 +247,8 @@ def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
         _chup(page, "02-chip-da-vao-bo-don-ngay7-tat")
     finally:
         os.environ["VIDEODL_BAT_DON_NGAY7"] = "1"
+
+
+def test_admin_thay_badge_do_loi_lap_chi_dem_khong_nguong(page):
+    page.wait_for_selector("#badge-do-loi-lap:not([hidden])")
+    assert page.inner_text("#badge-do-loi-lap") == "2 id đo lỗi lặp, lâu nhất 4 lần"

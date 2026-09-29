@@ -579,7 +579,10 @@ def admin_don_vao_bo_loi(nguoi_tao: str = Depends(require_admin)) -> dict:
     """Các hàng dọn ngày 7 ĐANG LỖI (trash trượt, đo trượt, hoặc nguồn đã chết mà không
     còn bản sao). Chỉ quản trị: chứa id video và id tệp Drive của cả team."""
     hang = models_vao_bo.hang_don_loi(DB_PATH)
-    return {"so_hang": len(hang), "hang": hang}
+    # Ứng viên đo lỗi LIÊN TIẾP (tập R): chỉ ĐẾM, không có ngưỡng báo động nào.
+    tap_r = models_vao_bo.doc_tap_thu_lai_an_toan(DB_PATH)
+    return {"so_hang": len(hang), "hang": hang,
+            "do_loi_lap": {"so_id": len(tap_r), "lau_nhat_lan": max(tap_r.values(), default=0)}}
 
 
 @app.put("/admin/nguoi-dung/{email}")

@@ -75,3 +75,16 @@ def test_khi_don_ngay7_tat_api_khong_gui_se_don_luc_de_the_khong_hua_ngay_xoa(kh
     theo = {v["video_id"]: v for v in app_mod.list_videos(limit=200, offset=0,
                                                           nguoi_tao=TOI)["videos"]}
     assert theo["v2"]["vao_bo"]["se_don_luc"] is not None
+
+
+def test_endpoint_don_loi_bao_so_id_do_loi_lap_chi_dem_khong_nguong(kho):
+    models_vao_bo.ghi_tap_thu_lai(kho, {"v1": 3, "v2": 1})
+    res = app_mod.admin_don_vao_bo_loi(nguoi_tao="admin@astronex.ai")
+    assert res["do_loi_lap"] == {"so_id": 2, "lau_nhat_lan": 3}
+    models_vao_bo.ghi_tap_thu_lai(kho, {})
+    assert app_mod.admin_don_vao_bo_loi(nguoi_tao="a")["do_loi_lap"] == {"so_id": 0, "lau_nhat_lan": 0}
+    import sqlite3
+    with sqlite3.connect(kho) as c:
+        c.execute("INSERT OR REPLACE INTO vao_bo_kv VALUES ('tap_thu_lai', 'hỏng')")
+    assert app_mod.admin_don_vao_bo_loi(nguoi_tao="a")["do_loi_lap"]["so_id"] == 0, \
+        "trang quản trị chỉ đọc: R hỏng không làm nó sập"

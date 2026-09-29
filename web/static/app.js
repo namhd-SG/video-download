@@ -1897,12 +1897,19 @@
   // gọi endpoint). Lỗi mạng/không phải admin ⇒ ẩn badge, không làm hỏng thư viện.
   async function loadBadgeDonLoi() {
     const el = document.getElementById("badge-don-loi");
+    const elLap = document.getElementById("badge-do-loi-lap");
     if (!el) return;
     el.hidden = true;
+    if (elLap) elLap.hidden = true;
     try {
       const me = await apiGet("/me");
       if (!me.la_admin) return;
       const res = await apiGet("/admin/don-vao-bo-loi");
+      // Chỉ ĐẾM (không ngưỡng): N id đang trong tập thử-lại, lâu nhất K lần trượt liên tiếp.
+      if (elLap && res.do_loi_lap && res.do_loi_lap.so_id) {
+        elLap.textContent = `${res.do_loi_lap.so_id} id đo lỗi lặp, lâu nhất ${res.do_loi_lap.lau_nhat_lan} lần`;
+        elLap.hidden = false;
+      }
       if (!res.so_hang) return;
       el.textContent = `Dọn lỗi (${res.so_hang})`;
       el.title = res.hang.slice(0, 10).map((h) =>

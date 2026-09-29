@@ -69,21 +69,85 @@ def ghi_ngay_quet_day_du(db_path: Path, ngay: str) -> None:
             (KHOA_QUET_DAY_DU, ngay))
 
 
-def doc_tap_thu_lai(db_path: Path) -> set[str]:
-    """Tập R: `video_id` của ứng viên mà lần đo gần nhất trả "chưa đo được" (Drive lỗi).
-    Sống trong `vao_bo_kv` (JSON) nên khởi động lại không làm mất."""
+class TapThuLaiHong(ValueError):
+    """Giá trị `tap_thu_lai` trong `vao_bo_kv` hỏng (không phải JSON, hoặc không phải danh
+    sách/bản đồ đúng dạng). Người gọi KHÔNG được để nó chặn lượt kiểm: log lỗi, quét đủ."""
+
+
+def _phan_tich_tap_thu_lai(gia_tri: str) -> dict[str, int]:
+    try:
+        v = json.loads(gia_tri)
+    except ValueError as exc:
+        raise TapThuLaiHong(f"không phải JSON: {exc}") from exc
+    if isinstance(v, list):                       # dạng CŨ: danh sách id ⇒ mỗi id đếm 1
+        if not all(isinstance(x, str) for x in v):
+            raise TapThuLaiHong("danh sách chứa phần tử không phải chuỗi")
+        return {x: 1 for x in v}
+    if isinstance(v, dict):
+        if not all(isinstance(k, str) and isinstance(n, int) and not isinstance(n, bool)
+                   and n >= 1 for k, n in v.items()):
+            raise TapThuLaiHong("bản đồ id → số lần phải là số nguyên ≥ 1")
+        return dict(v)
+    raise TapThuLaiHong(f"kiểu {type(v).__name__} không phải danh sách/bản đồ")
+
+
+def doc_tap_thu_lai(db_path: Path) -> dict[str, int]:
+    """Tập R: `{video_id: số lần đo trượt LIÊN TIẾP}` của ứng viên mà lần đo gần nhất trả
+    "chưa đo được" (Drive lỗi). Sống trong `vao_bo_kv` (JSON) nên khởi động lại không mất.
+    Giá trị dạng cũ (danh sách) được đọc thành số lần 1. Hỏng ⇒ `TapThuLaiHong`."""
     with _connect(db_path) as conn:
         r = conn.execute("SELECT gia_tri FROM vao_bo_kv WHERE khoa = ?",
                          (KHOA_TAP_THU_LAI,)).fetchone()
-    return set(json.loads(r["gia_tri"])) if r else set()
+    return _phan_tich_tap_thu_lai(r["gia_tri"]) if r else {}
 
 
-def ghi_tap_thu_lai(db_path: Path, video_ids: set[str]) -> None:
+def doc_tap_thu_lai_an_toan(db_path: Path) -> dict[str, int]:
+    """Như `doc_tap_thu_lai` nhưng giá trị hỏng ⇒ {} (cho trang quản trị chỉ đọc)."""
+    try:
+        return doc_tap_thu_lai(db_path)
+    except TapThuLaiHong:
+        return {}
+
+
+def ghi_tap_thu_lai(db_path: Path, tap: dict[str, int] | set[str]) -> None:
+    """Ghi ĐÈ nguyên tập R (dùng cho test/di trú). Lượt kiểm dùng `cap_nhat_tap_thu_lai`."""
+    dang_map = tap if isinstance(tap, dict) else {v: 1 for v in tap}
     with _connect(db_path) as conn:
         conn.execute(
             "INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES (?, ?) "
             "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri",
-            (KHOA_TAP_THU_LAI, json.dumps(sorted(video_ids))))
+            (KHOA_TAP_THU_LAI, json.dumps(dang_map, sort_keys=True)))
+
+
+def cap_nhat_tap_thu_lai(db_path: Path, do_duoc: set[str], khong_duoc: set[str]) -> dict[str, int]:
+    """Cập nhật R cuối lượt: ĐỌC–GỘP–GHI trong MỘT `BEGIN IMMEDIATE`.
+
+    R_mới = (R_hiện_tại − đo_được) ∪ trượt, rồi tỉa id không còn là ứng viên; id trượt tăng
+    số lần liên tiếp thêm 1, id đo được (DAT/AM) rời R. R_hiện_tại được đọc LẠI trong
+    giao dịch (không dùng bản chụp đầu lượt): một lượt/tiến trình khác vừa thêm id giữa
+    lúc đọc và lúc ghi thì id đó SỐNG. Giá trị hiện tại hỏng ⇒ coi là rỗng (bị ghi đè)."""
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        r = conn.execute("SELECT gia_tri FROM vao_bo_kv WHERE khoa = ?",
+                         (KHOA_TAP_THU_LAI,)).fetchone()
+        try:
+            hien_tai = _phan_tich_tap_thu_lai(r["gia_tri"]) if r else {}
+        except TapThuLaiHong:
+            hien_tai = {}
+        con_ung_vien = {x["video_id"] for x in conn.execute(
+            "SELECT v.video_id FROM videos v "
+            f"WHERE v.drive_file_id IS NOT NULL AND {CON_SONG_CHUNG} "
+            "AND NOT EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
+            "                AND b.an_luc IS NOT NULL)").fetchall()}
+        moi = {k: n for k, n in hien_tai.items() if k in con_ung_vien and k not in do_duoc}
+        for k in khong_duoc:
+            if k in con_ung_vien:
+                moi[k] = hien_tai.get(k, 0) + 1
+        conn.execute(
+            "INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES (?, ?) "
+            "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri",
+            (KHOA_TAP_THU_LAI, json.dumps(moi, sort_keys=True)))
+    return moi
 
 
 def video_da_bao_dong(db_path: Path) -> set[str]:

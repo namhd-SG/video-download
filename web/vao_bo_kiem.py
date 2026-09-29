@@ -9,7 +9,15 @@ THỨ TỰ GHI (luật guard-marker): mốc ẩn `an_luc` và các hàng `video_
 ghi SAU khi bằng chứng đạt — không bao giờ trước. Ghi mốc trước rồi đo trượt thì video
 biến khỏi lưới trong khi chưa có gì chứng tỏ nó đã vào bộ, và không có gì báo.
 
-KHOẢNG HỞ ĐÃ CHẤP NHẬN của lượt 15 phút (pha (a) chọn A ∪ T ∪ H, `chay_luot_kiem`): một
+CÁCH MỘT LƯỢT CHỌN ỨNG VIÊN (`chay_luot_kiem`): mỗi lượt 15 phút đo bằng chứng đầy đủ
+(pha (b)) chỉ cho A ∪ T ∪ H ∪ R — A = nguồn có ≥1 bản mang dấu, T = nguồn đang ở Thùng rác,
+H = ứng viên đã có hàng báo động, R = tập THỬ LẠI (`{video_id: số lần đo trượt liên tiếp}`
+trong `vao_bo_kv`). Lượt đầu tiên mỗi ngày VN quét ĐẦY ĐỦ mọi ứng viên; ứng viên mà lần quét
+đó (hay bất kỳ lượt nào) trả "chưa đo được" vào R và được thử lại Ở MỖI LƯỢT 15 PHÚT tới
+khi ra DAT/AM — nên một lần quét ngày hỏng lẻ tẻ không phải chờ tới ngày mai. Quét hỏng
+TOÀN BỘ thì không ghi ngày (quét lại lượt sau). R hỏng ⇒ log lỗi và ép quét đủ lượt đó.
+
+KHOẢNG HỞ ĐÃ CHẤP NHẬN của lượt 15 phút (pha (a) chọn A ∪ T ∪ H ∪ R, `chay_luot_kiem`): một
 nguồn CHƯA TỪNG bị ẩn và CHƯA TỪNG có hàng báo động mà bị XOÁ HẲN / bị dọn khỏi Thùng rác
 (không còn trong danh sách Thùng rác), hoặc có `mimeType` không phải `video/*` (nên truy vấn
 Thùng rác không thấy), hoặc mất quyền/404 từng tệp — CHỈ được lượt QUÉT ĐẦY ĐỦ mỗi ngày VN
@@ -120,6 +128,7 @@ class KetQuaLuotKiem:
     so_goi_drive: int = 0
     fallback: bool = False
     quet_day_du: bool = False
+    tap_r_hong: bool = False            # R trong DB hỏng ⇒ lượt này bị ép quét đủ
 
 
 def _dong_ban(drive: DriveVaoBo, nguon: dict | None, ban_hop_le_: tuple,
@@ -211,12 +220,21 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             kq.id_sai += 1
 
     kq.quet_day_du = models_vao_bo.doc_ngay_quet_day_du(db_path) != hom_nay
-    tap_r = models_vao_bo.doc_tap_thu_lai(db_path)
+    h = models_vao_bo.video_da_bao_dong(db_path)
+    try:
+        tap_r = models_vao_bo.doc_tap_thu_lai(db_path)
+    except models_vao_bo.TapThuLaiHong as exc:
+        # R hỏng KHÔNG được chặn lượt kiểm: log lỗi, QUÉT ĐỦ lượt này, và lần ghi R cuối
+        # lượt (`cap_nhat_tap_thu_lai`) sẽ ghi đè bằng giá trị hợp lệ.
+        log.error("tập thử-lại R trong vao_bo_kv HỎNG (%s) — QUÉT ĐỦ lượt này, R sẽ được ghi "
+                  "đè", exc)
+        tap_r = {}
+        kq.tap_r_hong = True
+        kq.quet_day_du = True
     kq.n_r = len(tap_r)
     if kq.quet_day_du:
         chon = ung_vien
     else:
-        h = models_vao_bo.video_da_bao_dong(db_path)
         try:
             a, t = _pha_a(d, [u["drive_file_id"] for u in ung_vien]) if ung_vien else (set(), set())
         except Exception as exc:  # noqa: BLE001 — MỌI lỗi pha (a): quét đủ, không nuốt, không đọc là âm
@@ -257,7 +275,8 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             else:
                 # Nguồn đã SỐNG lại (khôi phục khỏi Thùng rác…): hết báo động, gỡ dấu để
                 # badge quản trị và tập H thôi phình.
-                models_vao_bo.xoa_bao_dong(db_path, u["video_id"])
+                if u["video_id"] in h:      # chỉ ghi khi CÓ hàng báo động để gỡ
+                    models_vao_bo.xoa_bao_dong(db_path, u["video_id"])
             kq.chua_co_bang_chung += 1
             continue
         if do.nguon is None:
@@ -280,10 +299,9 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         models_vao_bo.ghi_da_vao_bo(db_path, u["video_id"], u["chu"], dong)
         kq.da_an += 1
 
-    # Tập R mới = (R cũ ∩ ứng viên còn lại − vừa đo được) ∪ vừa "chưa đo được". Ứng viên đã
-    # ẩn/loại/dọn tự rời R; ứng viên chưa tới lượt này (bị dừng giữa chừng) giữ nguyên.
-    con_ung_vien = {u["video_id"] for u in ung_vien}
-    models_vao_bo.ghi_tap_thu_lai(db_path, ((tap_r & con_ung_vien) - do_duoc) | khong_duoc)
+    # Tập R mới = (R hiện tại − vừa đo được) ∪ vừa "chưa đo được" (số lần liên tiếp +1), tỉa
+    # ứng viên không còn — ĐỌC–GỘP–GHI trong một giao dịch, không ghi đè bản chụp cũ.
+    models_vao_bo.cap_nhat_tap_thu_lai(db_path, do_duoc, khong_duoc)
     # Ghi ngày quét khi lượt quét chạy HẾT (không bị dừng) VÀ không hỏng toàn bộ. Vài ứng
     # viên "chưa đo được" thì đã nằm trong R (được thử lại mỗi lượt). Hỏng TOÀN BỘ thì không
     # ai được đo: đánh dấu xong là bịt cửa sổ phát hiện đến hết ngày ⇒ để lượt sau quét lại.

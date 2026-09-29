@@ -343,14 +343,14 @@ def test_mot_tep_hong_vinh_vien_van_ghi_ngay_vao_R_va_luot_sau_chi_do_A_T_H_R(kh
     kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO)
     assert kq.quet_day_du and kq.khong_do_duoc == 1
     assert models_vao_bo.doc_ngay_quet_day_du(db) == NGAY_VN, "vài tệp hỏng vẫn ghi ngày quét"
-    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1"}
-    for phut in (15, 30, 45):
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 1}
+    for lan, phut in enumerate((15, 30, 45), start=2):
         d.goi.clear()
         with caplog.at_level(logging.INFO, logger="videodl.web.vao_bo"):
             kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=phut))
         assert not kq.quet_day_du, "không có quét đầy đủ mỗi 15 phút"
         assert da_lay_tep(d) == {fid(1), fid(3)}, "chỉ A ∪ T ∪ H ∪ R: v1 ∈ R, v3 ∈ A; v2 thì không"
-        assert models_vao_bo.doc_tap_thu_lai(db) == {"v1"}, "trượt lại thì ở lại R"
+        assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": lan}, "trượt lại: ở lại R, đếm +1"
         assert kq.n_r == 1
     dong_cuoi = [r.getMessage() for r in caplog.records if "|A|=" in r.getMessage()][-1]
     assert "|R|=1" in dong_cuoi
@@ -366,7 +366,7 @@ def test_quet_hong_toan_bo_khong_ghi_ngay_va_R_chua_tat_ca(kho):
     kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO)
     assert kq.khong_do_duoc == kq.da_xet == 2
     assert models_vao_bo.doc_ngay_quet_day_du(db) is None
-    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1", "v2"}
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 1, "v2": 1}
     assert chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=15)).quet_day_du, \
         "lượt sau quét lại (cú chớp Drive)"
 
@@ -379,12 +379,12 @@ def test_R_rut_lai_khi_do_duoc_ke_ca_DAT_va_AM_va_o_lai_khi_van_truot(kho):
     for i in (1, 2, 4):
         d.loi[("lay_tep", fid(i))] = http_loi(503)
     chay_luot_kiem(db, d, bay_gio=BAY_GIO)
-    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1", "v2", "v4"}
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 1, "v2": 1, "v4": 1}
     del d.loi[("lay_tep", fid(1))]
     del d.loi[("lay_tep", fid(2))]
     kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=15))
     assert (kq.da_an, kq.chua_co_bang_chung, kq.khong_do_duoc) == (1, 1, 1)
-    assert models_vao_bo.doc_tap_thu_lai(db) == {"v4"}, "v1 (AM) và v2 (DAT) rời R; v4 ở lại"
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v4": 2}, "v1 (AM), v2 (DAT) rời R; v4 ở lại, đếm 2"
 
 
 def test_R_song_sot_khoi_dong_lai_va_tu_don_ung_vien_khong_con(kho):
@@ -398,10 +398,100 @@ def test_R_song_sot_khoi_dong_lai_va_tu_don_ung_vien_khong_con(kho):
     # "Khởi động lại": trạng thái chỉ còn trong DB — đọc bằng kết nối mới.
     with sqlite3.connect(db) as c:
         assert c.execute("SELECT gia_tri FROM vao_bo_kv WHERE khoa = 'tap_thu_lai'").fetchone()[0] \
-            == '["v1", "v2"]'
+            == '{"v1": 1, "v2": 1}'
     d.goi.clear()
     chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=15))
     assert da_lay_tep(d) == {fid(1), fid(2)}, "R từ lượt trước được nạp lại và đo"
     models.danh_dau_da_loai(db, "v1", TOI)                     # v1 không còn là ứng viên
     chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=30))
-    assert models_vao_bo.doc_tap_thu_lai(db) == {"v2"}
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v2": 3}
+
+
+# --- R hỏng không được chặn lượt kiểm ---------------------------------------------------------------------
+
+def _ghi_tho_r(db, gia_tri: str):
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES ('tap_thu_lai', ?) "
+                  "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri", (gia_tri,))
+
+
+@pytest.mark.parametrize("hong", ["khong phai json", '{"v1": ', "123", "null", '"v1"',
+                                  '{"v1": "x"}', '{"v1": 0}', '{"v1": true}', "[1, 2]"])
+def test_R_hong_van_kiem_van_an_van_bao_dong_va_R_ghi_lai_hop_le(kho, caplog, hong):
+    db, job = kho
+    them(db, job, 1)           # có bản có dấu ⇒ phải được ẨN
+    them(db, job, 2)           # nguồn 404, chưa từng báo: CHỈ lượt quét đầy đủ mới bắt được
+    da_quet_hom_nay(db)        # hôm nay đã quét: nếu KHÔNG bị ép quét đủ thì v2 lọt lưới
+    _ghi_tho_r(db, hong)
+    d = drive(nguon=(1,), co_ban=(1,))
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO)           # KHÔNG được ném
+    assert kq.tap_r_hong and kq.quet_day_du, "R hỏng ⇒ ép quét đủ lượt này"
+    assert [r for r in caplog.records if r.levelno == logging.ERROR and "HỎNG" in r.getMessage()]
+    assert hang(db) and hang(db)[0] == ("v1", 1), "v1 vẫn được ẩn"
+    assert len(loi_bao_dong(caplog, LY_DO_NGUON_404)) == 1, "v2 vẫn được báo động"
+    assert models_vao_bo.doc_tap_thu_lai(db) == {}, "R đã được ghi đè bằng giá trị hợp lệ"
+    assert not chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=15)).tap_r_hong
+
+
+def test_R_dang_cu_la_danh_sach_duoc_doc_thanh_so_lan_1_roi_cong_don(kho):
+    db, job = kho
+    for i in (1, 2):
+        them(db, job, i)
+    da_quet_hom_nay(db)
+    _ghi_tho_r(db, '["v1", "v2"]')
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 1, "v2": 1}, "di trú: danh sách → số lần 1"
+    d = drive(nguon=(1, 2))
+    d.loi[("lay_tep", fid(1))] = http_loi(403)                # v1 trượt lại; v2 đo được ⇒ rời R
+    chay_luot_kiem(db, d, bay_gio=BAY_GIO)
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 2}
+
+
+# --- đọc–gộp–ghi trong một giao dịch ---------------------------------------------------------------------
+
+class DriveCoNguoiGhiXen(DriveGia):
+    """Trong lúc pha (b) đo một tệp, một 'tiến trình khác' thêm id vào R."""
+
+    def __init__(self, db, *a, **kw):
+        super().__init__(*a, **kw)
+        self._db = db
+        self.da_xen = False
+
+    def lay_tep(self, file_id):
+        if not self.da_xen:
+            self.da_xen = True
+            models_vao_bo.ghi_tap_thu_lai(self._db, {"v9": 2})
+        return super().lay_tep(file_id)
+
+
+def test_id_them_vao_R_giua_luc_doc_va_ghi_van_song(kho):
+    db, job = kho
+    for i in (1, 9):
+        them(db, job, i)
+    da_quet_hom_nay(db)
+    d = DriveCoNguoiGhiXen(db)
+    d.dat_ten_thu_muc("BO1", "N.2809C - x")
+    d.them_nguon(fid(1))
+    d.them_ban("ban1", fid(1), folder="BO1", md5="SAI")       # v1 ∈ A ⇒ được đo (và tệp xen chạy)
+    d.them_nguon(fid(9))
+    d.loi[("lay_tep", fid(1))] = http_loi(500)                # v1 trượt lượt này ⇒ vào R
+    chay_luot_kiem(db, d, bay_gio=BAY_GIO)
+    assert d.da_xen
+    assert models_vao_bo.doc_tap_thu_lai(db) == {"v1": 1, "v9": 2}, \
+        "id do bên khác thêm giữa chừng không bị ghi đè mất; số lần của nó không đổi"
+
+
+# --- NIT-1: chỉ gỡ báo động khi CÓ hàng báo động ------------------------------------------------------------
+
+def test_khong_ghi_xoa_bao_dong_cho_ung_vien_khong_co_hang_bao_dong(kho, monkeypatch):
+    db, job = kho
+    for i in (1, 2):
+        them(db, job, i)
+    goi = []
+    goc = models_vao_bo.xoa_bao_dong
+    monkeypatch.setattr(models_vao_bo, "xoa_bao_dong", lambda db_, vid: goi.append(vid) or goc(db_, vid))
+    models_vao_bo.ghi_bao_dong(db, "v2", TOI, LY_DO_NGUON_404)
+    d = drive(nguon=(1, 2))                                   # cả hai nguồn SỐNG, 0 bản ⇒ AM-sống
+    chay_luot_kiem(db, d, bay_gio=BAY_GIO)                    # quét đầy đủ: đo cả v1 và v2
+    assert goi == ["v2"], "v1 (không có hàng báo động) không được kéo theo một giao dịch ghi"
+    assert models_vao_bo.hang_don_loi(db) == []
