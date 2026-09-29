@@ -8,6 +8,7 @@ test — no shared state, no network, no real Chromium/yt-dlp calls.
 from __future__ import annotations
 
 import json
+import logging
 
 import hashlib
 import sqlite3
@@ -24,6 +25,7 @@ from tiktok_music_downloader.utils import VideoRef
 from web import models
 from web import cookies as cookies_mod
 from web import queue as queue_mod
+from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO
 from web.queue import JobWorker, _JobProgress, process_job
 
 
@@ -1822,3 +1824,256 @@ def test_bo_qua_duoc_them_vao_DB_cu_khong_co_cot(tmp_path):
 
     with sqlite3.connect(db) as conn:
         assert "bo_qua" in {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+
+
+# ---------------------------------------------------------------------------
+# Lỗi từng video có tên: `loi` = tổng, `loi_tiktok` = phần TikTok không cho tải.
+# Đột biến ĐỎ: `phan_loai_loi` luôn `he_thong` · bỏ cộng `loi_tiktok`.
+# ---------------------------------------------------------------------------
+
+def _job_mot_video(tmp_path):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    ref = VideoRef(video_id="1", url="https://www.tiktok.com/@x/video/1")
+    return db_path, job_id, ref
+
+
+def test_loi_requested_format_tinh_vao_loi_tiktok(tmp_path):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _JobProgress(db_path, job_id, [ref], tmp_path / "out", lambda **kw: None)
+    progress.note("failed", {"loi": "ERROR: Requested format is not available"})
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+
+
+def test_loi_khong_ro_ly_do_la_he_thong(tmp_path):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _JobProgress(db_path, job_id, [ref], tmp_path / "out", lambda **kw: None)
+    progress.note("failed")   # người gọi cũ không kèm info
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 0)
+
+
+def test_loi_drive_khong_tinh_vao_loi_tiktok(tmp_path, monkeypatch):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_FAILED, monkeypatch, verified=True)
+    progress.note("downloaded")
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 0)
+
+
+def test_bai_anh_khong_luong_video_tinh_vao_loi_tiktok(tmp_path, monkeypatch):
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_OK, monkeypatch, verified=False)
+    progress.note("downloaded")
+    job = models.get_job(db_path, job_id)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+
+
+def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
+    """DB có từ trước khi có cột: job cũ CÓ lỗi = NULL (chưa phân loại); job cũ
+    KHÔNG lỗi = 0 (không có gì để phân loại sai)."""
+    import sqlite3
+    db_path = tmp_path / "cu.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY AUTOINCREMENT, url TEXT NOT NULL,"
+                     " trang_thai TEXT NOT NULL DEFAULT 'pending', tong INTEGER NOT NULL DEFAULT 0,"
+                     " xong INTEGER NOT NULL DEFAULT 0, loi INTEGER NOT NULL DEFAULT 0,"
+                     " tao_luc TEXT NOT NULL, nguoi_tao TEXT NOT NULL DEFAULT 'khach')")
+        conn.execute("INSERT INTO jobs (url, loi, tao_luc) VALUES ('u', 1, '2026-09-01T00:00:00+00:00')")
+        conn.execute("INSERT INTO jobs (url, loi, tao_luc) VALUES ('u', 0, '2026-09-01T00:00:00+00:00')")
+    models.init_db(db_path)
+    assert models.get_job(db_path, 1)["loi_tiktok"] is None, \
+        "job cũ CÓ lỗi = CHƯA PHÂN LOẠI (NULL), không phải 0"
+    assert models.list_jobs(db_path, None)[1]["loi_tiktok"] is None
+    assert models.get_job(db_path, 2)["loi_tiktok"] == 0, "job cũ không lỗi bắt đầu ở 0"
+    # Job cũ đang chạy qua lúc migrate: cộng lỗi vào `loi`, `loi_tiktok` giữ NULL.
+    models.increment_job_counts(db_path, 1, loi_delta=1, loi_tiktok_delta=1)
+    job = models.get_job(db_path, 1)
+    assert (job["loi"], job["loi_tiktok"]) == (2, None)
+    # Job cũ không lỗi, đang chạy: lỗi TikTok đầu tiên được đếm đúng.
+    models.increment_job_counts(db_path, 2, loi_delta=1, loi_tiktok_delta=1)
+    job = models.get_job(db_path, 2)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+    # init_db chạy lại không đụng số đã đếm.
+    models.init_db(db_path)
+    assert models.get_job(db_path, 2)["loi_tiktok"] == 1
+
+
+def test_job_moi_co_loi_tiktok_bang_0_khong_phai_null(tmp_path):
+    db_path = tmp_path / "moi.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    assert models.get_job(db_path, job_id)["loi_tiktok"] == 0
+
+
+def test_loi_lifecycle_hook_log_dung_mot_error_khong_trung(tmp_path, monkeypatch, caplog):
+    """Đột biến ĐỎ: `da_log=True` (nuốt ERROR) hoặc thêm lại dòng WARNING song song."""
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_FAILED, monkeypatch, verified=True)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        progress.note("downloaded")
+    ghi = [r for r in caplog.records if r.name == "videodl.web"]
+    assert [r.levelno for r in ghi] == [logging.ERROR], [(r.levelname, r.getMessage()) for r in ghi]
+    assert "upload trượt" in ghi[0].getMessage()
+
+
+# ---------------------------------------------------------------------------
+# Cầu dao "hỏng hàng loạt" — chỉ đếm `Requested format is not available`.
+# Đột biến ĐỎ: đếm cả bài ảnh · không reset chuỗi · ERROR mỗi video sau ngưỡng.
+# ---------------------------------------------------------------------------
+
+_RF = {"loi": "ERROR: [TikTok] 1: Requested format is not available"}
+_ANH = {"loi": LOI_KHONG_CO_LUONG_VIDEO}
+
+
+def _chay_cau_dao(tmp_path, dau_ra: list[str], job_ten="a", caplog=None, db_path=None, job_id=None):
+    """`dau_ra`: "rf" | "anh" | "ok" — mỗi phần tử là MỘT video thử tải."""
+    if db_path is None:
+        db_path = tmp_path / "jobs.db"
+        models.init_db(db_path)
+        job_id = models.create_job(db_path, "u", len(dau_ra), job_ten)
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(len(dau_ra))]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+    import web.queue as qm
+    qm_verify = qm.verify_video_stream
+    qm.verify_video_stream = lambda path: True
+    try:
+        for kq in dau_ra:
+            if kq == "ok":
+                progress.note("downloaded")
+            else:
+                progress.note("failed", _RF if kq == "rf" else _ANH)
+    finally:
+        qm.verify_video_stream = qm_verify
+    return db_path, job_id
+
+
+def _co_bat(db_path, job_id) -> bool:
+    return models.get_job(db_path, job_id)["nghi_su_co_hang_loat"] == 1
+
+
+def _so_error_hang_loat(caplog) -> int:
+    return len([r for r in caplog.records
+                if r.levelno == logging.ERROR and "sự cố hàng loạt" in r.getMessage()])
+
+
+def test_cau_dao_muoi_bai_anh_lien_tiep_khong_bat(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["anh"] * 10)
+    assert not _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 0
+
+
+def test_cau_dao_nam_requested_format_lien_tiep_bat(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 5)
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_bon_bon_co_mot_ok_giua_khong_bat_theo_luat_chuoi(tmp_path, monkeypatch):
+    """Cô lập LUẬT CHUỖI: tắt luật tỉ lệ (ti lệ 100%) — 4 rf, 1 ok, 4 rf không bật."""
+    monkeypatch.setattr(queue_mod, "CAU_DAO_TI_LE", 1.0)
+    db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 4 + ["ok"] + ["rf"] * 4)
+    assert not _co_bat(db_path, job_id), "OK giữa chừng phải reset chuỗi"
+
+
+def test_cau_dao_luat_ti_le_bat_khi_du_5_va_tren_30_phan_tram(tmp_path):
+    # 4 rf, 1 ok, 4 rf: tổng 5 khi thử tới video thứ 6 (5 > 0.3×6) ⇒ bật.
+    db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 4 + ["ok"] + ["rf"] * 4)
+    assert _co_bat(db_path, job_id)
+
+
+def test_cau_dao_nam_loi_roi_rac_duoi_30_phan_tram_khong_bat(tmp_path):
+    # 5 rf trên 20 video = 25%, không có chuỗi nào ≥5.
+    dau_ra = (["rf", "ok", "ok", "ok"] * 5)
+    assert dau_ra.count("rf") == 5 and len(dau_ra) == 20
+    db_path, job_id = _chay_cau_dao(tmp_path, dau_ra)
+    assert not _co_bat(db_path, job_id)
+
+
+def test_cau_dao_error_chi_mot_lan_khong_moi_video_sau_nguong(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 12)
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_hai_job_moi_job_ba_rf_khong_bat_pham_vi_tung_job(tmp_path):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    j1 = models.create_job(db_path, "u", 10, "a")
+    j2 = models.create_job(db_path, "u", 10, "a")
+    _chay_cau_dao(tmp_path, ["rf"] * 3 + ["ok"] * 7, db_path=db_path, job_id=j1)
+    _chay_cau_dao(tmp_path, ["rf"] * 3 + ["ok"] * 7, db_path=db_path, job_id=j2)
+    assert not _co_bat(db_path, j1) and not _co_bat(db_path, j2)
+
+
+def test_job_cu_co_nghi_su_co_hang_loat_null(tmp_path):
+    db_path = tmp_path / "moi.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    assert models.get_job(db_path, job_id)["nghi_su_co_hang_loat"] is None
+
+
+def test_cau_dao_dem_truoc_ghi_loi_nen_van_bat_khi_ghi_db_no(tmp_path, monkeypatch, caplog):
+    """Chốt THỨ TỰ: bộ đếm cầu dao chạy TRƯỚC `_ghi_loi`. `increment_job_counts`
+    ném ở mỗi lần ⇒ cầu dao vẫn bật, đúng một dòng ERROR.
+
+    Đột biến ĐỎ: chuyển `_theo_doi_hang_loat` ra SAU `_ghi_loi`.
+    """
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 5, "a")
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(5)]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+
+    def _no(*a, **kw):
+        raise RuntimeError("DB đang khoá")
+
+    monkeypatch.setattr(models, "increment_job_counts", _no)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        for _ in range(5):
+            try:
+                progress.note("failed", _RF)
+            except RuntimeError:
+                pass   # `note` để lỗi DB nổi lên; cầu dao đã đếm xong trước đó
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_chot_luu_co_thu_lai_khi_lan_ghi_dau_no(tmp_path, monkeypatch, caplog):
+    """Lần ghi cờ đầu ném, video kế OK (chuỗi đứt) ⇒ cờ VẪN vào DB.
+
+    Đột biến ĐỎ: bỏ chốt (thoát sớm khi điều kiện hết đúng)."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 6, "a")
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(6)]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+    that = models.set_job_nghi_su_co_hang_loat
+    lan = {"n": 0}
+
+    def _ghi_no_lan_dau(*a, **kw):
+        lan["n"] += 1
+        if lan["n"] == 1:
+            raise RuntimeError("DB đang khoá")
+        return that(*a, **kw)
+
+    monkeypatch.setattr(models, "set_job_nghi_su_co_hang_loat", _ghi_no_lan_dau)
+    monkeypatch.setattr(queue_mod, "verify_video_stream", lambda path: True)
+    # Tắt luật tỉ lệ để sau khi chuỗi đứt điều kiện thật sự HẾT đúng — nếu không
+    # luật tỉ lệ vẫn đúng và tự nó gọi lại lần ghi, che mất việc thiếu chốt.
+    monkeypatch.setattr(queue_mod, "CAU_DAO_TI_LE", 1.0)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        for _ in range(5):
+            progress.note("failed", _RF)
+        assert not _co_bat(db_path, job_id), "lần ghi đầu đã trượt"
+        progress.note("downloaded")           # chuỗi đứt, điều kiện chuỗi hết đúng
+    assert _co_bat(db_path, job_id), "cờ phải được ghi lại ở video kế tiếp"
+    assert _so_error_hang_loat(caplog) == 1

@@ -18,6 +18,7 @@ from typing import Callable, Protocol
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO, phan_loai_loi
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
@@ -48,6 +49,21 @@ POLL_INTERVAL_SECONDS = 1.0
 # ngưỡng nào. Chúng là lựa chọn của người dùng với đánh đổi đã bày ra, không
 # phải kết quả hiệu chỉnh. Đổi chúng thì phải hỏi lại người dùng.
 TRAN_GIAY_MOT_LUOT = 600.0
+
+# Cầu dao "hỏng hàng loạt": nhiều video CÙNG báo `Requested format is not
+# available` trong một job là dấu hiệu của sự cố chung (yt-dlp/TikTok đổi gì đó),
+# không phải từng video hỏng. Chỉ đếm ĐÚNG chuỗi này — cố ý KHÔNG đếm bài ảnh
+# ("carries no video stream": 58% ở một nguồn ngày 10/09, bình thường) và các mẫu
+# TikTok khác.
+#
+# ⚠ HAI SỐ NÀY CHƯA HIỆU CHỈNH. Nền đo được 29/09: tối đa 1 lỗi/job, tổng 2 lỗi
+# trên ~960 video. Chúng là ngưỡng thiết kế đã thoả thuận (agy caudaotiktok-R1b),
+# không phải kết quả đo — chỉnh khi có số liệu thật.
+#   trip khi: ≥ CAU_DAO_SO_LIEN_TIEP lỗi LIÊN TIẾP,
+#         hoặc: tổng ≥ CAU_DAO_SO_LIEN_TIEP VÀ tổng > CAU_DAO_TI_LE × số video đã thử.
+CAU_DAO_MAU_LOI = "requested format is not available"
+CAU_DAO_SO_LIEN_TIEP = 5
+CAU_DAO_TI_LE = 0.30
 
 # Tạm ĐẶT VỀ 1 — USER CHỐT 22/09 qua `AskUserQuestion`. Một lượt nghĩa là không
 # đào sâu, tức xấp xỉ hành vi trước khi có tính năng này: mã đào sâu lên máy thật
@@ -363,6 +379,12 @@ class _JobProgress:
         self._output_dir = output_dir
         self._lifecycle_hook = lifecycle_hook
         self._idx = 0
+        # Cầu dao hỏng hàng loạt (theo TỪNG job — object này sống một job).
+        self._rf_tong = 0        # số lỗi `Requested format` đã thấy
+        self._rf_lien_tiep = 0   # chuỗi lỗi đó liên tiếp, về 0 khi gặp video khác
+        self._da_thu = 0         # số video đã thử tải (không tính video bỏ qua)
+        self._da_bao = False     # mốc "đã báo ERROR" — TÁCH khỏi bộ đếm
+        self._da_luu = False     # mốc "đã ghi cờ vào DB"
 
     def _note_sighting(self, ref: VideoRef, *, da_tai: bool) -> None:
         """Record that this job saw this video under its source.
@@ -381,9 +403,71 @@ class _JobProgress:
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         self._job_id, ref.video_id, type(exc).__name__)
 
+    def _ghi_loi(self, ref: VideoRef, ly_do: object, *, loai: str | None = None,
+                 da_log: bool = False) -> None:
+        """Đếm một video lỗi: `loi` luôn +1, `loi_tiktok` +1 khi TikTok không
+        cho tải. `loai=None` ⇒ tự phân loại theo `ly_do`; truyền `"he_thong"`
+        để ép (lỗi Drive không bao giờ được xếp vào phía TikTok).
+
+        Lỗi phía TikTok chỉ WARNING — ERROR dành cho lỗi hệ thống thật.
+        `da_log=True` khi thư viện `downloader.py` đã log đúng mức cho lỗi tải
+        này, để không ghi thêm một dòng trùng.
+        """
+        loai = loai or phan_loai_loi(ly_do)
+        la_tiktok = loai == "tiktok"
+        if da_log:
+            pass
+        elif la_tiktok:
+            log.warning("job %s: video %s lỗi phía TikTok (%s)", self._job_id, ref.video_id, ly_do)
+        else:
+            log.error("job %s: video %s lỗi hệ thống (%s)", self._job_id, ref.video_id, ly_do)
+        models.increment_job_counts(self._db_path, self._job_id, loi_delta=1,
+                                    loi_tiktok_delta=1 if la_tiktok else 0)
+
+    def _theo_doi_hang_loat(self, la_rf: bool) -> None:
+        """Cập nhật bộ đếm cầu dao sau MỘT video đã thử, rồi phán.
+
+        ERROR ĐÚNG MỘT lần mỗi job: mốc `_da_bao` là một biến riêng, không suy
+        ra từ bộ đếm (bộ đếm còn tăng sau ngưỡng). Cờ DB có mốc riêng `_da_luu`
+        chỉ đặt SAU khi ghi thành công, và là CHỐT: đã báo mà chưa lưu được thì
+        MỌI video sau đó đều thử lưu lại, không phụ thuộc điều kiện còn đúng hay
+        không (chuỗi đã đứt, tỉ lệ đã tụt) — nếu không, một lần ghi trượt sẽ mất
+        cờ vĩnh viễn.
+        """
+        self._da_thu += 1
+        if la_rf:
+            self._rf_tong += 1
+            self._rf_lien_tiep += 1
+        else:
+            self._rf_lien_tiep = 0
+        vuot_chuoi = self._rf_lien_tiep >= CAU_DAO_SO_LIEN_TIEP
+        vuot_ti_le = (self._rf_tong >= CAU_DAO_SO_LIEN_TIEP
+                      and self._rf_tong > CAU_DAO_TI_LE * self._da_thu)
+        if (vuot_chuoi or vuot_ti_le) and not self._da_bao:
+            log.error("job %s: nghi sự cố hàng loạt — %d/%d video đã thử báo 'Requested format is "
+                      "not available' (liên tiếp %d)", self._job_id, self._rf_tong,
+                      self._da_thu, self._rf_lien_tiep)
+            self._da_bao = True
+        if self._da_bao and not self._da_luu:
+            try:
+                models.set_job_nghi_su_co_hang_loat(self._db_path, self._job_id)
+                self._da_luu = True
+            except Exception as exc:  # noqa: BLE001 — bookkeeping must not fail a job
+                log.warning("job %s: không ghi được cờ sự cố hàng loạt (%s)",
+                            self._job_id, type(exc).__name__)
+
     def note(self, kind: str, info: dict | None = None) -> None:
         ref = self._refs[self._idx]
         self._idx += 1
+        if kind == "downloaded":
+            self._theo_doi_hang_loat(False)
+        elif kind == "failed":
+            self._theo_doi_hang_loat(
+                CAU_DAO_MAU_LOI in str((info or {}).get("loi", "")).lower())
+        if kind == "failed":
+            # `info` của nhánh lỗi chỉ mang lý do, không phải metadata yt-dlp.
+            self._ghi_loi(ref, (info or {}).get("loi", ""), da_log=True)
+            return
         ref = _bo_sung_metadata(ref, info)
         if kind == "downloaded":
             path = self._output_dir / ref.filename
@@ -402,18 +486,15 @@ class _JobProgress:
                     models.increment_job_counts(self._db_path, self._job_id, xong_delta=1)
                     self._note_sighting(ref, da_tai=True)
                 else:
-                    log.warning(
-                        "job %s: %s xác minh có luồng video nhưng lifecycle hook báo %s (%s)"
-                        " — tính là lỗi, không tính là xong",
-                        self._job_id, ref.filename, result.outcome.value, result.reason,
-                    )
-                    models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
+                    # Lỗi hệ thống: ĐÚNG MỘT dòng ERROR (ở `_ghi_loi`), kèm đủ
+                    # ngữ cảnh — không thêm dòng WARNING song song.
+                    self._ghi_loi(
+                        ref,
+                        f"xác minh có luồng video nhưng lifecycle hook báo "
+                        f"{result.outcome.value} ({result.reason}) — tính là lỗi, không tính là xong",
+                        loai="he_thong")
             else:
-                log.warning("job %s: %s downloaded but carries no video stream",
-                            self._job_id, ref.filename)
-                models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
-        elif kind == "failed":
-            models.increment_job_counts(self._db_path, self._job_id, loi_delta=1)
+                self._ghi_loi(ref, LOI_KHONG_CO_LUONG_VIDEO)
         # "skipped" = file already on disk from an earlier partial run; it was
         # never verified by *this* run, so it counts toward neither xong nor
         # loi here — `tong` already accounts for it.

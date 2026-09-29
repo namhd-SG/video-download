@@ -38,7 +38,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     ly_do_dung TEXT,
     so_trang INTEGER NOT NULL DEFAULT 0,
     tim_thay INTEGER NOT NULL DEFAULT 0,
-    bo_qua INTEGER NOT NULL DEFAULT 0
+    bo_qua INTEGER NOT NULL DEFAULT 0,
+    loi_tiktok INTEGER,
+    nghi_su_co_hang_loat INTEGER
 )
 """
 
@@ -410,6 +412,22 @@ def init_db(db_path: Path) -> None:
         _add_column_if_missing(conn, "jobs", "so_trang", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "tim_thay", "INTEGER NOT NULL DEFAULT 0")
         _add_column_if_missing(conn, "jobs", "bo_qua", "INTEGER NOT NULL DEFAULT 0")
+        # Trong `loi` (tổng), bao nhiêu video là do TikTok không cho tải
+        # (bài ảnh, video gỡ). `loi - loi_tiktok` = lỗi hệ thống.
+        # CỐ Ý nullable, KHÔNG default: NULL = "chưa phân loại" cho mọi job tạo
+        # trước cột này. Một default 0 sẽ biến lỗi cũ thành "toàn bộ là lỗi hệ
+        # thống" (khung đỏ sai), còn một job đang chạy qua lúc migrate thì đếm
+        # dở dang. Job mới ghi 0 tường minh lúc INSERT (`create_job`).
+        _add_column_if_missing(conn, "jobs", "loi_tiktok", "INTEGER")
+        # Job cũ KHÔNG có lỗi thì không có gì để phân loại sai: cho bắt đầu ở 0
+        # để lỗi đầu tiên (nếu còn chạy) được đếm đúng. Job cũ CÓ lỗi giữ NULL.
+        # Idempotent: hàng mới đã ghi 0 lúc INSERT.
+        # Chỉ khi bảng có cột `loi` (một jobs.db đời rất cũ thì chưa có).
+        if any(r[1] == "loi" for r in conn.execute("PRAGMA table_info(jobs)")):
+            conn.execute("UPDATE jobs SET loi_tiktok = 0 WHERE loi_tiktok IS NULL AND loi = 0")
+        # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
+        # = chưa từng bật (mọi job cũ); 1 = đã bật.
+        _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
         # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
         # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
         # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
@@ -579,8 +597,8 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
     cũ không gửi hai trường này vẫn tạo job như trước."""
     with _connect(db_path) as conn:
         cur = conn.execute(
-            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, tao_luc, nguoi_tao, "
-            "usecase, insight_goc) VALUES (?, 'pending', ?, 0, 0, ?, ?, ?, ?)",
+            "INSERT INTO jobs (url, trang_thai, tong, xong, loi, loi_tiktok, tao_luc, nguoi_tao, "
+            "usecase, insight_goc) VALUES (?, 'pending', ?, 0, 0, 0, ?, ?, ?, ?)",
             (url, so_luong, _now(), nguoi_tao, usecase, insight_goc),
         )
         job_id = cur.lastrowid
@@ -805,6 +823,12 @@ def set_job_skipped(db_path: Path, job_id: int, bo_qua: int) -> None:
         conn.execute("UPDATE jobs SET bo_qua = ? WHERE id = ?", (bo_qua, job_id))
 
 
+def set_job_nghi_su_co_hang_loat(db_path: Path, job_id: int) -> None:
+    """Bật cờ "nghi sự cố hàng loạt" cho job. Idempotent."""
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job_id,))
+
+
 def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
     """How many refs the scrape produced after dedupe — NOT how many the user
     asked for. `tong` holds that and must stay untouched; the two differ by
@@ -814,11 +838,17 @@ def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
 
 
 def increment_job_counts(db_path: Path, job_id: int, xong_delta: int = 0,
-                          loi_delta: int = 0) -> None:
+                          loi_delta: int = 0, loi_tiktok_delta: int = 0) -> None:
+    """`loi_tiktok_delta` là phần CỦA `loi_delta` do TikTok không cho tải —
+    người gọi phải tự bảo đảm nó không vượt `loi_delta`. Hàng có `loi_tiktok`
+    NULL (job tạo trước cột) giữ NULL."""
     with _connect(db_path) as conn:
         conn.execute(
-            "UPDATE jobs SET xong = xong + ?, loi = loi + ? WHERE id = ?",
-            (xong_delta, loi_delta, job_id),
+            "UPDATE jobs SET xong = xong + ?, loi = loi + ?, "
+            # Job cũ (NULL = chưa phân loại) GIỮ NULL: cộng vào đó là đếm dở dang.
+            "loi_tiktok = CASE WHEN loi_tiktok IS NULL THEN NULL ELSE loi_tiktok + ? END "
+            "WHERE id = ?",
+            (xong_delta, loi_delta, loi_tiktok_delta, job_id),
         )
 
 

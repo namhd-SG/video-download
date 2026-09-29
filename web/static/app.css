@@ -288,6 +288,19 @@
      một sự cố, đúng thứ hiểu nhầm bản vá này sinh ra để chấm dứt. Cả hai token
      đều có bản dark mode nên không cần quy tắc riêng cho theme. */
   .skip-note { margin-top: 6px; font-size: .76rem; color: var(--text-muted); background: var(--surface-alt); border-radius: 6px; padding: 5px 8px; line-height: 1.35; }
+  /* Báo thiếu (bao-thieu.js). Khung xám = TikTok không cho tải video này, bỏ qua
+     được; khung đỏ = lỗi hệ thống thật. Tách hai màu là cả mục đích: một khung
+     đỏ cho lỗi bình thường dạy người dùng bỏ qua khung đỏ. */
+  .nguon { margin-top: 6px; font-size: .76rem; color: var(--text); }
+  .lo-tt { margin-top: 6px; font-size: .74rem; color: var(--text-muted); background: var(--surface-alt);
+    border: 1px dashed var(--border); border-radius: 6px; padding: 5px 8px; }
+  .lo-ht { margin-top: 6px; font-size: .74rem; color: var(--danger); background: var(--danger-bg);
+    border-radius: 6px; padding: 5px 8px; }
+  .queue-item .actions { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; align-items: center; }
+  .queue-item .actions .btn { font-size: .74rem; padding: 4px 10px; }
+  .chay-lai-xn { display: inline-flex; align-items: center; gap: 6px; font-size: .76rem; flex-wrap: wrap; }
+  .chay-lai-n { width: 5.5rem; font: inherit; font-size: .76rem; padding: 3px 6px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text); }
   .job-meta { margin-top: 4px; font-size: .72rem; color: var(--text-muted); }
   .job-meta a { color: var(--accent); }
   .chia-link { font: inherit; font-size: .72rem; color: var(--accent); background: none; border: none;
