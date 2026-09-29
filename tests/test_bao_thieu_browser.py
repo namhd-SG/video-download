@@ -336,3 +336,24 @@ def test_job_truoc_ban_cap_nhat_loi_chua_phan_loai_khung_xam_khong_do_khong_thie
     assert h.locator(".progress-fill.has-errors").count() == 0
     assert "1 lỗi (chưa phân loại — lượt trước bản cập nhật)" in h.locator(".lo-tt").inner_text()
     assert h.locator(".status-badge").inner_text() != "Thiếu"
+
+
+def test_co_nghi_su_co_hang_loat_khung_do_de_khung_xam_va_nhan_thieu(trang, db):
+    """Đột biến ĐỎ: giao diện bỏ qua cờ."""
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=15, loi=5, loi_tiktok=5, ly_do="het_vong")
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
+    p, _ = trang()
+    h = _hang(p, job)
+    assert "Có thể là sự cố hàng loạt" in h.locator(".lo-ht").inner_text()
+    assert h.locator(".lo-tt").count() == 0, "khung đỏ ghi đè khung xám TikTok"
+    assert h.locator(".status-badge").inner_text() == "Thiếu"
+    assert h.locator(".progress-fill.has-errors").count() == 1
+
+
+def test_job_cu_khong_co_co_hang_loat_thi_khong_do(trang, db):
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=15, loi=5, loi_tiktok=5, ly_do="het_vong")
+    p, _ = trang()
+    h = _hang(p, job)
+    assert h.locator(".lo-ht").count() == 0
+    assert h.locator(".lo-tt").count() == 1

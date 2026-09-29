@@ -50,6 +50,21 @@ POLL_INTERVAL_SECONDS = 1.0
 # phải kết quả hiệu chỉnh. Đổi chúng thì phải hỏi lại người dùng.
 TRAN_GIAY_MOT_LUOT = 600.0
 
+# Cầu dao "hỏng hàng loạt": nhiều video CÙNG báo `Requested format is not
+# available` trong một job là dấu hiệu của sự cố chung (yt-dlp/TikTok đổi gì đó),
+# không phải từng video hỏng. Chỉ đếm ĐÚNG chuỗi này — cố ý KHÔNG đếm bài ảnh
+# ("carries no video stream": 58% ở một nguồn ngày 10/09, bình thường) và các mẫu
+# TikTok khác.
+#
+# ⚠ HAI SỐ NÀY CHƯA HIỆU CHỈNH. Nền đo được 29/09: tối đa 1 lỗi/job, tổng 2 lỗi
+# trên ~960 video. Chúng là ngưỡng thiết kế đã thoả thuận (agy caudaotiktok-R1b),
+# không phải kết quả đo — chỉnh khi có số liệu thật.
+#   trip khi: ≥ CAU_DAO_SO_LIEN_TIEP lỗi LIÊN TIẾP,
+#         hoặc: tổng ≥ CAU_DAO_SO_LIEN_TIEP VÀ tổng > CAU_DAO_TI_LE × số video đã thử.
+CAU_DAO_MAU_LOI = "requested format is not available"
+CAU_DAO_SO_LIEN_TIEP = 5
+CAU_DAO_TI_LE = 0.30
+
 # Tạm ĐẶT VỀ 1 — USER CHỐT 22/09 qua `AskUserQuestion`. Một lượt nghĩa là không
 # đào sâu, tức xấp xỉ hành vi trước khi có tính năng này: mã đào sâu lên máy thật
 # nhưng nằm im, nên chuyến deploy này không mang rủi ro TikTok chặn.
@@ -364,6 +379,12 @@ class _JobProgress:
         self._output_dir = output_dir
         self._lifecycle_hook = lifecycle_hook
         self._idx = 0
+        # Cầu dao hỏng hàng loạt (theo TỪNG job — object này sống một job).
+        self._rf_tong = 0        # số lỗi `Requested format` đã thấy
+        self._rf_lien_tiep = 0   # chuỗi lỗi đó liên tiếp, về 0 khi gặp video khác
+        self._da_thu = 0         # số video đã thử tải (không tính video bỏ qua)
+        self._da_bao = False     # mốc "đã báo ERROR" — TÁCH khỏi bộ đếm
+        self._da_luu = False     # mốc "đã ghi cờ vào DB"
 
     def _note_sighting(self, ref: VideoRef, *, da_tai: bool) -> None:
         """Record that this job saw this video under its source.
@@ -405,9 +426,45 @@ class _JobProgress:
         models.increment_job_counts(self._db_path, self._job_id, loi_delta=1,
                                     loi_tiktok_delta=1 if la_tiktok else 0)
 
+    def _theo_doi_hang_loat(self, la_rf: bool) -> None:
+        """Cập nhật bộ đếm cầu dao sau MỘT video đã thử, rồi phán.
+
+        ERROR ĐÚNG MỘT lần mỗi job: mốc `_da_bao` là một biến riêng, không suy
+        ra từ bộ đếm (bộ đếm còn tăng sau ngưỡng). Cờ DB có mốc riêng `_da_luu`
+        và chỉ đặt SAU khi ghi thành công, nên ghi trượt thì lượt sau ghi lại.
+        """
+        self._da_thu += 1
+        if la_rf:
+            self._rf_tong += 1
+            self._rf_lien_tiep += 1
+        else:
+            self._rf_lien_tiep = 0
+        vuot_chuoi = self._rf_lien_tiep >= CAU_DAO_SO_LIEN_TIEP
+        vuot_ti_le = (self._rf_tong >= CAU_DAO_SO_LIEN_TIEP
+                      and self._rf_tong > CAU_DAO_TI_LE * self._da_thu)
+        if not (vuot_chuoi or vuot_ti_le):
+            return
+        if not self._da_bao:
+            log.error("job %s: nghi sự cố hàng loạt — %d/%d video đã thử báo 'Requested format is "
+                      "not available' (liên tiếp %d)", self._job_id, self._rf_tong,
+                      self._da_thu, self._rf_lien_tiep)
+            self._da_bao = True
+        if not self._da_luu:
+            try:
+                models.set_job_nghi_su_co_hang_loat(self._db_path, self._job_id)
+                self._da_luu = True
+            except Exception as exc:  # noqa: BLE001 — bookkeeping must not fail a job
+                log.warning("job %s: không ghi được cờ sự cố hàng loạt (%s)",
+                            self._job_id, type(exc).__name__)
+
     def note(self, kind: str, info: dict | None = None) -> None:
         ref = self._refs[self._idx]
         self._idx += 1
+        if kind == "downloaded":
+            self._theo_doi_hang_loat(False)
+        elif kind == "failed":
+            self._theo_doi_hang_loat(
+                CAU_DAO_MAU_LOI in str((info or {}).get("loi", "")).lower())
         if kind == "failed":
             # `info` của nhánh lỗi chỉ mang lý do, không phải metadata yt-dlp.
             self._ghi_loi(ref, (info or {}).get("loi", ""), da_log=True)

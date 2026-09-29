@@ -37,12 +37,13 @@
   function soLieu(job) {
     const tong = so(job.tong), tim = so(job.tim_thay), boQua = so(job.bo_qua);
     const loi = so(job.loi);
+    const suCoHangLoat = Number(job.nghi_su_co_hang_loat) === 1;
     // `loi_tiktok` NULL = job tạo trước khi có phân loại: KHÔNG biết lỗi nào là
     // của ai, nên không được tính thành lỗi hệ thống (khung đỏ / nhãn Thiếu).
     const chuaPhanLoai = job.loi_tiktok === null || job.loi_tiktok === undefined;
     const loiTiktok = chuaPhanLoai ? 0 : Math.min(so(job.loi_tiktok), loi);
     return {
-      tong, tim, boQua, xong: so(job.xong), loi, loiTiktok,
+      tong, tim, boQua, xong: so(job.xong), loi, loiTiktok, suCoHangLoat,
       loiChuaPhanLoai: chuaPhanLoai ? loi : 0,
       loiHt: chuaPhanLoai ? 0 : loi - loiTiktok,
     };
@@ -78,7 +79,7 @@
     if (job.trang_thai !== "done") return null;
     const s = soLieu(job);
     if (s.tong <= 0) return null;
-    if (s.loiHt > 0) return { chu: "Thiếu", lop: "thieu" };
+    if (s.loiHt > 0 || s.suCoHangLoat) return { chu: "Thiếu", lop: "thieu" };
     const theoMa = NHAN_THEO_LY_DO[job.ly_do_dung];
     if (theoMa) return { chu: theoMa, lop: "thieu" };
     if (MA_CHAY_LAI_DUOC.has(job.ly_do_dung) && s.tim > 0 && s.tim < s.tong) {
@@ -105,13 +106,19 @@
 
   // Có lỗi HỆ THỐNG đã xác định (đỏ)? Lỗi chưa phân loại không tính.
   function coLoiHeThong(job) {
-    return soLieu(job).loiHt > 0;
+    const s = soLieu(job);
+    return s.loiHt > 0 || s.suCoHangLoat;
   }
 
   function khungLoi(job) {
     const s = soLieu(job);
     let h = "";
-    if (s.loiTiktok > 0) {
+    if (s.suCoHangLoat) {
+      // Ghi đè khung xám TikTok: nhiều video cùng một lỗi không còn là "từng
+      // video hỏng, bỏ qua được".
+      h += `<div class="lo-ht">Có thể là sự cố hàng loạt (nhiều video cùng báo ` +
+        `'Requested format') — không phải lỗi từng video, báo người phát triển.</div>`;
+    } else if (s.loiTiktok > 0) {
       h += `<div class="lo-tt">${s.loiTiktok} video TikTok không cho tải ` +
         `(bài dạng ảnh, bị gỡ hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
     }

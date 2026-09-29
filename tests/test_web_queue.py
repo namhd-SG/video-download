@@ -25,6 +25,7 @@ from tiktok_music_downloader.utils import VideoRef
 from web import models
 from web import cookies as cookies_mod
 from web import queue as queue_mod
+from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO
 from web.queue import JobWorker, _JobProgress, process_job
 
 
@@ -1909,3 +1910,102 @@ def test_loi_lifecycle_hook_log_dung_mot_error_khong_trung(tmp_path, monkeypatch
     ghi = [r for r in caplog.records if r.name == "videodl.web"]
     assert [r.levelno for r in ghi] == [logging.ERROR], [(r.levelname, r.getMessage()) for r in ghi]
     assert "upload trượt" in ghi[0].getMessage()
+
+
+# ---------------------------------------------------------------------------
+# Cầu dao "hỏng hàng loạt" — chỉ đếm `Requested format is not available`.
+# Đột biến ĐỎ: đếm cả bài ảnh · không reset chuỗi · ERROR mỗi video sau ngưỡng.
+# ---------------------------------------------------------------------------
+
+_RF = {"loi": "ERROR: [TikTok] 1: Requested format is not available"}
+_ANH = {"loi": LOI_KHONG_CO_LUONG_VIDEO}
+
+
+def _chay_cau_dao(tmp_path, dau_ra: list[str], job_ten="a", caplog=None, db_path=None, job_id=None):
+    """`dau_ra`: "rf" | "anh" | "ok" — mỗi phần tử là MỘT video thử tải."""
+    if db_path is None:
+        db_path = tmp_path / "jobs.db"
+        models.init_db(db_path)
+        job_id = models.create_job(db_path, "u", len(dau_ra), job_ten)
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(len(dau_ra))]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+    import web.queue as qm
+    qm_verify = qm.verify_video_stream
+    qm.verify_video_stream = lambda path: True
+    try:
+        for kq in dau_ra:
+            if kq == "ok":
+                progress.note("downloaded")
+            else:
+                progress.note("failed", _RF if kq == "rf" else _ANH)
+    finally:
+        qm.verify_video_stream = qm_verify
+    return db_path, job_id
+
+
+def _co_bat(db_path, job_id) -> bool:
+    return models.get_job(db_path, job_id)["nghi_su_co_hang_loat"] == 1
+
+
+def _so_error_hang_loat(caplog) -> int:
+    return len([r for r in caplog.records
+                if r.levelno == logging.ERROR and "sự cố hàng loạt" in r.getMessage()])
+
+
+def test_cau_dao_muoi_bai_anh_lien_tiep_khong_bat(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["anh"] * 10)
+    assert not _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 0
+
+
+def test_cau_dao_nam_requested_format_lien_tiep_bat(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 5)
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_bon_bon_co_mot_ok_giua_khong_bat_theo_luat_chuoi(tmp_path, monkeypatch):
+    """Cô lập LUẬT CHUỖI: tắt luật tỉ lệ (ti lệ 100%) — 4 rf, 1 ok, 4 rf không bật."""
+    monkeypatch.setattr(queue_mod, "CAU_DAO_TI_LE", 1.0)
+    db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 4 + ["ok"] + ["rf"] * 4)
+    assert not _co_bat(db_path, job_id), "OK giữa chừng phải reset chuỗi"
+
+
+def test_cau_dao_luat_ti_le_bat_khi_du_5_va_tren_30_phan_tram(tmp_path):
+    # 4 rf, 1 ok, 4 rf: tổng 5 khi thử tới video thứ 6 (5 > 0.3×6) ⇒ bật.
+    db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 4 + ["ok"] + ["rf"] * 4)
+    assert _co_bat(db_path, job_id)
+
+
+def test_cau_dao_nam_loi_roi_rac_duoi_30_phan_tram_khong_bat(tmp_path):
+    # 5 rf trên 20 video = 25%, không có chuỗi nào ≥5.
+    dau_ra = (["rf", "ok", "ok", "ok"] * 5)
+    assert dau_ra.count("rf") == 5 and len(dau_ra) == 20
+    db_path, job_id = _chay_cau_dao(tmp_path, dau_ra)
+    assert not _co_bat(db_path, job_id)
+
+
+def test_cau_dao_error_chi_mot_lan_khong_moi_video_sau_nguong(tmp_path, caplog):
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        db_path, job_id = _chay_cau_dao(tmp_path, ["rf"] * 12)
+    assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_hai_job_moi_job_ba_rf_khong_bat_pham_vi_tung_job(tmp_path):
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    j1 = models.create_job(db_path, "u", 10, "a")
+    j2 = models.create_job(db_path, "u", 10, "a")
+    _chay_cau_dao(tmp_path, ["rf"] * 3 + ["ok"] * 7, db_path=db_path, job_id=j1)
+    _chay_cau_dao(tmp_path, ["rf"] * 3 + ["ok"] * 7, db_path=db_path, job_id=j2)
+    assert not _co_bat(db_path, j1) and not _co_bat(db_path, j2)
+
+
+def test_job_cu_co_nghi_su_co_hang_loat_null(tmp_path):
+    db_path = tmp_path / "moi.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    assert models.get_job(db_path, job_id)["nghi_su_co_hang_loat"] is None

@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     so_trang INTEGER NOT NULL DEFAULT 0,
     tim_thay INTEGER NOT NULL DEFAULT 0,
     bo_qua INTEGER NOT NULL DEFAULT 0,
-    loi_tiktok INTEGER
+    loi_tiktok INTEGER,
+    nghi_su_co_hang_loat INTEGER
 )
 """
 
@@ -418,6 +419,9 @@ def init_db(db_path: Path) -> None:
         # thống" (khung đỏ sai), còn một job đang chạy qua lúc migrate thì đếm
         # dở dang. Job mới ghi 0 tường minh lúc INSERT (`create_job`).
         _add_column_if_missing(conn, "jobs", "loi_tiktok", "INTEGER")
+        # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
+        # = chưa từng bật (mọi job cũ); 1 = đã bật.
+        _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
         # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
         # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
         # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
@@ -811,6 +815,12 @@ def set_job_skipped(db_path: Path, job_id: int, bo_qua: int) -> None:
     """
     with _connect(db_path) as conn:
         conn.execute("UPDATE jobs SET bo_qua = ? WHERE id = ?", (bo_qua, job_id))
+
+
+def set_job_nghi_su_co_hang_loat(db_path: Path, job_id: int) -> None:
+    """Bật cờ "nghi sự cố hàng loạt" cho job. Idempotent."""
+    with _connect(db_path) as conn:
+        conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job_id,))
 
 
 def set_job_found(db_path: Path, job_id: int, tim_thay: int) -> None:
