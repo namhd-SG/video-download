@@ -121,6 +121,7 @@
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
     videosDaDon: [],          // GET /videos → da_don_trong_cum: video đã dọn khỏi Drive, GIỮ CHỖ trong lô
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
+    chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
@@ -211,7 +212,7 @@
   // "còn bao nhiêu sau khi áp mọi lọc khác" như facet search đầy đủ).
   function buildBuckets(group) {
     const map = new Map();
-    for (const v of state.videos) {
+    for (const v of videoTrongNen()) {
       const seenThisVideo = new Set();
       for (const b of group.getBuckets(v)) {
         if (seenThisVideo.has(b.key)) continue;
@@ -235,7 +236,29 @@
     return video.cum_id === cumLoc;
   }
 
+  // Video đã vào bộ tự tìm (server gắn `vao_bo`): ẨN khỏi lưới mặc định, chỉ hiện
+  // khi bật chip "Đã vào bộ". Lọc ở CLIENT như mọi bộ lọc khác — trang đã nạp trọn
+  // thư viện. ⚠ CHỈ lưới/đếm/hộp lọc đi qua đây; cắt lô của cụm (`videoCuaCum`) KHÔNG,
+  // vì video đã vào bộ vẫn nằm trong lô của cụm.
+  function videoDaVaoBo(video) { return Boolean(video.vao_bo); }
+
+  // Tập video ĐANG HIỆN theo chip: mẫu số cho nhãn "x/N video", số đếm ở thanh bên
+  // và số đếm trong các hộp lọc — để chúng khớp lưới người dùng đang nhìn.
+  function videoTrongNen() {
+    return state.videos.filter((v) => videoDaVaoBo(v) === state.chiVaoBo);
+  }
+
+  function veChipVaoBo() {
+    const chip = document.getElementById("chip-vao-bo");
+    if (!chip) return;
+    const n = state.videos.filter(videoDaVaoBo).length;
+    chip.textContent = `Đã vào bộ (${n})`;
+    chip.classList.toggle("on", state.chiVaoBo);
+    chip.setAttribute("aria-pressed", String(state.chiVaoBo));
+  }
+
   function videoMatchesFilters(video) {
+    if (videoDaVaoBo(video) !== state.chiVaoBo) return false;
     if (!videoKhopCum(video, state.cumLoc)) return false;
     return FILTER_GROUPS.every((g) => {
       const selected = state.filters[g.id];
@@ -608,6 +631,7 @@
     const emptyState = document.getElementById("empty-state");
     const noMatch = document.getElementById("no-match-state");
 
+    veChipVaoBo();
     if (state.videos.length === 0) {
       emptyState.hidden = false;
       noMatch.hidden = true;
@@ -630,9 +654,12 @@
     // con số đúng.
     const total = state.videosTotal ?? state.videos.length;
     const loaded = state.videos.length;
+    // Mẫu số "x/N" là tập đang hiện theo chip (không gồm video đã vào bộ khi chip tắt):
+    // video ẩn theo thiết kế không phải "bị bộ lọc loại".
+    const nen = videoTrongNen().length;
     const parts = [];
-    parts.push(filtered.length === loaded ? `${loaded}` : `${filtered.length}/${loaded}`);
-    parts.push("video");
+    parts.push(filtered.length === nen ? `${nen}` : `${filtered.length}/${nen}`);
+    parts.push(state.chiVaoBo ? "video đã vào bộ" : "video");
     if (loaded < total) parts.push(`(đang hiện ${loaded} trong ${total})`);
     document.getElementById("library-count").textContent = parts.join(" ");
 
@@ -648,6 +675,22 @@
     renderActiveFilters();
     renderCumRail();
     renderCumHead();
+  }
+
+  // Ngày (không giờ) theo múi giờ của trình duyệt; rỗng nếu không đọc được.
+  function fmtNgay(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? escapeHtml(d.toLocaleDateString("vi-VN")) : "";
+  }
+
+  // Huy hiệu mã bộ + ngày sẽ xoá khỏi Video Desk cho video đã vào bộ. Nhiều bộ ⇒ một
+  // huy hiệu "N.2809C · N.2909B". Nguồn sự thật về bộ là folder id ở server; đây chỉ hiện.
+  function renderBoDaVao(b) {
+    if (!b) return "";
+    const ma = b.ma_bo && b.ma_bo.length ? b.ma_bo.map(escapeHtml).join(" · ") : "Đã vào bộ";
+    const ngay = fmtNgay(b.se_don_luc);
+    return `<div class="card-bo"><span class="bo-ma" title="Mã bộ tự tìm">${ma}</span>` +
+      (ngay ? `<span class="bo-don">Xoá khỏi Video Desk ${ngay}</span>` : "") + `</div>`;
   }
 
   function renderCard(video) {
@@ -668,6 +711,7 @@
         <div class="card-body">
           <div class="card-title">${escapeHtml(video.title || "(chưa có tiêu đề)")}</div>
           <div class="card-meta">${metaParts.map((m, i) => i === 0 ? m : `<span class="sep">·</span>${m}`).join(" ")}</div>
+          ${renderBoDaVao(video.vao_bo)}
           ${video.url
             ? `<a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>`
             : `<span class="card-link card-link-trong">chưa rõ link gốc</span>`}
@@ -835,6 +879,11 @@
     sauKhiDoiBoLoc(); // cập nhật badge số lượng trên nút + về trang 1
   });
 
+  document.getElementById("chip-vao-bo").addEventListener("click", () => {
+    state.chiVaoBo = !state.chiVaoBo;
+    sauKhiDoiBoLoc();
+  });
+
   document.getElementById("active-filters").addEventListener("click", (ev) => {
     if (ev.target.id === "clear-all-pill") {
       for (const g of FILTER_GROUPS) state.filters[g.id].clear();
@@ -851,6 +900,7 @@
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
     state.cumLoc = "tat_ca";
+    state.chiVaoBo = false;
     sauKhiDoiBoLoc();
   });
 
@@ -1289,13 +1339,14 @@
     if (!rail) return;
     const dem = new Map();
     let chua = 0;
-    for (const v of state.videos) {
+    const nen = videoTrongNen();
+    for (const v of nen) {
       if (v.cum_id == null) chua++; else dem.set(v.cum_id, (dem.get(v.cum_id) || 0) + 1);
     }
     const hang = (loc, nhan, n, lop = "") =>
       `<button type="button" class="cum-row ${lop}${state.cumLoc === loc ? " on" : ""}" data-cum-loc="${loc}">` +
       `${nhan}<span class="n">${n}</span></button>`;
-    let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", state.videos.length) +
+    let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", nen.length) +
       hang("chua", "Chưa vào cụm", chua, "chua") + `<hr class="rail-sep">`;
     if (!state.cums.length) {
       h += `<div class="rail-empty">Chưa có cụm nào. Chọn vài video cùng một kiểu (vd. cartoon) → bấm ` +

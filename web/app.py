@@ -28,6 +28,7 @@ from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web import models_chia
 from web import models_cum
+from web import models_vao_bo
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
@@ -643,9 +644,14 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     # bàn làm việc riêng, nên `cum_id` luôn là cụm của chính người đang xem.
     cums = models_cum.cum_cho_videos(DB_PATH, [v["video_id"] for v in videos],
                                      nguoi_tao)
+    # Video đã vào bộ tự tìm (đang ẩn 7 ngày): `{an_luc, se_don_luc, ma_bo}`. Trả CẢ
+    # chúng — trang ẩn khỏi lưới mặc định và hiện ở chip "Đã vào bộ" — nhưng
+    # `count_videos` cũng đếm chúng, nên `tong` khớp số hàng trả về.
+    vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
         video["cum_id"] = cums.get(video["video_id"])
+        video["vao_bo"] = vao_bo.get(video["video_id"])
     return {
         "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,

@@ -94,7 +94,12 @@
     <aside class="cum-rail" id="cum-rail" aria-label="Cụm của tôi"></aside>
     <div class="lib-main">
     <div class="cum-head" id="cum-head" hidden></div>
-    <div class="filter-bar" id="filter-bar"></div>
+    <div class="filter-row">
+      <div class="filter-bar" id="filter-bar"></div>
+      <!-- "Đã vào bộ": video đã được copy vào một bộ tự tìm bị ẨN khỏi lưới mặc định
+           7 ngày (rồi tệp nguồn vào Thùng rác). Bấm chip này để xem CHỈ chúng. -->
+      <button type="button" class="chip-vao-bo" id="chip-vao-bo" aria-pressed="false">Đã vào bộ (0)</button>
+    </div>
     <div class="active-filters" id="active-filters" hidden></div>
 
     <div id="empty-state" class="empty-state" hidden>
