@@ -119,7 +119,7 @@ def vao_bo_cho_videos(db_path: Path, video_ids: list[str]) -> dict[str, dict]:
             f"AND an_luc IS NOT NULL AND drive_don_luc IS NULL", video_ids).fetchall()
         ma = conn.execute(
             f"SELECT video_id, ma_bo FROM video_vao_bo_ban WHERE video_id IN ({marks}) "
-            f"ORDER BY thay_luc, ban_copy_id", video_ids).fetchall()
+            f"ORDER BY thay_luc, ma_bo", video_ids).fetchall()
     ma_theo_video: dict[str, list[str]] = {}
     for r in ma:
         if r["ma_bo"] not in ma_theo_video.setdefault(r["video_id"], []):

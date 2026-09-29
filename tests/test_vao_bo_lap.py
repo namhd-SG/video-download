@@ -118,3 +118,14 @@ def test_mot_luot_tron_an_roi_don_roi_xoa_anh(tmp_path):
     assert vb["v2"]["drive_don_luc"], "v2 đã dọn"
     assert [a for t, a in d.goi if t == "bo_vao_thung_rac"] == [fid(2)]
     assert not (thumbs / "v2.webp").exists() and (thumbs / "v1.webp").exists()
+
+
+def test_mot_buoc_hong_khong_chan_cac_buoc_sau(db, monkeypatch):
+    from web import vao_bo_don, vao_bo_kiem, vao_bo_thumbs
+    chay = []
+    monkeypatch.setattr(vao_bo_kiem, "chay_luot_kiem",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("kiểm hỏng")))
+    monkeypatch.setattr(vao_bo_don, "chay_luot_don", lambda *a, **k: chay.append("don"))
+    monkeypatch.setattr(vao_bo_thumbs, "don_thumbs", lambda *a, **k: chay.append("anh"))
+    assert LapVaoBo(db, lambda: DriveGia()).chay_mot_luot() is True
+    assert chay == ["don", "anh"]

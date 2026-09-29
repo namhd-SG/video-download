@@ -249,6 +249,7 @@ def test_nguon_404_ghi_khong_con_khong_goi_trash(kho):
     kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
     assert kq.khong_con == 1 and da_trash(d) == []
     assert hang(db, "v1")["ly_do_don"] == "khong_con"
+    assert kq.truot == [], "ca đã thiết kế: 0 báo động"
 
 
 # --- video đã Loại tay -----------------------------------------------------------------------

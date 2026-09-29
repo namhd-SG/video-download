@@ -262,6 +262,26 @@ def test_ghi_da_vao_bo_hai_lan_giu_moc_dau_va_them_ban_moi(kho):
     assert [b["ban_copy_id"] for b in ban] == ["c1", "c2"]
 
 
+def test_hai_luot_an_cung_luc_chi_mot_luot_dat_moc(kho):
+    import threading
+    db, job = kho
+    them_video(db, job, 1)
+    ban = [{"ban_copy_id": "c1", "folder_id": "F", "ma_bo": "N.1", "bang_chung": "properties"}]
+    rao = threading.Barrier(2)
+    ket: list[bool] = []
+
+    def chay(luc):
+        rao.wait()
+        ket.append(models_vao_bo.ghi_da_vao_bo(db, "v1", TOI, ban, luc))
+    ts = [threading.Thread(target=chay, args=(x,)) for x in ("2026-09-20T00:00:00+00:00",
+                                                          "2026-09-21T00:00:00+00:00")]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(ket) == [False, True], "đúng MỘT lượt đặt mốc, lượt kia thấy mốc và không dời"
+    assert hang_vao_bo(db)[0][0]["an_luc"] in ("2026-09-20T00:00:00+00:00",
+                                                "2026-09-21T00:00:00+00:00")
+
+
 def test_video_da_loai_hoac_da_don_khong_la_ung_vien(kho):
     db, job = kho
     for i in (1, 2, 3):

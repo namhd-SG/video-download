@@ -61,10 +61,22 @@ class LapVaoBo:
                 log.info("bộ kiểm đã-vào-bộ: Drive chưa cấu hình — bỏ qua các lượt")
                 self._da_bao_chua_cau_hinh = True
             return False
-        vao_bo_kiem.chay_luot_kiem(self._db_path, drive, dung=self._stop.is_set)
-        vao_bo_don.chay_luot_don(self._db_path, drive, dung=self._stop.is_set)
-        # Ảnh dọn SAU mốc dọn Drive, cùng lượt: là hệ quả của mốc, không phải mốc riêng.
-        vao_bo_thumbs.don_thumbs(self._db_path, thumbs_dir_for(self._db_path))
+        # Ba bước độc lập: một bước hỏng không được chặn các bước sau — dọn ngày 7 không
+        # được đợi bộ kiểm ẩn chạy được. Ảnh dọn SAU mốc dọn Drive, cùng lượt: là hệ quả
+        # của mốc, không phải mốc riêng.
+        buoc = (
+            ("kiểm ẩn", lambda: vao_bo_kiem.chay_luot_kiem(
+                self._db_path, drive, dung=self._stop.is_set)),
+            ("dọn ngày 7", lambda: vao_bo_don.chay_luot_don(
+                self._db_path, drive, dung=self._stop.is_set)),
+            ("dọn ảnh", lambda: vao_bo_thumbs.don_thumbs(
+                self._db_path, thumbs_dir_for(self._db_path))),
+        )
+        for ten, chay in buoc:
+            try:
+                chay()
+            except Exception:  # noqa: BLE001
+                log.exception("bước '%s' của lượt đã-vào-bộ hỏng — các bước sau vẫn chạy", ten)
         return True
 
     def _loop(self) -> None:
