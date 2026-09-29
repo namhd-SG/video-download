@@ -121,6 +121,7 @@
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
+    chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
   };
   for (const g of FILTER_GROUPS) state.filters[g.id] = new Map();
 
@@ -307,6 +308,13 @@
     document.getElementById("queue-count").textContent =
       state.jobs.length ? `${state.jobs.length} lượt` : "";
     emptyHint.hidden = state.jobs.length > 0;
+    // Đang gõ số trong ô "chạy lại" thì KHÔNG vẽ lại: mỗi nhịp poll thay cả
+    // `innerHTML` và ô mất focus giữa chừng. Dữ liệu vẫn nạp vào `state.jobs`;
+    // hàng đợi vẽ lại ở nhịp poll đầu tiên sau khi rời ô. (Không vẽ lại ngay
+    // lúc `focusout`: bấm nút "Chạy lại" làm ô mất focus TRƯỚC khi click tới,
+    // vẽ lại lúc đó thay mất nút và làm mất cú bấm.)
+    const dangGo = document.activeElement;
+    if (dangGo && dangGo.classList && dangGo.classList.contains("chay-lai-n") && list.contains(dangGo)) return;
     list.innerHTML = state.jobs.map(renderQueueItem).join("");
   }
 
@@ -321,16 +329,23 @@
   //
   // Chỉ áp cho `done`: `failed`/`cancelled`/`interrupted` đã có câu chuyện
   // riêng và không được cái nhãn này che mất.
+  //
+  // Hai nhãn (`bao-thieu.js::nhanThieu`): "Nguồn hụt" khi nguồn cho ít hơn số
+  // xin và không có lỗi hệ thống; "Thiếu" khi có lỗi hệ thống hoặc thiếu mà
+  // nguồn không giải thích được.
   function nhanTrangThai(job) {
-    if (job.trang_thai === "done" && job.tong > 0 && job.xong < job.tong) {
-      return { chu: "Thiếu", lop: "thieu" };
-    }
+    const thieu = window.BaoThieu.nhanThieu(job);
+    if (thieu) return thieu;
     return { chu: STATUS_LABEL[job.trang_thai] || job.trang_thai, lop: job.trang_thai };
   }
 
   function renderQueueItem(job) {
-    const pct = job.tong > 0 ? Math.min(100, Math.round((job.xong / job.tong) * 100)) : 0;
-    const hasErrors = job.loi > 0;
+    // Mẫu số là số DÒ ĐƯỢC, không phải số xin: xong 87/88 là đã tải hết nguồn,
+    // không phải mới tải 62% (`bao-thieu.js::mauSo`).
+    const BT = window.BaoThieu;
+    const pct = BT.phanTram(job);
+    // Đỏ CHỈ cho lỗi hệ thống; lỗi phía TikTok có khung xám riêng.
+    const hasErrors = (Number(job.loi) || 0) > (Number(job.loi_tiktok) || 0);
     const stopText = job.ly_do_dung
       ? (STOP_REASON_TEXT[job.ly_do_dung] ||
          `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
@@ -344,7 +359,10 @@
     // Khác `already_owned` ở chỗ mã đó chỉ bắn khi bỏ qua HẾT. Ca hay gặp là bỏ
     // qua MỘT PHẦN, và đó chính là ca không có gì giải thích cho tới bản vá này.
     const boQua = Number(job.bo_qua) || 0;
-    const skipText = boQua > 0
+    // Đã có dòng nguồn (`dongNguon`) thì con số này nằm ở đó; chỉ còn cần khi
+    // lượt đang chạy và dòng nguồn chưa hiện.
+    const nguonText = BT.dongNguon(job);
+    const skipText = boQua > 0 && !nguonText
       ? `Bỏ qua ${boQua} video đã có trong kho.`
       : "";
     const driveLink = job.drive_folder_link
@@ -358,10 +376,13 @@
         </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
-          <span>${job.xong}/${job.tong}${hasErrors ? ` · ${job.loi} lỗi` : ""}</span>
+          <span>${BT.chuTienDo(job)}</span>
         </div>
+        ${nguonText ? `<div class="nguon">${nguonText}</div>` : ""}
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
+        ${BT.khungLoi(job)}
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
+        ${BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null)}
         ${queueLine(job)}
         <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}
           · <button type="button" class="chia-link" data-chia="${job.id}">Chia cụm</button></div>
@@ -721,6 +742,53 @@
       // Vẽ lại từ máy chủ trong MỌI ca, kể cả ca trượt: trạng thái thật
       // nằm ở DB, và sau một lần 409 thì hàng này đã sang "Đang chạy".
       await loadJobs();
+    }
+  });
+
+  // Chạy lại để kiếm thêm + chép link. Cùng lý do uỷ quyền như "Rút lượt".
+  const queueList = document.getElementById("queue-list");
+  queueList.addEventListener("input", (ev) => {
+    const o = ev.target.closest("[data-chay-lai-n]");
+    if (o) state.chayLai.set(Number(o.dataset.chayLaiN), o.value);
+  });
+  queueList.addEventListener("click", async (ev) => {
+    const nut = ev.target.closest("[data-chay-lai],[data-chay-lai-ok],[data-chay-lai-huy],[data-chep-link]");
+    if (!nut) return;
+    const id = Number(nut.dataset.chayLai ?? nut.dataset.chayLaiOk ?? nut.dataset.chayLaiHuy ?? nut.dataset.chepLink);
+    const job = state.jobs.find((j) => j.id === id);
+    if (!job) return;
+    if (nut.dataset.chepLink !== undefined) {
+      try {
+        await navigator.clipboard.writeText(job.url);
+        showToast("Đã chép link.");
+      } catch (e) {
+        showToast("Không chép được — chọn và copy tay.");
+      }
+    } else if (nut.dataset.chayLai !== undefined) {
+      state.chayLai.set(id, window.BaoThieu.soChayLai(job));
+      renderQueue();
+      const o = queueList.querySelector(`[data-chay-lai-n="${id}"]`);
+      if (o) o.focus();
+    } else if (nut.dataset.chayLaiHuy !== undefined) {
+      state.chayLai.delete(id);
+      renderQueue();
+    } else {
+      const n = window.BaoThieu.chuanHoaSoChayLai(state.chayLai.get(id));
+      if (n === null) {
+        showToast(`Số video phải từ 1 đến ${window.BaoThieu.MAX_SO_LUONG}.`);
+        return;
+      }
+      nut.disabled = true;
+      // Đúng đường tạo lượt của form: một POST /jobs, không route riêng.
+      const kq = await guiTaoJob({ url: job.url, so_luong: n });
+      if (kq.ok) {
+        state.chayLai.delete(id);
+        renderQueue();
+        showToast(`Đã tạo lượt mới kiếm thêm ${n} video.`);
+      } else {
+        nut.disabled = false;
+        showToast(kq.loi);
+      }
     }
   });
 
@@ -1773,6 +1841,28 @@
     return body;
   }
 
+  // MỘT đường tạo lượt cho cả form lẫn nút "Chạy lại": POST /jobs, đưa job mới
+  // lên đầu hàng đợi và theo dõi tiến độ. Trả `{ok:true}` hoặc `{ok:false, loi}`
+  // — không ném, để nơi gọi tự chọn nói lỗi ở ô lỗi hay ở toast.
+  async function guiTaoJob(body) {
+    try {
+      const res = await fetch("/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, loi: errorDetailText(data) };
+      const idx = state.jobs.findIndex((j) => j.id === data.id);
+      if (idx >= 0) state.jobs[idx] = data; else state.jobs.unshift(data);
+      renderQueue();
+      followJob(data.id);
+      return { ok: true, job: data };
+    } catch (err) {
+      return { ok: false, loi: "Lỗi mạng: " + err.message };
+    }
+  }
+
   document.getElementById("job-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const errorBox = document.getElementById("error");
@@ -1784,26 +1874,14 @@
     const insightGoc = document.getElementById("insight-goc").value.trim();
     submitBtn.disabled = true;
     try {
-      const body = taoJobBody(url, soLuong, usecase, insightGoc);
-      const res = await fetch("/jobs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        errorBox.textContent = errorDetailText(data);
+      const kq = await guiTaoJob(taoJobBody(url, soLuong, usecase, insightGoc));
+      if (!kq.ok) {
+        errorBox.textContent = kq.loi;
         return;
       }
-      const idx = state.jobs.findIndex((j) => j.id === data.id);
-      if (idx >= 0) state.jobs[idx] = data; else state.jobs.unshift(data);
-      renderQueue();
-      followJob(data.id);
       document.getElementById("url").value = "";
       document.getElementById("usecase").value = "";
       document.getElementById("insight-goc").value = "";
-    } catch (err) {
-      errorBox.textContent = "Lỗi mạng: " + err.message;
     } finally {
       submitBtn.disabled = false;
     }
