@@ -26,14 +26,25 @@ from pathlib import Path
 
 from web import models_vao_bo
 from web.models import _connect
+from web.vao_bo_kiem import _DemGoi
 from web.vao_bo_drive import (DriveVaoBo, ban_hop_le, chon_folder, doc_het_trang,
                               ma_bo_tu_ten, KHOA_DAU_NGUON)
 from web.vi_tu_con_song import CON_SONG_CHUNG
 
 
+# Thời gian chờ khoá khi đọc DB (giây) — đọc chỉ-đọc mà writer đang giữ khoá độc quyền thì
+# chờ chừng này rồi báo `DbKhongDoc`. Là hằng để test rút ngắn.
+THOI_GIAN_CHO_KHOA = 5.0
+
+
 class ThieuBang(RuntimeError):
-    """DB không mở được ở chế độ chỉ-đọc, hoặc chưa có bảng cần (`videos`,
-    `video_vao_bo`) — dry-run KHÔNG tự dựng lược đồ, nên nói thẳng thay vì đoán."""
+    """Không có tệp DB, hoặc DB chưa có bảng cần (`videos`, `video_vao_bo`) — dry-run
+    KHÔNG tự dựng lược đồ, nên nói thẳng thay vì đoán."""
+
+
+class DbKhongDoc(RuntimeError):
+    """DB CÓ đó nhưng lúc này không đọc được vì lý do KHÁC thiếu bảng (đang bị khoá, đĩa,
+    quyền…). Khác `ThieuBang`: chạy lại sau có thể khỏi, còn thiếu bảng thì không."""
 
 
 @contextmanager
@@ -43,9 +54,9 @@ def _ket_noi_doc_chi(db_path: Path):
     if not db_path.is_file():
         raise ThieuBang(f"không thấy tệp DB: {db_path}")
     try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=THOI_GIAN_CHO_KHOA)
     except sqlite3.OperationalError as exc:
-        raise ThieuBang(f"không mở được DB chỉ-đọc: {exc}") from exc
+        raise DbKhongDoc(f"không mở được DB chỉ-đọc: {exc}") from exc
     conn.row_factory = sqlite3.Row
     try:
         co = {r[0] for r in conn.execute(
@@ -56,7 +67,9 @@ def _ket_noi_doc_chi(db_path: Path):
             raise ThieuBang(f"DB chưa có bảng {sorted(thieu)} — chạy ứng dụng (init_db) trước")
         yield conn
     except sqlite3.OperationalError as exc:
-        raise ThieuBang(f"đọc DB trượt: {exc}") from exc
+        if "no such table" in str(exc).lower():
+            raise ThieuBang(f"DB thiếu bảng: {exc}") from exc
+        raise DbKhongDoc(f"đọc DB trượt: {exc}") from exc
     finally:
         conn.close()
 
@@ -69,6 +82,7 @@ class BaoCaoBackfill:
     nguon_loi: int = 0
     nguon_phu_loi: int = 0             # nguồn KHÔNG phải ứng viên mà không lấy được folder cha
     so_folder_nguon: int = 0           # folder cha của MỌI nguồn Video Desk đã biết
+    so_goi_drive: int = 0              # số lời gọi Drive đã thực hiện (dry-run và --that như nhau)
     so_shared_drive: int = 0
     so_file_video: int = 0
     so_co_dau: int = 0
@@ -102,6 +116,8 @@ def _video_song(db_path: Path, chi_doc: bool) -> tuple[list[dict], set[str]]:
 def chay_backfill(db_path: Path, drive: DriveVaoBo, *, that: bool = False,
                   luc: str | None = None) -> BaoCaoBackfill:
     bc = BaoCaoBackfill(that=that)
+    dem = _DemGoi(drive)
+    drive = dem
     song, moi_nguon_id = _video_song(db_path, chi_doc=not that)
     bc.so_song_co_drive = len(song)
     ung_vien = [v for v in song if not v["da_an"]]
@@ -190,6 +206,7 @@ def chay_backfill(db_path: Path, drive: DriveVaoBo, *, that: bool = False,
                                  "bang_chung": "md5_backfill"})
             if dong and models_vao_bo.ghi_da_vao_bo(db_path, m["video_id"], m["chu"], dong, luc):
                 bc.da_ghi += 1
+    bc.so_goi_drive = dem.so_goi
     return bc
 
 
@@ -198,6 +215,8 @@ def in_bang(bc: BaoCaoBackfill) -> list[str]:
     dong = [
         f"video còn sống có drive_file_id: {bc.so_song_co_drive}",
         f"đã ẩn từ trước (không xét lại): {bc.da_an_tu_truoc}",
+        f"lời gọi Drive đã thực hiện: {bc.so_goi_drive} "
+        "(dry-run chỉ đọc; --that dùng đúng chừng này rồi mới ghi DB)",
         f"files.get nguồn OK: {bc.nguon_ok} · lỗi: {bc.nguon_loi}",
         f"folder cha của MỌI nguồn Video Desk: {bc.so_folder_nguon} "
         f"(nguồn ngoài ứng viên không lấy được: {bc.nguon_phu_loi})",

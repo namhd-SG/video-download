@@ -250,3 +250,43 @@ def test_dry_run_thieu_tep_db_dung_sach_khong_tao_tep(tmp_path, capsys):
     db = tmp_path / "khong-co.db"
     assert vao_bo_cli.main(["backfill", "--db", str(db)], tao_drive=lambda: DriveGia()) == 7
     assert not db.exists() and list(tmp_path.iterdir()) == []
+
+
+# --- lệnh quản trị: phân biệt "thiếu bảng" (7) và "DB đang khoá/lỗi khác" (8) ----------------------
+
+def test_dry_run_db_dang_bi_khoa_thoat_8_khong_phai_7(kho, capsys, monkeypatch):
+    from web import vao_bo_backfill
+    db, d = kho
+    with sqlite3.connect(db) as c:
+        c.execute("PRAGMA journal_mode=DELETE")       # khoá độc quyền chặn được cả người đọc
+    monkeypatch.setattr(vao_bo_backfill, "THOI_GIAN_CHO_KHOA", 0.05)
+    giu = sqlite3.connect(db, isolation_level=None)
+    giu.execute("BEGIN EXCLUSIVE")
+    try:
+        rc = vao_bo_cli.main(["backfill", "--db", str(db)], tao_drive=lambda: d)
+    finally:
+        giu.execute("ROLLBACK")
+        giu.close()
+    err = capsys.readouterr().err
+    assert rc == 8 and d.goi == []
+    assert "KHÔNG ĐỌC ĐƯỢC" in err and "locked" in err
+    assert vao_bo_cli.main(["backfill", "--db", str(db)], tao_drive=lambda: d) == 0, \
+        "hết khoá thì chạy lại được — đúng lý do phải khác mã với thiếu bảng"
+
+
+# --- dry-run in số lời gọi Drive ----------------------------------------------------------------------
+
+@pytest.mark.parametrize("that", [False, True])
+def test_bang_in_so_loi_goi_drive_bang_so_lan_goi_that(kho, that):
+    db, d = kho
+    bc = chay_backfill(db, d, that=that)
+    assert bc.so_goi_drive == len(d.goi) > 0
+    assert f"lời gọi Drive đã thực hiện: {len(d.goi)} " in "\n".join(in_bang(bc))
+
+
+def test_so_loi_goi_dry_run_bang_so_loi_goi_that(kho, tmp_path):
+    """`--that` ghi thêm DB chứ không gọi thêm Drive: hai chế độ cùng số lời gọi."""
+    db, d = kho
+    dry = chay_backfill(db, d, that=False).so_goi_drive
+    d.goi.clear()
+    assert chay_backfill(db, d, that=True).so_goi_drive == dry

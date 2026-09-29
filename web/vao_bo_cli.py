@@ -7,7 +7,8 @@ Chạy ở nơi có biến `GDRIVE_*` (hoặc chỉ `--env-file` trỏ tới t�
 `~/.config/videodl/env` trên mini).
 
 Mã thoát: 0 xong · 2 sai cú pháp · 3 Drive chưa cấu hình · 6 lỗi khi đọc Drive/DB ·
-7 dry-run không mở được DB chỉ-đọc hoặc DB thiếu bảng (dry-run không tự tạo bảng).
+7 không có tệp DB hoặc DB thiếu bảng (dry-run không tự tạo bảng) ·
+8 DB có nhưng không đọc được lúc này (khoá/lỗi khác) — khác 7: chạy lại sau có thể khỏi.
 """
 from __future__ import annotations
 
@@ -18,10 +19,10 @@ from pathlib import Path
 from typing import Callable
 
 from web import models
-from web.vao_bo_backfill import ThieuBang, chay_backfill, in_bang
+from web.vao_bo_backfill import DbKhongDoc, ThieuBang, chay_backfill, in_bang
 from web.vao_bo_drive import DriveThat, DriveVaoBo
 
-MA_OK, MA_CHUA_CAU_HINH, MA_LOI, MA_THIEU_BANG = 0, 3, 6, 7
+MA_OK, MA_CHUA_CAU_HINH, MA_LOI, MA_THIEU_BANG, MA_DB_KHONG_DOC = 0, 3, 6, 7, 8
 DB_MAC_DINH = Path(__file__).resolve().parent / "data" / "jobs.db"
 
 
@@ -58,6 +59,10 @@ def main(argv: list[str] | None = None, *,
     except ThieuBang as exc:
         print(f"backfill dừng: {exc}", file=sys.stderr)
         return MA_THIEU_BANG
+    except DbKhongDoc as exc:
+        print(f"backfill dừng: DB có nhưng KHÔNG ĐỌC ĐƯỢC lúc này (đang bị khoá / lỗi khác — "
+              f"chạy lại sau có thể khỏi): {exc}", file=sys.stderr)
+        return MA_DB_KHONG_DOC
     except Exception as exc:  # noqa: BLE001 — báo loại lỗi
         # Đọc Drive xong toàn bộ rồi mới ghi, và ghi có điều kiện `IS NULL` ⇒ chạy lại
         # sau lỗi là an toàn (không ghi trùng); dry-run cho biết còn lại bao nhiêu.
