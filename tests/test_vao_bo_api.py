@@ -88,3 +88,11 @@ def test_endpoint_don_loi_bao_so_id_do_loi_lap_chi_dem_khong_nguong(kho):
         c.execute("INSERT OR REPLACE INTO vao_bo_kv VALUES ('tap_thu_lai', 'hỏng')")
     assert app_mod.admin_don_vao_bo_loi(nguoi_tao="a")["do_loi_lap"]["so_id"] == 0, \
         "trang quản trị chỉ đọc: R hỏng không làm nó sập"
+
+
+def test_endpoint_r_json_long_sau_khong_lam_endpoint_sap(kho):
+    import sqlite3
+    with sqlite3.connect(kho) as c:
+        c.execute("INSERT OR REPLACE INTO vao_bo_kv VALUES ('tap_thu_lai', ?)",
+                  ("[" * 100000 + "]" * 100000,))
+    assert app_mod.admin_don_vao_bo_loi(nguoi_tao="a")["do_loi_lap"] == {"so_id": 0, "lau_nhat_lan": 0}
