@@ -576,3 +576,17 @@ def test_lo_bi_bot_video_o_tab_khac_truoc_khi_mo_van_ghi_moc_va_khong_bia_x_tren
     page.wait_for_function("document.querySelector('#cum-head .sent-line')")
     dong = page.inner_text("#cum-head .sent-line")
     assert "(3 video)" in dong, f"đã gửi 3 trên lô 3 video lúc mở — không phải số đếm cũ của trang: {dong}"
+
+
+def test_chon_tay_bo_video_da_qua_han_giu_nguon_nhung_van_gui_video_con_han():
+    """Video ẩn đã quá `se_don_luc` (≤ bây giờ) không được vào danh sách gửi Creative Desk —
+    tệp nguồn sắp không còn để copy. Video còn hạn (B3) VẪN gửi được."""
+    d = _node("chon-sau-ban-giao.js")
+    q = d["qua_han"]        # 5 video: 2 quá hạn, 1 còn hạn, 2 thường
+    assert q["tin"]["soItem"] == 3, "chỉ 3 item (còn hạn + thường) được gửi"
+    assert "2 video đã quá hạn giữ tệp nguồn" in q["toast"]
+    assert q["conChon"] == 2, "2 video quá hạn vẫn giữ tick — chúng chưa đi đâu cả"
+    t = d["toan_qua_han"]
+    assert t["moTab"] == 0 and t["soLanGui"] == 0, "toàn quá hạn ⇒ không mở tab, không gửi"
+    assert "đã quá hạn giữ tệp nguồn" in t["toast"]
+    assert d["ack"]["tin"]["soItem"] == 3, "control: không có vao_bo ⇒ gửi hết như cũ"

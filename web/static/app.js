@@ -1059,6 +1059,16 @@
   // Chọn tay (26/09): gửi danh sách qua `postMessage` thay vì query string, để
   // chọn bao nhiêu cũng được và Creative Desk tự chia bộ. Đường của CỤM vẫn đi
   // qua URL (`moLoCum`) — hợp đồng `nhan` không đổi.
+  // Tệp nguồn của video này đã chết / sắp bị dọn? Đúng khi server đánh dấu `da_don`
+  // (đã vào Thùng rác) hoặc `vao_bo.se_don_luc` ≤ `bayGio` (đã quá hạn 7 ngày — lượt dọn
+  // sắp lấy tệp đi). Gửi một item như thế sang Creative Desk là gửi một file sắp không
+  // còn để copy; và bên nhận bỏ CẢ LÔ khi một item hỏng. Hàm thuần — test gọi thẳng.
+  function nguonDaChet(v, bayGio) {
+    if (v.da_don) return true;
+    const han = v.vao_bo && v.vao_bo.se_don_luc ? Date.parse(v.vao_bo.se_don_luc) : NaN;
+    return !Number.isNaN(han) && han <= bayGio;
+  }
+
   async function moBoTuTim() {
     if (state.dangBanGiao) return;  // bấm đúp khi đang chờ ack ⇒ bỏ qua
     const daChon = state.videos.filter((v) => state.selected.has(v.video_id));
@@ -1068,13 +1078,18 @@
     const coDrive = daChon.filter((v) => v.drive_file_id);
     // Bên nhận bỏ CẢ LÔ, không ack, khi chỉ một item sai luật — người dùng sẽ
     // chờ trọn hạn ack. Lọc trước theo đúng luật đó và nói ra số bị bỏ.
-    const guiDuoc = coDrive.filter(itemHopLeBenNhan);
-    const khongHopLe = coDrive.length - guiDuoc.length;
+    // Nguồn đã chết/quá hạn dọn: bỏ TRƯỚC, nói ra số bị bỏ (server cũng kiểm lại ở đường lô).
+    const bayGio = Date.now();
+    const nguonChet = coDrive.filter((v) => nguonDaChet(v, bayGio));
+    const conSong = coDrive.filter((v) => !nguonDaChet(v, bayGio));
+    const guiDuoc = conSong.filter(itemHopLeBenNhan);
+    const khongHopLe = conSong.length - guiDuoc.length;
     const items = guiDuoc.map(itemBanGiao);
 
     if (!items.length) {
       showToast("Chưa có gì để gửi sang Creative Desk: " + [
         chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+        nguonChet.length ? `${nguonChet.length} video đã quá hạn giữ tệp nguồn` : "",
         khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
       ].filter(Boolean).join(", ") + ".");
       return;
@@ -1100,6 +1115,7 @@
     // Số bị bỏ đi KÈM mọi thông báo kết quả — toast riêng sẽ bị toast sau đè mất.
     const boLai = [
       chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+      nguonChet.length ? `${nguonChet.length} video đã quá hạn giữ tệp nguồn` : "",
       khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
     ].filter(Boolean).join(", ");
     const ghiChuBoLai = boLai ? ` (${boLai} nên không gửi kèm.)` : "";
@@ -1877,6 +1893,26 @@
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
   // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
+  // Badge "Dọn lỗi (N)": CHỈ quản trị (server kiểm `require_admin`; người thường không
+  // gọi endpoint). Lỗi mạng/không phải admin ⇒ ẩn badge, không làm hỏng thư viện.
+  async function loadBadgeDonLoi() {
+    const el = document.getElementById("badge-don-loi");
+    if (!el) return;
+    el.hidden = true;
+    try {
+      const me = await apiGet("/me");
+      if (!me.la_admin) return;
+      const res = await apiGet("/admin/don-vao-bo-loi");
+      if (!res.so_hang) return;
+      el.textContent = `Dọn lỗi (${res.so_hang})`;
+      el.title = res.hang.slice(0, 10).map((h) =>
+        `${h.video_id}: ${h.loi_cuoi || "?"} (${h.so_lan_truot} lần)`).join("\n");
+      el.hidden = false;
+    } catch (err) {
+      if (err instanceof PhienHetHan) throw err;
+    }
+  }
+
   async function loadVideos() {
     // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định
     // của server, KHÔNG đọc `tong`, và in nhãn theo số đã nạp. Hậu quả: video
@@ -1917,6 +1953,7 @@
       showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
     }
     renderLibrary();
+    loadBadgeDonLoi().catch(() => { /* phiên hết hạn đã được các lời gọi khác báo */ });
   }
 
   // Thuần, không đụng DOM — tách riêng để `tests/js/` gọi được thẳng bằng

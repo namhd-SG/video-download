@@ -13,7 +13,7 @@ const grab = (n) => {
 };
 
 // cachTra: "ack" | "tu_choi" | "im" | "sai_origin" | "sai_id" | "dong" (user đóng tab) | null (popup bị chặn)
-async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0, idSo = 0 }) {
+async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0, idSo = 0, quaHan = 0, sapHan = 0 }) {
   const CREATIVE_DESK_URL = "https://automation.example";
   const CREATIVE_DESK_ORIGIN = "https://automation.example";
   const MAX_PM_ITEMS = 500;
@@ -29,7 +29,12 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
                                     : i < idSo ? 123456789012 + i        // id dạng SỐ — bên nhận bỏ
                                     : "drive_" + id.padStart(6, "0"),
                                   title: "t" + id,
-                                  url: i >= soVideo - linhHong ? "khong-phai-link" : "https://t/" + id })),
+                                  url: i >= soVideo - linhHong ? "khong-phai-link" : "https://t/" + id,
+                                  // `quaHan` video ĐẦU: nguồn đã quá hạn 7 ngày (se_don_luc ở quá khứ);
+                                  // `sapHan` video kế tiếp: còn hạn (se_don_luc ở tương lai) — vẫn gửi được.
+                                  vao_bo: i < quaHan ? { se_don_luc: "2020-01-01T00:00:00+00:00", ma_bo: ["N.1"] }
+                                    : i < quaHan + sapHan ? { se_don_luc: "2999-01-01T00:00:00+00:00", ma_bo: ["N.2"] }
+                                    : null })),
     idTrang: [], dangBanGiao: false,
   };
   const daGoi = { renderSelectionBar: 0, open: 0, toast: [], gui: [], url: null };
@@ -66,7 +71,7 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
   };
   // `grab` cắt từ chữ "function" nên mất tiền tố `async` của moBoTuTim — gắn lại.
   eval(["veNutChonTrang", "boChonTatCa", "boChonCacVideo", "datNutBanGiao", "guiBanGiaoPm",
-        "itemBanGiao", "itemHopLeBenNhan", "moTabCreativeDesk"].map(grab).join("\n") + "\n" +
+        "itemBanGiao", "itemHopLeBenNhan", "nguonDaChet", "moTabCreativeDesk"].map(grab).join("\n") + "\n" +
        grab("moBoTuTim").replace(/^function/, "async function") + "\nvar __f = moBoTuTim;");
   const p1 = __f();
   const nutKhiCho = { disabled: nut.disabled, text: nut.textContent };
@@ -115,6 +120,8 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     qua_tran: await chay({ cachTra: "ack", soVideo: 501 }),
     bam_dup: await chay({ cachTra: "ack", ackSauLuot: 3, bamDup: true }),
     gui_lai: await chay({ cachTra: "im", lanHaiAck: true }),
+    qua_han: await chay({ cachTra: "ack", soVideo: 5, quaHan: 2, sapHan: 1 }),
+    toan_qua_han: await chay({ cachTra: "ack", soVideo: 2, quaHan: 2 }),
   };
   process.stdout.write(JSON.stringify(kq));
 })();

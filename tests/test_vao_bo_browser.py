@@ -68,7 +68,6 @@ def may_chu():
     app_mod.COOKIE_TMP_DIR = tmp / "tmp"
     start, stop = app_mod.worker.start, app_mod.worker.stop
     app_mod.worker.start = app_mod.worker.stop = lambda: None
-    os.environ[app_mod.ENV_TAT_LAP_VAO_BO] = "1"      # không khởi bộ kiểm định kỳ
     app_mod.app.dependency_overrides[require_user] = lambda: NGUOI
     db = tmp / "jobs.db"
     models.init_db(db)
@@ -90,6 +89,10 @@ def may_chu():
     models_vao_bo.ghi_da_vao_bo(db, _id(4), NGUOI, [_ban("e", "N.2609D")],
                                 (bay_gio - timedelta(days=8)).isoformat())
     models_vao_bo.ghi_don_drive(db, _id(4), "da_don")
+    # Người xem là quản trị (thấy badge "Dọn lỗi"); v68 mang một ca nguồn-chết-không-bản-sao
+    # (hàng sổ KHÔNG ẩn video: `an_luc` NULL).
+    models.moi_admin_tu_env(db, [NGUOI])
+    models_vao_bo.ghi_bao_dong(db, _id(68), NGUOI, "nguon_o_thung_rac_khong_ban_sao")
     _mo_thumb_gia(tmp)
     with socket.socket() as so:
         so.bind(("127.0.0.1", 0))
@@ -104,7 +107,6 @@ def may_chu():
     server.should_exit = True
     t.join(timeout=5)
     app_mod.app.dependency_overrides.pop(require_user, None)
-    os.environ.pop(app_mod.ENV_TAT_LAP_VAO_BO, None)
     app_mod.worker.start, app_mod.worker.stop = start, stop
     for k, v in cu.items():
         setattr(app_mod, k, v)
@@ -222,3 +224,10 @@ def test_cum_sau_khi_don_lo_1_hut_mot_video_lo_2_lo_3_giu_nguyen(page, may_chu):
     assert "Video 5" not in [i["n"] for i in p1["items"]]
     page.click('#so-moi-trang [data-so="10"]')
     _chup(page, "03-cum-sau-don-lo-1-x-tren-n")
+
+
+def test_admin_thay_badge_don_loi_va_video_do_van_hien_o_luoi(page):
+    page.wait_for_selector("#badge-don-loi:not([hidden])")
+    assert page.inner_text("#badge-don-loi") == "Dọn lỗi (1)"
+    assert "nguon_o_thung_rac_khong_ban_sao" in page.get_attribute("#badge-don-loi", "title")
+    assert _id(68) in _ids_tren_luoi(page), "hàng báo động KHÔNG ẩn video"

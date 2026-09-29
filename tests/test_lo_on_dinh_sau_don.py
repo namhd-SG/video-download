@@ -144,3 +144,26 @@ def test_route_videos_mang_video_da_don_cua_cum_va_khong_hien_no_o_luoi(cum65, m
     assert _id(5) not in {v["video_id"] for v in res["videos"]}, "video đã dọn không hiện ở lưới"
     assert res["tong"] == 64
     assert res["da_don_trong_cum"] == [{"video_id": _id(5), "cum_id": cum_id, "tao_luc": _luc(5)}]
+
+
+def _ghi_an(db, vid, ngay_truoc):
+    from datetime import datetime, timedelta, timezone
+    luc = (datetime(2026, 9, 29, tzinfo=timezone.utc) - timedelta(days=ngay_truoc)).isoformat()
+    models_vao_bo = __import__("web.models_vao_bo", fromlist=["x"])
+    models_vao_bo.ghi_da_vao_bo(db, vid, TOI, [{"ban_copy_id": "c" + vid, "folder_id": "F",
+                                                 "ma_bo": "N.1", "bang_chung": "properties"}], luc)
+
+
+def test_payload_bo_item_qua_han_giu_nguon_chua_kip_don_va_giu_item_con_han(cum65):
+    """Đường lô của cụm đọc lại DB: video ẩn ≥ 7 ngày mà lượt dọn chưa kịp lấy tệp đi thì
+    KHÔNG gửi; video ẩn < 7 ngày (B3) vẫn gửi. `so_video` giữ nguyên ⇒ nhãn x/N."""
+    from datetime import datetime, timezone
+    db, cum_id = cum65
+    _ghi_an(db, _id(5), 8)          # quá hạn, chưa dọn
+    _ghi_an(db, _id(6), 6)          # còn hạn
+    cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
+    p = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1,
+                                   bay_gio=datetime(2026, 9, 29, tzinfo=timezone.utc))
+    ten = _ten(p)
+    assert _id(5) not in ten and _id(6) in ten
+    assert (len(p["items"]), p["so_video"]) == (29, 30)

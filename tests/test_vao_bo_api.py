@@ -39,3 +39,26 @@ def test_videos_route_gan_vao_bo_cho_video_dang_an(kho):
     assert theo["v2"]["vao_bo"] == {"an_luc": AN, "se_don_luc": se_don, "ma_bo": ["N.2809C"]}
     assert theo["v3"]["vao_bo"]["ma_bo"] == ["N.2809C", "N.2909B"]
     assert res["tong"] == 3, "tong đếm cả video đang ẩn (trang lọc theo chip), không đếm video đã dọn"
+
+
+# --- trang quản trị: hàng dọn đang lỗi -----------------------------------------------------
+
+def test_endpoint_don_loi_chi_liet_ke_hang_dang_loi(kho):
+    models_vao_bo.ghi_truot_don(kho, "v2", "trash_file không ok")
+    models_vao_bo.ghi_bao_dong(kho, "v1", TOI, "nguon_o_thung_rac_khong_ban_sao")
+    res = app_mod.admin_don_vao_bo_loi(nguoi_tao="admin@astronex.ai")
+    theo = {h["video_id"]: h for h in res["hang"]}
+    assert res["so_hang"] == 2 and set(theo) == {"v1", "v2"}, "v3 lành, v4 đã dọn xong: không có"
+    assert theo["v2"]["so_lan_truot"] == 1 and theo["v2"]["loi_cuoi"] == "trash_file không ok"
+    assert theo["v1"]["loi_cuoi"] == "nguon_o_thung_rac_khong_ban_sao"
+    assert theo["v1"]["drive_file_id"] == "1Drive_1_AbCdEfGhIjKl"
+
+
+def test_endpoint_don_loi_chi_danh_cho_quan_tri(kho):
+    from fastapi import HTTPException
+    route = next(r for r in app_mod.app.routes if getattr(r, "path", "") == "/admin/don-vao-bo-loi")
+    assert app_mod.require_admin in [d.call for d in route.dependant.dependencies], \
+        "route phải đi qua require_admin (403 ở SERVER, không phải giấu nút)"
+    with pytest.raises(HTTPException) as e:
+        app_mod.require_admin(nguoi_tao="nguoi-thuong@astronex.ai")
+    assert e.value.status_code == 403

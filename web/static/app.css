@@ -326,6 +326,10 @@
   }
   .chip-vao-bo:hover { border-color: var(--accent); }
   .chip-vao-bo.on { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+  .badge-don-loi {
+    align-self: center; background: var(--danger); color: #fff; border-radius: 999px;
+    padding: 2px 10px; font-size: .74rem; font-weight: 600; cursor: help;
+  }
   .card-bo { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
   .bo-ma {
     align-self: flex-start; background: var(--surface-alt); color: var(--accent);

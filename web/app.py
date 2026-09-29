@@ -574,6 +574,14 @@ def admin_liet_ke(nguoi_tao: str = Depends(require_admin)) -> dict:
     }
 
 
+@app.get("/admin/don-vao-bo-loi")
+def admin_don_vao_bo_loi(nguoi_tao: str = Depends(require_admin)) -> dict:
+    """Các hàng dọn ngày 7 ĐANG LỖI (trash trượt, đo trượt, hoặc nguồn đã chết mà không
+    còn bản sao). Chỉ quản trị: chứa id video và id tệp Drive của cả team."""
+    hang = models_vao_bo.hang_don_loi(DB_PATH)
+    return {"so_hang": len(hang), "hang": hang}
+
+
 @app.put("/admin/nguoi-dung/{email}")
 def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
                    nguoi_tao: str = Depends(require_admin)) -> dict:

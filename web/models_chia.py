@@ -25,9 +25,10 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
-from web import models_cum, models_dac_diem
+from web import models_cum, models_dac_diem, models_vao_bo
 from web.models import _connect, _now
 from web.vi_tu_con_song import (CHUA_AN, CHUA_DON_DRIVE, CHUA_LOAI,
                                 CON_SONG_CHUNG, DA_DON_DRIVE)
@@ -1686,7 +1687,9 @@ def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) ->
     không kéo mọi lô sau trượt một ô. Người gọi tự bỏ hàng `da_don`.
     """
     rows = conn.execute(
-        f"SELECT v.video_id, v.title, v.url, v.drive_file_id, {DA_DON_DRIVE} AS da_don "
+        f"SELECT v.video_id, v.title, v.url, v.drive_file_id, {DA_DON_DRIVE} AS da_don, "
+        "(SELECT b.an_luc FROM video_vao_bo b WHERE b.video_id = v.video_id "
+        " AND b.drive_don_luc IS NULL) AS an_luc "
         "FROM video_cum vc "
         "JOIN videos v ON v.video_id = vc.video_id "
         "LEFT JOIN jobs j ON j.id = v.job_id "
@@ -1698,8 +1701,16 @@ def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) ->
     return toan_bo[(thu - 1) * models_cum.LO_TOI_DA: thu * models_cum.LO_TOI_DA]
 
 
+def _nguon_da_chet(v: dict, bay_gio: datetime) -> bool:
+    """Tệp nguồn đã dọn (`da_don`) HOẶC đã quá hạn 7 ngày kể từ lúc ẩn mà lượt dọn chưa kịp
+    lấy đi. Đọc lại từ DB mỗi lần dựng payload — không tin gì từ trạng thái trang."""
+    if v["da_don"]:
+        return True
+    return bool(v["an_luc"]) and models_vao_bo.het_han_giu_nguon(v["an_luc"], bay_gio)
+
+
 def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
-                   thu: int) -> dict:
+                   thu: int, bay_gio: datetime | None = None) -> dict:
     """Dựng `{v, items, nhan}` cho lô `thu` của cụm THẬT `cum` — hợp đồng
     `nhan` (plans/260923-1558-tai-theo-cum/hop-dong-nhan.md), 8 quy tắc.
 
@@ -1725,11 +1736,12 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     id sai hình dạng, link gốc không phải http(s)) bị BỎ khỏi lô — một item
     sai làm bên nhận bỏ cả lô.
     """
+    bay_gio = bay_gio or datetime.now(timezone.utc)
     with _connect(db_path) as conn:
         lo = _video_trong_lo(conn, cum, chu, chi_cua, thu)
     items = [{"f": v["drive_file_id"], "n": v["title"] or v["video_id"], "u": v["url"]}
              for v in lo
-             if not v["da_don"] and _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
+             if not _nguon_da_chet(v, bay_gio) and _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
     nhan = {"usecase": cum["usecase"], "insight": cum["insight"], "template": "Goc",
             "cum_id": cum["id"], "lo": {"thu": thu, "tong": cum["so_lo"]}}
     # `so_video` = số video của lô TRƯỚC khi lọc, đếm cùng lượt với `items` —
