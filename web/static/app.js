@@ -119,6 +119,7 @@
     idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
+    videosDaDon: [],          // GET /videos → da_don_trong_cum: video đã dọn khỏi Drive, GIỮ CHỖ trong lô
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
@@ -1265,8 +1266,20 @@
   // Bộ 1/n đã mở. ⚠ Giới hạn đã biết (điều phối chốt 23/09): mốc "đã mở" gắn
   // theo SỐ THỨ TỰ lô; thêm/bớt video làm ranh giới lô dịch đi, và đổi kiểu
   // cũng không xoá mốc cũ — không có cảnh báo "mở dưới tên cũ".
+  //
+  // Có ngoại lệ ĐÃ CHẶN: video được DỌN khỏi Drive (ngày 7 sau khi vào bộ) KHÔNG
+  // làm lô trượt. Chúng không nằm trong `state.videos` (không hiện ở đâu) nhưng
+  // vẫn GIỮ CHỖ ở đây, đánh dấu `da_don: true` — cùng tập với server cắt lô
+  // (`models_chia._video_trong_lo`, video cũ nhất trước theo (tao_luc, video_id)).
+  // Người dùng của hàm này tự bỏ chúng khi đếm video còn sống / gửi đi.
   function videoCuaCum(cumId) {
-    return state.videos.filter((v) => v.cum_id === cumId).reverse();
+    const song = state.videos.filter((v) => v.cum_id === cumId).reverse();
+    const da = (state.videosDaDon || []).filter((g) => g.cum_id === cumId)
+      .map((g) => ({ video_id: g.video_id, tao_luc: g.tao_luc, cum_id: g.cum_id, da_don: true }));
+    if (!da.length) return song;
+    return song.concat(da).sort((a, b) =>
+      a.tao_luc < b.tao_luc ? -1 : a.tao_luc > b.tao_luc ? 1
+        : a.video_id < b.video_id ? -1 : a.video_id > b.video_id ? 1 : 0);
   }
 
   function mauCum(id) { return `hsl(${(id * 67) % 360} 55% 50%)`; }
@@ -1334,16 +1347,20 @@
     if (!cum) { head.innerHTML = ""; return; }
     const lo = chiaLo(videoCuaCum(cum.id), HANDOFF_MAX);
     const tong = lo.length;
-    const n = lo.reduce((a, l) => a + l.length, 0);
+    // Video đã dọn giữ chỗ trong lô nhưng không tính vào "N video" của cụm.
+    const nSong = (l) => l.filter((v) => !v.da_don).length;
+    const n = lo.reduce((a, l) => a + nSong(l), 0);
+    // Nhãn số video của một lô CHƯA mở: "x/N" khi lô đã hụt vì video được dọn.
+    const nhanLoChuaMo = (l) => nSong(l) < l.length ? `${nSong(l)}/${l.length}` : `${l.length}`;
     // Chỉ VẼ mốc của lô còn tồn tại (`thu ≤ số lô`); mốc cũ vẫn nằm trong DB.
     // Giữ NGUYÊN hàng (không chỉ `mo_luc`) — cần cả `so_item` cho nhãn "x/N".
     const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m]));
-    const nut = tong === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
+    const nut = n === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
       : tong === 1 ? `<button type="button" class="btn primary" data-mo-lo="1">Tạo bộ tự tìm từ cụm này (${n})</button>`
-      : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map((l) => l.length).join(" + ")})</button>`;
+      : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map(nhanLoChuaMo).join(" + ")})</button>`;
     const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
       const m = moLuc.get(i + 1);
-      const nhanN = nhanSoVideo(m, l.length);
+      const nhanN = nhanSoVideo(m, nhanLoChuaMo(l));
       return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${nhanN} video</span>` +
         `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m.mo_luc)}` : "chưa mở"}</span><span class="grow"></span>` +
         `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
@@ -1413,7 +1430,8 @@
     const cum = state.cums.find((c) => c.id === cumId);
     if (!cum) return "rong";
     const muc = chiaLo(videoCuaCum(cumId), HANDOFF_MAX)[thu - 1];
-    if (!muc || !muc.length) return "rong";
+    // Lô chỉ còn video đã dọn khỏi Drive ⇒ không có gì để gửi (giống lô rỗng).
+    if (!muc || !muc.some((v) => !v.da_don)) return "rong";
     const tab = moTabTrong();
     if (!tab) return "chan";
     let payload;
@@ -1449,7 +1467,11 @@
       return "rong";
     }
     if (guiDi.items.length < soVideo) {
-      showToast(`${soVideo - guiDi.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
+      const daDon = muc.filter((v) => v.da_don).length;
+      showToast(daDon
+        ? `${soVideo - guiDi.items.length} video không gửi kèm (${daDon} đã dọn khỏi Drive sau khi vào bộ, ` +
+          `còn lại chưa lên Drive hoặc thiếu link gốc hợp lệ).`
+        : `${soVideo - guiDi.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
     }
     dieuHuongTab(tab, urlBanGiao(guiDi));
     try {
@@ -1466,8 +1488,11 @@
   }
 
   async function moHetLoCum(cumId) {
-    const tong = chiaLo(videoCuaCum(cumId), HANDOFF_MAX).length;
+    const dsLo = chiaLo(videoCuaCum(cumId), HANDOFF_MAX);
+    const tong = dsLo.length;
     for (let thu = 1; thu <= tong; thu++) {
+      // Lô toàn video đã dọn: bỏ qua, đừng để "rong" chặn các lô sau nó.
+      if (!dsLo[thu - 1].some((v) => !v.da_don)) continue;
       const kq = await moLoCum(cumId, thu);
       if (kq === "chan") {
         // Trình duyệt thường chỉ cho MỘT tab mỗi cú bấm. Nói đúng thế, và chỉ
@@ -1819,6 +1844,7 @@
 
     state.videos = videos;
     state.videosTotal = tong;
+    state.videosDaDon = first.da_don_trong_cum || [];
     // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
     // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị
     // đếm vào "không hiện ở trang này" và vào số của hộp xác nhận Xoá.

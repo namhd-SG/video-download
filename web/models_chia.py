@@ -30,7 +30,7 @@ from pathlib import Path
 from web import models_cum, models_dac_diem
 from web.models import _connect, _now
 from web.vi_tu_con_song import (CHUA_AN, CHUA_DON_DRIVE, CHUA_LOAI,
-                                CON_SONG_CHUNG)
+                                CON_SONG_CHUNG, DA_DON_DRIVE)
 
 # Tập ĐÓNG cho `chia_lan.trang_thai`, `video_cum_nhap.lan` và
 # `thao_tac_duyet.loai`. Kiểm ở Python, không CHECK constraint — lý do ở
@@ -1675,14 +1675,19 @@ def _item_hop_le_ben_nhan(drive_file_id, url) -> bool:
 
 
 def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) -> list[dict]:
-    """Video của lô `thu` (TRƯỚC khi lọc Drive).
+    """Video của lô `thu` (TRƯỚC khi lọc Drive), mỗi hàng kèm `da_don`.
 
     Thứ tự cắt lô PHẢI khớp `app.js::videoCuaCum` + `chiaLo` (video CŨ nhất
     trước, cắt block `LO_TOI_DA`, RỒI mới lọc video chưa lên Drive) — xem
     ghi chú đầy đủ ở `xay_payload_lo`.
+
+    Tập bị cắt là tập KHÔNG lọc theo dọn Drive (`CHUA_LOAI`, không phải
+    `CON_SONG_CHUNG`): video đã dọn vẫn giữ chỗ của nó, nên dọn một video ở lô 1
+    không kéo mọi lô sau trượt một ô. Người gọi tự bỏ hàng `da_don`.
     """
     rows = conn.execute(
-        "SELECT v.video_id, v.title, v.url, v.drive_file_id FROM video_cum vc "
+        f"SELECT v.video_id, v.title, v.url, v.drive_file_id, {DA_DON_DRIVE} AS da_don "
+        "FROM video_cum vc "
         "JOIN videos v ON v.video_id = vc.video_id "
         "LEFT JOIN jobs j ON j.id = v.job_id "
         f"WHERE {CHUA_LOAI} AND (? IS NULL OR j.nguoi_tao = ?) "
@@ -1706,14 +1711,15 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     `cum` là kết quả `models_cum.lay_cum`/`_cum_hoac_404` (đã kiểm quyền sở
     hữu + tính `so_lo`) — hàm này KHÔNG tự truy vấn bảng `cum`, chỉ đọc
     thẳng `video_cum`/`videos`/`jobs`, dùng ĐÚNG khoá lọc sở hữu
-    (`CHUA_LOAI` + phạm vi `chi_cua`) mà
-    `models_cum._VIDEO_CON_THAY` áp dụng, để số video một lô không bao giờ
-    lệch số `liet_ke_cum` đã đếm.
+    (`CHUA_LOAI` + phạm vi `chi_cua`) mà `models_cum._VIDEO_TRONG_LO_CAT`
+    áp dụng, để số lô không bao giờ lệch số `liet_ke_cum` đã đếm.
 
     Thứ tự cắt lô PHẢI khớp `app.js::videoCuaCum` + `chiaLo` (video CŨ nhất
     trước, cắt block `LO_TOI_DA`, RỒI mới lọc video chưa lên Drive) — lọc
     Drive trước khi cắt sẽ làm ranh giới lô trôi so với những gì người dùng
-    đã thấy trên UI trước khi bấm.
+    đã thấy trên UI trước khi bấm. Video đã DỌN khỏi Drive (ngày 7 sau khi vào
+    bộ) vẫn nằm trong tập bị cắt, bị bỏ ở đây và ở `so_video` giữ nguyên số của
+    lô ⇒ nhãn "x/N". Phía trang nhận chúng qua `da_don_trong_cum` của `/videos`.
 
     Item nào sai luật bên nhận (`_item_hop_le_ben_nhan`: chưa lên Drive, Drive
     id sai hình dạng, link gốc không phải http(s)) bị BỎ khỏi lô — một item
@@ -1722,7 +1728,8 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     with _connect(db_path) as conn:
         lo = _video_trong_lo(conn, cum, chu, chi_cua, thu)
     items = [{"f": v["drive_file_id"], "n": v["title"] or v["video_id"], "u": v["url"]}
-             for v in lo if _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
+             for v in lo
+             if not v["da_don"] and _item_hop_le_ben_nhan(v["drive_file_id"], v["url"])]
     nhan = {"usecase": cum["usecase"], "insight": cum["insight"], "template": "Goc",
             "cum_id": cum["id"], "lo": {"thu": thu, "tong": cum["so_lo"]}}
     # `so_video` = số video của lô TRƯỚC khi lọc, đếm cùng lượt với `items` —

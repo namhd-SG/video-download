@@ -637,6 +637,10 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     return {
         "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,
+        # Video của cụm mình đã được dọn khỏi Drive: không hiện ở đâu, nhưng
+        # vẫn giữ chỗ trong lô — trang cắt lô trên cùng tập với server
+        # (`models_chia._video_trong_lo`) nên phải biết chúng.
+        "da_don_trong_cum": models_cum.video_da_don_trong_cum(DB_PATH, nguoi_tao, chi_cua),
     }
 
 
