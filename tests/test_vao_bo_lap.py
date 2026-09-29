@@ -82,3 +82,39 @@ def test_lifespan_khoi_va_dung_thread_va_env_tat_duoc(tmp_path, monkeypatch):
     monkeypatch.setenv(app_mod.ENV_TAT_LAP_VAO_BO, "1")
     asyncio.run(chay())
     assert khoi == []
+
+
+def test_mot_luot_tron_an_roi_don_roi_xoa_anh(tmp_path):
+    """Một lượt trọn theo đúng thứ tự: video có bản sao → ẩn (lượt kiểm), video đã ẩn đủ
+    7 ngày → nguồn vào Thùng rác + ảnh bị xoá (lượt dọn), trong CÙNG một `chay_mot_luot`."""
+    from datetime import datetime, timedelta, timezone
+    from web import models_vao_bo
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job = models.create_job(db, "https://www.tiktok.com/tag/a", 2, TOI)
+    fid = lambda i: f"1Src{i:03d}_AbCdEfGhIjKl"  # noqa: E731
+    for i in (1, 2):
+        models.record_video(db, job_id=job, video_id=f"v{i}", url=f"https://t.co/{i}",
+                            drive_file_id=fid(i), tao_luc=f"2026-09-01T00:00:0{i}+00:00")
+    # v2 đã ẩn từ 8 ngày trước; v1 chưa ẩn nhưng đã có bản sao trên Drive.
+    cu = (datetime.now(timezone.utc) - timedelta(days=8)).isoformat()
+    models_vao_bo.ghi_da_vao_bo(db, "v2", TOI, [{"ban_copy_id": "ban2", "folder_id": "BO1",
+                                                 "ma_bo": "N.1", "bang_chung": "properties"}], cu)
+    d = DriveGia()
+    d.dat_ten_thu_muc("BO1", "N.2809C - x")
+    for i in (1, 2):
+        d.them_nguon(fid(i))
+        d.them_ban(f"ban{i}", fid(i), folder="BO1")
+    thumbs = tmp_path / "thumbs"
+    thumbs.mkdir()
+    (thumbs / "v2.webp").write_bytes(b"x")
+    (thumbs / "v1.webp").write_bytes(b"x")
+
+    assert LapVaoBo(db, lambda: d).chay_mot_luot() is True
+
+    with models._connect(db) as c:
+        vb = {r["video_id"]: dict(r) for r in c.execute("SELECT * FROM video_vao_bo")}
+    assert vb["v1"]["an_luc"] and vb["v1"]["drive_don_luc"] is None, "v1 vừa ẩn, chưa đủ 7 ngày"
+    assert vb["v2"]["drive_don_luc"], "v2 đã dọn"
+    assert [a for t, a in d.goi if t == "bo_vao_thung_rac"] == [fid(2)]
+    assert not (thumbs / "v2.webp").exists() and (thumbs / "v1.webp").exists()

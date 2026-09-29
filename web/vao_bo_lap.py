@@ -1,4 +1,4 @@
-"""Thread nền chạy định kỳ bộ kiểm "đã vào bộ" (ẩn) — sống trong `_lifespan`.
+"""Thread nền chạy định kỳ bộ kiểm "đã vào bộ" (ẩn + dọn ngày 7 + ảnh) — sống trong `_lifespan`.
 
 Chọn thread trong tiến trình thay vì một LaunchAgent riêng: không thêm dịch vụ phải
 `launchctl list` sau mỗi lần deploy, và nó chạy lại theo deploy. Đổi lại nó chết cùng
@@ -21,7 +21,8 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from web import vao_bo_kiem
+from web import vao_bo_don, vao_bo_kiem, vao_bo_thumbs
+from web.lifecycle import thumbs_dir_for
 from web.vao_bo_drive import DriveThat, DriveVaoBo
 
 log = logging.getLogger("videodl.web.vao_bo")
@@ -52,7 +53,8 @@ class LapVaoBo:
             self._thread.join(timeout=timeout)
 
     def chay_mot_luot(self) -> bool:
-        """Một lượt trọn (ẩn). Trả False nếu bỏ qua vì Drive chưa cấu hình."""
+        """Một lượt trọn (ẩn → dọn ngày 7 → dọn ảnh). Trả False nếu bỏ qua vì Drive
+        chưa cấu hình."""
         drive = self._tao_drive()
         if not drive.dang_cau_hinh():
             if not self._da_bao_chua_cau_hinh:
@@ -60,6 +62,9 @@ class LapVaoBo:
                 self._da_bao_chua_cau_hinh = True
             return False
         vao_bo_kiem.chay_luot_kiem(self._db_path, drive, dung=self._stop.is_set)
+        vao_bo_don.chay_luot_don(self._db_path, drive, dung=self._stop.is_set)
+        # Ảnh dọn SAU mốc dọn Drive, cùng lượt: là hệ quả của mốc, không phải mốc riêng.
+        vao_bo_thumbs.don_thumbs(self._db_path, thumbs_dir_for(self._db_path))
         return True
 
     def _loop(self) -> None:
