@@ -85,7 +85,11 @@
     if (MA_CHAY_LAI_DUOC.has(job.ly_do_dung) && s.tim > 0 && s.tim < s.tong) {
       return { chu: "Nguồn hụt", lop: "thieu" };
     }
-    if (s.xong < s.tong) return { chu: "Thiếu", lop: "thieu" };
+    // Thiếu KHÔNG giải thích được: sau khi cộng phần lỗi đã có tên (TikTok không
+    // cho tải / chưa phân loại) mà vẫn chưa đủ số video dò được. Thiếu chỉ vì
+    // TikTok bỏ qua video thì đã có khung xám nói rồi — không phải "Thiếu".
+    const canDat = Math.min(s.tim || s.tong, s.tong);
+    if (s.xong + s.loiTiktok + s.loiChuaPhanLoai < canDat) return { chu: "Thiếu", lop: "thieu" };
     return null;
   }
 
@@ -106,6 +110,13 @@
 
   function coSuCoHangLoat(job) {
     return soLieu(job).suCoHangLoat;
+  }
+
+  // Cờ sự cố hàng loạt mâu thuẫn với câu "chạy lại có thể ra thêm" — chỉ ba mã
+  // khuyên chạy lại mới bị ẩn câu dừng; câu của mã khác (vd. "Hãy NGHỈ…") vẫn
+  // đúng và vẫn cần.
+  function anCauDung(job) {
+    return soLieu(job).suCoHangLoat && MA_CHAY_LAI_DUOC.has(job.ly_do_dung);
   }
 
   // Có lỗi HỆ THỐNG đã xác định (đỏ)? Lỗi chưa phân loại không tính.
@@ -174,7 +185,7 @@
   }
 
   window.BaoThieu = Object.freeze({
-    MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, coSuCoHangLoat, chuTienDo, nhanThieu, dongNguon, khungLoi,
+    MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, coSuCoHangLoat, anCauDung, chuTienDo, nhanThieu, dongNguon, khungLoi,
     soChayLai, khungHanhDong, chuanHoaSoChayLai,
   });
 })();

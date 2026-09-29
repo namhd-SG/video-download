@@ -415,8 +415,6 @@ class _JobProgress:
         """
         loai = loai or phan_loai_loi(ly_do)
         la_tiktok = loai == "tiktok"
-        # Điểm gắn cho cầu dao "hỏng hàng loạt" (chờ chốt ngưỡng): mọi lỗi từng
-        # video đi qua ĐÂY, có `loai` và số đếm hiện tại — chưa cài gì.
         if da_log:
             pass
         elif la_tiktok:
@@ -431,7 +429,10 @@ class _JobProgress:
 
         ERROR ĐÚNG MỘT lần mỗi job: mốc `_da_bao` là một biến riêng, không suy
         ra từ bộ đếm (bộ đếm còn tăng sau ngưỡng). Cờ DB có mốc riêng `_da_luu`
-        và chỉ đặt SAU khi ghi thành công, nên ghi trượt thì lượt sau ghi lại.
+        chỉ đặt SAU khi ghi thành công, và là CHỐT: đã báo mà chưa lưu được thì
+        MỌI video sau đó đều thử lưu lại, không phụ thuộc điều kiện còn đúng hay
+        không (chuỗi đã đứt, tỉ lệ đã tụt) — nếu không, một lần ghi trượt sẽ mất
+        cờ vĩnh viễn.
         """
         self._da_thu += 1
         if la_rf:
@@ -442,14 +443,12 @@ class _JobProgress:
         vuot_chuoi = self._rf_lien_tiep >= CAU_DAO_SO_LIEN_TIEP
         vuot_ti_le = (self._rf_tong >= CAU_DAO_SO_LIEN_TIEP
                       and self._rf_tong > CAU_DAO_TI_LE * self._da_thu)
-        if not (vuot_chuoi or vuot_ti_le):
-            return
-        if not self._da_bao:
+        if (vuot_chuoi or vuot_ti_le) and not self._da_bao:
             log.error("job %s: nghi sự cố hàng loạt — %d/%d video đã thử báo 'Requested format is "
                       "not available' (liên tiếp %d)", self._job_id, self._rf_tong,
                       self._da_thu, self._rf_lien_tiep)
             self._da_bao = True
-        if not self._da_luu:
+        if self._da_bao and not self._da_luu:
             try:
                 models.set_job_nghi_su_co_hang_loat(self._db_path, self._job_id)
                 self._da_luu = True

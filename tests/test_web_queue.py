@@ -1874,7 +1874,8 @@ def test_bai_anh_khong_luong_video_tinh_vao_loi_tiktok(tmp_path, monkeypatch):
 
 
 def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
-    """DB có từ trước khi có cột: `init_db` cộng cột với mặc định 0."""
+    """DB có từ trước khi có cột: job cũ CÓ lỗi = NULL (chưa phân loại); job cũ
+    KHÔNG lỗi = 0 (không có gì để phân loại sai)."""
     import sqlite3
     db_path = tmp_path / "cu.db"
     with sqlite3.connect(db_path) as conn:
@@ -1882,15 +1883,24 @@ def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
                      " trang_thai TEXT NOT NULL DEFAULT 'pending', tong INTEGER NOT NULL DEFAULT 0,"
                      " xong INTEGER NOT NULL DEFAULT 0, loi INTEGER NOT NULL DEFAULT 0,"
                      " tao_luc TEXT NOT NULL, nguoi_tao TEXT NOT NULL DEFAULT 'khach')")
-        conn.execute("INSERT INTO jobs (url, tao_luc) VALUES ('u', '2026-09-01T00:00:00+00:00')")
+        conn.execute("INSERT INTO jobs (url, loi, tao_luc) VALUES ('u', 1, '2026-09-01T00:00:00+00:00')")
+        conn.execute("INSERT INTO jobs (url, loi, tao_luc) VALUES ('u', 0, '2026-09-01T00:00:00+00:00')")
     models.init_db(db_path)
     assert models.get_job(db_path, 1)["loi_tiktok"] is None, \
-        "job cũ = CHƯA PHÂN LOẠI (NULL), không phải 0"
-    assert models.list_jobs(db_path, None)[0]["loi_tiktok"] is None
+        "job cũ CÓ lỗi = CHƯA PHÂN LOẠI (NULL), không phải 0"
+    assert models.list_jobs(db_path, None)[1]["loi_tiktok"] is None
+    assert models.get_job(db_path, 2)["loi_tiktok"] == 0, "job cũ không lỗi bắt đầu ở 0"
     # Job cũ đang chạy qua lúc migrate: cộng lỗi vào `loi`, `loi_tiktok` giữ NULL.
     models.increment_job_counts(db_path, 1, loi_delta=1, loi_tiktok_delta=1)
     job = models.get_job(db_path, 1)
-    assert (job["loi"], job["loi_tiktok"]) == (1, None)
+    assert (job["loi"], job["loi_tiktok"]) == (2, None)
+    # Job cũ không lỗi, đang chạy: lỗi TikTok đầu tiên được đếm đúng.
+    models.increment_job_counts(db_path, 2, loi_delta=1, loi_tiktok_delta=1)
+    job = models.get_job(db_path, 2)
+    assert (job["loi"], job["loi_tiktok"]) == (1, 1)
+    # init_db chạy lại không đụng số đã đếm.
+    models.init_db(db_path)
+    assert models.get_job(db_path, 2)["loi_tiktok"] == 1
 
 
 def test_job_moi_co_loi_tiktok_bang_0_khong_phai_null(tmp_path):
@@ -2034,4 +2044,33 @@ def test_cau_dao_dem_truoc_ghi_loi_nen_van_bat_khi_ghi_db_no(tmp_path, monkeypat
             except RuntimeError:
                 pass   # `note` để lỗi DB nổi lên; cầu dao đã đếm xong trước đó
     assert _co_bat(db_path, job_id)
+    assert _so_error_hang_loat(caplog) == 1
+
+
+def test_cau_dao_chot_luu_co_thu_lai_khi_lan_ghi_dau_no(tmp_path, monkeypatch, caplog):
+    """Lần ghi cờ đầu ném, video kế OK (chuỗi đứt) ⇒ cờ VẪN vào DB.
+
+    Đột biến ĐỎ: bỏ chốt (thoát sớm khi điều kiện hết đúng)."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 6, "a")
+    refs = [VideoRef(video_id=str(i), url=f"https://t/{i}") for i in range(6)]
+    progress = _JobProgress(db_path, job_id, refs, tmp_path / "out", lambda **kw: _UPLOAD_OK)
+    that = models.set_job_nghi_su_co_hang_loat
+    lan = {"n": 0}
+
+    def _ghi_no_lan_dau(*a, **kw):
+        lan["n"] += 1
+        if lan["n"] == 1:
+            raise RuntimeError("DB đang khoá")
+        return that(*a, **kw)
+
+    monkeypatch.setattr(models, "set_job_nghi_su_co_hang_loat", _ghi_no_lan_dau)
+    monkeypatch.setattr(queue_mod, "verify_video_stream", lambda path: True)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        for _ in range(5):
+            progress.note("failed", _RF)
+        assert not _co_bat(db_path, job_id), "lần ghi đầu đã trượt"
+        progress.note("downloaded")           # chuỗi đứt, điều kiện chuỗi hết đúng
+    assert _co_bat(db_path, job_id), "cờ phải được ghi lại ở video kế tiếp"
     assert _so_error_hang_loat(caplog) == 1

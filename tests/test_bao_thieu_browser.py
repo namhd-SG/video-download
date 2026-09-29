@@ -297,7 +297,8 @@ def test_bam_doi_khi_post_dang_bay_qua_lan_ve_lai_chi_ra_mot_post(trang, db):
     ("het_vong", "Nguồn hụt"), ("het_thoi_gian", "Nguồn hụt"), ("page_cap", "Nguồn hụt"),
     ("nghi_bi_chan", "Nghi bị chặn"), ("stalled", "Hết video"),
     ("already_owned", "Đã có hết"), ("source_empty", "Nguồn rỗng"),
-    ("feed_rong", "Thiếu"), (None, "Thiếu"),
+    # Đã tải hết số dò được, không lỗi hệ thống ⇒ không có gì "thiếu" để tô nhãn.
+    ("feed_rong", "Xong"), (None, "Xong"),
 ])
 def test_nhan_theo_ly_do_dung_nguon_hut_chi_cho_nhom_chay_lai_duoc(trang, db, ma, nhan):
     """Đột biến ĐỎ: "Nguồn hụt" bất kể mã dừng."""
@@ -326,16 +327,47 @@ def test_chay_lai_mang_theo_usecase_va_insight_goc_cua_luot_goc(trang, db):
 
 
 def test_job_truoc_ban_cap_nhat_loi_chua_phan_loai_khung_xam_khong_do_khong_thieu(trang, db):
-    """`loi_tiktok` NULL + loi>0 ⇒ khung xám trung tính; KHÔNG đỏ, KHÔNG nhãn Thiếu."""
+    """Hàng THẬT: tong=tim=20, xong=19, loi=1, loi_tiktok NULL, không mã dừng ⇒
+    khung xám trung tính; KHÔNG đỏ, KHÔNG nhãn Thiếu (lỗi đó giải thích chỗ thiếu)."""
     job = _job(db, tong=20, tim=20, bo_qua=0, xong=19, loi=1)
     with models._connect(db) as conn:
-        conn.execute("UPDATE jobs SET loi_tiktok = NULL, xong = 20 WHERE id = ?", (job,))
+        conn.execute("UPDATE jobs SET loi_tiktok = NULL, ly_do_dung = NULL WHERE id = ?", (job,))
     p, _ = trang()
     h = _hang(p, job)
     assert h.locator(".lo-ht").count() == 0
     assert h.locator(".progress-fill.has-errors").count() == 0
     assert "1 lỗi (chưa phân loại — lượt trước bản cập nhật)" in h.locator(".lo-tt").inner_text()
     assert h.locator(".status-badge").inner_text() != "Thiếu"
+
+
+def test_thieu_chi_vi_loi_tiktok_khong_gan_nhan_thieu(trang, db):
+    """Job mới: 19/20, một video TikTok không cho tải ⇒ đã giải thích, không "Thiếu".
+
+    Đột biến ĐỎ: trả lại nhánh cũ `xong < tong ⇒ Thiếu`."""
+    job = _job(db, tong=20, tim=20, bo_qua=0, xong=19, loi=1, loi_tiktok=1)
+    p, _ = trang()
+    assert _hang(p, job).locator(".status-badge").inner_text() != "Thiếu"
+
+
+def test_thieu_khong_giai_thich_duoc_van_la_thieu(trang, db):
+    job = _job(db, tong=20, tim=20, bo_qua=0, xong=15)
+    p, _ = trang()
+    assert _hang(p, job).locator(".status-badge").inner_text() == "Thiếu"
+
+
+def test_co_hang_loat_giu_cau_dung_cua_ma_khong_khuyen_chay_lai(trang, db):
+    """Cờ + nghi_bi_chan ⇒ vẫn còn câu "NGHỈ…", vẫn không có nút chạy lại.
+
+    Đột biến ĐỎ: ẩn câu dừng với MỌI mã khi có cờ."""
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=15, loi=5, loi_tiktok=5, ly_do="nghi_bi_chan")
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
+    p, _ = trang()
+    h = _hang(p, job)
+    assert "NGHỈ" in h.locator(".stop-reason").inner_text()
+    assert h.locator("[data-chay-lai]").count() == 0
+    assert h.locator(".lo-ht").count() == 1
+
 
 
 def test_co_nghi_su_co_hang_loat_khung_do_de_khung_xam_va_nhan_thieu(trang, db):

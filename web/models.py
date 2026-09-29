@@ -419,6 +419,10 @@ def init_db(db_path: Path) -> None:
         # thống" (khung đỏ sai), còn một job đang chạy qua lúc migrate thì đếm
         # dở dang. Job mới ghi 0 tường minh lúc INSERT (`create_job`).
         _add_column_if_missing(conn, "jobs", "loi_tiktok", "INTEGER")
+        # Job cũ KHÔNG có lỗi thì không có gì để phân loại sai: cho bắt đầu ở 0
+        # để lỗi đầu tiên (nếu còn chạy) được đếm đúng. Job cũ CÓ lỗi giữ NULL.
+        # Idempotent: hàng mới đã ghi 0 lúc INSERT.
+        conn.execute("UPDATE jobs SET loi_tiktok = 0 WHERE loi_tiktok IS NULL AND loi = 0")
         # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
         # = chưa từng bật (mọi job cũ); 1 = đã bật.
         _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
