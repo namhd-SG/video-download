@@ -40,6 +40,7 @@ from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
                            trash_drive_file, videos_today_for_cookie,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
+from web.vao_bo_lap import LapVaoBo
 
 log = logging.getLogger("videodl.web")
 
@@ -129,6 +130,10 @@ _END_STATES = ("done", "failed", "interrupted")
 
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR)
 
+# Đặt biến này (giá trị bất kỳ, không rỗng) thì `_lifespan` KHÔNG khởi bộ kiểm định kỳ
+# "đã vào bộ" — đường lùi tính năng mà không cần deploy lại.
+ENV_TAT_LAP_VAO_BO = "VIDEODL_TAT_LAP_VAO_BO"
+
 
 def _make_private_dir(path: Path) -> None:
     """Create `path` readable by this user only, and fix the mode if it is
@@ -207,9 +212,16 @@ async def _lifespan(app: FastAPI):
     if da_moi:
         log.info("mồi %d admin từ cấu hình máy (bảng trước đó chưa có admin nào)", da_moi)
     worker.start()
+    # Bộ kiểm "đã vào bộ": ẩn video đã được copy vào bộ tự tìm, dọn tệp nguồn sau 7
+    # ngày. Tắt nhanh bằng env nếu cần lùi mà không deploy lại.
+    lap = None if os.environ.get(ENV_TAT_LAP_VAO_BO) else LapVaoBo(DB_PATH)
+    if lap is not None:
+        lap.start()
     try:
         yield
     finally:
+        if lap is not None:
+            lap.stop()
         worker.stop()
 
 
