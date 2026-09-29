@@ -19,6 +19,17 @@
   // phải chữa cookie trước.
   const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap"]);
 
+  // Nhãn theo LÝ DO DỪNG cho bốn mã không chạy lại được ngay — nhãn phải nói
+  // đúng việc nên làm, nên trùng ý câu ở `app.js::STOP_REASON_TEXT`:
+  //   nghi_bi_chan  ⇒ "Nghi bị chặn"  (NGHỈ đã)
+  //   stalled       ⇒ "Hết video"     (nguồn không còn gì TikTok cho xem)
+  //   already_owned ⇒ "Đã có hết"     (thư viện có hết, đổi nguồn)
+  //   source_empty  ⇒ "Nguồn rỗng"
+  const NHAN_THEO_LY_DO = Object.freeze({
+    nghi_bi_chan: "Nghi bị chặn", stalled: "Hết video",
+    already_owned: "Đã có hết", source_empty: "Nguồn rỗng",
+  });
+
   const DANG_CHAY = new Set(["pending", "running"]);
 
   const so = (x) => Number(x) || 0;
@@ -51,14 +62,20 @@
   }
 
   // Nhãn cho job `done`; `null` = để `nhanTrangThai` dùng nhãn trạng thái gốc.
-  //   Thiếu     — có lỗi HỆ THỐNG, hoặc thiếu mà không giải thích được bằng nguồn
-  //   Nguồn hụt — nguồn cho ít hơn số xin, còn lại không có lỗi hệ thống
+  //   Thiếu        — có lỗi HỆ THỐNG, hoặc thiếu mà không giải thích được
+  //   (theo mã)    — bốn mã dừng ở `NHAN_THEO_LY_DO`: nhãn nói lý do dừng
+  //   Nguồn hụt    — CHỈ nhóm chạy lại được (het_vong/het_thoi_gian/page_cap), nguồn
+  //                  cho ít hơn số xin, không có lỗi hệ thống
   function nhanThieu(job) {
     if (job.trang_thai !== "done") return null;
     const s = soLieu(job);
     if (s.tong <= 0) return null;
     if (s.loiHt > 0) return { chu: "Thiếu", lop: "thieu" };
-    if (s.tim > 0 && s.tim < s.tong) return { chu: "Nguồn hụt", lop: "thieu" };
+    const theoMa = NHAN_THEO_LY_DO[job.ly_do_dung];
+    if (theoMa) return { chu: theoMa, lop: "thieu" };
+    if (MA_CHAY_LAI_DUOC.has(job.ly_do_dung) && s.tim > 0 && s.tim < s.tong) {
+      return { chu: "Nguồn hụt", lop: "thieu" };
+    }
     if (s.xong < s.tong) return { chu: "Thiếu", lop: "thieu" };
     return null;
   }

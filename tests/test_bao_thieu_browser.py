@@ -153,7 +153,7 @@ def test_nghi_bi_chan_khong_co_nut_chay_lai_nhung_van_chep_link(trang, db):
     p, _ = trang()
     h = _hang(p, job)
     assert h.locator("[data-chay-lai]").count() == 0
-    assert h.locator(".status-badge").inner_text() == "Nguồn hụt"
+    assert h.locator(".status-badge").inner_text() == "Nghi bị chặn"
     assert h.get_by_role("button", name="Chép link").count() == 1
     assert "Nguồn lần này có 30 video" in h.locator(".nguon").inner_text()
 
@@ -291,3 +291,22 @@ def test_bam_doi_khi_post_dang_bay_qua_lan_ve_lai_chi_ra_mot_post(trang, db):
         r.continue_()                 # KHÔNG unroute: unroute huỷ request đang giữ
     p.wait_for_function("document.querySelectorAll('#queue-list > li').length === 2")
     assert dem["post"] == 1
+
+
+@pytest.mark.parametrize("ma, nhan", [
+    ("het_vong", "Nguồn hụt"), ("het_thoi_gian", "Nguồn hụt"), ("page_cap", "Nguồn hụt"),
+    ("nghi_bi_chan", "Nghi bị chặn"), ("stalled", "Hết video"),
+    ("already_owned", "Đã có hết"), ("source_empty", "Nguồn rỗng"),
+    ("feed_rong", "Thiếu"), (None, "Thiếu"),
+])
+def test_nhan_theo_ly_do_dung_nguon_hut_chi_cho_nhom_chay_lai_duoc(trang, db, ma, nhan):
+    """Đột biến ĐỎ: "Nguồn hụt" bất kể mã dừng."""
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=20, ly_do=ma)
+    p, _ = trang()
+    assert _hang(p, job).locator(".status-badge").inner_text() == nhan, ma
+
+
+def test_loi_he_thong_thang_nhan_theo_ly_do_dung(trang, db):
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=19, loi=1, ly_do="nghi_bi_chan")
+    p, _ = trang()
+    assert _hang(p, job).locator(".status-badge").inner_text() == "Thiếu"
