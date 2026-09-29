@@ -56,8 +56,9 @@ class DriveGia:
         return self.cau_hinh
 
     def _loi(self, ten, arg):
-        if (ten, arg) in self.loi:
-            raise self.loi[(ten, arg)]
+        for khoa in ((ten, arg), (ten, "*")):
+            if khoa in self.loi:
+                raise self.loi[khoa]
 
     def lay_tep(self, file_id):
         self.goi.append(("lay_tep", file_id))
@@ -72,6 +73,20 @@ class DriveGia:
         khop = [copy.deepcopy(t) for t in self.tep.values()
                 if t["properties"].get(KHOA_DAU_NGUON) == nguon_id and not t["trashed"]]
         return self._trang(khop, page_token)
+
+    def liet_ke_ban_sao_theo_lo(self, nguon_ids, page_token):
+        assert 0 < len(nguon_ids) <= 200, "một lô tối đa 200 id"
+        self.goi.append(("liet_ke_lo", str(len(nguon_ids))))
+        self._loi("liet_ke_lo", "*")
+        khop = [copy.deepcopy(t) for t in self.tep.values()
+                if t["properties"].get(KHOA_DAU_NGUON) in set(nguon_ids) and not t["trashed"]]
+        return self._trang(khop, page_token)
+
+    def liet_ke_video_thung_rac(self, page_token):
+        self.goi.append(("liet_ke_thung_rac", "*"))
+        self._loi("liet_ke_thung_rac", "*")
+        return self._trang([copy.deepcopy(t) for t in self.tep.values() if t["trashed"]],
+                           page_token)
 
     def liet_ke_video_shared_drive(self, drive_id, page_token):
         self.goi.append(("liet_ke_drive", drive_id))

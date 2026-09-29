@@ -336,6 +336,16 @@ CREATE TABLE IF NOT EXISTS video_vao_bo_ban (
 )
 """
 
+# Sổ khoá–giá trị nhỏ của bộ kiểm "đã vào bộ". Hiện chỉ giữ `quet_day_du_ngay`: ngày (lịch
+# VN) của lượt quét ĐẦY ĐỦ gần nhất — để khởi động lại tiến trình không làm lượt quét
+# ngày bị bỏ sót hay lặp thừa.
+_VAO_BO_KV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS vao_bo_kv (
+    khoa TEXT PRIMARY KEY,
+    gia_tri TEXT NOT NULL
+)
+"""
+
 _VIDEO_VAO_BO_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_video_vao_bo_ban_video ON video_vao_bo_ban(video_id)",
 )
@@ -394,6 +404,7 @@ def init_db(db_path: Path) -> None:
         # thêm hai bảng rỗng.
         conn.execute(_VIDEO_VAO_BO_SCHEMA)
         conn.execute(_VIDEO_VAO_BO_BAN_SCHEMA)
+        conn.execute(_VAO_BO_KV_SCHEMA)
         for statement in _VIDEO_VAO_BO_INDEX:
             conn.execute(statement)
         # `the_he` (thế hệ): bump mỗi lần `ghi_de_xuat` GHI ĐÈ nháp — `hoan_tac`

@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from web import models_vao_bo
-from web.vao_bo_drive import (DriveKhongThay, DriveVaoBo, chon_folder, doc_het_trang,
-                              ban_hop_le, id_drive_hop_le, ma_bo_tu_ten)
+from web.vao_bo_drive import (KHOA_DAU_NGUON, TOI_DA_ID_MOI_LO, DriveKhongThay, DriveVaoBo,
+                              chon_folder, doc_het_trang, ban_hop_le, id_drive_hop_le,
+                              ma_bo_tu_ten)
 
 log = logging.getLogger("videodl.web.vao_bo")
 
@@ -98,6 +100,14 @@ class KetQuaLuotKiem:
     id_sai: int = 0
     nguon_mat: int = 0
     bao_dong: int = 0
+    # Nhật ký chi phí của lượt (in ở cuối MỖI lượt): |A|, |T|, |H| — None nếu pha (a) không
+    # chạy (lượt quét đầy đủ, hoặc pha (a) trượt) — cùng số lời gọi Drive thật đã tốn.
+    n_a: int | None = None
+    n_t: int | None = None
+    n_h: int | None = None
+    so_goi_drive: int = 0
+    fallback: bool = False
+    quet_day_du: bool = False
 
 
 def _dong_ban(drive: DriveVaoBo, nguon: dict | None, ban_hop_le_: tuple,
@@ -116,24 +126,100 @@ def _dong_ban(drive: DriveVaoBo, nguon: dict | None, ban_hop_le_: tuple,
     return ra
 
 
-def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
-                   dung: Callable[[], bool] = lambda: False) -> KetQuaLuotKiem:
-    """Một lượt: với mỗi video còn sống chưa ẩn, đo bằng chứng và ẨN nếu đạt.
+class _DemGoi:
+    """Bọc một `DriveVaoBo` để ĐẾM mọi lời gọi Drive của lượt (trừ `dang_cau_hinh`)."""
 
-    Trả số đếm (không im lặng): `da_xet` = số ứng viên, `da_an` = số vừa ẩn.
-    `dung()` (vd `stop_event.is_set`) được hỏi giữa hai ứng viên để thoát sạch.
+    def __init__(self, drive: DriveVaoBo):
+        self._drive = drive
+        self.so_goi = 0
+
+    def __getattr__(self, ten):
+        f = getattr(self._drive, ten)
+        if ten == "dang_cau_hinh" or not callable(f):
+            return f
+
+        def boc(*a, **k):
+            self.so_goi += 1
+            return f(*a, **k)
+        return boc
+
+
+def _pha_a(drive: DriveVaoBo, nguon_ids: list[str]) -> tuple[set[str], set[str]]:
+    """Pha (a) của lượt 15 phút — RẺ, chỉ để CHỌN ứng viên đáng đo bằng chứng đầy đủ.
+
+    A = nguồn ứng viên có ≥1 bản mang dấu, hỏi theo lô ≤ `TOI_DA_ID_MOI_LO` id, đọc HẾT
+        trang của từng lô (trang rỗng kèm token KHÔNG phải hết).
+    T = nguồn ứng viên đang ở Thùng rác: MỘT truy vấn liệt kê video trong thùng rác,
+        đọc hết trang, giao với tập ứng viên.
+    Lời gọi nào ném (403/404/5xx/timeout…) thì hàm này ném — người gọi QUÉT ĐỦ, tuyệt đối
+    không đọc lỗi thành "không có".
     """
+    tap = set(nguon_ids)
+    a: set[str] = set()
+    for i in range(0, len(nguon_ids), TOI_DA_ID_MOI_LO):
+        lo = nguon_ids[i:i + TOI_DA_ID_MOI_LO]
+        tep = doc_het_trang(lambda t, lo=lo: drive.liet_ke_ban_sao_theo_lo(lo, t))
+        a |= {(f.get("properties") or {}).get(KHOA_DAU_NGUON) for f in tep} & tap
+    thung = doc_het_trang(lambda t: drive.liet_ke_video_thung_rac(t))
+    return a, {f["id"] for f in thung} & tap
+
+
+def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
+                   dung: Callable[[], bool] = lambda: False,
+                   bay_gio: datetime | None = None) -> KetQuaLuotKiem:
+    """Một lượt: đo bằng chứng và ẨN video khi bằng chứng đạt.
+
+    MỖI lượt = pha (a) rồi pha (b):
+      (a) chọn ứng viên đáng đo: A ∪ T ∪ H (xem `_pha_a`; H = ứng viên đã có hàng báo động).
+      (b) `do_bang_chung` ĐẦY ĐỦ (không đổi) cho các ứng viên được chọn.
+    Pha (a) trượt ở BẤT KỲ lời gọi nào ⇒ log lỗi và pha (b) cho MỌI ứng viên lượt này.
+    Lượt đầu tiên sau 00:00 giờ VN của mỗi ngày là lượt QUÉT ĐẦY ĐỦ: pha (b) cho MỌI ứng
+    viên, không cần pha (a) — bắt ca mất quyền/404 từng tệp mà chưa từng báo, trễ ≤ 24 giờ.
+    Ngày quét đầy đủ được ghi SAU khi lượt chạy hết (khởi động lại không bỏ/lặp).
+
+    Không có giới hạn theo tuổi video: mọi ứng viên đều có thể được chọn ở pha (a).
+    `dung()` được hỏi giữa hai ứng viên để thoát sạch.
+    """
+    bay_gio = bay_gio or datetime.now(timezone.utc)
+    hom_nay = models_vao_bo.ngay_vn(bay_gio)
     kq = KetQuaLuotKiem()
+    d = _DemGoi(drive)
     ten_cache: dict[str, str] = {}
+    ung_vien = []
     for u in models_vao_bo.ung_vien_can_kiem(db_path):
+        if id_drive_hop_le(u["drive_file_id"]):
+            ung_vien.append(u)
+        else:
+            kq.id_sai += 1
+
+    kq.quet_day_du = models_vao_bo.doc_ngay_quet_day_du(db_path) != hom_nay
+    if kq.quet_day_du:
+        chon = ung_vien
+    else:
+        h = models_vao_bo.video_da_bao_dong(db_path)
+        try:
+            a, t = _pha_a(d, [u["drive_file_id"] for u in ung_vien]) if ung_vien else (set(), set())
+        except Exception as exc:  # noqa: BLE001 — MỌI lỗi pha (a): quét đủ, không nuốt, không đọc là âm
+            kq.fallback = True
+            log.error("pha (a) của lượt kiểm trượt (%s%s) — QUÉT ĐỦ pha (b) cho mọi %d ứng viên "
+                      "lượt này", type(exc).__name__,
+                      f" HTTP {exc.resp.status}" if getattr(exc, "resp", None) is not None else "",
+                      len(ung_vien))
+            chon = ung_vien
+        else:
+            kq.n_a, kq.n_t = len(a), len(t)
+            kq.n_h = sum(1 for u in ung_vien if u["video_id"] in h)
+            chon = [u for u in ung_vien if u["drive_file_id"] in a or u["drive_file_id"] in t
+                    or u["video_id"] in h]
+
+    bi_dung = False
+    for u in chon:
         if dung():
+            bi_dung = True
             break
         kq.da_xet += 1
         nguon_id = u["drive_file_id"]
-        if not id_drive_hop_le(nguon_id):
-            kq.id_sai += 1
-            continue
-        do = do_bang_chung(drive, nguon_id)
+        do = do_bang_chung(d, nguon_id)
         if do.trang_thai == KHONG_DO_DUOC:
             kq.khong_do_duoc += 1
             continue
@@ -152,7 +238,7 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             kq.nguon_mat += 1
             continue
         try:
-            dong = _dong_ban(drive, do.nguon, do.ban, ten_cache)
+            dong = _dong_ban(d, do.nguon, do.ban, ten_cache)
         except Exception as exc:  # noqa: BLE001
             log.warning("tra tên folder bộ trượt (%s) — thử lại lượt sau", type(exc).__name__)
             kq.khong_do_duoc += 1
@@ -163,6 +249,12 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         # CHỈ TỚI ĐÂY mới ghi: bằng chứng đã đạt và tên bộ đã có.
         models_vao_bo.ghi_da_vao_bo(db_path, u["video_id"], u["chu"], dong)
         kq.da_an += 1
-    if kq.da_an or kq.khong_do_duoc:
-        log.info("lượt kiểm đã-vào-bộ: %s", kq)
+
+    if kq.quet_day_du and not bi_dung:
+        models_vao_bo.ghi_ngay_quet_day_du(db_path, hom_nay)   # SAU khi quét xong
+    kq.so_goi_drive = d.so_goi
+    log.info("lượt kiểm đã-vào-bộ: |A|=%s |T|=%s |H|=%s ứng_viên=%d đã_đo=%d lời_gọi_drive=%d "
+             "fallback=%s quét_đầy_đủ=%s đã_ẩn=%d không_đo_được=%d",
+             kq.n_a, kq.n_t, kq.n_h, len(ung_vien), kq.da_xet, kq.so_goi_drive, kq.fallback,
+             kq.quet_day_du, kq.da_an, kq.khong_do_duoc)
     return kq

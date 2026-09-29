@@ -25,6 +25,9 @@ TRUONG_TEP = "id,name,md5Checksum,size,parents,trashed,driveId,properties"
 _ID_DRIVE = re.compile(r"[A-Za-z0-9_-]{10,128}")
 # Trần an toàn cho vòng đọc trang: chống một `nextPageToken` lặp mãi.
 TOI_DA_TRANG = 500
+# Số id nguồn tối đa trong MỘT truy vấn `properties has … or …` (đo trên prod: N=200 ⇒
+# đếm chính xác, 0,7 giây, độ dài q 17 196).
+TOI_DA_ID_MOI_LO = 200
 
 
 class DriveKhongThay(Exception):
@@ -43,6 +46,12 @@ class DriveVaoBo(Protocol):
     def liet_ke_video_shared_drive(self, drive_id: str,
                                    page_token: str | None) -> tuple[list[dict], str | None]:
         """MỘT trang file video chưa vào thùng rác trên Shared Drive `drive_id`."""
+    def liet_ke_ban_sao_theo_lo(self, nguon_ids: list[str],
+                                page_token: str | None) -> tuple[list[dict], str | None]:
+        """MỘT trang bản copy chưa vào thùng rác mang dấu nguồn thuộc BẤT KỲ id nào trong
+        `nguon_ids` (≤ `TOI_DA_ID_MOI_LO`). Mỗi tệp trả kèm `properties.videodesk_src`."""
+    def liet_ke_video_thung_rac(self, page_token: str | None) -> tuple[list[dict], str | None]:
+        """MỘT trang file video ĐANG Ở Thùng rác (`trashed = true`) trên Shared Drive."""
     def ten_thu_muc(self, folder_id: str) -> str: ...
     def bo_vao_thung_rac(self, file_id: str) -> bool:
         """True CHỈ khi Drive báo ok. Chưa cấu hình / trượt ⇒ False."""
@@ -169,6 +178,26 @@ class DriveThat:
             supportsAllDrives=True, pageSize=1000, pageToken=page_token,
             q="trashed = false and mimeType contains 'video/'",
             fields=f"nextPageToken,files({TRUONG_TEP})").execute()
+        return r.get("files", []), r.get("nextPageToken")
+
+    def liet_ke_ban_sao_theo_lo(self, nguon_ids: list[str], page_token: str | None):
+        if not nguon_ids or len(nguon_ids) > TOI_DA_ID_MOI_LO:
+            raise ValueError(f"lô id nguồn phải 1..{TOI_DA_ID_MOI_LO}")
+        if not all(id_drive_hop_le(i) for i in nguon_ids):
+            raise ValueError("id nguồn sai hình dạng — không dựng truy vấn")
+        dieu_kien = " or ".join(
+            f"properties has {{key='{KHOA_DAU_NGUON}' and value='{i}'}}" for i in nguon_ids)
+        r = self._svc().files().list(
+            q=f"({dieu_kien}) and trashed = false", corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000,
+            pageToken=page_token, fields="nextPageToken,files(id,properties)").execute()
+        return r.get("files", []), r.get("nextPageToken")
+
+    def liet_ke_video_thung_rac(self, page_token: str | None):
+        r = self._svc().files().list(
+            q="trashed = true and mimeType contains 'video/'", corpora="allDrives",
+            includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000,
+            pageToken=page_token, fields="nextPageToken,files(id)").execute()
         return r.get("files", []), r.get("nextPageToken")
 
     def ten_thu_muc(self, folder_id: str) -> str:

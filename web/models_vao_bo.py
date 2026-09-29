@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from web.models import _connect, _now
 from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG
@@ -24,6 +25,43 @@ from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG
 # Đồng hồ 7 ngày tính từ `an_luc` (lần xác minh ĐẦU; với backfill là lúc ghi
 # backfill) — user chốt 26/09, plan 29/09.
 SO_NGAY_DEN_KHI_DON = 7
+
+VN_TIMEZONE = ZoneInfo("Asia/Saigon")
+KHOA_QUET_DAY_DU = "quet_day_du_ngay"
+# Hai mã lý do của hàng báo động "nguồn chết, không bản sao" (`vao_bo_kiem.LY_DO_*`).
+LY_DO_BAO_DONG = ("nguon_o_thung_rac_khong_ban_sao", "nguon_404_khong_ban_sao")
+
+
+def ngay_vn(bay_gio: datetime) -> str:
+    """Ngày lịch Việt Nam (`YYYY-MM-DD`) của một thời điểm — ranh giới lượt quét đầy đủ."""
+    return bay_gio.astimezone(VN_TIMEZONE).date().isoformat()
+
+
+def doc_ngay_quet_day_du(db_path: Path) -> str | None:
+    with _connect(db_path) as conn:
+        r = conn.execute("SELECT gia_tri FROM vao_bo_kv WHERE khoa = ?",
+                         (KHOA_QUET_DAY_DU,)).fetchone()
+    return r["gia_tri"] if r else None
+
+
+def ghi_ngay_quet_day_du(db_path: Path, ngay: str) -> None:
+    """Ghi ngày quét đầy đủ. CHỈ gọi SAU khi lượt quét đã chạy hết (không bị dừng giữa
+    chừng) — ghi trước thì một lượt bị ngắt làm mất quét của cả ngày."""
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES (?, ?) "
+            "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri",
+            (KHOA_QUET_DAY_DU, ngay))
+
+
+def video_da_bao_dong(db_path: Path) -> set[str]:
+    """`video_id` đang mang hàng báo động nguồn-chết (tập H của lượt kiểm 15 phút)."""
+    marks = ",".join("?" * len(LY_DO_BAO_DONG))
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT video_id FROM video_vao_bo WHERE drive_don_luc IS NULL "
+            f"AND loi_cuoi IN ({marks})", LY_DO_BAO_DONG).fetchall()
+    return {r["video_id"] for r in rows}
 
 
 def _doc_luc(iso: str) -> datetime:
