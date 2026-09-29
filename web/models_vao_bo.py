@@ -19,7 +19,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from web.models import _connect, _now
-from web.vi_tu_con_song import CON_SONG_CHUNG
+from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG
 
 # Đồng hồ 7 ngày tính từ `an_luc` (lần xác minh ĐẦU; với backfill là lúc ghi
 # backfill) — user chốt 26/09, plan 29/09.
@@ -138,8 +138,7 @@ def ung_vien_don(db_path: Path, bay_gio: datetime | None = None) -> list[dict]:
     han = bay_gio - timedelta(days=SO_NGAY_DEN_KHI_DON)
     with _connect(db_path) as conn:
         rows = conn.execute(
-            "SELECT b.video_id, v.drive_file_id, b.an_luc, "
-            "       v.da_loai_luc IS NOT NULL AS da_loai "
+            f"SELECT b.video_id, v.drive_file_id, b.an_luc, NOT ({CHUA_LOAI}) AS da_loai "
             "FROM video_vao_bo b JOIN videos v ON v.video_id = b.video_id "
             "WHERE b.an_luc IS NOT NULL AND b.drive_don_luc IS NULL "
             "ORDER BY b.an_luc, b.video_id").fetchall()

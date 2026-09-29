@@ -12,7 +12,12 @@ from web.vao_bo_drive import KHOA_DAU_NGUON, DriveKhongThay
 
 
 class DriveGia:
-    def __init__(self, *, trang: int = 100, trang_rong_dau: bool = False):
+    def __init__(self, *, trang: int = 100, trang_rong_dau: bool = False,
+                 tra_ca_thung_rac: bool = False):
+        # `tra_ca_thung_rac`: liệt kê Shared Drive trả cả tệp đã vào thùng rác — mô phỏng
+        # tệp bị bỏ vào thùng giữa lúc liệt kê và lúc so khớp (vế `trashed=false` là lưới
+        # an toàn cho khe đó; Drive thật lọc `trashed = false` ở truy vấn).
+        self.tra_ca_thung_rac = tra_ca_thung_rac
         self.tep: dict[str, dict] = {}
         self.ten: dict[str, str] = {}
         self.cau_hinh = True
@@ -72,7 +77,8 @@ class DriveGia:
         self.goi.append(("liet_ke_drive", drive_id))
         self._loi("liet_ke_drive", drive_id)
         khop = [copy.deepcopy(t) for t in self.tep.values()
-                if t.get("driveId") == drive_id and not t["trashed"] and t.get("md5Checksum")]
+                if t.get("driveId") == drive_id and t.get("md5Checksum")
+                and (self.tra_ca_thung_rac or not t["trashed"])]
         return self._trang(khop, page_token)
 
     def _trang(self, khop, token):
