@@ -18,7 +18,9 @@ chưa ghi gì.
 """
 from __future__ import annotations
 
+import sqlite3
 from collections import defaultdict
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -29,12 +31,44 @@ from web.vao_bo_drive import (DriveVaoBo, ban_hop_le, chon_folder, doc_het_trang
 from web.vi_tu_con_song import CON_SONG_CHUNG
 
 
+class ThieuBang(RuntimeError):
+    """DB không mở được ở chế độ chỉ-đọc, hoặc chưa có bảng cần (`videos`,
+    `video_vao_bo`) — dry-run KHÔNG tự dựng lược đồ, nên nói thẳng thay vì đoán."""
+
+
+@contextmanager
+def _ket_noi_doc_chi(db_path: Path):
+    """Mở DB `mode=ro`: không tạo tệp, không ghi WAL, không `init_db`. Ném `ThieuBang`
+    (thông điệp sạch) nếu tệp/bảng không có."""
+    if not db_path.is_file():
+        raise ThieuBang(f"không thấy tệp DB: {db_path}")
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.OperationalError as exc:
+        raise ThieuBang(f"không mở được DB chỉ-đọc: {exc}") from exc
+    conn.row_factory = sqlite3.Row
+    try:
+        co = {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN "
+            "('videos', 'video_vao_bo')")}
+        thieu = {"videos", "video_vao_bo"} - co
+        if thieu:
+            raise ThieuBang(f"DB chưa có bảng {sorted(thieu)} — chạy ứng dụng (init_db) trước")
+        yield conn
+    except sqlite3.OperationalError as exc:
+        raise ThieuBang(f"đọc DB trượt: {exc}") from exc
+    finally:
+        conn.close()
+
+
 @dataclass
 class BaoCaoBackfill:
     so_song_co_drive: int = 0          # mọi video còn sống có drive_file_id
     da_an_tu_truoc: int = 0            # trong đó đã ẩn (không xét lại)
     nguon_ok: int = 0
     nguon_loi: int = 0
+    nguon_phu_loi: int = 0             # nguồn KHÔNG phải ứng viên mà không lấy được folder cha
+    so_folder_nguon: int = 0           # folder cha của MỌI nguồn Video Desk đã biết
     so_shared_drive: int = 0
     so_file_video: int = 0
     so_co_dau: int = 0
@@ -48,9 +82,11 @@ class BaoCaoBackfill:
     that: bool = False
 
 
-def _video_song(db_path: Path) -> tuple[list[dict], set[str]]:
-    """(mọi video còn sống có drive_file_id, mọi drive_file_id kể cả đã loại/đã dọn)."""
-    with _connect(db_path) as conn:
+def _video_song(db_path: Path, chi_doc: bool) -> tuple[list[dict], set[str]]:
+    """(mọi video còn sống có drive_file_id, mọi drive_file_id kể cả đã ẩn/loại/dọn).
+    `chi_doc`: mở DB `mode=ro` (dry-run) thay vì kết nối thường."""
+    cm = _ket_noi_doc_chi(db_path) if chi_doc else _connect(db_path)
+    with cm as conn:
         rows = conn.execute(
             "SELECT v.video_id, v.drive_file_id, j.nguoi_tao AS chu, "
             "EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
@@ -66,7 +102,7 @@ def _video_song(db_path: Path) -> tuple[list[dict], set[str]]:
 def chay_backfill(db_path: Path, drive: DriveVaoBo, *, that: bool = False,
                   luc: str | None = None) -> BaoCaoBackfill:
     bc = BaoCaoBackfill(that=that)
-    song, moi_nguon_id = _video_song(db_path)
+    song, moi_nguon_id = _video_song(db_path, chi_doc=not that)
     bc.so_song_co_drive = len(song)
     ung_vien = [v for v in song if not v["da_an"]]
     bc.da_an_tu_truoc = len(song) - len(ung_vien)
@@ -91,7 +127,18 @@ def chay_backfill(db_path: Path, drive: DriveVaoBo, *, that: bool = False,
     for f in tat_ca:
         if f.get("md5Checksum") and f.get("size"):
             theo_khoa[(f["md5Checksum"], f["size"])].append(f)
+    # Folder cha của MỌI nguồn Video Desk — không chỉ của ứng viên đang xét. Một bản "sao"
+    # nằm trong folder đang chứa nguồn của video đã ẩn / đã loại / lấy-trượt vẫn là dương
+    # giả. Nguồn không phải ứng viên: lấy siêu dữ liệu để biết folder (Thùng rác vẫn trả
+    # `parents`); không lấy được thì chỉ còn lưới theo id (`moi_nguon_id`) che cho nó.
     cha_cua_nguon = {p for n in nguon.values() for p in (n.get("parents") or [])}
+    da_thu = {v["drive_file_id"] for v in ung_vien}
+    for fid in sorted(moi_nguon_id - da_thu):
+        try:
+            cha_cua_nguon.update(drive.lay_tep(fid).get("parents") or [])
+        except Exception:  # noqa: BLE001
+            bc.nguon_phu_loi += 1
+    bc.so_folder_nguon = len(cha_cua_nguon)
 
     cha_ban_sao: set[str] = set()
     for v in ung_vien:
@@ -152,6 +199,8 @@ def in_bang(bc: BaoCaoBackfill) -> list[str]:
         f"video còn sống có drive_file_id: {bc.so_song_co_drive}",
         f"đã ẩn từ trước (không xét lại): {bc.da_an_tu_truoc}",
         f"files.get nguồn OK: {bc.nguon_ok} · lỗi: {bc.nguon_loi}",
+        f"folder cha của MỌI nguồn Video Desk: {bc.so_folder_nguon} "
+        f"(nguồn ngoài ứng viên không lấy được: {bc.nguon_phu_loi})",
         f"số Shared Drive chứa nguồn: {bc.so_shared_drive}",
         f"file video (chưa trash) trên Shared Drive: {bc.so_file_video}",
         f"file mang dấu properties.videodesk_src: {bc.so_co_dau}",
