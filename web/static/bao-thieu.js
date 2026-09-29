@@ -104,6 +104,10 @@
       (s.boQua > 0 ? `:${chiTiet}` : ".");
   }
 
+  function coSuCoHangLoat(job) {
+    return soLieu(job).suCoHangLoat;
+  }
+
   // Có lỗi HỆ THỐNG đã xác định (đỏ)? Lỗi chưa phân loại không tính.
   function coLoiHeThong(job) {
     const s = soLieu(job);
@@ -137,6 +141,8 @@
   // `null` = không có nút chạy lại.
   function soChayLai(job) {
     const s = soLieu(job);
+    // Cờ sự cố hàng loạt ⇒ chạy lại chỉ gặp lại đúng lỗi đó: không mời bấm.
+    if (s.suCoHangLoat) return null;
     if (!MA_CHAY_LAI_DUOC.has(job.ly_do_dung) || s.tong <= 0 || s.xong >= s.tong) return null;
     return Math.min(s.tong - s.xong, MAX_SO_LUONG);
   }
@@ -168,7 +174,7 @@
   }
 
   window.BaoThieu = Object.freeze({
-    MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, chuTienDo, nhanThieu, dongNguon, khungLoi,
+    MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, coSuCoHangLoat, chuTienDo, nhanThieu, dongNguon, khungLoi,
     soChayLai, khungHanhDong, chuanHoaSoChayLai,
   });
 })();

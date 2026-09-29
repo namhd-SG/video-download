@@ -357,3 +357,19 @@ def test_job_cu_khong_co_co_hang_loat_thi_khong_do(trang, db):
     h = _hang(p, job)
     assert h.locator(".lo-ht").count() == 0
     assert h.locator(".lo-tt").count() == 1
+
+
+def test_co_hang_loat_an_nut_chay_lai_va_cau_ra_them_chi_con_khung_do(trang, db):
+    """Đột biến ĐỎ: luật nút chạy lại bỏ qua cờ."""
+    job = _job(db, tong=50, tim=20, bo_qua=0, xong=15, loi=5, loi_tiktok=5, ly_do="het_vong")
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
+    p, _ = trang()
+    h = _hang(p, job)
+    assert h.locator("[data-chay-lai]").count() == 0
+    assert "kiếm thêm" not in h.inner_text()
+    assert h.locator(".stop-reason").count() == 0
+    assert "ra thêm" not in h.inner_text()
+    assert h.locator(".lo-ht").count() == 1
+    assert h.get_by_role("button", name="Chép link").count() == 1
+    assert h.locator(".status-badge").inner_text() == "Thiếu"

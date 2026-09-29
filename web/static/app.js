@@ -347,7 +347,9 @@
     const pct = BT.phanTram(job);
     // Đỏ CHỈ cho lỗi hệ thống; lỗi phía TikTok có khung xám riêng.
     const hasErrors = BT.coLoiHeThong(job);
-    const stopText = job.ly_do_dung
+    // Có cờ sự cố hàng loạt thì câu "chạy lại có thể ra thêm" mâu thuẫn với khung
+    // đỏ — thẻ chỉ còn khung đỏ + Chép link.
+    const stopText = job.ly_do_dung && !window.BaoThieu.coSuCoHangLoat(job)
       ? (STOP_REASON_TEXT[job.ly_do_dung] ||
          `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
       : "";
