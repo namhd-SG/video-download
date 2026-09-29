@@ -15,6 +15,7 @@ Không có hàm nào ở đây gọi Drive — Drive là việc của `vao_bo_ki
 """
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +42,7 @@ def don_ngay7_dang_bat() -> bool:
 
 VN_TIMEZONE = ZoneInfo("Asia/Saigon")
 KHOA_QUET_DAY_DU = "quet_day_du_ngay"
+KHOA_TAP_THU_LAI = "tap_thu_lai"
 # Hai mã lý do của hàng báo động "nguồn chết, không bản sao" (`vao_bo_kiem.LY_DO_*`).
 LY_DO_BAO_DONG = ("nguon_o_thung_rac_khong_ban_sao", "nguon_404_khong_ban_sao")
 
@@ -65,6 +67,23 @@ def ghi_ngay_quet_day_du(db_path: Path, ngay: str) -> None:
             "INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES (?, ?) "
             "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri",
             (KHOA_QUET_DAY_DU, ngay))
+
+
+def doc_tap_thu_lai(db_path: Path) -> set[str]:
+    """Tập R: `video_id` của ứng viên mà lần đo gần nhất trả "chưa đo được" (Drive lỗi).
+    Sống trong `vao_bo_kv` (JSON) nên khởi động lại không làm mất."""
+    with _connect(db_path) as conn:
+        r = conn.execute("SELECT gia_tri FROM vao_bo_kv WHERE khoa = ?",
+                         (KHOA_TAP_THU_LAI,)).fetchone()
+    return set(json.loads(r["gia_tri"])) if r else set()
+
+
+def ghi_tap_thu_lai(db_path: Path, video_ids: set[str]) -> None:
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES (?, ?) "
+            "ON CONFLICT(khoa) DO UPDATE SET gia_tri = excluded.gia_tri",
+            (KHOA_TAP_THU_LAI, json.dumps(sorted(video_ids))))
 
 
 def video_da_bao_dong(db_path: Path) -> set[str]:

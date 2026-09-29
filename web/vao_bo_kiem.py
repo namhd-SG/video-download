@@ -116,6 +116,7 @@ class KetQuaLuotKiem:
     n_a: int | None = None
     n_t: int | None = None
     n_h: int | None = None
+    n_r: int | None = None              # |R|: tập thử-lại đọc được lúc chọn ứng viên
     so_goi_drive: int = 0
     fallback: bool = False
     quet_day_du: bool = False
@@ -181,12 +182,18 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
     """Một lượt: đo bằng chứng và ẨN video khi bằng chứng đạt.
 
     MỖI lượt = pha (a) rồi pha (b):
-      (a) chọn ứng viên đáng đo: A ∪ T ∪ H (xem `_pha_a`; H = ứng viên đã có hàng báo động).
+      (a) chọn ứng viên đáng đo: A ∪ T ∪ H ∪ R (xem `_pha_a`; H = ứng viên đã có hàng báo
+          động; R = tập THỬ LẠI: ứng viên mà lần đo trước trả "chưa đo được").
       (b) `do_bang_chung` ĐẦY ĐỦ (không đổi) cho các ứng viên được chọn.
     Pha (a) trượt ở BẤT KỲ lời gọi nào ⇒ log lỗi và pha (b) cho MỌI ứng viên lượt này.
     Lượt đầu tiên sau 00:00 giờ VN của mỗi ngày là lượt QUÉT ĐẦY ĐỦ: pha (b) cho MỌI ứng
     viên, không cần pha (a) — bắt ca mất quyền/404 từng tệp mà chưa từng báo, trễ ≤ 24 giờ.
-    Ngày quét đầy đủ được ghi SAU khi lượt chạy hết (khởi động lại không bỏ/lặp).
+    Ngày quét đầy đủ được ghi SAU khi lượt quét chạy hết (khởi động lại không bỏ/lặp), kể cả
+    khi vài ứng viên "chưa đo được": chúng vào tập R và được đo lại ở MỖI lượt 15 phút cho
+    tới khi đo được (rời R khi ra DAT hoặc AM; trượt lại thì ở lại) — một tệp hỏng vĩnh viễn
+    không kéo cả lượt quét đầy đủ về mỗi 15 phút. NGOẠI LỆ: quét hỏng TOÀN BỘ (mọi ứng
+    viên đã xét đều "chưa đo được", ≥1) là một cú chớp Drive, không phải một lượt quét ⇒
+    KHÔNG ghi ngày, lượt sau quét lại.
 
     Không có giới hạn theo tuổi video: mọi ứng viên đều có thể được chọn ở pha (a).
     `dung()` được hỏi giữa hai ứng viên để thoát sạch.
@@ -204,6 +211,8 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             kq.id_sai += 1
 
     kq.quet_day_du = models_vao_bo.doc_ngay_quet_day_du(db_path) != hom_nay
+    tap_r = models_vao_bo.doc_tap_thu_lai(db_path)
+    kq.n_r = len(tap_r)
     if kq.quet_day_du:
         chon = ung_vien
     else:
@@ -221,9 +230,11 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             kq.n_a, kq.n_t = len(a), len(t)
             kq.n_h = sum(1 for u in ung_vien if u["video_id"] in h)
             chon = [u for u in ung_vien if u["drive_file_id"] in a or u["drive_file_id"] in t
-                    or u["video_id"] in h]
+                    or u["video_id"] in h or u["video_id"] in tap_r]
 
     bi_dung = False
+    do_duoc: set[str] = set()       # ứng viên lượt này ĐO ĐƯỢC (DAT/AM) ⇒ rời R
+    khong_duoc: set[str] = set()    # ứng viên lượt này "chưa đo được" ⇒ vào/ở lại R
     for u in chon:
         if dung():
             bi_dung = True
@@ -233,7 +244,9 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         do = do_bang_chung(d, nguon_id)
         if do.trang_thai == KHONG_DO_DUOC:
             kq.khong_do_duoc += 1
+            khong_duoc.add(u["video_id"])
             continue
+        do_duoc.add(u["video_id"])
         if do.trang_thai == AM:
             ly_do = ly_do_nguon_chet(do)
             if ly_do:
@@ -257,6 +270,8 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         except Exception as exc:  # noqa: BLE001
             log.warning("tra tên folder bộ trượt (%s) — thử lại lượt sau", type(exc).__name__)
             kq.khong_do_duoc += 1
+            do_duoc.discard(u["video_id"])
+            khong_duoc.add(u["video_id"])
             continue
         if not dong:
             kq.chua_co_bang_chung += 1
@@ -265,14 +280,19 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         models_vao_bo.ghi_da_vao_bo(db_path, u["video_id"], u["chu"], dong)
         kq.da_an += 1
 
-    # Ghi ngày quét CHỈ khi lượt quét THẬT SỰ đo được: không bị dừng giữa chừng VÀ không ứng
-    # viên nào "chưa đo được" (Drive lỗi). Một lượt quét mà mọi `lay_tep` đều ném không phải
-    # một lượt quét — đánh dấu nó là xong sẽ bịt cửa sổ phát hiện đến hết ngày.
-    if kq.quet_day_du and not bi_dung and kq.khong_do_duoc == 0:
+    # Tập R mới = (R cũ ∩ ứng viên còn lại − vừa đo được) ∪ vừa "chưa đo được". Ứng viên đã
+    # ẩn/loại/dọn tự rời R; ứng viên chưa tới lượt này (bị dừng giữa chừng) giữ nguyên.
+    con_ung_vien = {u["video_id"] for u in ung_vien}
+    models_vao_bo.ghi_tap_thu_lai(db_path, ((tap_r & con_ung_vien) - do_duoc) | khong_duoc)
+    # Ghi ngày quét khi lượt quét chạy HẾT (không bị dừng) VÀ không hỏng toàn bộ. Vài ứng
+    # viên "chưa đo được" thì đã nằm trong R (được thử lại mỗi lượt). Hỏng TOÀN BỘ thì không
+    # ai được đo: đánh dấu xong là bịt cửa sổ phát hiện đến hết ngày ⇒ để lượt sau quét lại.
+    hong_toan_bo = kq.da_xet > 0 and kq.khong_do_duoc == kq.da_xet
+    if kq.quet_day_du and not bi_dung and not hong_toan_bo:
         models_vao_bo.ghi_ngay_quet_day_du(db_path, hom_nay)   # SAU khi quét xong
     kq.so_goi_drive = d.so_goi
-    log.info("lượt kiểm đã-vào-bộ: |A|=%s |T|=%s |H|=%s ứng_viên=%d đã_đo=%d lời_gọi_drive=%d "
+    log.info("lượt kiểm đã-vào-bộ: |A|=%s |T|=%s |H|=%s |R|=%s ứng_viên=%d đã_đo=%d lời_gọi_drive=%d "
              "fallback=%s quét_đầy_đủ=%s đã_ẩn=%d không_đo_được=%d",
-             kq.n_a, kq.n_t, kq.n_h, len(ung_vien), kq.da_xet, kq.so_goi_drive, kq.fallback,
+             kq.n_a, kq.n_t, kq.n_h, kq.n_r, len(ung_vien), kq.da_xet, kq.so_goi_drive, kq.fallback,
              kq.quet_day_du, kq.da_an, kq.khong_do_duoc)
     return kq

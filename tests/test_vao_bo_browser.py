@@ -183,7 +183,7 @@ def test_chip_da_vao_bo_chi_hien_ba_video_do_moi_the_co_ma_bo_va_ngay_xoa(page):
     v66 = next(v for v in api["videos"] if v["video_id"] == _id(66))
     con_lai = datetime.fromisoformat(v66["vao_bo"]["se_don_luc"]) - datetime.now(timezone.utc)
     assert timedelta(hours=22) < con_lai < timedelta(hours=25)
-    _chup(page, "02-chip-da-vao-bo-huy-hieu-va-ngay")
+    _chup(page, "02b-chip-da-vao-bo-don-ngay7-bat")
 
 
 def test_bam_chip_lan_nua_ve_luoi_mac_dinh(page):
@@ -243,5 +243,6 @@ def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
         page.click("#chip-vao-bo")
         assert page.locator("#card-grid .bo-ma").count() == 3
         assert page.locator("#card-grid .bo-don").count() == 0, "tắt ⇒ không hứa ngày xoá"
+        _chup(page, "02-chip-da-vao-bo-don-ngay7-tat")
     finally:
         os.environ["VIDEODL_BAT_DON_NGAY7"] = "1"
