@@ -20,6 +20,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from web.vi_tu_con_song import CON_SONG_CHUNG
+
 VALID_END_STATES = ("done", "failed")
 
 _SCHEMA = """
@@ -299,6 +301,56 @@ _CHIA_INDEX = (
 )
 
 
+# Video đã vào một bộ tự tìm (bản sao nằm trong folder đơn bên Creative Desk).
+# MỘT hàng mỗi video: `an_luc` = lúc bộ kiểm xác minh bằng chứng và ẨN video khỏi
+# lưới (mốc ghi SAU khi bằng chứng đạt, một lần); `drive_don_luc` = lúc tệp
+# NGUỒN đã được xử lý xong ở ngày thứ 7 (vào Thùng rác / đã ở đó / đã mất),
+# ghi SAU khi Drive báo ok. Hai mốc tách nhau: mốc thứ nhất "đã báo", mốc thứ hai
+# "đã dọn". Cố ý KHÔNG dùng `videos.da_loai_luc` cho việc dọn: cột đó gắn với
+# `loai_boi` — người dùng CHỦ ĐỘNG bỏ video — còn dọn ngày 7 là máy làm.
+# `so_lan_truot`/`loi_cuoi`: lần dọn trượt, để báo động mỗi lượt còn trượt.
+_VIDEO_VAO_BO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_vao_bo (
+    video_id TEXT PRIMARY KEY,
+    chu TEXT,
+    an_luc TEXT,
+    drive_don_luc TEXT,
+    ly_do_don TEXT,
+    so_lan_truot INTEGER NOT NULL DEFAULT 0,
+    loi_cuoi TEXT
+)
+"""
+
+# Mỗi bản sao đạt bằng chứng là MỘT hàng (một video có thể nằm ở 2 bộ). Nguồn
+# sự thật về "bộ nào" là `folder_id`; `ma_bo` chỉ để hiện. `bang_chung`:
+# `properties` = bản copy do Creative Desk gắn dấu nguồn lúc copy;
+# `md5_backfill` = khớp md5+size trên Shared Drive (video vào bộ trước khi có dấu).
+_VIDEO_VAO_BO_BAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_vao_bo_ban (
+    video_id TEXT NOT NULL,
+    ban_copy_id TEXT NOT NULL UNIQUE,
+    folder_id TEXT NOT NULL,
+    ma_bo TEXT NOT NULL,
+    bang_chung TEXT NOT NULL CHECK (bang_chung IN ('properties', 'md5_backfill')),
+    thay_luc TEXT NOT NULL
+)
+"""
+
+# Sổ khoá–giá trị nhỏ của bộ kiểm "đã vào bộ". Hiện chỉ giữ `quet_day_du_ngay`: ngày (lịch
+# VN) của lượt quét ĐẦY ĐỦ gần nhất — để khởi động lại tiến trình không làm lượt quét
+# ngày bị bỏ sót hay lặp thừa.
+_VAO_BO_KV_SCHEMA = """
+CREATE TABLE IF NOT EXISTS vao_bo_kv (
+    khoa TEXT PRIMARY KEY,
+    gia_tri TEXT NOT NULL
+)
+"""
+
+_VIDEO_VAO_BO_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_video_vao_bo_ban_video ON video_vao_bo_ban(video_id)",
+)
+
+
 def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
     """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
 
@@ -347,6 +399,13 @@ def init_db(db_path: Path) -> None:
         conn.execute(_VIDEO_DAC_DIEM_SCHEMA)
         conn.execute(_THAO_TAC_DUYET_SCHEMA)
         for statement in _CHIA_INDEX:
+            conn.execute(statement)
+        # Bảng mới, thêm thuần tuý (không đụng bảng cũ): DB có sẵn chỉ được TẠO
+        # thêm hai bảng rỗng.
+        conn.execute(_VIDEO_VAO_BO_SCHEMA)
+        conn.execute(_VIDEO_VAO_BO_BAN_SCHEMA)
+        conn.execute(_VAO_BO_KV_SCHEMA)
+        for statement in _VIDEO_VAO_BO_INDEX:
             conn.execute(statement)
         # `the_he` (thế hệ): bump mỗi lần `ghi_de_xuat` GHI ĐÈ nháp — `hoan_tac`
         # chỉ được lùi thao tác cùng thế hệ với nháp HIỆN TẠI, không được lùi
@@ -970,7 +1029,7 @@ def video_de_loai(db_path: Path, video_ids: list[str],
         rows = conn.execute(
             f"SELECT v.video_id, v.drive_file_id FROM videos v "
             f"LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*video_ids, chi_cua, chi_cua],
         ).fetchall()
@@ -1021,7 +1080,7 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     is meant to grow without bound, and a per-job SELECT of every row would
     quietly become the slowest part of enumerating.
 
-    ⚠ KHÔNG thêm `WHERE da_loai_luc IS NULL` vào đây. Câu hỏi của hàm này là
+    ⚠ KHÔNG thêm điều kiện theo cột loại (`vi_tu_con_song`) vào đây. Câu hỏi của hàm này là
     "kho đã có file này chưa", không phải "ai còn muốn thấy nó". Lọc theo cột
     loại sẽ làm lượt quét sau tải LẠI đúng video mà chủ vừa bỏ — tốn một lượt
     TikTok và dựng lại thứ họ vừa dọn. Thư viện lọc ở `list_videos`; chỗ này
@@ -1061,7 +1120,7 @@ def list_videos(db_path: Path, chi_cua: str | None,
         rows = conn.execute(
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
             (chi_cua, chi_cua, limit, offset),
@@ -1079,7 +1138,7 @@ def count_videos(db_path: Path, chi_cua: str | None) -> int:
         return int(conn.execute(
             "SELECT COUNT(*) FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?)",
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?)",
             (chi_cua, chi_cua),
         ).fetchone()[0])
 

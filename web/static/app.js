@@ -119,7 +119,9 @@
     idTrang: [],              // video_id của TRANG đang hiện — "Chọn tất cả" chỉ lấy ở đây
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
+    videosDaDon: [],          // GET /videos → da_don_trong_cum: video đã dọn khỏi Drive, GIỮ CHỖ trong lô
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
+    chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
@@ -210,7 +212,7 @@
   // "còn bao nhiêu sau khi áp mọi lọc khác" như facet search đầy đủ).
   function buildBuckets(group) {
     const map = new Map();
-    for (const v of state.videos) {
+    for (const v of videoTrongNen()) {
       const seenThisVideo = new Set();
       for (const b of group.getBuckets(v)) {
         if (seenThisVideo.has(b.key)) continue;
@@ -234,7 +236,29 @@
     return video.cum_id === cumLoc;
   }
 
+  // Video đã vào bộ tự tìm (server gắn `vao_bo`): ẨN khỏi lưới mặc định, chỉ hiện
+  // khi bật chip "Đã vào bộ". Lọc ở CLIENT như mọi bộ lọc khác — trang đã nạp trọn
+  // thư viện. ⚠ CHỈ lưới/đếm/hộp lọc đi qua đây; cắt lô của cụm (`videoCuaCum`) KHÔNG,
+  // vì video đã vào bộ vẫn nằm trong lô của cụm.
+  function videoDaVaoBo(video) { return Boolean(video.vao_bo); }
+
+  // Tập video ĐANG HIỆN theo chip: mẫu số cho nhãn "x/N video", số đếm ở thanh bên
+  // và số đếm trong các hộp lọc — để chúng khớp lưới người dùng đang nhìn.
+  function videoTrongNen() {
+    return state.videos.filter((v) => videoDaVaoBo(v) === state.chiVaoBo);
+  }
+
+  function veChipVaoBo() {
+    const chip = document.getElementById("chip-vao-bo");
+    if (!chip) return;
+    const n = state.videos.filter(videoDaVaoBo).length;
+    chip.textContent = `Đã vào bộ (${n})`;
+    chip.classList.toggle("on", state.chiVaoBo);
+    chip.setAttribute("aria-pressed", String(state.chiVaoBo));
+  }
+
   function videoMatchesFilters(video) {
+    if (videoDaVaoBo(video) !== state.chiVaoBo) return false;
     if (!videoKhopCum(video, state.cumLoc)) return false;
     return FILTER_GROUPS.every((g) => {
       const selected = state.filters[g.id];
@@ -607,6 +631,7 @@
     const emptyState = document.getElementById("empty-state");
     const noMatch = document.getElementById("no-match-state");
 
+    veChipVaoBo();
     if (state.videos.length === 0) {
       emptyState.hidden = false;
       noMatch.hidden = true;
@@ -629,9 +654,12 @@
     // con số đúng.
     const total = state.videosTotal ?? state.videos.length;
     const loaded = state.videos.length;
+    // Mẫu số "x/N" là tập đang hiện theo chip (không gồm video đã vào bộ khi chip tắt):
+    // video ẩn theo thiết kế không phải "bị bộ lọc loại".
+    const nen = videoTrongNen().length;
     const parts = [];
-    parts.push(filtered.length === loaded ? `${loaded}` : `${filtered.length}/${loaded}`);
-    parts.push("video");
+    parts.push(filtered.length === nen ? `${nen}` : `${filtered.length}/${nen}`);
+    parts.push(state.chiVaoBo ? "video đã vào bộ" : "video");
     if (loaded < total) parts.push(`(đang hiện ${loaded} trong ${total})`);
     document.getElementById("library-count").textContent = parts.join(" ");
 
@@ -647,6 +675,22 @@
     renderActiveFilters();
     renderCumRail();
     renderCumHead();
+  }
+
+  // Ngày (không giờ) theo múi giờ của trình duyệt; rỗng nếu không đọc được.
+  function fmtNgay(iso) {
+    const d = iso ? new Date(iso) : null;
+    return d && !Number.isNaN(d.getTime()) ? escapeHtml(d.toLocaleDateString("vi-VN")) : "";
+  }
+
+  // Huy hiệu mã bộ + ngày sẽ xoá khỏi Video Desk cho video đã vào bộ. Nhiều bộ ⇒ một
+  // huy hiệu "N.2809C · N.2909B". Nguồn sự thật về bộ là folder id ở server; đây chỉ hiện.
+  function renderBoDaVao(b) {
+    if (!b) return "";
+    const ma = b.ma_bo && b.ma_bo.length ? b.ma_bo.map(escapeHtml).join(" · ") : "Đã vào bộ";
+    const ngay = fmtNgay(b.se_don_luc);
+    return `<div class="card-bo"><span class="bo-ma" title="Mã bộ tự tìm">${ma}</span>` +
+      (ngay ? `<span class="bo-don">Xoá khỏi Video Desk ${ngay}</span>` : "") + `</div>`;
   }
 
   function renderCard(video) {
@@ -667,6 +711,7 @@
         <div class="card-body">
           <div class="card-title">${escapeHtml(video.title || "(chưa có tiêu đề)")}</div>
           <div class="card-meta">${metaParts.map((m, i) => i === 0 ? m : `<span class="sep">·</span>${m}`).join(" ")}</div>
+          ${renderBoDaVao(video.vao_bo)}
           ${video.url
             ? `<a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>`
             : `<span class="card-link card-link-trong">chưa rõ link gốc</span>`}
@@ -834,6 +879,11 @@
     sauKhiDoiBoLoc(); // cập nhật badge số lượng trên nút + về trang 1
   });
 
+  document.getElementById("chip-vao-bo").addEventListener("click", () => {
+    state.chiVaoBo = !state.chiVaoBo;
+    sauKhiDoiBoLoc();
+  });
+
   document.getElementById("active-filters").addEventListener("click", (ev) => {
     if (ev.target.id === "clear-all-pill") {
       for (const g of FILTER_GROUPS) state.filters[g.id].clear();
@@ -850,6 +900,7 @@
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
     state.cumLoc = "tat_ca";
+    state.chiVaoBo = false;
     sauKhiDoiBoLoc();
   });
 
@@ -1008,6 +1059,16 @@
   // Chọn tay (26/09): gửi danh sách qua `postMessage` thay vì query string, để
   // chọn bao nhiêu cũng được và Creative Desk tự chia bộ. Đường của CỤM vẫn đi
   // qua URL (`moLoCum`) — hợp đồng `nhan` không đổi.
+  // Tệp nguồn của video này đã chết / sắp bị dọn? Đúng khi server đánh dấu `da_don`
+  // (đã vào Thùng rác) hoặc `vao_bo.se_don_luc` ≤ `bayGio` (đã quá hạn 7 ngày — lượt dọn
+  // sắp lấy tệp đi). Gửi một item như thế sang Creative Desk là gửi một file sắp không
+  // còn để copy; và bên nhận bỏ CẢ LÔ khi một item hỏng. Hàm thuần — test gọi thẳng.
+  function nguonDaChet(v, bayGio) {
+    if (v.da_don) return true;
+    const han = v.vao_bo && v.vao_bo.se_don_luc ? Date.parse(v.vao_bo.se_don_luc) : NaN;
+    return !Number.isNaN(han) && han <= bayGio;
+  }
+
   async function moBoTuTim() {
     if (state.dangBanGiao) return;  // bấm đúp khi đang chờ ack ⇒ bỏ qua
     const daChon = state.videos.filter((v) => state.selected.has(v.video_id));
@@ -1017,13 +1078,18 @@
     const coDrive = daChon.filter((v) => v.drive_file_id);
     // Bên nhận bỏ CẢ LÔ, không ack, khi chỉ một item sai luật — người dùng sẽ
     // chờ trọn hạn ack. Lọc trước theo đúng luật đó và nói ra số bị bỏ.
-    const guiDuoc = coDrive.filter(itemHopLeBenNhan);
-    const khongHopLe = coDrive.length - guiDuoc.length;
+    // Nguồn đã chết/quá hạn dọn: bỏ TRƯỚC, nói ra số bị bỏ (server cũng kiểm lại ở đường lô).
+    const bayGio = Date.now();
+    const nguonChet = coDrive.filter((v) => nguonDaChet(v, bayGio));
+    const conSong = coDrive.filter((v) => !nguonDaChet(v, bayGio));
+    const guiDuoc = conSong.filter(itemHopLeBenNhan);
+    const khongHopLe = conSong.length - guiDuoc.length;
     const items = guiDuoc.map(itemBanGiao);
 
     if (!items.length) {
       showToast("Chưa có gì để gửi sang Creative Desk: " + [
         chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+        nguonChet.length ? `${nguonChet.length} video đã quá hạn giữ tệp nguồn` : "",
         khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
       ].filter(Boolean).join(", ") + ".");
       return;
@@ -1049,6 +1115,7 @@
     // Số bị bỏ đi KÈM mọi thông báo kết quả — toast riêng sẽ bị toast sau đè mất.
     const boLai = [
       chuaLenDrive.length ? `${chuaLenDrive.length} video chưa lên Drive` : "",
+      nguonChet.length ? `${nguonChet.length} video đã quá hạn giữ tệp nguồn` : "",
       khongHopLe ? `${khongHopLe} video thiếu link gốc hợp lệ` : "",
     ].filter(Boolean).join(", ");
     const ghiChuBoLai = boLai ? ` (${boLai} nên không gửi kèm.)` : "";
@@ -1265,8 +1332,20 @@
   // Bộ 1/n đã mở. ⚠ Giới hạn đã biết (điều phối chốt 23/09): mốc "đã mở" gắn
   // theo SỐ THỨ TỰ lô; thêm/bớt video làm ranh giới lô dịch đi, và đổi kiểu
   // cũng không xoá mốc cũ — không có cảnh báo "mở dưới tên cũ".
+  //
+  // Có ngoại lệ ĐÃ CHẶN: video được DỌN khỏi Drive (ngày 7 sau khi vào bộ) KHÔNG
+  // làm lô trượt. Chúng không nằm trong `state.videos` (không hiện ở đâu) nhưng
+  // vẫn GIỮ CHỖ ở đây, đánh dấu `da_don: true` — cùng tập với server cắt lô
+  // (`models_chia._video_trong_lo`, video cũ nhất trước theo (tao_luc, video_id)).
+  // Người dùng của hàm này tự bỏ chúng khi đếm video còn sống / gửi đi.
   function videoCuaCum(cumId) {
-    return state.videos.filter((v) => v.cum_id === cumId).reverse();
+    const song = state.videos.filter((v) => v.cum_id === cumId).reverse();
+    const da = (state.videosDaDon || []).filter((g) => g.cum_id === cumId)
+      .map((g) => ({ video_id: g.video_id, tao_luc: g.tao_luc, cum_id: g.cum_id, da_don: true }));
+    if (!da.length) return song;
+    return song.concat(da).sort((a, b) =>
+      a.tao_luc < b.tao_luc ? -1 : a.tao_luc > b.tao_luc ? 1
+        : a.video_id < b.video_id ? -1 : a.video_id > b.video_id ? 1 : 0);
   }
 
   function mauCum(id) { return `hsl(${(id * 67) % 360} 55% 50%)`; }
@@ -1276,13 +1355,14 @@
     if (!rail) return;
     const dem = new Map();
     let chua = 0;
-    for (const v of state.videos) {
+    const nen = videoTrongNen();
+    for (const v of nen) {
       if (v.cum_id == null) chua++; else dem.set(v.cum_id, (dem.get(v.cum_id) || 0) + 1);
     }
     const hang = (loc, nhan, n, lop = "") =>
       `<button type="button" class="cum-row ${lop}${state.cumLoc === loc ? " on" : ""}" data-cum-loc="${loc}">` +
       `${nhan}<span class="n">${n}</span></button>`;
-    let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", state.videos.length) +
+    let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", nen.length) +
       hang("chua", "Chưa vào cụm", chua, "chua") + `<hr class="rail-sep">`;
     if (!state.cums.length) {
       h += `<div class="rail-empty">Chưa có cụm nào. Chọn vài video cùng một kiểu (vd. cartoon) → bấm ` +
@@ -1334,16 +1414,20 @@
     if (!cum) { head.innerHTML = ""; return; }
     const lo = chiaLo(videoCuaCum(cum.id), HANDOFF_MAX);
     const tong = lo.length;
-    const n = lo.reduce((a, l) => a + l.length, 0);
+    // Video đã dọn giữ chỗ trong lô nhưng không tính vào "N video" của cụm.
+    const nSong = (l) => l.filter((v) => !v.da_don).length;
+    const n = lo.reduce((a, l) => a + nSong(l), 0);
+    // Nhãn số video của một lô CHƯA mở: "x/N" khi lô đã hụt vì video được dọn.
+    const nhanLoChuaMo = (l) => nSong(l) < l.length ? `${nSong(l)}/${l.length}` : `${l.length}`;
     // Chỉ VẼ mốc của lô còn tồn tại (`thu ≤ số lô`); mốc cũ vẫn nằm trong DB.
     // Giữ NGUYÊN hàng (không chỉ `mo_luc`) — cần cả `so_item` cho nhãn "x/N".
     const moLuc = new Map(cum.lo_mo.filter((m) => m.thu <= tong).map((m) => [m.thu, m]));
-    const nut = tong === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
+    const nut = n === 0 ? `<button type="button" class="btn primary" disabled>Tạo bộ tự tìm từ cụm này (0)</button>`
       : tong === 1 ? `<button type="button" class="btn primary" data-mo-lo="1">Tạo bộ tự tìm từ cụm này (${n})</button>`
-      : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map((l) => l.length).join(" + ")})</button>`;
+      : `<button type="button" class="btn primary" data-mo-het>Tạo ${tong} bộ tự tìm (${lo.map(nhanLoChuaMo).join(" + ")})</button>`;
     const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
       const m = moLuc.get(i + 1);
-      const nhanN = nhanSoVideo(m, l.length);
+      const nhanN = nhanSoVideo(m, nhanLoChuaMo(l));
       return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${nhanN} video</span>` +
         `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m.mo_luc)}` : "chưa mở"}</span><span class="grow"></span>` +
         `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
@@ -1413,7 +1497,8 @@
     const cum = state.cums.find((c) => c.id === cumId);
     if (!cum) return "rong";
     const muc = chiaLo(videoCuaCum(cumId), HANDOFF_MAX)[thu - 1];
-    if (!muc || !muc.length) return "rong";
+    // Lô chỉ còn video đã dọn khỏi Drive ⇒ không có gì để gửi (giống lô rỗng).
+    if (!muc || !muc.some((v) => !v.da_don)) return "rong";
     const tab = moTabTrong();
     if (!tab) return "chan";
     let payload;
@@ -1449,7 +1534,11 @@
       return "rong";
     }
     if (guiDi.items.length < soVideo) {
-      showToast(`${soVideo - guiDi.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
+      const daDon = muc.filter((v) => v.da_don).length;
+      showToast(daDon
+        ? `${soVideo - guiDi.items.length} video không gửi kèm (${daDon} đã dọn khỏi Drive sau khi vào bộ, ` +
+          `còn lại chưa lên Drive hoặc thiếu link gốc hợp lệ).`
+        : `${soVideo - guiDi.items.length} video chưa lên Drive hoặc thiếu link gốc hợp lệ nên không gửi kèm.`);
     }
     dieuHuongTab(tab, urlBanGiao(guiDi));
     try {
@@ -1466,8 +1555,11 @@
   }
 
   async function moHetLoCum(cumId) {
-    const tong = chiaLo(videoCuaCum(cumId), HANDOFF_MAX).length;
+    const dsLo = chiaLo(videoCuaCum(cumId), HANDOFF_MAX);
+    const tong = dsLo.length;
     for (let thu = 1; thu <= tong; thu++) {
+      // Lô toàn video đã dọn: bỏ qua, đừng để "rong" chặn các lô sau nó.
+      if (!dsLo[thu - 1].some((v) => !v.da_don)) continue;
       const kq = await moLoCum(cumId, thu);
       if (kq === "chan") {
         // Trình duyệt thường chỉ cho MỘT tab mỗi cú bấm. Nói đúng thế, và chỉ
@@ -1801,6 +1893,33 @@
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
   // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
+  // Badge "Dọn lỗi (N)": CHỈ quản trị (server kiểm `require_admin`; người thường không
+  // gọi endpoint). Lỗi mạng/không phải admin ⇒ ẩn badge, không làm hỏng thư viện.
+  async function loadBadgeDonLoi() {
+    const el = document.getElementById("badge-don-loi");
+    const elLap = document.getElementById("badge-do-loi-lap");
+    if (!el) return;
+    el.hidden = true;
+    if (elLap) elLap.hidden = true;
+    try {
+      const me = await apiGet("/me");
+      if (!me.la_admin) return;
+      const res = await apiGet("/admin/don-vao-bo-loi");
+      // Chỉ ĐẾM (không ngưỡng): N id đang trong tập thử-lại, lâu nhất K lần trượt liên tiếp.
+      if (elLap && res.do_loi_lap && res.do_loi_lap.so_id) {
+        elLap.textContent = `${res.do_loi_lap.so_id} id đo lỗi lặp, lâu nhất ${res.do_loi_lap.lau_nhat_lan} lần`;
+        elLap.hidden = false;
+      }
+      if (!res.so_hang) return;
+      el.textContent = `Dọn lỗi (${res.so_hang})`;
+      el.title = res.hang.slice(0, 10).map((h) =>
+        `${h.video_id}: ${h.loi_cuoi || "?"} (${h.so_lan_truot} lần)`).join("\n");
+      el.hidden = false;
+    } catch (err) {
+      if (err instanceof PhienHetHan) throw err;
+    }
+  }
+
   async function loadVideos() {
     // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định
     // của server, KHÔNG đọc `tong`, và in nhãn theo số đã nạp. Hậu quả: video
@@ -1819,6 +1938,7 @@
 
     state.videos = videos;
     state.videosTotal = tong;
+    state.videosDaDon = first.da_don_trong_cum || [];
     // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
     // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị
     // đếm vào "không hiện ở trang này" và vào số của hộp xác nhận Xoá.
@@ -1840,6 +1960,7 @@
       showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
     }
     renderLibrary();
+    loadBadgeDonLoi().catch(() => { /* phiên hết hạn đã được các lời gọi khác báo */ });
   }
 
   // Thuần, không đụng DOM — tách riêng để `tests/js/` gọi được thẳng bằng

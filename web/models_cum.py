@@ -16,6 +16,7 @@ import math
 from pathlib import Path
 
 from web.models import _connect, _now
+from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG, DA_DON_DRIVE
 
 # Trần `items` của một lần bàn giao — trùng `HANDOFF_MAX` (web/static/app.js)
 # và `MAX_ITEMS` bên meta-ads (hợp đồng `nhan`, quy tắc 7).
@@ -63,7 +64,10 @@ def _cum_cua_toi(conn, cum_id: int, chu: str):
         "SELECT * FROM cum WHERE id = ? AND chu = ?", (cum_id, chu)).fetchone()
 
 
-def _dang_ra(row, so_video: int, lo_mo: list[dict]) -> dict:
+def _dang_ra(row, so_video: int, lo_mo: list[dict], so_video_cat: int) -> dict:
+    """`so_video` = video còn thấy (cụm hiện bao nhiêu thẻ); `so_video_cat` =
+    tập DÙNG ĐỂ CẮT LÔ (gồm cả video đã dọn khỏi Drive) — `so_lo` đếm trên tập
+    này để số lô và ranh giới lô không trượt khi một video được dọn."""
     return {
         "id": row["id"],
         "usecase": row["usecase"],
@@ -72,7 +76,7 @@ def _dang_ra(row, so_video: int, lo_mo: list[dict]) -> dict:
         "insight": ten_insight_con(row["insight_goc"], row["kieu"]),
         "tao_luc": row["tao_luc"],
         "so_video": so_video,
-        "so_lo": so_lo(so_video),
+        "so_lo": so_lo(so_video_cat),
         "lo_mo": lo_mo,
     }
 
@@ -83,8 +87,35 @@ def _dang_ra(row, so_video: int, lo_mo: list[dict]) -> dict:
 _VIDEO_CON_THAY = (
     "JOIN videos v ON v.video_id = vc.video_id "
     "LEFT JOIN jobs j ON j.id = v.job_id "
-    "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+    f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
 )
+
+
+# Tập video CẮT LÔ: chỉ bỏ video người dùng đã loại, KHÔNG bỏ video đã dọn khỏi
+# Drive. Video dọn ở ngày 7 mà biến khỏi tập cắt thì mọi video sau nó dồn lên một
+# ô, lô 2 và lô 3 đổi nội dung so với lúc người dùng đã thấy/đã mở. Video đã dọn
+# vẫn chiếm chỗ trong lô, chỉ bị bỏ khi dựng payload (`models_chia.xay_payload_lo`)
+# và nhãn "x/N" nói ra chỗ hụt đó. Phải cùng tập với `models_chia._video_trong_lo`.
+_VIDEO_TRONG_LO_CAT = (
+    "JOIN videos v ON v.video_id = vc.video_id "
+    "LEFT JOIN jobs j ON j.id = v.job_id "
+    f"WHERE {CHUA_LOAI} AND (? IS NULL OR j.nguoi_tao = ?) "
+)
+
+
+def video_da_don_trong_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
+    """Video CỦA CỤM `chu` đã dọn khỏi Drive: `[{video_id, cum_id, tao_luc}]`.
+
+    Trang cần chúng vì nó cắt lô Ở CLIENT (`app.js::videoCuaCum` + `chiaLo`) trên
+    cùng tập với server — mà `/videos` không trả video đã dọn (chúng không hiện ở
+    đâu cả). Chỉ mang khoá cắt (id, cụm, thời điểm), không mang nội dung."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT v.video_id, vc.cum_id, v.tao_luc FROM video_cum vc "
+            + _VIDEO_TRONG_LO_CAT + f"AND vc.chu = ? AND {DA_DON_DRIVE} "
+            "ORDER BY vc.cum_id, v.tao_luc, v.video_id",
+            (chi_cua, chi_cua, chu)).fetchall()
+    return [dict(r) for r in rows]
 
 
 def liet_ke_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
@@ -100,6 +131,10 @@ def liet_ke_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
             "SELECT vc.cum_id, COUNT(*) AS n FROM video_cum vc " + _VIDEO_CON_THAY +
             "AND vc.chu = ? GROUP BY vc.cum_id",
             (chi_cua, chi_cua, chu)).fetchall()}
+        dem_cat = {r["cum_id"]: r["n"] for r in conn.execute(
+            "SELECT vc.cum_id, COUNT(*) AS n FROM video_cum vc " + _VIDEO_TRONG_LO_CAT +
+            "AND vc.chu = ? GROUP BY vc.cum_id",
+            (chi_cua, chi_cua, chu)).fetchall()}
         mo: dict[int, list[dict]] = {}
         for r in conn.execute(
                 "SELECT m.cum_id, m.thu, m.mo_luc, m.so_item, m.so_video FROM cum_lo_mo m "
@@ -108,7 +143,8 @@ def liet_ke_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
             mo.setdefault(r["cum_id"], []).append(
                 {"thu": r["thu"], "mo_luc": r["mo_luc"],
                  "so_item": r["so_item"], "so_video": r["so_video"]})
-    return [_dang_ra(r, dem.get(r["id"], 0), mo.get(r["id"], [])) for r in rows]
+    return [_dang_ra(r, dem.get(r["id"], 0), mo.get(r["id"], []), dem_cat.get(r["id"], 0))
+            for r in rows]
 
 
 def dem_da_vao_cum(db_path: Path, chu: str, chi_cua: str | None) -> int:
@@ -223,7 +259,7 @@ def gan_video(db_path: Path, cum_id: int, chu: str, chi_cua: str | None,
         marks = ",".join("?" * len(ids))
         hop_le = [r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*ids, chi_cua, chi_cua]).fetchall()]
         conn.executemany(

@@ -28,6 +28,7 @@ from tiktok_music_downloader.utils import is_tiktok_collection
 from web import models
 from web import models_chia
 from web import models_cum
+from web import models_vao_bo
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
@@ -40,6 +41,7 @@ from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
                            trash_drive_file, videos_today_for_cookie,
                            thumb_path_for, thumbs_dir_for)
 from web.queue import JobWorker
+from web.vao_bo_lap import LapVaoBo
 
 log = logging.getLogger("videodl.web")
 
@@ -129,6 +131,10 @@ _END_STATES = ("done", "failed", "interrupted")
 
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR)
 
+# Đặt biến này (giá trị bất kỳ, không rỗng) thì `_lifespan` KHÔNG khởi bộ kiểm định kỳ
+# "đã vào bộ" — đường lùi tính năng mà không cần deploy lại.
+ENV_TAT_LAP_VAO_BO = "VIDEODL_TAT_LAP_VAO_BO"
+
 
 def _make_private_dir(path: Path) -> None:
     """Create `path` readable by this user only, and fix the mode if it is
@@ -207,9 +213,16 @@ async def _lifespan(app: FastAPI):
     if da_moi:
         log.info("mồi %d admin từ cấu hình máy (bảng trước đó chưa có admin nào)", da_moi)
     worker.start()
+    # Bộ kiểm "đã vào bộ": ẩn video đã được copy vào bộ tự tìm, dọn tệp nguồn sau 7
+    # ngày. Tắt nhanh bằng env nếu cần lùi mà không deploy lại.
+    lap = None if os.environ.get(ENV_TAT_LAP_VAO_BO) else LapVaoBo(DB_PATH)
+    if lap is not None:
+        lap.start()
     try:
         yield
     finally:
+        if lap is not None:
+            lap.stop()
         worker.stop()
 
 
@@ -561,6 +574,17 @@ def admin_liet_ke(nguoi_tao: str = Depends(require_admin)) -> dict:
     }
 
 
+@app.get("/admin/don-vao-bo-loi")
+def admin_don_vao_bo_loi(nguoi_tao: str = Depends(require_admin)) -> dict:
+    """Các hàng dọn ngày 7 ĐANG LỖI (trash trượt, đo trượt, hoặc nguồn đã chết mà không
+    còn bản sao). Chỉ quản trị: chứa id video và id tệp Drive của cả team."""
+    hang = models_vao_bo.hang_don_loi(DB_PATH)
+    # Ứng viên đo lỗi LIÊN TIẾP (tập R): chỉ ĐẾM, không có ngưỡng báo động nào.
+    tap_r = models_vao_bo.doc_tap_thu_lai_an_toan(DB_PATH)
+    return {"so_hang": len(hang), "hang": hang,
+            "do_loi_lap": {"so_id": len(tap_r), "lau_nhat_lan": max(tap_r.values(), default=0)}}
+
+
 @app.put("/admin/nguoi-dung/{email}")
 def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
                    nguoi_tao: str = Depends(require_admin)) -> dict:
@@ -631,12 +655,21 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     # bàn làm việc riêng, nên `cum_id` luôn là cụm của chính người đang xem.
     cums = models_cum.cum_cho_videos(DB_PATH, [v["video_id"] for v in videos],
                                      nguoi_tao)
+    # Video đã vào bộ tự tìm (đang ẩn 7 ngày): `{an_luc, se_don_luc, ma_bo}`. Trả CẢ
+    # chúng — trang ẩn khỏi lưới mặc định và hiện ở chip "Đã vào bộ" — nhưng
+    # `count_videos` cũng đếm chúng, nên `tong` khớp số hàng trả về.
+    vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
         video["cum_id"] = cums.get(video["video_id"])
+        video["vao_bo"] = vao_bo.get(video["video_id"])
     return {
         "tong": models.count_videos(DB_PATH, chi_cua),
         "videos": videos,
+        # Video của cụm mình đã được dọn khỏi Drive: không hiện ở đâu, nhưng
+        # vẫn giữ chỗ trong lô — trang cắt lô trên cùng tập với server
+        # (`models_chia._video_trong_lo`) nên phải biết chúng.
+        "da_don_trong_cum": models_cum.video_da_don_trong_cum(DB_PATH, nguoi_tao, chi_cua),
     }
 
 
