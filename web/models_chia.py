@@ -29,6 +29,8 @@ from pathlib import Path
 
 from web import models_cum, models_dac_diem
 from web.models import _connect, _now
+from web.vi_tu_con_song import (CHUA_AN, CHUA_DON_DRIVE, CHUA_LOAI,
+                                CON_SONG_CHUNG)
 
 # Tập ĐÓNG cho `chia_lan.trang_thai`, `video_cum_nhap.lan` và
 # `thao_tac_duyet.loai`. Kiểm ở Python, không CHECK constraint — lý do ở
@@ -243,15 +245,19 @@ def _ghi_de_xuat_tren(conn, chia_lan_id: int, chu: str, nhoms: list[dict],
 # được đưa vào một lượt chia — MỘT chỗ cho mọi nơi hỏi câu đó: liệt video gửi
 # tầng hình phân tích (ảnh rời máy), và lọc id lúc nhập nháp. Mỗi mục là
 # `(lý do bị loại, điều kiện để ĐƯỢC vào)`; lý do dùng để đếm trong báo cáo.
-# Loại thêm một loại video khỏi lượt chia = thêm MỘT dòng vào tuple này; vd
-# khi có cột mốc video đã dọn khỏi Drive thì thêm dòng
-# `("da_don_drive", "v.drive_don_luc IS NULL"),`.
+# Loại thêm một loại video khỏi lượt chia = thêm MỘT dòng vào tuple này.
+# `da_vao_bo`: video đã vào một bộ tự tìm (`video_vao_bo.an_luc`) nằm ở thẻ ẩn
+# 7 ngày và KHÔNG vào lượt chia mới (user 29/09: "đã up lên tự tìm thì đưa vào
+# tag ẩn"), dù vẫn gửi Creative Desk được từ bộ lọc "Đã vào bộ".
+# `da_don_drive`: tệp nguồn đã dọn khỏi Drive — không còn gì để phân tích.
 # `da_o_cum`: video đã nằm trong một cụm THẬT của CHỦ JOB (người chia lượt
 # này — cùng luật sở hữu với `ghi_de_xuat`) không được phân tích lại: duyệt
 # không bao giờ chuyển nó, nên gửi ảnh nó đi chỉ tốn tiền và để ảnh rời máy vô
 # ích. `ghi_de_xuat::loc` vẫn tự kiểm lại (hai nháp song song).
 DIEU_KIEN_VAO_LUOT_CHIA = (
-    ("da_loai", "v.da_loai_luc IS NULL"),
+    ("da_loai", CHUA_LOAI),
+    ("da_vao_bo", CHUA_AN),
+    ("da_don_drive", CHUA_DON_DRIVE),
     ("da_o_cum", "NOT EXISTS (SELECT 1 FROM video_cum vc JOIN jobs jc ON jc.id = v.job_id "
                  "WHERE vc.video_id = v.video_id AND vc.chu = jc.nguoi_tao)"),
 )
@@ -398,11 +404,12 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         video_cum_cua_chu = {r["video_id"] for r in conn.execute(
             "SELECT video_id FROM video_cum WHERE chu = ?", (lan["chu"],)).fetchall()}
         # Video người dùng đã LOẠI khỏi thư viện (`/videos/loai`, kể cả bấm từ
-        # chính màn này) cũng biến khỏi mọi làn — cùng luật với
-        # `DIEU_KIEN_VAO_LUOT_CHIA` cho lượt mới; lượt đã có thì lọc lúc đọc.
+        # chính màn này), hoặc đã được DỌN khỏi Drive ở ngày thứ 7, cũng biến
+        # khỏi mọi làn — cùng luật với `DIEU_KIEN_VAO_LUOT_CHIA` cho lượt mới;
+        # lượt đã có thì lọc lúc đọc.
         da_loai = {r["video_id"] for r in conn.execute(
             "SELECT vcn.video_id FROM video_cum_nhap vcn JOIN videos v ON v.video_id = vcn.video_id "
-            "WHERE vcn.chia_lan_id = ? AND v.da_loai_luc IS NOT NULL", (chia_lan_id,)).fetchall()}
+            f"WHERE vcn.chia_lan_id = ? AND NOT ({CON_SONG_CHUNG})", (chia_lan_id,)).fetchall()}
         for r in conn.execute(
                 "SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
                 "WHERE chia_lan_id = ? ORDER BY video_id", (chia_lan_id,)).fetchall():
@@ -751,7 +758,7 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
         marks = ",".join("?" * len(con_lai))
         hop_le = {r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*con_lai, chi_cua, chi_cua]).fetchall()}
         bi_bo = [v for v in con_lai if v not in hop_le]
@@ -841,7 +848,7 @@ def _giai_quyet_kieu_vao_cum(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
         marks = ",".join("?" * len(con_lai))
         hop_le = {r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*con_lai, chi_cua, chi_cua]).fetchall()}
         bi_bo = [v for v in con_lai if v not in hop_le]
@@ -1124,8 +1131,8 @@ def _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids, *, lan_khong_hop
     # mã riêng cho id của người khác sẽ cho bất kỳ ai dò "video X có trong kho
     # và đã bị loại". Id ngoài lượt rơi xuống `khong_hop_le` như mọi id lạ.
     da_loai = sorted(r["video_id"] for r in conn.execute(
-        f"SELECT video_id FROM videos WHERE da_loai_luc IS NOT NULL "
-        f"AND video_id IN ({marks})", unique_ids).fetchall() if r["video_id"] in trong_luot)
+        f"SELECT v.video_id FROM videos v WHERE NOT ({CON_SONG_CHUNG}) "
+        f"AND v.video_id IN ({marks})", unique_ids).fetchall() if r["video_id"] in trong_luot)
     if da_loai:
         return {"tu_choi": "video_da_loai", "video_ids": da_loai}
     khong_hop_le = [v for v in unique_ids
@@ -1678,7 +1685,7 @@ def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) ->
         "SELECT v.video_id, v.title, v.url, v.drive_file_id FROM video_cum vc "
         "JOIN videos v ON v.video_id = vc.video_id "
         "LEFT JOIN jobs j ON j.id = v.job_id "
-        "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+        f"WHERE {CHUA_LOAI} AND (? IS NULL OR j.nguoi_tao = ?) "
         "AND vc.chu = ? AND vc.cum_id = ? "
         "ORDER BY v.tao_luc ASC, v.video_id ASC",
         (chi_cua, chi_cua, chu, cum["id"])).fetchall()
@@ -1699,7 +1706,7 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     `cum` là kết quả `models_cum.lay_cum`/`_cum_hoac_404` (đã kiểm quyền sở
     hữu + tính `so_lo`) — hàm này KHÔNG tự truy vấn bảng `cum`, chỉ đọc
     thẳng `video_cum`/`videos`/`jobs`, dùng ĐÚNG khoá lọc sở hữu
-    (`da_loai_luc IS NULL` + phạm vi `chi_cua`) mà
+    (`CHUA_LOAI` + phạm vi `chi_cua`) mà
     `models_cum._VIDEO_CON_THAY` áp dụng, để số video một lô không bao giờ
     lệch số `liet_ke_cum` đã đếm.
 

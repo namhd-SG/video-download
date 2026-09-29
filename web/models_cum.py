@@ -16,6 +16,7 @@ import math
 from pathlib import Path
 
 from web.models import _connect, _now
+from web.vi_tu_con_song import CON_SONG_CHUNG
 
 # Trần `items` của một lần bàn giao — trùng `HANDOFF_MAX` (web/static/app.js)
 # và `MAX_ITEMS` bên meta-ads (hợp đồng `nhan`, quy tắc 7).
@@ -83,7 +84,7 @@ def _dang_ra(row, so_video: int, lo_mo: list[dict]) -> dict:
 _VIDEO_CON_THAY = (
     "JOIN videos v ON v.video_id = vc.video_id "
     "LEFT JOIN jobs j ON j.id = v.job_id "
-    "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+    f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
 )
 
 
@@ -223,7 +224,7 @@ def gan_video(db_path: Path, cum_id: int, chu: str, chi_cua: str | None,
         marks = ",".join("?" * len(ids))
         hop_le = [r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*ids, chi_cua, chi_cua]).fetchall()]
         conn.executemany(

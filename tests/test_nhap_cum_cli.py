@@ -346,7 +346,8 @@ def test_liet_bo_video_da_o_cum_that_cua_chu_job(kho, capsys):
     ra = _chay(capsys, db, "liet", job)[1]
     assert [v["video_id"] for v in ra["video"]] == ["3", "4"]
     assert ra["so_bi_loc"] == 2
-    assert ra["bi_loc_theo_ly_do"] == {"da_loai": 1, "da_o_cum": 2}
+    assert ra["bi_loc_theo_ly_do"] == {"da_loai": 1, "da_vao_bo": 0, "da_don_drive": 0,
+                                     "da_o_cum": 2}
 
 
 # --- kiểu rỗng sau khi lọc không vào nháp -----------------------------------------------

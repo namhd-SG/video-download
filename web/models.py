@@ -20,6 +20,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from web.vi_tu_con_song import CON_SONG_CHUNG
+
 VALID_END_STATES = ("done", "failed")
 
 _SCHEMA = """
@@ -1016,7 +1018,7 @@ def video_de_loai(db_path: Path, video_ids: list[str],
         rows = conn.execute(
             f"SELECT v.video_id, v.drive_file_id FROM videos v "
             f"LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND v.da_loai_luc IS NULL "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*video_ids, chi_cua, chi_cua],
         ).fetchall()
@@ -1067,7 +1069,7 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     is meant to grow without bound, and a per-job SELECT of every row would
     quietly become the slowest part of enumerating.
 
-    ⚠ KHÔNG thêm `WHERE da_loai_luc IS NULL` vào đây. Câu hỏi của hàm này là
+    ⚠ KHÔNG thêm điều kiện theo cột loại (`vi_tu_con_song`) vào đây. Câu hỏi của hàm này là
     "kho đã có file này chưa", không phải "ai còn muốn thấy nó". Lọc theo cột
     loại sẽ làm lượt quét sau tải LẠI đúng video mà chủ vừa bỏ — tốn một lượt
     TikTok và dựng lại thứ họ vừa dọn. Thư viện lọc ở `list_videos`; chỗ này
@@ -1107,7 +1109,7 @@ def list_videos(db_path: Path, chi_cua: str | None,
         rows = conn.execute(
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?) "
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
             (chi_cua, chi_cua, limit, offset),
@@ -1125,7 +1127,7 @@ def count_videos(db_path: Path, chi_cua: str | None) -> int:
         return int(conn.execute(
             "SELECT COUNT(*) FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            "WHERE v.da_loai_luc IS NULL AND (? IS NULL OR j.nguoi_tao = ?)",
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?)",
             (chi_cua, chi_cua),
         ).fetchone()[0])
 
