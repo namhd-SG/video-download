@@ -2067,6 +2067,9 @@ def test_cau_dao_chot_luu_co_thu_lai_khi_lan_ghi_dau_no(tmp_path, monkeypatch, c
 
     monkeypatch.setattr(models, "set_job_nghi_su_co_hang_loat", _ghi_no_lan_dau)
     monkeypatch.setattr(queue_mod, "verify_video_stream", lambda path: True)
+    # Tắt luật tỉ lệ để sau khi chuỗi đứt điều kiện thật sự HẾT đúng — nếu không
+    # luật tỉ lệ vẫn đúng và tự nó gọi lại lần ghi, che mất việc thiếu chốt.
+    monkeypatch.setattr(queue_mod, "CAU_DAO_TI_LE", 1.0)
     with caplog.at_level(logging.DEBUG, logger="videodl.web"):
         for _ in range(5):
             progress.note("failed", _RF)

@@ -422,7 +422,9 @@ def init_db(db_path: Path) -> None:
         # Job cũ KHÔNG có lỗi thì không có gì để phân loại sai: cho bắt đầu ở 0
         # để lỗi đầu tiên (nếu còn chạy) được đếm đúng. Job cũ CÓ lỗi giữ NULL.
         # Idempotent: hàng mới đã ghi 0 lúc INSERT.
-        conn.execute("UPDATE jobs SET loi_tiktok = 0 WHERE loi_tiktok IS NULL AND loi = 0")
+        # Chỉ khi bảng có cột `loi` (một jobs.db đời rất cũ thì chưa có).
+        if any(r[1] == "loi" for r in conn.execute("PRAGMA table_info(jobs)")):
+            conn.execute("UPDATE jobs SET loi_tiktok = 0 WHERE loi_tiktok IS NULL AND loi = 0")
         # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
         # = chưa từng bật (mọi job cũ); 1 = đã bật.
         _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
