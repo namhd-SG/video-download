@@ -121,6 +121,7 @@
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
+    dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
   };
   for (const g of FILTER_GROUPS) state.filters[g.id] = new Map();
@@ -382,7 +383,8 @@
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${BT.khungLoi(job)}
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
-        ${BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null)}
+        ${BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
+          state.dangGuiChayLai.has(job.id))}
         ${queueLine(job)}
         <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}
           · <button type="button" class="chia-link" data-chia="${job.id}">Chia cụm</button></div>
@@ -778,16 +780,23 @@
         showToast(`Số video phải từ 1 đến ${window.BaoThieu.MAX_SO_LUONG}.`);
         return;
       }
-      nut.disabled = true;
-      // Đúng đường tạo lượt của form: một POST /jobs, không route riêng.
-      const kq = await guiTaoJob({ url: job.url, so_luong: n });
-      if (kq.ok) {
-        state.chayLai.delete(id);
+      // `disabled` đặt tay lên nút sẽ MẤT ở lần vẽ lại kế tiếp (poll/SSE thay
+      // `innerHTML`), nên cờ sống ở `state` và cả lần vẽ lẫn lần bấm đều đọc nó.
+      if (state.dangGuiChayLai.has(id)) return;
+      state.dangGuiChayLai.add(id);
+      renderQueue();
+      try {
+        // Đúng đường tạo lượt của form: một POST /jobs, không route riêng.
+        const kq = await guiTaoJob({ url: job.url, so_luong: n });
+        if (kq.ok) {
+          state.chayLai.delete(id);
+          showToast(`Đã tạo lượt mới kiếm thêm ${n} video.`);
+        } else {
+          showToast(kq.loi);
+        }
+      } finally {
+        state.dangGuiChayLai.delete(id);
         renderQueue();
-        showToast(`Đã tạo lượt mới kiếm thêm ${n} video.`);
-      } else {
-        nut.disabled = false;
-        showToast(kq.loi);
       }
     }
   });

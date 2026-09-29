@@ -258,3 +258,36 @@ def test_chep_link_truot_thi_bao_toast_khong_im_lang(trang, db):
     _hang(p, job).get_by_role("button", name="Chép link").click()
     p.wait_for_function("!document.getElementById('toast').hidden")
     assert "Không chép được" in p.inner_text("#toast")
+
+
+def test_bam_doi_khi_post_dang_bay_qua_lan_ve_lai_chi_ra_mot_post(trang, db):
+    """POST bị giữ, hàng đợi vẽ lại (poll 5s), bấm lần nữa ⇒ vẫn đúng 1 POST.
+
+    Đột biến ĐỎ: bỏ `state.dangGuiChayLai.add(id)`.
+    """
+    job = _job(db, tong=140, tim=88, bo_qua=1, xong=87, ly_do="het_vong")
+    p, _ = trang()
+    giu: list = []
+    dem = {"post": 0}
+
+    def cong(route):
+        if route.request.method == "POST":
+            dem["post"] += 1
+            giu.append(route)      # giữ lại, chưa cho đi
+        else:
+            route.continue_()
+
+    p.route("**/jobs", cong)
+    h = _hang(p, job)
+    h.locator("[data-chay-lai]").click()
+    h.locator("[data-chay-lai-ok]").click()
+    p.wait_for_timeout(5600)          # ≥1 nhịp poll ⇒ hàng đợi đã vẽ lại
+    ok = p.locator(f"#job-{job} [data-chay-lai-ok]")
+    assert ok.is_disabled(), "sau vẽ lại nút xác nhận phải vẫn khoá khi POST còn bay"
+    ok.dispatch_event("click")
+    p.wait_for_timeout(300)
+    assert dem["post"] == 1
+    for r in giu:
+        r.continue_()                 # KHÔNG unroute: unroute huỷ request đang giữ
+    p.wait_for_function("document.querySelectorAll('#queue-list > li').length === 2")
+    assert dem["post"] == 1

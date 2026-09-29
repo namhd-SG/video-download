@@ -428,13 +428,13 @@ class _JobProgress:
                     models.increment_job_counts(self._db_path, self._job_id, xong_delta=1)
                     self._note_sighting(ref, da_tai=True)
                 else:
-                    log.warning(
-                        "job %s: %s xác minh có luồng video nhưng lifecycle hook báo %s (%s)"
-                        " — tính là lỗi, không tính là xong",
-                        self._job_id, ref.filename, result.outcome.value, result.reason,
-                    )
-                    self._ghi_loi(ref, f"{result.outcome.value}: {result.reason}",
-                                  loai="he_thong", da_log=True)
+                    # Lỗi hệ thống: ĐÚNG MỘT dòng ERROR (ở `_ghi_loi`), kèm đủ
+                    # ngữ cảnh — không thêm dòng WARNING song song.
+                    self._ghi_loi(
+                        ref,
+                        f"xác minh có luồng video nhưng lifecycle hook báo "
+                        f"{result.outcome.value} ({result.reason}) — tính là lỗi, không tính là xong",
+                        loai="he_thong")
             else:
                 self._ghi_loi(ref, LOI_KHONG_CO_LUONG_VIDEO)
         # "skipped" = file already on disk from an earlier partial run; it was

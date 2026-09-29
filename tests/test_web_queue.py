@@ -8,6 +8,7 @@ test — no shared state, no network, no real Chromium/yt-dlp calls.
 from __future__ import annotations
 
 import json
+import logging
 
 import hashlib
 import sqlite3
@@ -1884,3 +1885,15 @@ def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
     models.init_db(db_path)
     assert models.get_job(db_path, 1)["loi_tiktok"] == 0
     assert models.list_jobs(db_path, None)[0]["loi_tiktok"] == 0
+
+
+def test_loi_lifecycle_hook_log_dung_mot_error_khong_trung(tmp_path, monkeypatch, caplog):
+    """Đột biến ĐỎ: `da_log=True` (nuốt ERROR) hoặc thêm lại dòng WARNING song song."""
+    db_path, job_id, ref = _job_mot_video(tmp_path)
+    progress = _make_progress(db_path, job_id, ref, tmp_path / "out",
+                               lambda **kw: _UPLOAD_FAILED, monkeypatch, verified=True)
+    with caplog.at_level(logging.DEBUG, logger="videodl.web"):
+        progress.note("downloaded")
+    ghi = [r for r in caplog.records if r.name == "videodl.web"]
+    assert [r.levelno for r in ghi] == [logging.ERROR], [(r.levelname, r.getMessage()) for r in ghi]
+    assert "upload trượt" in ghi[0].getMessage()
