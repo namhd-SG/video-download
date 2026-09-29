@@ -23,7 +23,6 @@ cờ khoá "đang dọn".
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -44,7 +43,8 @@ LY_DO_DA_DON = "da_don"
 # CÔNG TẮC dọn ngày 7, MẶC ĐỊNH TẮT. Bật bằng biến môi trường này (`1`/`true`/`yes`/`on`).
 # Khi tắt, `chay_luot_don` không gọi Drive và không ghi mốc nào — chỉ log số hàng đủ hạn
 # đang chờ. Cổng này phủ MỌI đường dọn: hàng do backfill lẫn hàng do bộ kiểm ẩn.
-ENV_BAT_DON_NGAY7 = "VIDEODL_BAT_DON_NGAY7"
+# (Định nghĩa ở `models_vao_bo` — dùng chung với lọc hạn ở payload/thẻ; import lại ở đây.)
+ENV_BAT_DON_NGAY7 = models_vao_bo.ENV_BAT_DON_NGAY7
 
 # Trần số lần gọi `trash_file` MỖI LƯỢT; hàng vượt trần để lượt sau, không bao giờ bị bỏ.
 # ⚠ 50 CHƯA hiệu chỉnh — không có phép đo nào về tốc độ/hạn ngạch Drive đứng sau con số
@@ -52,8 +52,7 @@ ENV_BAT_DON_NGAY7 = "VIDEODL_BAT_DON_NGAY7"
 TOI_DA_TRASH_MOI_LUOT = 50
 
 
-def don_ngay7_dang_bat() -> bool:
-    return os.environ.get(ENV_BAT_DON_NGAY7, "").strip().lower() in ("1", "true", "yes", "on")
+don_ngay7_dang_bat = models_vao_bo.don_ngay7_dang_bat
 
 
 @dataclass
@@ -122,7 +121,7 @@ def chay_luot_don(db_path: Path, drive: DriveVaoBo, *, bay_gio: datetime | None 
             ly_do = ly_do_nguon_chet(do)
             if ly_do:
                 # Bản trong Thùng rác / đã mất là bản DUY NHẤT: hiện lại video và báo động.
-                bao_dong_nguon_chet(vid, nguon_id, ly_do)
+                bao_dong_nguon_chet(vid, nguon_id, ly_do, da_an=True)
                 kq.nguon_chet += 1
             if models_vao_bo.bo_an(db_path, vid, u["an_luc"], giu_bao_dong=ly_do):
                 kq.hien_lai += 1

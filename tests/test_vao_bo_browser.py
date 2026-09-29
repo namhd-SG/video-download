@@ -60,6 +60,7 @@ def may_chu():
 
     from web.auth import require_user
 
+    os.environ["VIDEODL_BAT_DON_NGAY7"] = "1"       # bật để thẻ hiện ngày xoá; test OFF tự tắt
     tmp = Path(tempfile.mkdtemp(prefix="videodl-vaobo-"))
     cu = {k: getattr(app_mod, k) for k in
           ("DATA_DIR", "DB_PATH", "DOWNLOADS_DIR", "COOKIES_DIR", "COOKIE_TMP_DIR")}
@@ -107,6 +108,7 @@ def may_chu():
     server.should_exit = True
     t.join(timeout=5)
     app_mod.app.dependency_overrides.pop(require_user, None)
+    os.environ.pop("VIDEODL_BAT_DON_NGAY7", None)
     app_mod.worker.start, app_mod.worker.stop = start, stop
     for k, v in cu.items():
         setattr(app_mod, k, v)
@@ -231,3 +233,15 @@ def test_admin_thay_badge_don_loi_va_video_do_van_hien_o_luoi(page):
     assert page.inner_text("#badge-don-loi") == "Dọn lỗi (1)"
     assert "nguon_o_thung_rac_khong_ban_sao" in page.get_attribute("#badge-don-loi", "title")
     assert _id(68) in _ids_tren_luoi(page), "hàng báo động KHÔNG ẩn video"
+
+
+def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
+    os.environ.pop("VIDEODL_BAT_DON_NGAY7", None)
+    try:
+        page.click("#library-refresh")
+        page.wait_for_function("document.getElementById('chip-vao-bo').textContent === 'Đã vào bộ (3)'")
+        page.click("#chip-vao-bo")
+        assert page.locator("#card-grid .bo-ma").count() == 3
+        assert page.locator("#card-grid .bo-don").count() == 0, "tắt ⇒ không hứa ngày xoá"
+    finally:
+        os.environ["VIDEODL_BAT_DON_NGAY7"] = "1"

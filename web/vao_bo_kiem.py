@@ -9,6 +9,13 @@ THỨ TỰ GHI (luật guard-marker): mốc ẩn `an_luc` và các hàng `video_
 ghi SAU khi bằng chứng đạt — không bao giờ trước. Ghi mốc trước rồi đo trượt thì video
 biến khỏi lưới trong khi chưa có gì chứng tỏ nó đã vào bộ, và không có gì báo.
 
+KHOẢNG HỞ ĐÃ CHẤP NHẬN của lượt 15 phút (pha (a) chọn A ∪ T ∪ H, `chay_luot_kiem`): một
+nguồn CHƯA TỪNG bị ẩn và CHƯA TỪNG có hàng báo động mà bị XOÁ HẲN / bị dọn khỏi Thùng rác
+(không còn trong danh sách Thùng rác), hoặc có `mimeType` không phải `video/*` (nên truy vấn
+Thùng rác không thấy), hoặc mất quyền/404 từng tệp — CHỈ được lượt QUÉT ĐẦY ĐỦ mỗi ngày VN
+bắt, trễ ≤ 24 giờ. Ngoài ra: video ĐÃ ẨN không được đo lại khi dọn ngày 7 đang TẮT (lượt
+kiểm ẩn chỉ xét video chưa ẩn; đo lại lúc dọn nằm trong `vao_bo_don`, mà nó tắt).
+
 Ba kết quả của một lần đo, KHÔNG gộp:
   * DAT            — Drive trả lời và có ≥1 bản hợp lệ.
   * AM             — Drive trả lời (200) ở MỌI lời gọi, đọc HẾT mọi trang, và 0 bản hợp lệ.
@@ -47,10 +54,14 @@ def ly_do_nguon_chet(do: "KetQuaBangChung") -> str | None:
     return None
 
 
-def bao_dong_nguon_chet(video_id: str, nguon_id: str, ly_do: str) -> None:
-    log.error("BÁO ĐỘNG %s: video %s, tệp nguồn %s đã chết và không còn bản sao nào — "
-              "video được hiện lại để khôi phục kịp trước khi Drive dọn Thùng rác",
-              ly_do, video_id, nguon_id)
+def bao_dong_nguon_chet(video_id: str, nguon_id: str, ly_do: str, *, da_an: bool) -> None:
+    """`da_an`: video ĐÃ bị ẩn nên được hiện lại (ngày 7). False: chưa từng bị ẩn, vẫn hiện
+    từ đầu — câu "được hiện lại" sẽ là nói sai."""
+    hau_qua = ("video được hiện lại để khôi phục kịp trước khi Drive dọn Thùng rác" if da_an
+               else "video chưa từng bị ẩn (vẫn hiện) — cần khôi phục tệp nguồn kịp trước khi "
+                    "Drive dọn Thùng rác")
+    log.error("BÁO ĐỘNG %s: video %s, tệp nguồn %s đã chết và không còn bản sao nào — %s",
+              ly_do, video_id, nguon_id, hau_qua)
 
 
 @dataclass(frozen=True)
@@ -227,9 +238,13 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
             ly_do = ly_do_nguon_chet(do)
             if ly_do:
                 # Nguồn đã chết mà không có bản sao: báo ở MỌI lượt còn đúng.
-                bao_dong_nguon_chet(u["video_id"], nguon_id, ly_do)
+                bao_dong_nguon_chet(u["video_id"], nguon_id, ly_do, da_an=False)
                 models_vao_bo.ghi_bao_dong(db_path, u["video_id"], u["chu"], ly_do)
                 kq.bao_dong += 1
+            else:
+                # Nguồn đã SỐNG lại (khôi phục khỏi Thùng rác…): hết báo động, gỡ dấu để
+                # badge quản trị và tập H thôi phình.
+                models_vao_bo.xoa_bao_dong(db_path, u["video_id"])
             kq.chua_co_bang_chung += 1
             continue
         if do.nguon is None:
@@ -250,7 +265,10 @@ def chay_luot_kiem(db_path: Path, drive: DriveVaoBo, *,
         models_vao_bo.ghi_da_vao_bo(db_path, u["video_id"], u["chu"], dong)
         kq.da_an += 1
 
-    if kq.quet_day_du and not bi_dung:
+    # Ghi ngày quét CHỈ khi lượt quét THẬT SỰ đo được: không bị dừng giữa chừng VÀ không ứng
+    # viên nào "chưa đo được" (Drive lỗi). Một lượt quét mà mọi `lay_tep` đều ném không phải
+    # một lượt quét — đánh dấu nó là xong sẽ bịt cửa sổ phát hiện đến hết ngày.
+    if kq.quet_day_du and not bi_dung and kq.khong_do_duoc == 0:
         models_vao_bo.ghi_ngay_quet_day_du(db_path, hom_nay)   # SAU khi quét xong
     kq.so_goi_drive = d.so_goi
     log.info("lượt kiểm đã-vào-bộ: |A|=%s |T|=%s |H|=%s ứng_viên=%d đã_đo=%d lời_gọi_drive=%d "

@@ -15,6 +15,7 @@ Không có hàm nào ở đây gọi Drive — Drive là việc của `vao_bo_ki
 """
 from __future__ import annotations
 
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -25,6 +26,18 @@ from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG
 # Đồng hồ 7 ngày tính từ `an_luc` (lần xác minh ĐẦU; với backfill là lúc ghi
 # backfill) — user chốt 26/09, plan 29/09.
 SO_NGAY_DEN_KHI_DON = 7
+
+# CÔNG TẮC dọn ngày 7, MẶC ĐỊNH TẮT (`1`/`true`/`yes`/`on` để bật). Đặt Ở ĐÂY — một chỗ duy
+# nhất — vì nó chi phối MỌI thứ liên quan tới hạn 7 ngày: lượt dọn (`vao_bo_don`), lọc hạn
+# ở payload lô (`models_chia`), ngày xoá hiện trên thẻ (`vao_bo_cho_videos`) và lọc hạn ở
+# đường chọn tay của trang. Khi TẮT sẽ không tệp nào bị lấy đi, nên không có gì "sắp mất"
+# để lọc hay để hứa một ngày xoá.
+ENV_BAT_DON_NGAY7 = "VIDEODL_BAT_DON_NGAY7"
+
+
+def don_ngay7_dang_bat() -> bool:
+    return os.environ.get(ENV_BAT_DON_NGAY7, "").strip().lower() in ("1", "true", "yes", "on")
+
 
 VN_TIMEZONE = ZoneInfo("Asia/Saigon")
 KHOA_QUET_DAY_DU = "quet_day_du_ngay"
@@ -75,7 +88,10 @@ def ngay_se_don(an_luc: str) -> str:
 
 
 def het_han_giu_nguon(an_luc: str, bay_gio: datetime) -> bool:
-    """Đã đủ 7 ngày kể từ `an_luc` (tệp nguồn sắp/đã bị lượt dọn lấy đi)."""
+    """Đã đủ 7 ngày kể từ `an_luc` (tệp nguồn sắp/đã bị lượt dọn lấy đi). LUÔN False khi
+    công tắc dọn ngày 7 đang TẮT — không ai lấy tệp đi thì không có hạn nào để hết."""
+    if not don_ngay7_dang_bat():
+        return False
     return _doc_luc(an_luc) + timedelta(days=SO_NGAY_DEN_KHI_DON) <= bay_gio
 
 
@@ -179,7 +195,11 @@ def vao_bo_cho_videos(db_path: Path, video_ids: list[str]) -> dict[str, dict]:
     for r in ma:
         if r["ma_bo"] not in ma_theo_video.setdefault(r["video_id"], []):
             ma_theo_video[r["video_id"]].append(r["ma_bo"])
-    return {r["video_id"]: {"an_luc": r["an_luc"], "se_don_luc": ngay_se_don(r["an_luc"]),
+    bat = don_ngay7_dang_bat()
+    # `se_don_luc` CHỈ có khi dọn ngày 7 đang bật: tắt thì không hứa một ngày xoá (thẻ và
+    # lọc hạn phía trang đều đọc thiếu trường này là "không có hạn").
+    return {r["video_id"]: {"an_luc": r["an_luc"],
+                            "se_don_luc": ngay_se_don(r["an_luc"]) if bat else None,
                             "ma_bo": ma_theo_video.get(r["video_id"], [])}
             for r in rows}
 
@@ -196,7 +216,9 @@ def ung_vien_don(db_path: Path, bay_gio: datetime | None = None) -> list[dict]:
             f"SELECT b.video_id, v.drive_file_id, b.an_luc, NOT ({CHUA_LOAI}) AS da_loai "
             "FROM video_vao_bo b JOIN videos v ON v.video_id = b.video_id "
             "WHERE b.an_luc IS NOT NULL AND b.drive_don_luc IS NULL "
-            "ORDER BY b.an_luc, b.video_id").fetchall()
+            # Hàng đang TRƯỢT xuống cuối: một nhóm luôn-lỗi không được chặn hàng lành phía
+            # sau nó khi trần mỗi lượt cạn (`vao_bo_don.TOI_DA_TRASH_MOI_LUOT`).
+            "ORDER BY b.so_lan_truot ASC, b.an_luc, b.video_id").fetchall()
     return [dict(r) for r in rows if _doc_luc(r["an_luc"]) <= han]
 
 
@@ -254,3 +276,21 @@ def hang_don_loi(db_path: Path) -> list[dict]:
             "WHERE b.drive_don_luc IS NULL AND (b.so_lan_truot > 0 OR b.loi_cuoi IS NOT NULL) "
             "ORDER BY b.so_lan_truot DESC, b.video_id").fetchall()
     return [dict(r) for r in rows]
+
+
+def xoa_bao_dong(db_path: Path, video_id: str) -> bool:
+    """Xoá dấu báo động nguồn-chết khi nguồn đã SỐNG lại (đo ra ÂM nhưng nguồn còn ở thư
+    mục thường): hàng chưa ẩn (`an_luc` NULL) bị xoá hẳn, hàng đã ẩn chỉ bị xoá lỗi. Chỉ
+    đụng hàng mang ĐÚNG mã báo động — không xoá lỗi dọn thường (`trash_file` trượt…)."""
+    marks = ",".join("?" * len(LY_DO_BAO_DONG))
+    with _connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        cur = conn.execute(
+            f"DELETE FROM video_vao_bo WHERE video_id = ? AND an_luc IS NULL "
+            f"AND drive_don_luc IS NULL AND loi_cuoi IN ({marks})", (video_id, *LY_DO_BAO_DONG))
+        if cur.rowcount:
+            return True
+        cur = conn.execute(
+            f"UPDATE video_vao_bo SET loi_cuoi = NULL, so_lan_truot = 0 WHERE video_id = ? "
+            f"AND drive_don_luc IS NULL AND loi_cuoi IN ({marks})", (video_id, *LY_DO_BAO_DONG))
+        return cur.rowcount == 1

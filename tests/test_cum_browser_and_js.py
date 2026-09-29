@@ -590,3 +590,9 @@ def test_chon_tay_bo_video_da_qua_han_giu_nguon_nhung_van_gui_video_con_han():
     assert t["moTab"] == 0 and t["soLanGui"] == 0, "toàn quá hạn ⇒ không mở tab, không gửi"
     assert "đã quá hạn giữ tệp nguồn" in t["toast"]
     assert d["ack"]["tin"]["soItem"] == 3, "control: không có vao_bo ⇒ gửi hết như cũ"
+
+
+def test_chon_tay_khong_co_han_giu_nguon_thi_khong_bi_coi_la_qua_han():
+    """`se_don_luc: null` (dọn ngày 7 TẮT) ⇒ không có hạn nào để hết ⇒ gửi hết."""
+    d = _node("chon-sau-ban-giao.js")["khong_han"]
+    assert d["tin"]["soItem"] == 4 and "quá hạn" not in d["toast"]

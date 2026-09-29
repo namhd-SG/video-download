@@ -267,3 +267,65 @@ def test_log_moi_luot_co_A_T_H_so_loi_goi_fallback_va_quet_day_du(kho, caplog):
     with caplog.at_level(logging.INFO, logger="videodl.web.vao_bo"):
         chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(days=1))
     assert "quét_đầy_đủ=True" in next(r.getMessage() for r in caplog.records if "|A|=" in r.getMessage())
+
+
+# --- S-2: ngày quét chỉ ghi khi lượt quét THẬT SỰ đo được ------------------------------------------------
+
+def test_quet_ma_moi_lay_tep_deu_nem_thi_khong_ghi_ngay_va_lan_sau_quet_lai(kho):
+    db, job = kho
+    for i in (1, 2, 3):
+        them(db, job, i)
+    d = drive(nguon=(1, 2, 3))
+    for i in (1, 2, 3):
+        d.loi[("lay_tep", fid(i))] = http_loi(403)
+    kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO)
+    assert kq.quet_day_du and kq.khong_do_duoc == 3
+    assert models_vao_bo.doc_ngay_quet_day_du(db) is None, "quét không đo được gì ⇒ chưa xong"
+    assert chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=15)).quet_day_du, \
+        "lượt kế tiếp quét lại"
+    d.loi.clear()
+    assert chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=30)).quet_day_du
+    assert models_vao_bo.doc_ngay_quet_day_du(db) == NGAY_VN
+    assert not chay_luot_kiem(db, d, bay_gio=BAY_GIO + timedelta(minutes=45)).quet_day_du
+
+
+def test_quet_khong_co_ung_vien_nao_van_ghi_ngay(kho):
+    db, _ = kho
+    assert chay_luot_kiem(db, drive(), bay_gio=BAY_GIO).quet_day_du
+    assert models_vao_bo.doc_ngay_quet_day_du(db) == NGAY_VN
+
+
+# --- S-4: nguồn SỐNG lại ⇒ gỡ dấu báo động; lời log đúng cho video chưa từng ẩn ----------------------------
+
+def test_nguon_song_lai_thi_go_dau_bao_dong_va_h_thoi_phinh(kho):
+    db, job = kho
+    them(db, job, 1)
+    da_quet_hom_nay(db)
+    models_vao_bo.ghi_bao_dong(db, "v1", TOI, LY_DO_NGUON_O_THUNG_RAC)
+    assert models_vao_bo.video_da_bao_dong(db) == {"v1"}
+    d = drive(nguon=(1,))                       # nguồn đã được khôi phục: sống, 0 bản
+    kq = chay_luot_kiem(db, d, bay_gio=BAY_GIO)
+    assert kq.n_h == 1 and kq.bao_dong == 0
+    assert models_vao_bo.hang_don_loi(db) == [] and models_vao_bo.video_da_bao_dong(db) == set()
+    assert chay_luot_kiem(db, d, bay_gio=BAY_GIO).n_h == 0, "H không còn phình"
+
+
+def test_xoa_bao_dong_chi_dung_toi_ma_bao_dong_khong_dung_loi_don_thuong(kho):
+    db, job = kho
+    them(db, job, 1)
+    models_vao_bo.ghi_da_vao_bo(db, "v1", TOI, [{"ban_copy_id": "c", "folder_id": "F",
+                                                 "ma_bo": "N.1", "bang_chung": "properties"}])
+    models_vao_bo.ghi_truot_don(db, "v1", "trash_file không ok")
+    assert models_vao_bo.xoa_bao_dong(db, "v1") is False
+    assert [h["loi_cuoi"] for h in models_vao_bo.hang_don_loi(db)] == ["trash_file không ok"]
+
+
+def test_log_bao_dong_video_chua_tung_an_khong_noi_duoc_hien_lai(kho, caplog):
+    db, job = kho
+    them(db, job, 1)
+    da_quet_hom_nay(db)
+    d = drive(nguon=(1,), thung=(1,))
+    with caplog.at_level(logging.ERROR, logger="videodl.web.vao_bo"):
+        chay_luot_kiem(db, d, bay_gio=BAY_GIO)
+    msg = loi_bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)[0].getMessage()
+    assert "chưa từng bị ẩn" in msg and "được hiện lại" not in msg

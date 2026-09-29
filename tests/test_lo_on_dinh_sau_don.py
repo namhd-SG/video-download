@@ -154,7 +154,8 @@ def _ghi_an(db, vid, ngay_truoc):
                                                  "ma_bo": "N.1", "bang_chung": "properties"}], luc)
 
 
-def test_payload_bo_item_qua_han_giu_nguon_chua_kip_don_va_giu_item_con_han(cum65):
+def test_payload_bo_item_qua_han_giu_nguon_chua_kip_don_va_giu_item_con_han(cum65, monkeypatch):
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
     """Đường lô của cụm đọc lại DB: video ẩn ≥ 7 ngày mà lượt dọn chưa kịp lấy tệp đi thì
     KHÔNG gửi; video ẩn < 7 ngày (B3) vẫn gửi. `so_video` giữ nguyên ⇒ nhãn x/N."""
     from datetime import datetime, timezone
@@ -167,3 +168,19 @@ def test_payload_bo_item_qua_han_giu_nguon_chua_kip_don_va_giu_item_con_han(cum6
     ten = _ten(p)
     assert _id(5) not in ten and _id(6) in ten
     assert (len(p["items"]), p["so_video"]) == (29, 30)
+
+
+def test_khi_don_ngay7_tat_video_an_10_ngay_van_gui_duoc(cum65, monkeypatch):
+    """Công tắc TẮT ⇒ không tệp nào bị lấy đi ⇒ KHÔNG lọc theo tuổi: video ẩn 10 ngày vẫn
+    nằm trong payload. Bật công tắc thì đúng video đó bị bỏ (đối chứng)."""
+    from datetime import datetime, timezone
+    db, cum_id = cum65
+    _ghi_an(db, _id(5), 10)
+    cum = models_cum.lay_cum(db, cum_id, TOI, TOI)
+    bay_gio = datetime(2026, 9, 29, tzinfo=timezone.utc)
+    monkeypatch.delenv("VIDEODL_BAT_DON_NGAY7", raising=False)
+    tat = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1, bay_gio=bay_gio)
+    assert _id(5) in _ten(tat) and len(tat["items"]) == 30
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
+    bat = models_chia.xay_payload_lo(db, cum, TOI, TOI, 1, bay_gio=bay_gio)
+    assert _id(5) not in _ten(bat) and len(bat["items"]) == 29

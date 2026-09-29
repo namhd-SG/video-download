@@ -30,7 +30,8 @@ def kho(tmp_path, monkeypatch):
     return db
 
 
-def test_videos_route_gan_vao_bo_cho_video_dang_an(kho):
+def test_videos_route_gan_vao_bo_cho_video_dang_an(kho, monkeypatch):
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
     res = app_mod.list_videos(limit=200, offset=0, nguoi_tao=TOI)
     theo = {v["video_id"]: v for v in res["videos"]}
     assert set(theo) == {"v1", "v2", "v3"}, "v4 đã dọn: không hiện ở đâu"
@@ -62,3 +63,15 @@ def test_endpoint_don_loi_chi_danh_cho_quan_tri(kho):
     with pytest.raises(HTTPException) as e:
         app_mod.require_admin(nguoi_tao="nguoi-thuong@astronex.ai")
     assert e.value.status_code == 403
+
+
+def test_khi_don_ngay7_tat_api_khong_gui_se_don_luc_de_the_khong_hua_ngay_xoa(kho, monkeypatch):
+    monkeypatch.delenv("VIDEODL_BAT_DON_NGAY7", raising=False)
+    theo = {v["video_id"]: v for v in app_mod.list_videos(limit=200, offset=0,
+                                                          nguoi_tao=TOI)["videos"]}
+    assert theo["v2"]["vao_bo"]["se_don_luc"] is None
+    assert theo["v2"]["vao_bo"]["ma_bo"] == ["N.2809C"], "mã bộ vẫn hiện"
+    monkeypatch.setenv("VIDEODL_BAT_DON_NGAY7", "1")
+    theo = {v["video_id"]: v for v in app_mod.list_videos(limit=200, offset=0,
+                                                          nguoi_tao=TOI)["videos"]}
+    assert theo["v2"]["vao_bo"]["se_don_luc"] is not None

@@ -13,7 +13,7 @@ const grab = (n) => {
 };
 
 // cachTra: "ack" | "tu_choi" | "im" | "sai_origin" | "sai_id" | "dong" (user đóng tab) | null (popup bị chặn)
-async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0, idSo = 0, quaHan = 0, sapHan = 0 }) {
+async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDup = false, lanHaiAck = false, linhHong = 0, idSo = 0, quaHan = 0, sapHan = 0, khongHan = 0 }) {
   const CREATIVE_DESK_URL = "https://automation.example";
   const CREATIVE_DESK_ORIGIN = "https://automation.example";
   const MAX_PM_ITEMS = 500;
@@ -34,6 +34,8 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
                                   // `sapHan` video kế tiếp: còn hạn (se_don_luc ở tương lai) — vẫn gửi được.
                                   vao_bo: i < quaHan ? { se_don_luc: "2020-01-01T00:00:00+00:00", ma_bo: ["N.1"] }
                                     : i < quaHan + sapHan ? { se_don_luc: "2999-01-01T00:00:00+00:00", ma_bo: ["N.2"] }
+                                    // `khongHan` video kế tiếp: dọn ngày 7 TẮT ⇒ server không gửi hạn (null).
+                                    : i < quaHan + sapHan + khongHan ? { se_don_luc: null, ma_bo: ["N.3"] }
                                     : null })),
     idTrang: [], dangBanGiao: false,
   };
@@ -121,6 +123,7 @@ async function chay({ cachTra, ackSauLuot = 2, soVideo = 3, chuaDrive = 0, bamDu
     bam_dup: await chay({ cachTra: "ack", ackSauLuot: 3, bamDup: true }),
     gui_lai: await chay({ cachTra: "im", lanHaiAck: true }),
     qua_han: await chay({ cachTra: "ack", soVideo: 5, quaHan: 2, sapHan: 1 }),
+    khong_han: await chay({ cachTra: "ack", soVideo: 4, khongHan: 4 }),
     toan_qua_han: await chay({ cachTra: "ack", soVideo: 2, quaHan: 2 }),
   };
   process.stdout.write(JSON.stringify(kq));

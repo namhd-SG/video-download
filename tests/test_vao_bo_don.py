@@ -343,6 +343,8 @@ def test_am_va_nguon_o_thung_rac_hien_lai_va_bao_dong_moi_lan(kho, caplog):
         kq = chay_luot_don(db, d, bay_gio=BAY_GIO)
     assert kq.nguon_chet == 1 and kq.hien_lai == 1 and da_trash(d) == []
     assert len(_bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)) == 1
+    assert "được hiện lại" in _bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)[0].getMessage(), \
+        "video ĐÃ ẩn: lời log nói hiện lại"
     assert fid(1) in _bao_dong(caplog, LY_DO_NGUON_O_THUNG_RAC)[0].getMessage(), "mang id nguồn"
     r = hang(db, "v1")
     assert r["an_luc"] is None and r["loi_cuoi"] == LY_DO_NGUON_O_THUNG_RAC and r["so_lan_truot"] == 1
@@ -444,3 +446,23 @@ def test_tran_50_lan_trash_moi_luot_hang_du_sang_luot_sau_khong_mat(kho):
     assert xong == [50, 50, 20]
     assert len(da_trash(d)) == 120 and len(set(da_trash(d))) == 120, "mỗi nguồn đúng một lần"
     assert chay_luot_don(db, d, bay_gio=BAY_GIO).ung_vien == 0
+
+
+# --- S-5: hàng luôn-lỗi không được chặn hàng lành khi trần cạn --------------------------------------
+
+def test_50_hang_luon_loi_khong_chan_10_hang_lanh_qua_2_luot(kho):
+    db, job = kho
+    d = DriveGia()
+    d.dat_ten_thu_muc("BO1", "N.2809C - x")
+    for i in range(1, 61):
+        an_video(db, job, i, ngay=9 if i <= 50 else 8)      # 50 hàng lỗi CŨ hơn, 10 hàng lành
+        d.them_nguon(fid(i))
+        d.them_ban(f"ban{i}", fid(i), folder="BO1")
+        if i <= 50:
+            d.trash_ket_qua[fid(i)] = False
+    kq1 = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq1.trash_truot == 50 and kq1.da_bo_thung_rac == 0, "lượt 1: trần cạn vì 50 hàng lỗi"
+    kq2 = chay_luot_don(db, d, bay_gio=BAY_GIO)
+    assert kq2.da_bo_thung_rac == 10, "lượt 2: 10 hàng lành đi trước các hàng đã trượt"
+    assert all(hang(db, f"v{i}")["drive_don_luc"] for i in range(51, 61))
+    assert all(hang(db, f"v{i}")["drive_don_luc"] is None for i in range(1, 51))
