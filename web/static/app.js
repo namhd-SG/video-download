@@ -1920,6 +1920,20 @@
     }
   }
 
+  // Thư viện của người xem lớn hơn trần nạp ⇒ lưới CHỈ có `LIBRARY_MAX` video mới nhất. Hàm
+  // thuần: trả câu cảnh báo, hoặc "" khi chưa vượt (đúng bằng trần chưa bị cắt: `>` không phải `>=`).
+  function canhBaoGioiHan(tong, tran) {
+    return tong > tran ? `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất` : "";
+  }
+
+  function veCanhBaoGioiHan(tong) {
+    const el = document.getElementById("canh-bao-gioi-han");
+    if (!el) return;
+    const chu = canhBaoGioiHan(tong, LIBRARY_MAX);
+    el.textContent = chu;
+    el.hidden = chu === "";
+  }
+
   async function loadVideos() {
     // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định
     // của server, KHÔNG đọc `tong`, và in nhãn theo số đã nạp. Hậu quả: video
@@ -1938,6 +1952,7 @@
 
     state.videos = videos;
     state.videosTotal = tong;
+    veCanhBaoGioiHan(tong);
     state.videosDaDon = first.da_don_trong_cum || [];
     // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
     // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị

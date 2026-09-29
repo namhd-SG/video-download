@@ -1,0 +1,137 @@
+"""Thư viện vượt trần nạp (`LIBRARY_MAX` = 2000) phải có cảnh báo RÕ trên trang; đúng bằng
+trần thì không. Trình duyệt thật; `/videos` được giả theo trang (limit/offset) để có 2000+
+video mà không dựng DB lớn. Đặt `VIDEODL_SHOT_DIR` để lưu ảnh (`shot-canh-bao-2000.png`).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import tempfile
+import threading
+import time
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+
+pw_api = pytest.importorskip("playwright.sync_api")
+
+STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
+HARNESS = Path(__file__).parent / "js"
+
+
+def _videos(n: int) -> list[dict]:
+    return [{"video_id": f"76870{i:05d}", "title": f"Video {i + 1}", "author": "a", "duration": 15,
+             "play_count": 10, "region": "VN", "url": "https://www.tiktok.com/", "nguon": [],
+             "cum_id": None, "vao_bo": None, "tao_luc": "2026-09-23T00:00:00+00:00"}
+            for i in range(n)]
+
+
+@pytest.fixture(scope="module")
+def base_url():
+    import uvicorn
+
+    import web.app as app_mod
+    from web.auth import require_user
+
+    tmp = Path(tempfile.mkdtemp(prefix="videodl-canhbao-"))
+    cu = {k: getattr(app_mod, k) for k in
+          ("DATA_DIR", "DB_PATH", "DOWNLOADS_DIR", "COOKIES_DIR", "COOKIE_TMP_DIR")}
+    app_mod.DATA_DIR, app_mod.DB_PATH = tmp, tmp / "jobs.db"
+    app_mod.DOWNLOADS_DIR, app_mod.COOKIES_DIR = tmp / "downloads", tmp / "cookies"
+    app_mod.COOKIE_TMP_DIR = tmp / "tmp"
+    start, stop = app_mod.worker.start, app_mod.worker.stop
+    app_mod.worker.start = app_mod.worker.stop = lambda: None
+    app_mod.app.dependency_overrides[require_user] = lambda: "canhbao@dev.local"
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app_mod.app, host="127.0.0.1", port=port,
+                                           log_level="warning"))
+    t = threading.Thread(target=server.run, daemon=True)
+    t.start()
+    while not server.started:
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}/"
+    server.should_exit = True
+    t.join(timeout=5)
+    app_mod.app.dependency_overrides.pop(require_user, None)
+    app_mod.worker.start, app_mod.worker.stop = start, stop
+    for k, v in cu.items():
+        setattr(app_mod, k, v)
+
+
+def _mo_trang(base_url, tong: int):
+    """Trang thật; `/videos` giả phân trang theo `limit`/`offset` với `tong` video TỔNG cộng."""
+    kho = _videos(tong)
+    goi: list[int] = []
+
+    def tra(route):
+        q = parse_qs(urlparse(route.request.url).query)
+        limit, offset = int(q["limit"][0]), int(q["offset"][0])
+        goi.append(offset)
+        route.fulfill(json={"tong": tong, "videos": kho[offset:offset + limit],
+                            "da_don_trong_cum": []})
+    pw = pw_api.sync_playwright().start()
+    try:
+        br = pw.chromium.launch()
+    except Exception as exc:  # noqa: BLE001
+        pw.stop()
+        pytest.skip(f"không mở được Chromium: {exc}")
+    p = br.new_page(viewport={"width": 1200, "height": 900})
+    p.route("**/videos?*", tra)
+    p.goto(base_url)
+    p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+    return p, br, pw, goi
+
+
+@pytest.mark.parametrize("tong, co_canh_bao", [(2000, False), (2001, True)])
+def test_canh_bao_chi_hien_khi_vuot_tran_2000(base_url, tong, co_canh_bao):
+    p, br, pw, goi = _mo_trang(base_url, tong)
+    try:
+        p.wait_for_function(
+            "document.getElementById('library-count').textContent.includes('video')")
+        el = p.locator("#canh-bao-gioi-han")
+        if co_canh_bao:
+            assert el.is_visible()
+            assert el.inner_text() == f"Thư viện có {tong} video, lưới chỉ nạp 2000 video mới nhất"
+            thu_muc = os.environ.get("VIDEODL_SHOT_DIR")
+            if thu_muc:
+                # Chỉ phần đầu khối thư viện (cảnh báo + nhãn đếm + hàng thẻ đầu), không cả 40 thẻ.
+                hop = p.locator("section[aria-label='Thư viện creative']").bounding_box()
+                p.screenshot(path=str(Path(thu_muc) / "shot-canh-bao-2000.png"), full_page=True,
+                             clip={"x": hop["x"], "y": hop["y"], "width": hop["width"], "height": 520})
+        else:
+            assert not el.is_visible() and el.inner_text() == ""
+        # Cách nạp KHÔNG đổi: nạp theo trang 500 tới 2000 rồi dừng, không nạp video thứ 2001.
+        assert goi == [0, 500, 1000, 1500], goi
+        nhan = p.inner_text("#library-count")
+        assert (f"(đang hiện 2000 trong {tong})" in nhan) is co_canh_bao
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_ham_thuan_canh_bao_gioi_han_o_bien():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("cần node")
+    src = (STATIC / "app.js").read_text()
+    i = src.index("function canhBaoGioiHan(")
+    d, k = 0, src.index("{", i)
+    while True:
+        d += src[k] == "{"
+        d -= src[k] == "}"
+        if d == 0:
+            break
+        k += 1
+    ham = src[i:k + 1]
+    r = subprocess.run([node, "-e", ham + ";process.stdout.write(JSON.stringify(["
+                        "canhBaoGioiHan(2000,2000),canhBaoGioiHan(2001,2000),canhBaoGioiHan(0,2000)]))"],
+                       capture_output=True, text=True, timeout=20)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == ["", "Thư viện có 2001 video, lưới chỉ nạp 2000 video mới nhất", ""]

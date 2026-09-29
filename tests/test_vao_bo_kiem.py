@@ -313,3 +313,44 @@ def test_dung_giua_luot_thoat_sach(kho):
         return dem["n"] > 1
     kq = chay_luot_kiem(db, d, dung=dung)
     assert kq.da_an == 1
+
+
+# --- một điều kiện ứng viên duy nhất cho chọn ứng viên và tỉa R --------------------------------------
+
+def test_tap_tia_R_bang_dung_tap_ung_vien_qua_ca_ba_nhanh(kho):
+    """`cap_nhat_tap_thu_lai` tỉa R theo cùng điều kiện với `ung_vien_can_kiem`, ở đủ ba nhánh:
+    đã loại, đã ẩn (`an_luc`), đã dọn (`drive_don_luc`); cộng ứng viên sống để đối chứng."""
+    db, job = kho
+    for i in range(1, 6):
+        them_video(db, job, i)
+    models.danh_dau_da_loai(db, "v2", TOI)                                   # nhánh da_loai
+    models_vao_bo.ghi_da_vao_bo(db, "v3", TOI, [{"ban_copy_id": "c3", "folder_id": "F",
+                                                 "ma_bo": "N.1", "bang_chung": "properties"}])
+    with sqlite3.connect(db) as c:                                            # nhánh drive_don_luc
+        c.execute("INSERT INTO video_vao_bo (video_id, an_luc, drive_don_luc, ly_do_don) "
+                  "VALUES ('v4', 'x', 'y', 'da_don')")
+    ung_vien = {u["video_id"] for u in models_vao_bo.ung_vien_can_kiem(db)}
+    assert ung_vien == {"v1", "v5"}
+    models_vao_bo.ghi_tap_thu_lai(db, {f"v{i}": 1 for i in range(1, 6)} | {"khong-co": 1})
+    tia = models_vao_bo.cap_nhat_tap_thu_lai(db, set(), set())
+    assert set(tia) == ung_vien, "R được tỉa đúng bằng tập ứng viên"
+
+
+def test_hai_noi_dung_chung_mot_hang_so_khong_tu_viet_lai_dieu_kien():
+    import inspect
+    nguon = inspect.getsource(models_vao_bo)
+    assert nguon.count("NOT EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
+                       "\"\n    \"                AND b.an_luc IS NOT NULL)") == 1
+    assert nguon.count("SQL_UNG_VIEN_CAN_KIEM") >= 3, "định nghĩa + hai nơi dùng"
+
+
+def test_R_json_long_sau_100000_tang_la_hong_khong_phai_recursion_error(kho):
+    db, job = kho
+    sau = "[" * 100000 + "]" * 100000
+    with sqlite3.connect(db) as c:
+        c.execute("INSERT INTO vao_bo_kv (khoa, gia_tri) VALUES ('tap_thu_lai', ?)", (sau,))
+    with pytest.raises(models_vao_bo.TapThuLaiHong):
+        models_vao_bo.doc_tap_thu_lai(db)
+    assert models_vao_bo.doc_tap_thu_lai_an_toan(db) == {}
+    assert models_vao_bo.cap_nhat_tap_thu_lai(db, set(), set()) == {}, "bị ghi đè bằng giá trị hợp lệ"
+    assert models_vao_bo.doc_tap_thu_lai(db) == {}

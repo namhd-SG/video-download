@@ -69,6 +69,15 @@ def ghi_ngay_quet_day_du(db_path: Path, ngay: str) -> None:
             (KHOA_QUET_DAY_DU, ngay))
 
 
+# ĐIỀU KIỆN ứng viên của lượt kiểm (bí danh `v` trên `videos`): còn sống, có tệp nguồn trên
+# Drive, CHƯA bị ẩn. MỘT hằng cho cả hai nơi dùng — `ung_vien_can_kiem` (chọn ứng viên) và
+# `cap_nhat_tap_thu_lai` (tỉa R theo đúng tập đó) — để chúng không thể lệch nhau.
+SQL_UNG_VIEN_CAN_KIEM = (
+    f"v.drive_file_id IS NOT NULL AND {CON_SONG_CHUNG} "
+    "AND NOT EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
+    "                AND b.an_luc IS NOT NULL)")
+
+
 class TapThuLaiHong(ValueError):
     """Giá trị `tap_thu_lai` trong `vao_bo_kv` hỏng (không phải JSON, hoặc không phải danh
     sách/bản đồ đúng dạng). Người gọi KHÔNG được để nó chặn lượt kiểm: log lỗi, quét đủ."""
@@ -77,8 +86,9 @@ class TapThuLaiHong(ValueError):
 def _phan_tich_tap_thu_lai(gia_tri: str) -> dict[str, int]:
     try:
         v = json.loads(gia_tri)
-    except ValueError as exc:
-        raise TapThuLaiHong(f"không phải JSON: {exc}") from exc
+    except (ValueError, RecursionError) as exc:
+        # `RecursionError`: JSON lồng sâu quá giới hạn đệ quy của bộ giải mã — cũng là hỏng.
+        raise TapThuLaiHong(f"không phải JSON đọc được: {type(exc).__name__}") from exc
     if isinstance(v, list):                       # dạng CŨ: danh sách id ⇒ mỗi id đếm 1
         if not all(isinstance(x, str) for x in v):
             raise TapThuLaiHong("danh sách chứa phần tử không phải chuỗi")
@@ -135,10 +145,7 @@ def cap_nhat_tap_thu_lai(db_path: Path, do_duoc: set[str], khong_duoc: set[str])
         except TapThuLaiHong:
             hien_tai = {}
         con_ung_vien = {x["video_id"] for x in conn.execute(
-            "SELECT v.video_id FROM videos v "
-            f"WHERE v.drive_file_id IS NOT NULL AND {CON_SONG_CHUNG} "
-            "AND NOT EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
-            "                AND b.an_luc IS NOT NULL)").fetchall()}
+            f"SELECT v.video_id FROM videos v WHERE {SQL_UNG_VIEN_CAN_KIEM}").fetchall()}
         moi = {k: n for k, n in hien_tai.items() if k in con_ung_vien and k not in do_duoc}
         for k in khong_duoc:
             if k in con_ung_vien:
@@ -186,9 +193,7 @@ def ung_vien_can_kiem(db_path: Path) -> list[dict]:
         rows = conn.execute(
             "SELECT v.video_id, v.drive_file_id, j.nguoi_tao AS chu FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.drive_file_id IS NOT NULL AND {CON_SONG_CHUNG} "
-            "AND NOT EXISTS (SELECT 1 FROM video_vao_bo b WHERE b.video_id = v.video_id "
-            "                AND b.an_luc IS NOT NULL) "
+            f"WHERE {SQL_UNG_VIEN_CAN_KIEM} "
             "ORDER BY v.tao_luc DESC, v.video_id DESC").fetchall()
     return [dict(r) for r in rows]
 
