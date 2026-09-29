@@ -310,3 +310,29 @@ def test_loi_he_thong_thang_nhan_theo_ly_do_dung(trang, db):
     job = _job(db, tong=50, tim=20, bo_qua=0, xong=19, loi=1, ly_do="nghi_bi_chan")
     p, _ = trang()
     assert _hang(p, job).locator(".status-badge").inner_text() == "Thiếu"
+
+
+def test_chay_lai_mang_theo_usecase_va_insight_goc_cua_luot_goc(trang, db):
+    """Đột biến ĐỎ: bỏ usecase/insight_goc khỏi body chạy lại."""
+    job = _job(db, tong=140, tim=88, bo_qua=1, xong=87, ly_do="het_vong")
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET usecase = 'Dance', insight_goc = 'Badaboum' WHERE id = ?", (job,))
+    p, posts = trang()
+    h = _hang(p, job)
+    h.locator("[data-chay-lai]").click()
+    with p.expect_response(lambda r: r.url.rstrip("/").endswith("/jobs") and r.request.method == "POST"):
+        h.locator("[data-chay-lai-ok]").click()
+    assert posts == [{"url": URL_TAG, "so_luong": 53, "usecase": "Dance", "insight_goc": "Badaboum"}]
+
+
+def test_job_truoc_ban_cap_nhat_loi_chua_phan_loai_khung_xam_khong_do_khong_thieu(trang, db):
+    """`loi_tiktok` NULL + loi>0 ⇒ khung xám trung tính; KHÔNG đỏ, KHÔNG nhãn Thiếu."""
+    job = _job(db, tong=20, tim=20, bo_qua=0, xong=19, loi=1)
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET loi_tiktok = NULL, xong = 20 WHERE id = ?", (job,))
+    p, _ = trang()
+    h = _hang(p, job)
+    assert h.locator(".lo-ht").count() == 0
+    assert h.locator(".progress-fill.has-errors").count() == 0
+    assert "1 lỗi (chưa phân loại — lượt trước bản cập nhật)" in h.locator(".lo-tt").inner_text()
+    assert h.locator(".status-badge").inner_text() != "Thiếu"

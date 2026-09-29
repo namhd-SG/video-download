@@ -394,6 +394,8 @@ class _JobProgress:
         """
         loai = loai or phan_loai_loi(ly_do)
         la_tiktok = loai == "tiktok"
+        # Điểm gắn cho cầu dao "hỏng hàng loạt" (chờ chốt ngưỡng): mọi lỗi từng
+        # video đi qua ĐÂY, có `loai` và số đếm hiện tại — chưa cài gì.
         if da_log:
             pass
         elif la_tiktok:

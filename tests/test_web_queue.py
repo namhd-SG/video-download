@@ -1883,8 +1883,20 @@ def test_jobs_db_cu_duoc_them_cot_loi_tiktok(tmp_path):
                      " tao_luc TEXT NOT NULL, nguoi_tao TEXT NOT NULL DEFAULT 'khach')")
         conn.execute("INSERT INTO jobs (url, tao_luc) VALUES ('u', '2026-09-01T00:00:00+00:00')")
     models.init_db(db_path)
-    assert models.get_job(db_path, 1)["loi_tiktok"] == 0
-    assert models.list_jobs(db_path, None)[0]["loi_tiktok"] == 0
+    assert models.get_job(db_path, 1)["loi_tiktok"] is None, \
+        "job cũ = CHƯA PHÂN LOẠI (NULL), không phải 0"
+    assert models.list_jobs(db_path, None)[0]["loi_tiktok"] is None
+    # Job cũ đang chạy qua lúc migrate: cộng lỗi vào `loi`, `loi_tiktok` giữ NULL.
+    models.increment_job_counts(db_path, 1, loi_delta=1, loi_tiktok_delta=1)
+    job = models.get_job(db_path, 1)
+    assert (job["loi"], job["loi_tiktok"]) == (1, None)
+
+
+def test_job_moi_co_loi_tiktok_bang_0_khong_phai_null(tmp_path):
+    db_path = tmp_path / "moi.db"
+    models.init_db(db_path)
+    job_id = models.create_job(db_path, "u", 1, "a")
+    assert models.get_job(db_path, job_id)["loi_tiktok"] == 0
 
 
 def test_loi_lifecycle_hook_log_dung_mot_error_khong_trung(tmp_path, monkeypatch, caplog):

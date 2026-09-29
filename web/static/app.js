@@ -346,7 +346,7 @@
     const BT = window.BaoThieu;
     const pct = BT.phanTram(job);
     // Đỏ CHỈ cho lỗi hệ thống; lỗi phía TikTok có khung xám riêng.
-    const hasErrors = (Number(job.loi) || 0) > (Number(job.loi_tiktok) || 0);
+    const hasErrors = BT.coLoiHeThong(job);
     const stopText = job.ly_do_dung
       ? (STOP_REASON_TEXT[job.ly_do_dung] ||
          `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
@@ -787,7 +787,9 @@
       renderQueue();
       try {
         // Đúng đường tạo lượt của form: một POST /jobs, không route riêng.
-        const kq = await guiTaoJob({ url: job.url, so_luong: n });
+        // Mang theo usecase / insight gốc của lượt gốc: chạy lại là CÙNG một
+        // việc, và bỏ hai ô này thì màn nháp duyệt kiểu hỏi lại từ đầu.
+        const kq = await guiTaoJob(taoJobBody(job.url, n, job.usecase, job.insight_goc));
         if (kq.ok) {
           state.chayLai.delete(id);
           showToast(`Đã tạo lượt mới kiếm thêm ${n} video.`);

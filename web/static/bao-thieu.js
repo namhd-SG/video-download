@@ -36,8 +36,16 @@
 
   function soLieu(job) {
     const tong = so(job.tong), tim = so(job.tim_thay), boQua = so(job.bo_qua);
-    const loi = so(job.loi), loiTiktok = Math.min(so(job.loi_tiktok), loi);
-    return { tong, tim, boQua, xong: so(job.xong), loi, loiTiktok, loiHt: loi - loiTiktok };
+    const loi = so(job.loi);
+    // `loi_tiktok` NULL = job tạo trước khi có phân loại: KHÔNG biết lỗi nào là
+    // của ai, nên không được tính thành lỗi hệ thống (khung đỏ / nhãn Thiếu).
+    const chuaPhanLoai = job.loi_tiktok === null || job.loi_tiktok === undefined;
+    const loiTiktok = chuaPhanLoai ? 0 : Math.min(so(job.loi_tiktok), loi);
+    return {
+      tong, tim, boQua, xong: so(job.xong), loi, loiTiktok,
+      loiChuaPhanLoai: chuaPhanLoai ? loi : 0,
+      loiHt: chuaPhanLoai ? 0 : loi - loiTiktok,
+    };
   }
 
   // Mẫu số của thanh tiến độ: số DÒ ĐƯỢC khi đã biết, còn `tong` (số xin) khi
@@ -95,12 +103,20 @@
       (s.boQua > 0 ? `:${chiTiet}` : ".");
   }
 
+  // Có lỗi HỆ THỐNG đã xác định (đỏ)? Lỗi chưa phân loại không tính.
+  function coLoiHeThong(job) {
+    return soLieu(job).loiHt > 0;
+  }
+
   function khungLoi(job) {
     const s = soLieu(job);
     let h = "";
     if (s.loiTiktok > 0) {
       h += `<div class="lo-tt">${s.loiTiktok} video TikTok không cho tải ` +
         `(bài dạng ảnh, bị gỡ hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
+    }
+    if (s.loiChuaPhanLoai > 0) {
+      h += `<div class="lo-tt">${s.loiChuaPhanLoai} lỗi (chưa phân loại — lượt trước bản cập nhật)</div>`;
     }
     if (s.loiHt > 0) {
       h += `<div class="lo-ht">${s.loiHt} video lỗi hệ thống (không tải hoặc không lên được ` +
@@ -145,7 +161,7 @@
   }
 
   window.BaoThieu = Object.freeze({
-    MAX_SO_LUONG, mauSo, phanTram, chuTienDo, nhanThieu, dongNguon, khungLoi,
+    MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, chuTienDo, nhanThieu, dongNguon, khungLoi,
     soChayLai, khungHanhDong, chuanHoaSoChayLai,
   });
 })();
