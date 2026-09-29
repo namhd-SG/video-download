@@ -299,6 +299,46 @@ _CHIA_INDEX = (
 )
 
 
+# Video đã vào một bộ tự tìm (bản sao nằm trong folder đơn bên Creative Desk).
+# MỘT hàng mỗi video: `an_luc` = lúc bộ kiểm xác minh bằng chứng và ẨN video khỏi
+# lưới (mốc ghi SAU khi bằng chứng đạt, một lần); `drive_don_luc` = lúc tệp
+# NGUỒN đã được xử lý xong ở ngày thứ 7 (vào Thùng rác / đã ở đó / đã mất),
+# ghi SAU khi Drive báo ok. Hai mốc tách nhau: mốc thứ nhất "đã báo", mốc thứ hai
+# "đã dọn". Cố ý KHÔNG dùng `videos.da_loai_luc` cho việc dọn: cột đó gắn với
+# `loai_boi` — người dùng CHỦ ĐỘNG bỏ video — còn dọn ngày 7 là máy làm.
+# `so_lan_truot`/`loi_cuoi`: lần dọn trượt, để báo động mỗi lượt còn trượt.
+_VIDEO_VAO_BO_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_vao_bo (
+    video_id TEXT PRIMARY KEY,
+    chu TEXT,
+    an_luc TEXT,
+    drive_don_luc TEXT,
+    ly_do_don TEXT,
+    so_lan_truot INTEGER NOT NULL DEFAULT 0,
+    loi_cuoi TEXT
+)
+"""
+
+# Mỗi bản sao đạt bằng chứng là MỘT hàng (một video có thể nằm ở 2 bộ). Nguồn
+# sự thật về "bộ nào" là `folder_id`; `ma_bo` chỉ để hiện. `bang_chung`:
+# `properties` = bản copy do Creative Desk gắn dấu nguồn lúc copy;
+# `md5_backfill` = khớp md5+size trên Shared Drive (video vào bộ trước khi có dấu).
+_VIDEO_VAO_BO_BAN_SCHEMA = """
+CREATE TABLE IF NOT EXISTS video_vao_bo_ban (
+    video_id TEXT NOT NULL,
+    ban_copy_id TEXT NOT NULL UNIQUE,
+    folder_id TEXT NOT NULL,
+    ma_bo TEXT NOT NULL,
+    bang_chung TEXT NOT NULL CHECK (bang_chung IN ('properties', 'md5_backfill')),
+    thay_luc TEXT NOT NULL
+)
+"""
+
+_VIDEO_VAO_BO_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_video_vao_bo_ban_video ON video_vao_bo_ban(video_id)",
+)
+
+
 def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
     """ALTER TABLE ADD COLUMN, tolerating only the already-there case.
 
@@ -347,6 +387,12 @@ def init_db(db_path: Path) -> None:
         conn.execute(_VIDEO_DAC_DIEM_SCHEMA)
         conn.execute(_THAO_TAC_DUYET_SCHEMA)
         for statement in _CHIA_INDEX:
+            conn.execute(statement)
+        # Bảng mới, thêm thuần tuý (không đụng bảng cũ): DB có sẵn chỉ được TẠO
+        # thêm hai bảng rỗng.
+        conn.execute(_VIDEO_VAO_BO_SCHEMA)
+        conn.execute(_VIDEO_VAO_BO_BAN_SCHEMA)
+        for statement in _VIDEO_VAO_BO_INDEX:
             conn.execute(statement)
         # `the_he` (thế hệ): bump mỗi lần `ghi_de_xuat` GHI ĐÈ nháp — `hoan_tac`
         # chỉ được lùi thao tác cùng thế hệ với nháp HIỆN TẠI, không được lùi
