@@ -18,8 +18,9 @@
 # tuyệt đối thì deploy lại từ commit cũ, đừng dựa vào script này.
 set -euo pipefail
 
-HOST="${VIDEODL_MINI_HOST:-nobi_auto@100.109.39.103}"
-EXPECT_HOST="autos-mac-mini"
+# Cùng bảng máy đích với deploy-to-mini.sh: lui phải về ĐÚNG máy vừa deploy.
+# shellcheck source=deploy/may-dich.sh
+source "$(dirname "$0")/may-dich.sh"
 REMOTE_REPO="Projects/video-download"
 LABEL="com.astronex.videodl"
 PORT=7870
@@ -32,6 +33,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 # Cùng cổng như lúc deploy: lui nhầm máy cũng hỏng như deploy nhầm máy.
 say "0. Kiểm máy đích"
+echo "   máy đích: $HOST (VIDEODL_MAY_DICH=${VIDEODL_MAY_DICH:-cu}, mong hostname: $EXPECT_HOST)"
 remote_host="$(ssh -o ConnectTimeout=10 -o BatchMode=yes "$HOST" 'hostname' 2>&1 | tail -1)"
 norm="$(printf '%s' "$remote_host" | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')"
 echo "   hostname bên kia: $remote_host"

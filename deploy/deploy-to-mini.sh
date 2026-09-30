@@ -24,10 +24,11 @@ RC_NGHIEM_THU=4     # đẩy xong nhưng nghiệm thu trượt
 RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁC "đang bận"
 RC_MOC=6            # mã mới đã chạy + nghiệm thu qua, nhưng KHÔNG ghi được mốc .deployed-sha
 
-HOST="${VIDEODL_MINI_HOST:-nobi_auto@100.109.39.103}"
-# Tên máy đích sau khi chuẩn hoá. `hostname` thật trả về "Autos-Mac-mini.local"
-# — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn nhầm chính mình.
-EXPECT_HOST="autos-mac-mini"
+# HOST + EXPECT_HOST (tên máy đích sau khi chuẩn hoá: `hostname` thật trả về dạng
+# "Autos-Mac-mini.local" — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn
+# nhầm chính mình) lấy từ bảng máy đích dùng chung với rollback-on-mini.sh.
+# shellcheck source=deploy/may-dich.sh
+source "$(dirname "$0")/may-dich.sh"
 REMOTE_REPO="Projects/video-download"
 LABEL="com.astronex.videodl"
 PORT=7870
@@ -107,6 +108,7 @@ don_tep_xoa() {
 # Đây là cổng quan trọng nhất trong script. Không có nó, một alias trỏ sai là
 # đủ để rsync đè lên máy dev.
 say "0. Kiểm máy đích"
+echo "   máy đích: $HOST (VIDEODL_MAY_DICH=${VIDEODL_MAY_DICH:-cu}, mong hostname: $EXPECT_HOST)"
 # `|| …`: ssh chết (255) dưới `set -euo pipefail` sẽ thoát NGAY bằng 255, im
 # lặng — stderr đã bị `2>&1` nuốt vào biến. Không đọc được tên máy là PHÉP ĐO
 # HỎNG, không phải "sai máy".

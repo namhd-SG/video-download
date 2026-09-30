@@ -20,7 +20,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = ("deploy/deploy-to-mini.sh", "deploy/verify-synced-files.sh",
-           "deploy/prune-git-deleted-files.sh")
+           "deploy/prune-git-deleted-files.sh", "deploy/may-dich.sh")
 
 # ssh giả: đối số cuối là lệnh xa. `KICH_BAN` chọn cách nó hỏng.
 SSH_GIA = r'''#!/usr/bin/env bash
