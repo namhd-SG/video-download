@@ -185,3 +185,95 @@ def test_chu_badge_worker_js():
 
 def test_tran_nghi_loi_co_han():
     assert 0 < queue_mod.TRAN_NGHI_LOI_GIAY <= 300
+
+
+def test_song_do_bang_thread_that_truoc_start_sau_stop(db_path, tmp_path):
+    """Mã "chet" của healthz đọc `thread.is_alive()` THẬT: chưa start / đã stop ⇒ False.
+    `_loop` giờ không chết vì `Exception`, nhưng luồng vẫn có thể không chạy (chưa start,
+    đã stop, hay một `BaseException` như SystemExit lọt ra) — chính các ca đó phải hiện ra."""
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  disk_guard_fn=lambda _p: _Dia(True))
+    assert w.trang_thai()["song"] is False
+    w.start()
+    try:
+        assert w.trang_thai()["song"] is True
+    finally:
+        w.stop()
+    assert _cho(lambda: w.trang_thai()["song"] is False)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_base_exception_lot_ra_thi_song_false(db_path, tmp_path, monkeypatch):
+    """Chỉ `Exception` được bắt (cố ý: `stop`/Ctrl-C vẫn phải dừng được luồng). Một
+    `BaseException` lọt ra giết luồng ⇒ `song` phải thành False, tức healthz nói "chet"."""
+    def claim_thoat(_p):
+        raise SystemExit("mô phỏng luồng bị giết")
+
+    monkeypatch.setattr(models, "claim_next_pending_job", claim_thoat)
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: w.trang_thai()["song"] is False)
+    finally:
+        w.stop()
+
+
+@pytest.fixture
+def may_chu(tmp_path):
+    """App THẬT qua HTTP (uvicorn, cổng ngẫu nhiên), worker tắt, danh tính đổi được."""
+    import socket
+    import threading as th
+
+    import uvicorn
+
+    import web.app as app_mod
+    from web.auth import require_user
+
+    cu = {k: getattr(app_mod, k) for k in ("DATA_DIR", "DB_PATH")}
+    app_mod.DATA_DIR, app_mod.DB_PATH = tmp_path, tmp_path / "jobs.db"
+    models.init_db(app_mod.DB_PATH)
+    models.moi_admin_tu_env(app_mod.DB_PATH, ["sep@astronex.ai"])
+    ai = {"email": "nguoi-thuong@astronex.ai"}
+    start, stop = app_mod.worker.start, app_mod.worker.stop
+    app_mod.worker.start = app_mod.worker.stop = lambda: None
+    app_mod.app.dependency_overrides[require_user] = lambda: ai["email"]
+    with socket.socket() as so:
+        so.bind(("127.0.0.1", 0))
+        port = so.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app_mod.app, host="127.0.0.1", port=port,
+                                           log_level="warning"))
+    t = th.Thread(target=server.run, daemon=True)
+    t.start()
+    while not server.started:
+        time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}", ai
+    server.should_exit = True
+    t.join(timeout=5)
+    app_mod.app.dependency_overrides.pop(require_user, None)
+    app_mod.worker.start, app_mod.worker.stop = start, stop
+    for k, v in cu.items():
+        setattr(app_mod, k, v)
+
+
+def _get(url):
+    import urllib.error
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return r.status, json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        return e.code, None
+
+
+def test_admin_worker_qua_http_nguoi_thuong_403_admin_200(may_chu):
+    """Miễn trừ trong lưới route (`KHONG_CAN_KIEM_CHU`) chỉ đúng nếu route THẬT SỰ chặn ở
+    server: người thường ⇒ 403, quản trị ⇒ 200 kèm chi tiết. Đo qua HTTP, không gọi hàm."""
+    goc, ai = may_chu
+    ma, _ = _get(goc + "/admin/worker")
+    assert ma == 403
+    ai["email"] = "sep@astronex.ai"
+    ma, than = _get(goc + "/admin/worker")
+    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia"}
+    ma, than = _get(goc + "/healthz")
+    assert ma == 200 and set(than) == {"status", "worker"}, "healthz chỉ có mã, không chi tiết"
