@@ -610,7 +610,7 @@ class JobWorker:
 
     def trang_thai(self) -> dict:
         """Cho healthz / badge quản trị: worker có sống không, lỗi lặp bao nhiêu lần
-        liên tiếp, có đang chờ vì đĩa không. Luồng chết im lặng từng xảy ra 7 lần
+        liên tiếp (0 trong lúc một job đang chạy lành), có đang chờ vì đĩa không. Luồng chết im lặng từng xảy ra 7 lần
         (23–24/09, `disk I/O error` ở `claim_next_pending_job`) — không ai biết."""
         return {
             "song": self._thread is not None and self._thread.is_alive(),
@@ -656,8 +656,10 @@ class JobWorker:
                 if job is None:
                     self._stop.wait(self._poll_interval)
             except Exception as exc:  # noqa: BLE001 — vòng worker không được chết
-                self._loi_lien_tiep += 1
                 self._so_lan_nghi += 1
+                # Báo ra CHUỖI lỗi thật (1, 2, 3…) kể cả khi mỗi vòng đều nhận được job rồi
+                # mới hỏng — xoá lúc claim chỉ để job LÀNH kế tiếp không bị báo "lỗi lặp".
+                self._loi_lien_tiep = self._so_lan_nghi
                 self._loi_cuoi = type(exc).__name__
                 log.error("worker lỗi (lần %d liên tiếp)%s", self._loi_lien_tiep,
                           f", job {job['id']} đang dở" if job else "", exc_info=True)

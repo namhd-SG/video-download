@@ -374,6 +374,7 @@ def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_nghi_lui_dan(db_path, tmp_path):
     finally:
         w.stop()
     assert cho[:3] == [0.005, 0.01, 0.02]
+    assert w.trang_thai()["loi_lien_tiep"] >= 3, "chuỗi lỗi phải được báo đúng số, không kẹt ở 1"
 
 
 def test_mot_loi_thoang_qua_khong_bao_loi_lap_suot_job_lanh_ke_tiep(db_path, tmp_path):
