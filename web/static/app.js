@@ -1893,6 +1893,25 @@
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
   // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
+  // Badge worker (CHỈ quản trị): worker chết / lỗi lặp / chờ đĩa thì job pending không
+  // chạy mà trang vẫn trông bình thường — nói ra. Hàm thuần theo `tt` (null ⇒ ẩn).
+  function chuBadgeWorker(tt) {
+    if (!tt) return "";
+    if (!tt.song) return "Worker đã dừng — job chờ sẽ không chạy";
+    if (tt.job_ket && tt.job_ket.length) return `Worker: ${tt.job_ket.length} job kẹt "đang chạy", chưa ghi được trạng thái`;
+    if (tt.loi_lien_tiep > 0) return `Worker lỗi lặp ${tt.loi_lien_tiep} lần (${tt.loi_cuoi || "?"})`;
+    if (tt.cho_dia) return `Worker chờ đĩa: ${tt.cho_dia}`;
+    return "";
+  }
+
+  function veBadgeWorker(tt) {
+    const el = document.getElementById("badge-worker");
+    if (!el) return;
+    const chu = chuBadgeWorker(tt);
+    el.textContent = chu;
+    el.hidden = !chu;
+  }
+
   // Badge "Dọn lỗi (N)": CHỈ quản trị (server kiểm `require_admin`; người thường không
   // gọi endpoint). Lỗi mạng/không phải admin ⇒ ẩn badge, không làm hỏng thư viện.
   async function loadBadgeDonLoi() {
@@ -1901,9 +1920,14 @@
     if (!el) return;
     el.hidden = true;
     if (elLap) elLap.hidden = true;
+    veBadgeWorker(null);
     try {
       const me = await apiGet("/me");
       if (!me.la_admin) return;
+      veBadgeWorker(await apiGet("/admin/worker").catch((e) => {
+        if (e instanceof PhienHetHan) throw e;
+        return null;
+      }));
       const res = await apiGet("/admin/don-vao-bo-loi");
       // Chỉ ĐẾM (không ngưỡng): N id đang trong tập thử-lại, lâu nhất K lần trượt liên tiếp.
       if (elLap && res.do_loi_lap && res.do_loi_lap.so_id) {

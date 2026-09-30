@@ -574,6 +574,7 @@ KHONG_CAN_KIEM_CHU = {
     "GET /me/quota": "chính người đang gọi",
     "GET /admin/nguoi-dung": "require_admin — 403 cho người thường",
     "GET /admin/don-vao-bo-loi": "require_admin — 403 cho người thường",
+    "GET /admin/worker": "require_admin — 403 cho người thường",
     "GET /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
     "PUT /admin/nguoi-dung/{email}": "require_admin — 403 cho người thường",
     "POST /videos/loai": "nhận danh sách id, tự lọc quyền sở hữu trong `models.video_de_loai`",

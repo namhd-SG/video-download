@@ -30,11 +30,19 @@ from web import models
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
 from web.cookies import cookies_path_for_user  # noqa: F401
 from web.cookies import ly_do_jar_khong_dung_duoc
-from web.lifecycle import on_video_verified
+from web.lifecycle import check_disk_guard, on_video_verified
 
 log = logging.getLogger("videodl.web")
 
 POLL_INTERVAL_SECONDS = 1.0
+# Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
+# Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
+# trong vòng một phút sau khi hết lỗi.
+TRAN_NGHI_LOI_GIAY = 60.0
+# Chờ đĩa kéo dài: nhắc lại một dòng log mỗi chừng này giây (không phải mỗi vòng — lý do
+# mang số MB đổi từng giây và log dồn lên chính cái đĩa đang dưới ngưỡng; cũng không
+# phải chỉ một lần — chờ nhiều ngày mà log chỉ còn một dòng đầu là im lặng).
+NHAC_CHO_DIA_GIAY = 600.0
 
 # Trần cho một lượt ĐÀO SÂU trên nhánh music/search/profile — USER CHỐT 21/09
 # qua `AskUserQuestion`, không phải số chọn tay.
@@ -558,14 +566,29 @@ class JobWorker:
 
     def __init__(self, db_path: Path, downloads_dir: Path, cookies_dir: Path,
                  poll_interval: float = POLL_INTERVAL_SECONDS,
-                 process_job_fn: Callable[..., None] = process_job):
+                 process_job_fn: Callable[..., None] = process_job,
+                 disk_guard_fn: Callable[[Path], object] = check_disk_guard):
         self._db_path = db_path
         self._downloads_dir = downloads_dir
         self._cookies_dir = cookies_dir
         self._poll_interval = poll_interval
         self._process_job_fn = process_job_fn
+        self._disk_guard_fn = disk_guard_fn
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        # Trạng thái đọc từ luồng khác (`trang_thai()`); chỉ luồng worker ghi.
+        # Hai bộ đếm, hai việc: `_loi_lien_tiep` là số BÁO RA (healthz/badge) — xoá ngay khi
+        # nhận được job, để một lỗi thoáng qua không bị báo "lỗi lặp" suốt job lành kế tiếp;
+        # `_so_lan_nghi` chỉ để nghỉ lùi — xoá khi CẢ vòng trót lọt, để "nhận được mà xử lý
+        # hỏng" liên tục vẫn nghỉ lùi dần thay vì dội vào DB mỗi nhịp poll.
+        self._loi_lien_tiep = 0
+        self._so_lan_nghi = 0
+        self._loi_cuoi: str | None = None
+        self._cho_dia: str | None = None
+        self._nhac_cho_dia_luc = 0.0
+        # Job dở chưa ghi được 'interrupted'. `frozenset` và chỉ GÁN LẠI cả tập: luồng web
+        # đọc nó trong `trang_thai()`, sửa tại chỗ sẽ làm phép duyệt bên đó nổ.
+        self._cho_danh_dau: frozenset[int] = frozenset()
 
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
@@ -585,10 +608,86 @@ class JobWorker:
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
+    def trang_thai(self) -> dict:
+        """Cho healthz / badge quản trị: worker có sống không, lỗi lặp bao nhiêu lần
+        liên tiếp (0 trong lúc một job đang chạy lành), có đang chờ vì đĩa không. Luồng chết im lặng từng xảy ra 7 lần
+        (23–24/09, `disk I/O error` ở `claim_next_pending_job`) — không ai biết."""
+        return {
+            "song": self._thread is not None and self._thread.is_alive(),
+            "loi_lien_tiep": self._loi_lien_tiep,
+            "loi_cuoi": self._loi_cuoi,
+            "cho_dia": self._cho_dia,
+            "job_ket": sorted(self._cho_danh_dau),
+        }
+
     def _loop(self) -> None:
+        # MỖI vòng được bọc: trước đây một `OperationalError` ở `claim_next_pending_job`
+        # (hay ở `finish_job` bên trong `process_job`) lọt ra đây và GIẾT luồng — app
+        # vẫn phục vụ web, job kẹt 'running'/'pending' tới lần restart sau.
         while not self._stop.is_set():
-            job = models.claim_next_pending_job(self._db_path)
-            if job is None:
-                time.sleep(self._poll_interval)
+            job = None
+            self._thu_lai_danh_dau()
+            try:
+                # Cổng đĩa LÚC NHẬN job, cùng ngưỡng với cổng lúc tạo job (`POST /jobs`):
+                # job đã chờ trước khi đĩa tụt không được bắt đầu tải khi đĩa đã cạn.
+                # Không tự fail — job ở lại 'pending', chạy khi đĩa có chỗ lại.
+                dia = self._disk_guard_fn(self._downloads_dir)
+                if not dia.ok:
+                    # Log khi BƯỚC VÀO trạng thái chờ, không log mỗi vòng: lý do mang số MB
+                    # đổi từng giây (đĩa mini tụt theo swap của account khác), và log dồn
+                    # lên chính cái đĩa đang dưới ngưỡng. `_cho_dia` vẫn cập nhật số mới.
+                    bay_gio = time.monotonic()
+                    if self._cho_dia is None or bay_gio - self._nhac_cho_dia_luc >= NHAC_CHO_DIA_GIAY:
+                        log.warning("worker %s, chưa nhận job pending: %s",
+                                    "CHỜ" if self._cho_dia is None else "VẪN CHỜ", dia.reason)
+                        self._nhac_cho_dia_luc = bay_gio
+                    self._cho_dia = dia.reason
+                    self._loi_lien_tiep = self._so_lan_nghi = 0
+                    self._stop.wait(self._poll_interval)
+                    continue
+                if self._cho_dia is not None:
+                    log.info("worker hết chờ đĩa, nhận job lại")
+                self._cho_dia = None
+                job = models.claim_next_pending_job(self._db_path)
+                self._loi_lien_tiep = 0  # nhận được (hoặc hàng rỗng): DB đang đọc/ghi được
+                if job is not None:
+                    self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)
+                self._so_lan_nghi = 0  # cả vòng trót lọt
+                if job is None:
+                    self._stop.wait(self._poll_interval)
+            except Exception as exc:  # noqa: BLE001 — vòng worker không được chết
+                self._so_lan_nghi += 1
+                # Báo ra CHUỖI lỗi thật (1, 2, 3…) kể cả khi mỗi vòng đều nhận được job rồi
+                # mới hỏng — xoá lúc claim chỉ để job LÀNH kế tiếp không bị báo "lỗi lặp".
+                self._loi_lien_tiep = self._so_lan_nghi
+                self._loi_cuoi = type(exc).__name__
+                log.error("worker lỗi (lần %d liên tiếp)%s", self._loi_lien_tiep,
+                          f", job {job['id']} đang dở" if job else "", exc_info=True)
+                if job is not None:
+                    try:
+                        models.mark_job_interrupted(self._db_path, job["id"])
+                    except Exception:  # noqa: BLE001 — DB vẫn hỏng: thử lại ở đầu vòng sau
+                        self._cho_danh_dau = self._cho_danh_dau | {job["id"]}
+                        log.error("worker: chưa ghi được 'interrupted' cho job %s — thử lại "
+                                  "mỗi vòng", job["id"], exc_info=True)
+                self._stop.wait(self.nghi_sau_loi(self._so_lan_nghi))
+
+    def _thu_lai_danh_dau(self) -> None:
+        """Job bị bỏ dở mà lần trước chưa ghi được 'interrupted' (DB còn hỏng lúc đó): thử
+        lại MỖI vòng tới khi ghi được — lượt quét lúc khởi động giờ hiếm chạy, vì worker
+        không còn chết để được restart. Nằm NGOÀI đường nhận job: một hàng không ghi được
+        mãi (vd trang DB hỏng cục bộ) không được chặn cả hàng đợi. Trượt thì im lặng (đã log
+        lúc thêm vào); id vẫn hiện ở `job_ket` của healthz/badge cho tới khi ghi được."""
+        for jid in sorted(self._cho_danh_dau):
+            try:
+                models.mark_job_interrupted(self._db_path, jid)
+            except Exception:  # noqa: BLE001
                 continue
-            self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)
+            self._cho_danh_dau = self._cho_danh_dau - {jid}  # đã đổi, hoặc đã rời 'running'
+            log.info("worker: đã ghi 'interrupted' cho job %s (thử lại)", jid)
+
+    def nghi_sau_loi(self, lan: int) -> float:
+        """Số giây nghỉ sau lần lỗi liên tiếp thứ `lan` (≥1): poll, 2×poll, 4×poll…, trần
+        `TRAN_NGHI_LOI_GIAY`. Kẹp số mũ: lỗi lặp cả ngày không được làm tràn số NGAY TRONG
+        nhánh bắt lỗi (đó là chỗ duy nhất gọi hàm này)."""
+        return min(self._poll_interval * 2 ** min(max(lan, 1) - 1, 16), TRAN_NGHI_LOI_GIAY)

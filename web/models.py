@@ -1173,3 +1173,16 @@ def mark_running_as_interrupted(db_path: Path) -> int:
             (_now(),),
         )
         return cur.rowcount
+
+
+def mark_job_interrupted(db_path: Path, job_id: int) -> bool:
+    """Như lượt quét lúc khởi động, nhưng cho ĐÚNG một job: vòng worker bắt được
+    lỗi khi job này còn 'running' (vd `finish_job` trượt vì DB/đĩa). Chỉ đổi hàng
+    còn 'running' — job đã kịp ghi done/failed thì giữ nguyên. Trả True nếu đã đổi."""
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "UPDATE jobs SET trang_thai = 'interrupted', xong_luc = ? "
+            "WHERE id = ? AND trang_thai = 'running'",
+            (_now(), job_id),
+        )
+        return cur.rowcount == 1
