@@ -365,16 +365,17 @@ def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_nghi_lui_dan(db_path, tmp_path):
 
     w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.005,
                   process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
-    cho = []
+    cho, bao = [], []
     that = w._stop.wait
-    w._stop.wait = lambda t=None: (cho.append(t), that(t))[1]
+    # Ghi số BÁO RA ngay lúc nghỉ (trong nhánh lỗi) — đọc sau `stop()` thì phụ thuộc giờ dừng.
+    w._stop.wait = lambda t=None: (cho.append(t), bao.append(w._loi_lien_tiep), that(t))[2]
     w.start()
     try:
         assert _cho(lambda: len(cho) >= 3)
     finally:
         w.stop()
     assert cho[:3] == [0.005, 0.01, 0.02]
-    assert w.trang_thai()["loi_lien_tiep"] >= 3, "chuỗi lỗi phải được báo đúng số, không kẹt ở 1"
+    assert bao[:3] == [1, 2, 3], "chuỗi lỗi phải được báo đúng số, không kẹt ở 1"
 
 
 def test_mot_loi_thoang_qua_khong_bao_loi_lap_suot_job_lanh_ke_tiep(db_path, tmp_path):
