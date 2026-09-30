@@ -1898,8 +1898,8 @@
   function chuBadgeWorker(tt) {
     if (!tt) return "";
     if (!tt.song) return "Worker đã dừng — job chờ sẽ không chạy";
-    if (tt.loi_lien_tiep > 0) return `Worker lỗi lặp ${tt.loi_lien_tiep} lần (${tt.loi_cuoi || "?"})`;
     if (tt.job_ket && tt.job_ket.length) return `Worker: ${tt.job_ket.length} job kẹt "đang chạy", chưa ghi được trạng thái`;
+    if (tt.loi_lien_tiep > 0) return `Worker lỗi lặp ${tt.loi_lien_tiep} lần (${tt.loi_cuoi || "?"})`;
     if (tt.cho_dia) return `Worker chờ đĩa: ${tt.cho_dia}`;
     return "";
   }

@@ -354,10 +354,10 @@ def test_nghi_lui_dan_va_co_tran(db_path, tmp_path, monkeypatch):
     assert cho[:5] == [0.01, 0.02, 0.04, 0.08, 0.08]
 
 
-def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_dem_len(db_path, tmp_path):
-    """Bộ đếm chỉ xoá khi CẢ vòng trót lọt: claim được mà xử lý hỏng liên tục thì số lần
-    lỗi liên tiếp phải tăng (để nghỉ lùi dần), không kẹt ở 1."""
-    for i in range(4):
+def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_nghi_lui_dan(db_path, tmp_path):
+    """Nhận được job mà xử lý hỏng liên tục ⇒ vẫn nghỉ lùi dần (bộ đếm nghỉ chỉ xoá khi CẢ
+    vòng trót lọt), không dội vào DB mỗi nhịp poll."""
+    for i in range(6):
         models.create_job(db_path, f"https://www.tiktok.com/music/x-{i}", 1, "a")
 
     def xu_ly(db, _dl, _ck, job):
@@ -365,8 +365,93 @@ def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_dem_len(db_path, tmp_path):
 
     w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.005,
                   process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
+    cho = []
+    that = w._stop.wait
+    w._stop.wait = lambda t=None: (cho.append(t), that(t))[1]
     w.start()
     try:
-        assert _cho(lambda: w.trang_thai()["loi_lien_tiep"] >= 3)
+        assert _cho(lambda: len(cho) >= 3)
     finally:
         w.stop()
+    assert cho[:3] == [0.005, 0.01, 0.02]
+
+
+def test_mot_loi_thoang_qua_khong_bao_loi_lap_suot_job_lanh_ke_tiep(db_path, tmp_path):
+    """Job A hỏng một lần (DB khoá thoáng qua) rồi job B chạy lành và LÂU ⇒ trong lúc B
+    chạy, healthz không được báo "lỗi lặp". Đột biến xoá bộ đếm báo-ra sau khi xử lý xong
+    (thay vì ngay khi nhận được job) ⇒ ĐỎ."""
+    import threading
+    ja = models.create_job(db_path, "https://www.tiktok.com/music/a-1", 1, "a")
+    jb = models.create_job(db_path, "https://www.tiktok.com/music/b-2", 1, "b")
+    b_dang_chay, tha_b = threading.Event(), threading.Event()
+
+    def xu_ly(db, _dl, _ck, job):
+        if job["id"] == ja:
+            raise sqlite3.OperationalError("database is locked")
+        b_dang_chay.set()
+        tha_b.wait(5)
+        models.finish_job(db, job["id"], "done")
+
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert b_dang_chay.wait(5)
+        assert w.trang_thai()["loi_lien_tiep"] == 0
+        tha_b.set()
+        assert _cho(lambda: models.get_job(db_path, jb)["trang_thai"] == "done")
+    finally:
+        tha_b.set()
+        w.stop()
+    assert models.get_job(db_path, ja)["trang_thai"] == "interrupted"
+
+
+def test_id_ket_vinh_vien_khong_chan_hang_doi(db_path, tmp_path, monkeypatch):
+    """Ghi 'interrupted' cho job A trượt MÃI (trang DB hỏng cục bộ) ⇒ A nằm ở `job_ket`,
+    nhưng job B vẫn được nhận và chạy xong. Đột biến đưa vòng thử lại vào trong đường
+    nhận job (ném trước claim) ⇒ B không bao giờ chạy ⇒ ĐỎ."""
+    ja = models.create_job(db_path, "https://www.tiktok.com/music/a-1", 1, "a")
+    jb = models.create_job(db_path, "https://www.tiktok.com/music/b-2", 1, "b")
+    that = models.mark_job_interrupted
+
+    def danh_dau(p, jid):
+        if jid == ja:
+            raise sqlite3.DatabaseError("database disk image is malformed")
+        return that(p, jid)
+
+    def xu_ly(db, _dl, _ck, job):
+        if job["id"] == ja:
+            raise sqlite3.OperationalError("disk I/O error")
+        models.finish_job(db, job["id"], "done")
+
+    monkeypatch.setattr(models, "mark_job_interrupted", danh_dau)
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: models.get_job(db_path, jb)["trang_thai"] == "done")
+        assert w.trang_thai()["job_ket"] == [ja]
+    finally:
+        w.stop()
+
+
+def test_cho_dia_lau_thi_nhac_lai_theo_nhip_khong_moi_vong(db_path, tmp_path, caplog, monkeypatch):
+    """Chờ đĩa kéo dài ⇒ nhắc lại theo nhịp `NHAC_CHO_DIA_GIAY` (không im sau dòng đầu),
+    nhưng vẫn ít hơn hẳn số vòng. Đột biến bỏ nhắc lại ⇒ chỉ 1 dòng ⇒ ĐỎ."""
+    monkeypatch.setattr(queue_mod, "NHAC_CHO_DIA_GIAY", 0.05)
+    models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    dem = {"n": 0}
+
+    def dia(_p):
+        dem["n"] += 1
+        return _Dia(False, f"đĩa còn {300 - dem['n'] % 200} MB")
+
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.002, disk_guard_fn=dia)
+    with caplog.at_level("WARNING", logger="videodl.web"):
+        w.start()
+        try:
+            time.sleep(0.3)
+        finally:
+            w.stop()
+    cho = [r for r in caplog.records if "CHỜ" in r.getMessage()]
+    assert 2 <= len(cho) < dem["n"] / 5, (len(cho), dem["n"])
