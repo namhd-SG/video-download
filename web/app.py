@@ -307,11 +307,11 @@ def healthz() -> dict:
     probe in the handover checklist reach it over loopback with no Access
     JWT, and it discloses nothing but liveness — the worker part is a CODE
     only (no error text, no paths): "ok" · "chet" (thread gone) · "loi_lap"
-    (current loop failing repeatedly) · "cho_dia" (waiting: disk below the
+    (current loop failing, or a job stuck unmarked) · "cho_dia" (waiting: disk below the
     new-job threshold). HTTP stays 200: the web side is up either way, and
     deploy scripts gate on the status code."""
     tt = worker.trang_thai()
-    ma = ("chet" if not tt["song"] else "loi_lap" if tt["loi_lien_tiep"] > 0
+    ma = ("chet" if not tt["song"] else "loi_lap" if tt["loi_lien_tiep"] > 0 or tt.get("job_ket")
           else "cho_dia" if tt["cho_dia"] else "ok")
     return {"status": "ok", "worker": ma}
 

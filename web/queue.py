@@ -576,6 +576,9 @@ class JobWorker:
         self._loi_lien_tiep = 0
         self._loi_cuoi: str | None = None
         self._cho_dia: str | None = None
+        # Job dở chưa ghi được 'interrupted'. `frozenset` và chỉ GÁN LẠI cả tập: luồng web
+        # đọc nó trong `trang_thai()`, sửa tại chỗ sẽ làm phép duyệt bên đó nổ.
+        self._cho_danh_dau: frozenset[int] = frozenset()
 
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
@@ -604,6 +607,7 @@ class JobWorker:
             "loi_lien_tiep": self._loi_lien_tiep,
             "loi_cuoi": self._loi_cuoi,
             "cho_dia": self._cho_dia,
+            "job_ket": sorted(self._cho_danh_dau),
         }
 
     def _loop(self) -> None:
@@ -613,12 +617,22 @@ class JobWorker:
         while not self._stop.is_set():
             job = None
             try:
+                # Job bị bỏ dở mà lần trước chưa ghi được 'interrupted' (DB còn hỏng lúc
+                # đó): thử lại MỖI vòng tới khi ghi được. Không có bước này thì hàng kẹt
+                # 'running' mãi — lượt quét lúc khởi động giờ hiếm chạy, vì worker không
+                # còn chết để được restart. Ném ở đây ⇒ nhánh bắt lỗi dưới, thử lại vòng sau.
+                for jid in sorted(self._cho_danh_dau):
+                    models.mark_job_interrupted(self._db_path, jid)
+                    self._cho_danh_dau = self._cho_danh_dau - {jid}  # đã đổi, hoặc đã rời 'running'
                 # Cổng đĩa LÚC NHẬN job, cùng ngưỡng với cổng lúc tạo job (`POST /jobs`):
                 # job đã chờ trước khi đĩa tụt không được bắt đầu tải khi đĩa đã cạn.
                 # Không tự fail — job ở lại 'pending', chạy khi đĩa có chỗ lại.
                 dia = self._disk_guard_fn(self._downloads_dir)
                 if not dia.ok:
-                    if self._cho_dia is None or self._cho_dia != dia.reason:
+                    # Log khi BƯỚC VÀO trạng thái chờ, không log mỗi vòng: lý do mang số MB
+                    # đổi từng giây (đĩa mini tụt theo swap của account khác), và log dồn
+                    # lên chính cái đĩa đang dưới ngưỡng. `_cho_dia` vẫn cập nhật số mới.
+                    if self._cho_dia is None:
                         log.warning("worker CHỜ, chưa nhận job pending: %s", dia.reason)
                     self._cho_dia = dia.reason
                     self._loi_lien_tiep = 0
@@ -628,11 +642,13 @@ class JobWorker:
                     log.info("worker hết chờ đĩa, nhận job lại")
                 self._cho_dia = None
                 job = models.claim_next_pending_job(self._db_path)
+                if job is not None:
+                    self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)
+                # Xoá bộ đếm CHỈ khi cả vòng trót lọt — xoá ngay sau claim thì claim được mà
+                # xử lý hỏng liên tục sẽ không bao giờ nghỉ lùi quá một nhịp poll.
                 self._loi_lien_tiep = 0
                 if job is None:
                     self._stop.wait(self._poll_interval)
-                    continue
-                self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)
             except Exception as exc:  # noqa: BLE001 — vòng worker không được chết
                 self._loi_lien_tiep += 1
                 self._loi_cuoi = type(exc).__name__
@@ -641,9 +657,14 @@ class JobWorker:
                 if job is not None:
                     try:
                         models.mark_job_interrupted(self._db_path, job["id"])
-                    except Exception:  # noqa: BLE001 — DB vẫn hỏng: lượt quét lúc restart dọn
-                        log.error("worker: không ghi được 'interrupted' cho job %s", job["id"],
-                                  exc_info=True)
-                # Kẹp số mũ: lỗi lặp cả ngày không được làm tràn số NGAY TRONG nhánh bắt lỗi.
-                self._stop.wait(min(self._poll_interval * 2 ** min(self._loi_lien_tiep - 1, 16),
-                                    TRAN_NGHI_LOI_GIAY))
+                    except Exception:  # noqa: BLE001 — DB vẫn hỏng: thử lại ở đầu vòng sau
+                        self._cho_danh_dau = self._cho_danh_dau | {job["id"]}
+                        log.error("worker: chưa ghi được 'interrupted' cho job %s — thử lại "
+                                  "mỗi vòng", job["id"], exc_info=True)
+                self._stop.wait(self.nghi_sau_loi(self._loi_lien_tiep))
+
+    def nghi_sau_loi(self, lan: int) -> float:
+        """Số giây nghỉ sau lần lỗi liên tiếp thứ `lan` (≥1): poll, 2×poll, 4×poll…, trần
+        `TRAN_NGHI_LOI_GIAY`. Kẹp số mũ: lỗi lặp cả ngày không được làm tràn số NGAY TRONG
+        nhánh bắt lỗi (đó là chỗ duy nhất gọi hàm này)."""
+        return min(self._poll_interval * 2 ** min(max(lan, 1) - 1, 16), TRAN_NGHI_LOI_GIAY)

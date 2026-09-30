@@ -17,4 +17,5 @@ process.stdout.write(JSON.stringify({
   chet: chuBadgeWorker(tt({ song: false })),
   loi: chuBadgeWorker(tt({ loi_lien_tiep: 3, loi_cuoi: "OperationalError" })),
   dia: chuBadgeWorker(tt({ cho_dia: "đĩa còn 1 MB" })),
+  ket: chuBadgeWorker(tt({ job_ket: [7, 9] })),
 }));

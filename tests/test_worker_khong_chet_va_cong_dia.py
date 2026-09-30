@@ -181,6 +181,7 @@ def test_chu_badge_worker_js():
     assert "đã dừng" in do["chet"]
     assert "3 lần" in do["loi"] and "OperationalError" in do["loi"]
     assert "đĩa còn 1 MB" in do["dia"]
+    assert "2 job kẹt" in do["ket"]
 
 
 def test_tran_nghi_loi_co_han():
@@ -274,6 +275,98 @@ def test_admin_worker_qua_http_nguoi_thuong_403_admin_200(may_chu):
     assert ma == 403
     ai["email"] = "sep@astronex.ai"
     ma, than = _get(goc + "/admin/worker")
-    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia"}
+    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia", "job_ket"}
     ma, than = _get(goc + "/healthz")
     assert ma == 200 and set(than) == {"status", "worker"}, "healthz chỉ có mã, không chi tiết"
+
+
+def test_job_dang_do_ma_danh_dau_cung_truot_thi_thu_lai_toi_khi_ghi_duoc(db_path, tmp_path, monkeypatch):
+    """`process_job` ném VÀ `mark_job_interrupted` cũng trượt (DB hỏng hai lần) ⇒ id nằm
+    trong `job_ket` (healthz "loi_lap"), rồi được ghi 'interrupted' ở vòng sau khi DB lành.
+    Đột biến bỏ vòng thử lại ⇒ hàng kẹt 'running' mãi ⇒ ĐỎ."""
+    j1 = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    that = models.mark_job_interrupted
+    hong = {"con": 1}
+
+    def danh_dau(p, jid):
+        if hong["con"] > 0:
+            hong["con"] -= 1
+            raise sqlite3.OperationalError("disk I/O error")
+        return that(p, jid)
+
+    def xu_ly(db, _dl, _ck, job):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    monkeypatch.setattr(models, "mark_job_interrupted", danh_dau)
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: models.get_job(db_path, j1)["trang_thai"] == "interrupted")
+        assert _cho(lambda: w.trang_thai()["job_ket"] == [])
+    finally:
+        w.stop()
+
+
+def test_log_cho_dia_mot_lan_du_so_mb_doi_moi_vong(db_path, tmp_path, caplog):
+    """Lý do chờ mang số MB đổi từng giây ⇒ log WARNING chỉ khi BƯỚC VÀO trạng thái chờ,
+    nhưng `cho_dia` vẫn mang số mới nhất. Đột biến so theo chuỗi lý do ⇒ mỗi vòng một dòng ⇒ ĐỎ."""
+    models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    dem = {"n": 0}
+
+    def dia(_p):
+        dem["n"] += 1
+        return _Dia(False, f"đĩa còn {300 - dem['n']} MB")
+
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.005, disk_guard_fn=dia)
+    with caplog.at_level("WARNING", logger="videodl.web"):
+        w.start()
+        try:
+            assert _cho(lambda: dem["n"] >= 10)
+        finally:
+            w.stop()
+    cho = [r for r in caplog.records if "CHỜ" in r.getMessage()]
+    assert len(cho) == 1, [r.getMessage() for r in cho]
+    assert w.trang_thai()["cho_dia"] != "đĩa còn 299 MB", "cho_dia phải mang số mới nhất"
+
+
+def test_nghi_lui_dan_va_co_tran(db_path, tmp_path, monkeypatch):
+    """Nghỉ sau lỗi: poll, 2×, 4×… rồi kẹp ở trần. Đo cả hàm lẫn LỆNH NGHỈ THẬT của vòng
+    (spy lên `_stop.wait`). Đột biến `wait(0)` hoặc bỏ trần ⇒ ĐỎ."""
+    monkeypatch.setattr(queue_mod, "TRAN_NGHI_LOI_GIAY", 0.08)
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  disk_guard_fn=lambda _p: _Dia(True))
+    assert [w.nghi_sau_loi(n) for n in (1, 2, 3, 4, 5)] == [0.01, 0.02, 0.04, 0.08, 0.08]
+    assert w.nghi_sau_loi(10_000) == 0.08, "lỗi lặp rất lâu không được tràn số"
+
+    def claim_luon_hong(_p):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(models, "claim_next_pending_job", claim_luon_hong)
+    cho = []
+    that = w._stop.wait
+    w._stop.wait = lambda t=None: (cho.append(t), that(t))[1]
+    w.start()
+    try:
+        assert _cho(lambda: len(cho) >= 5)
+    finally:
+        w.stop()
+    assert cho[:5] == [0.01, 0.02, 0.04, 0.08, 0.08]
+
+
+def test_claim_duoc_ma_xu_ly_hong_lien_tuc_van_dem_len(db_path, tmp_path):
+    """Bộ đếm chỉ xoá khi CẢ vòng trót lọt: claim được mà xử lý hỏng liên tục thì số lần
+    lỗi liên tiếp phải tăng (để nghỉ lùi dần), không kẹt ở 1."""
+    for i in range(4):
+        models.create_job(db_path, f"https://www.tiktok.com/music/x-{i}", 1, "a")
+
+    def xu_ly(db, _dl, _ck, job):
+        raise sqlite3.OperationalError("database or disk is full")
+
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.005,
+                  process_job_fn=xu_ly, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: w.trang_thai()["loi_lien_tiep"] >= 3)
+    finally:
+        w.stop()
