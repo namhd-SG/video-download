@@ -42,7 +42,7 @@ say "python: $($PY -V)"
   echo "THIẾU mã nguồn ở $REPO"
   echo "Từ máy dev chạy:"
   echo "  rsync -a --exclude='.venv' --exclude='.git' --exclude='web/data' \\"
-  echo "        ./ nobi_auto@100.109.39.103:~/Projects/video-download/"
+  echo "        ./ <user>@<máy đích>:~/Projects/video-download/   (bảng: deploy/may-dich.sh)"
   exit 1
 }
 

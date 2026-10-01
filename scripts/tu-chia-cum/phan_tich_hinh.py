@@ -50,8 +50,31 @@ def _nap_kiem():
 kiem = _nap_kiem()
 
 TRUC = ("trang_phuc_dam_dong", "trang_phuc_nguoi_chinh", "boi_canh")
-# Cùng tên biến + mặc định với `deploy/rollback-on-mini.sh`.
-MINI_HOST_MAC_DINH = "nobi_auto@100.109.39.103"
+# Máy đích mặc định lấy từ bảng DÙNG CHUNG với deploy/lui (`deploy/may-dich.sh`), cùng
+# biến chọn/ghi đè (`VIDEODL_MAY_DICH`, `VIDEODL_MINI_HOST`) — không chép địa chỉ sang đây.
+BANG_MAY_DICH = _DAY.parent.parent / "deploy" / "may-dich.sh"
+
+
+def host_mac_dinh(env: dict | None = None) -> str:
+    """`HOST` mà deploy/lui sẽ dùng, với cùng env. Bảng báo sai tên máy, bảng mất, không
+    có bash ⇒ ValueError (thành `tham số sai`, không traceback).
+
+    `VIDEODL_MINI_HOST` ĐẶT mà RỖNG được trả nguyên chuỗi rỗng — để `MiniSsh` từ chối như
+    trước khi có bảng — thay vì rơi về máy mặc định như `:-` của bash: một biến rỗng do
+    gõ nhầm không được lặng lẽ thành "chạy trên máy thật"."""
+    env = env if env is not None else os.environ
+    if env.get("VIDEODL_MINI_HOST") == "":
+        return ""
+    try:
+        r = subprocess.run(["bash", "-c", 'source "$1" && printf %s "$HOST"', "_", str(BANG_MAY_DICH)],
+                           capture_output=True, text=True, env=env)
+    except OSError as exc:
+        raise ValueError(f"không chạy được bash để đọc {BANG_MAY_DICH}: {exc}") from exc
+    if r.returncode != 0 or not r.stdout:
+        raise ValueError(r.stderr.strip() or f"không đọc được máy đích từ {BANG_MAY_DICH}")
+    return r.stdout
+
+
 MINI_REPO_MAC_DINH = "~/Projects/video-download"
 # Trần một lượt agy: `--print-timeout 25m` cộng một phút lề.
 AGY_TIMEOUT_GIAY = 26 * 60
@@ -290,7 +313,7 @@ def main(argv: list[str] | None = None, *, chay_agy=None, chay_lenh=None,
     p.add_argument("--truc", choices=TRUC, default=TRUC[0])
     p.add_argument("--scratch", type=Path, help="thư mục tạm (mặc định: tạo mới trong $TMPDIR)")
     p.add_argument("--mini-db", type=Path, help="dùng DB CỤC BỘ này thay vì ssh (thử khô / test)")
-    p.add_argument("--ssh", default=os.environ.get("VIDEODL_MINI_HOST", MINI_HOST_MAC_DINH))
+    p.add_argument("--ssh", help="user@host; mặc định theo deploy/may-dich.sh")
     p.add_argument("--repo-mini", default=os.environ.get("VIDEODL_MINI_REPO", MINI_REPO_MAC_DINH))
     p.add_argument("--thu-muc-prompt", type=Path, default=_DAY)
     p.add_argument("--model-nhan", help=f"model vision (mặc định {agy_lenh.MODEL_NHAN}); "
@@ -305,7 +328,7 @@ def main(argv: list[str] | None = None, *, chay_agy=None, chay_lenh=None,
     pb = PhienBan.tu_thu_muc(a.thu_muc_prompt, a.model_nhan, a.model_chuan_hoa)
     try:
         m = (mini_mod.MiniCucBo(a.mini_db) if a.mini_db else
-             mini_mod.MiniSsh(a.ssh, a.repo_mini, chay_lenh or mini_mod.chay_that,
+             mini_mod.MiniSsh(host_mac_dinh() if a.ssh is None else a.ssh, a.repo_mini, chay_lenh or mini_mod.chay_that,
                               ssh_bin=os.environ.get("SSH_BIN", "ssh")))
     except ValueError as exc:
         out(f"tham số sai: {exc}")
