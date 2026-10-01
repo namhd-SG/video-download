@@ -56,9 +56,20 @@ BANG_MAY_DICH = _DAY.parent.parent / "deploy" / "may-dich.sh"
 
 
 def host_mac_dinh(env: dict | None = None) -> str:
-    """`HOST` mà deploy/lui sẽ dùng, với cùng env. Bảng báo sai tên máy ⇒ ValueError."""
-    r = subprocess.run(["bash", "-c", 'source "$1" && printf %s "$HOST"', "_", str(BANG_MAY_DICH)],
-                       capture_output=True, text=True, env=env if env is not None else os.environ)
+    """`HOST` mà deploy/lui sẽ dùng, với cùng env. Bảng báo sai tên máy, bảng mất, không
+    có bash ⇒ ValueError (thành `tham số sai`, không traceback).
+
+    `VIDEODL_MINI_HOST` ĐẶT mà RỖNG được trả nguyên chuỗi rỗng — để `MiniSsh` từ chối như
+    trước khi có bảng — thay vì rơi về máy mặc định như `:-` của bash: một biến rỗng do
+    gõ nhầm không được lặng lẽ thành "chạy trên máy thật"."""
+    env = env if env is not None else os.environ
+    if env.get("VIDEODL_MINI_HOST") == "":
+        return ""
+    try:
+        r = subprocess.run(["bash", "-c", 'source "$1" && printf %s "$HOST"', "_", str(BANG_MAY_DICH)],
+                           capture_output=True, text=True, env=env)
+    except OSError as exc:
+        raise ValueError(f"không chạy được bash để đọc {BANG_MAY_DICH}: {exc}") from exc
     if r.returncode != 0 or not r.stdout:
         raise ValueError(r.stderr.strip() or f"không đọc được máy đích từ {BANG_MAY_DICH}")
     return r.stdout

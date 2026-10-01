@@ -15,7 +15,9 @@ case "${VIDEODL_MAY_DICH:-cu}" in
   cu) _may_host="nobi_auto@100.109.39.103"; _may_expect="autos-mac-mini" ;;
   *)
     echo "DỪNG: VIDEODL_MAY_DICH='${VIDEODL_MAY_DICH}' không có trong bảng máy đích (deploy/may-dich.sh)." >&2
-    exit 1 ;;
+    # 7, không phải 1: deploy dùng 1 cho "cổng hostname chặn" — người đọc mã thoát phải
+    # phân biệt "cấu hình máy đích sai" với "đã tới một máy không phải máy đích".
+    exit 7 ;;
 esac
 HOST="${VIDEODL_MINI_HOST:-$_may_host}"
 EXPECT_HOST="${VIDEODL_MINI_EXPECT_HOST:-$_may_expect}"

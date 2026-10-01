@@ -46,7 +46,7 @@ def test_ghi_de_rieng_host_giu_expect_cu_de_cong_hostname_chan():
 
 def test_ten_may_khong_co_trong_bang_thi_dung():
     r = _bang(VIDEODL_MAY_DICH="khong-co")
-    assert r.returncode == 1 and "không có trong bảng máy đích" in r.stderr
+    assert r.returncode == 7 and "không có trong bảng máy đích" in r.stderr
 
 
 @pytest.fixture
@@ -91,7 +91,7 @@ def test_deploy_ten_may_la_dung_truoc_khi_ssh(bin_gia, tmp_path):
            "VIDEODL_MAY_DICH": "khong-co"}
     r = subprocess.run(["/bin/bash", "deploy/deploy-to-mini.sh"], cwd=REPO, env=env,
                        capture_output=True, text=True, timeout=30)
-    assert r.returncode == 1 and "không có trong bảng máy đích" in r.stderr
+    assert r.returncode == 7 and "không có trong bảng máy đích" in r.stderr
     assert not log.exists(), "không được ssh đi đâu khi tên máy sai"
 
 
@@ -117,3 +117,37 @@ def test_dia_chi_may_chi_ghi_cung_o_bang():
                         "--", "deploy/", "scripts/", "src/", "web/"], capture_output=True, text=True)
     dong = [d for d in r.stdout.splitlines() if d]
     assert dong and all(d.startswith("deploy/may-dich.sh:") for d in dong), dong
+
+
+def test_lui_va_deploy_goi_qua_symlink_van_thay_bang(bin_gia, tmp_path):
+    """Symlink đặt NGOÀI `deploy/` vẫn tìm thấy bảng (theo tệp thật), và lui đi tới máy
+    theo tham số. Đột biến `$(dirname "$0")` ⇒ 'may-dich.sh: No such file' ⇒ ĐỎ."""
+    lnk = tmp_path / "lnk"
+    lnk.mkdir()
+    (lnk / "lui.sh").symlink_to(REPO / "deploy" / "rollback-on-mini.sh")
+    log = tmp_path / "ssh.log"
+    env = {"PATH": f"{bin_gia}:/usr/bin:/bin", "HOME": str(tmp_path), "SSH_LOG": str(log),
+           "VIDEODL_MINI_HOST": "svc@m4.invalid", "VIDEODL_MINI_EXPECT_HOST": "may-moi"}
+    r = subprocess.run(["/bin/bash", str(lnk / "lui.sh"), "../x"], cwd=tmp_path, env=env,
+                       capture_output=True, text=True, timeout=30)
+    assert "may-dich.sh" not in r.stderr, r.stderr
+    assert "máy đích: svc@m4.invalid" in r.stdout
+    lenh = log.read_text().splitlines()
+    assert lenh and all("svc@m4.invalid" in d for d in lenh), lenh
+
+
+def test_phan_tich_hinh_bien_rong_van_bi_tu_choi_va_thieu_bash_la_valueerror():
+    spec = importlib.util.spec_from_file_location(
+        "pth2", REPO / "scripts" / "tu-chia-cum" / "phan_tich_hinh.py")
+    import sys
+    sys.path.insert(0, str(REPO / "scripts" / "tu-chia-cum"))
+    try:
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+    finally:
+        sys.path.pop(0)
+    goc = {k: v for k, v in os.environ.items() if not k.startswith("VIDEODL_")}
+    assert mod.host_mac_dinh({**goc, "VIDEODL_MINI_HOST": ""}) == "", \
+        "biến rỗng không được rơi về máy thật — MiniSsh sẽ từ chối chuỗi rỗng"
+    with pytest.raises(ValueError):
+        mod.host_mac_dinh({**goc, "PATH": "/khong-co-bash"})

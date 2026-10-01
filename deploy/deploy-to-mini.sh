@@ -23,12 +23,14 @@ RC_DANG_TAI=3       # có job đang chạy hoặc đang chờ
 RC_NGHIEM_THU=4     # đẩy xong nhưng nghiệm thu trượt
 RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁC "đang bận"
 RC_MOC=6            # mã mới đã chạy + nghiệm thu qua, nhưng KHÔNG ghi được mốc .deployed-sha
+RC_BANG_MAY=7       # bảng máy đích (deploy/may-dich.sh): tên máy lạ — đặt trong chính bảng
 
 # HOST + EXPECT_HOST (tên máy đích sau khi chuẩn hoá: `hostname` thật trả về dạng
 # "Autos-Mac-mini.local" — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn
 # nhầm chính mình) lấy từ bảng máy đích dùng chung với rollback-on-mini.sh.
+# `readlink -f` theo symlink tới tệp thật: gọi qua link đặt ngoài `deploy/` vẫn thấy bảng.
 # shellcheck source=deploy/may-dich.sh
-source "$(dirname "$0")/may-dich.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/may-dich.sh"
 REMOTE_REPO="Projects/video-download"
 LABEL="com.astronex.videodl"
 PORT=7870

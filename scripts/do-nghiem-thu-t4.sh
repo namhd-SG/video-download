@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Bộ đo cho nghiệm thu T4 — CHẠY TRÊN MINI, CHỈ ĐỌC.
 #
-#     ssh "$VIDEODL_MINI_HOST" 'bash -s' < scripts/do-nghiem-thu-t4.sh truoc
-#     ssh "$VIDEODL_MINI_HOST" 'bash -s' < scripts/do-nghiem-thu-t4.sh mau 300
-#     ssh "$VIDEODL_MINI_HOST" 'bash -s' < scripts/do-nghiem-thu-t4.sh sau
+#     H=$(bash -c 'source deploy/may-dich.sh && printf %s "$HOST"')   # máy đích, xem bảng
+#     ssh "$H" 'bash -s' < scripts/do-nghiem-thu-t4.sh truoc
+#     ssh "$H" 'bash -s' < scripts/do-nghiem-thu-t4.sh mau 300
+#     ssh "$H" 'bash -s' < scripts/do-nghiem-thu-t4.sh sau
 #
 # Vì sao script thay vì gõ tay từng lệnh: T4 hẹn giờ với hai người thật trên
 # một máy dùng chung với Promax. Khung 30 phút không phải lúc để dò cú pháp,

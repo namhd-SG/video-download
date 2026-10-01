@@ -19,8 +19,9 @@
 set -euo pipefail
 
 # Cùng bảng máy đích với deploy-to-mini.sh: lui phải về ĐÚNG máy vừa deploy.
+# `readlink -f` theo symlink tới tệp thật: gọi qua link đặt ngoài `deploy/` vẫn thấy bảng.
 # shellcheck source=deploy/may-dich.sh
-source "$(dirname "$0")/may-dich.sh"
+source "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/may-dich.sh"
 REMOTE_REPO="Projects/video-download"
 LABEL="com.astronex.videodl"
 PORT=7870
