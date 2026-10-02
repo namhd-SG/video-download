@@ -252,7 +252,12 @@ REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
 # ⚠ Thêm TRƯỚC `add_revalidate_header` ⇒ GZip nằm TRONG nó. Đặt ngoài thì GZip chỉ thấy
 # body dạng stream do `BaseHTTPMiddleware` sinh ra (`more_body=True`) ⇒ bỏ qua
 # `minimum_size`, nén cả `/healthz` 56 byte (đo 02/10). `Cache-Control` vẫn do lớp ngoài đặt.
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+#
+# `compresslevel=4` (mặc định Starlette là 9): đo 02/10 trên mini, `/videos` 1000 hàng thật
+# 1,73 MB ⇒ mức 9: 244 KB / 20,0 ms · mức 6: +1,1 % / 14,0 ms · mức 4: +8,1 % / 8,7 ms ·
+# mức 1: +29,5 % / 5,6 ms. Mini dùng chung với autotest (load có lúc ~20) ⇒ chọn mức nhỏ
+# nhất mà kích thước tăng ≤ ~10 %.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 
 
 @app.middleware("http")
