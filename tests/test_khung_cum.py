@@ -240,6 +240,31 @@ def test_tab_khac_gan_video_cu_hon_thi_khong_gui_va_nap_lai(app_mod, cum31, tmp_
     assert js["khung_sau"] == res_sau["khung_cum"], "khung đã nạp lại"
 
 
+def test_lo_doi_ma_nap_lai_hong_thi_khong_noi_da_nap_lai(app_mod, cum31, tmp_path):
+    db, c = cum31
+    res_truoc = app_mod.liet_ke_cum(nguoi_tao=TOI)
+    videos, _ = _videos_trang(app_mod, TOI)
+    models_cum.gan_video(db, c, TOI, TOI, ["y05"])
+    p = models_chia.xay_payload_lo(db, models_cum.lay_cum(db, c, TOI, TOI), TOI, TOI, 1)
+    js = _node({"che_do": "moLo", "videos": videos, "khungCum": res_truoc["khung_cum"],
+                "cum": next(x for x in res_truoc["cum"] if x["id"] == c), "thu": 1,
+                "payload": p, "loiNapCum": True}, tmp_path)
+    assert js["kq"] == "loi" and js["payload"] is None
+    assert not any("đã nạp lại" in t for t in js["toast"]), js["toast"]
+    assert any("không nạp lại được" in t for t in js["toast"])
+
+
+def test_khung_danh_da_don_thang_ban_da_nap_cu(tmp_path):
+    """Khung mới hơn `state.videos`: video vừa bị dọn sau lượt nạp `/videos` vẫn
+    nằm trong `state.videos`, nhưng khung đánh `da_don` ⇒ lô coi nó là đã dọn."""
+    js = _node({"che_do": "lo", "cumIds": [1],
+                "videos": [{"video_id": "a", "cum_id": 1}, {"video_id": "b", "cum_id": 1}],
+                "khungCum": [{"video_id": "a", "cum_id": 1, "tao_luc": "1", "da_don": True},
+                             {"video_id": "b", "cum_id": 1, "tao_luc": "2", "da_don": False}]},
+               tmp_path)
+    assert js == {"1": [["a*", "b"]]}
+
+
 def test_server_cu_khong_tra_video_ids_van_gui(app_mod, cum31, tmp_path):
     db, c = cum31
     cum = models_cum.lay_cum(db, c, TOI, TOI)

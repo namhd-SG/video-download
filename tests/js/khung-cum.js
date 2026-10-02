@@ -45,7 +45,10 @@ async function main() {
   };
   const apiGet = async (path) => {
     nhatKy.push(`GET ${path}`);
-    if (path === "/cum") return vao.resCum || vao.res;
+    if (path === "/cum") {
+      if (vao.loiNapCum) throw new Error("mạng chập");
+      return vao.resCum || vao.res;
+    }
     if (/^\/cum\/\d+\/lo\/\d+\/payload$/.test(path)) return JSON.parse(JSON.stringify(vao.payload));
     throw new Error(`apiGet không mong đợi: ${path}`);
   };

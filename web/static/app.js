@@ -1567,9 +1567,14 @@
     // gửi nhầm bộ. Nạp lại để lần bấm sau đúng. Server cũ không trả ⇒ bỏ qua.
     if (Array.isArray(idsLo) && !cungLo(idsLo, muc.map((v) => v.video_id))) {
       tab.close();
-      showToast("Lô đã đổi (tab khác vừa sửa cụm) — đã nạp lại, bấm lại.");
-      try { await loadCums(); } catch (err) {
+      // Chỉ nói "đã nạp lại" SAU khi nạp xong — nạp hỏng thì khung vẫn cũ và
+      // bấm lại sẽ bị từ chối tiếp, nên phải nói đúng thế.
+      try {
+        await loadCums();
+        showToast("Lô đã đổi (tab khác vừa sửa cụm) — đã nạp lại, bấm lại.");
+      } catch (err) {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+        showToast("Lô đã đổi (tab khác vừa sửa cụm) nhưng không nạp lại được — tải lại trang (F5).");
       }
       renderLibrary();
       return "loi";
