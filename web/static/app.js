@@ -2212,9 +2212,11 @@
     return true;
   }
 
-  // Ô `#error` dùng chung (form job, dữ liệu ban đầu, thư viện). Mỗi nguồn giữ MỘT câu
-  // mở đầu bằng `dau`: ghi câu mới thay câu cũ của CÙNG nguồn, không đè câu nguồn khác;
-  // `cau` rỗng ⇒ gỡ câu của nguồn đó (vd thư viện đã nạp lại được thì câu lỗi cũ thành sai).
+  // Ô `#error` dùng chung (form job, dữ liệu ban đầu, thư viện). Nguồn đi qua đây giữ MỘT
+  // câu mở đầu bằng `dau`: ghi câu mới thay câu cũ của CÙNG nguồn, không đè câu nguồn khác
+  // cũng đi qua đây; `cau` rỗng ⇒ gỡ câu của nguồn đó (vd thư viện đã nạp lại được thì câu
+  // lỗi cũ thành sai). ⚠ Form job (submit) CHƯA đi qua đây — nó vẫn xoá/ghi thẳng ô này, nên
+  // có thể làm mất câu lỗi thư viện (nợ ghi ở plan 261002-1305 "Nợ đã biết").
   function ghiOLoi(dau, cau) {
     const el = document.getElementById("error");
     if (!el) return;
