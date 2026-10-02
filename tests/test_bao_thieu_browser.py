@@ -75,6 +75,8 @@ def _job(db: Path, *, tong: int, tim: int, bo_qua: int, xong: int, loi: int = 0,
         models.set_job_stop_reason(db, job, ly_do)
     if trang_thai == "done":
         models.finish_job(db, job, "done")
+    elif trang_thai == "failed":
+        models.finish_job(db, job, "failed")
     elif trang_thai == "running":
         with models._connect(db) as conn:
             conn.execute("UPDATE jobs SET trang_thai = 'running' WHERE id = ?", (job,))
@@ -423,3 +425,17 @@ def test_the_feed_rong_hien_cau_xac_minh_khong_khuyen_dan_cookie(trang, db, tmp_
     thu_muc = Path(os.environ.get("VIDEODL_SHOT_DIR", tmp_path))
     thu_muc.mkdir(parents=True, exist_ok=True)
     h.screenshot(path=str(thu_muc / "the-feed-rong.png"))
+
+
+@pytest.mark.parametrize("ma", ["source_empty", "feed_rong", "nghi_bi_chan"])
+def test_luot_rong_bi_loi_hien_loi_va_cau_khong_noi_xong(trang, db, ma):
+    """Lượt rỗng giờ kết thúc `failed` (worker `process_job`): thẻ phải đọc "Lỗi",
+    và câu lý do không được mở bằng "Xong:" — trước đây `source_empty` viết
+    "Xong: nguồn này hiện không có video nào." cạnh một thẻ không tải được gì."""
+    job = _job(db, tong=20, tim=0, bo_qua=0, xong=0, ly_do=ma, trang_thai="failed")
+    p, _ = trang()
+    h = _hang(p, job)
+    assert h.locator(".status-badge").inner_text() == "Lỗi", ma
+    cau = h.locator(".stop-reason").inner_text()
+    assert cau and not cau.startswith("Xong"), (ma, cau)
+

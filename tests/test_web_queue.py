@@ -483,7 +483,7 @@ def test_process_job_marks_failed_on_exception_without_crashing_caller(tmp_path,
     job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 5, "a")
     job = models.get_job(db_path, job_id)
 
-    def _boom(url, max_videos, cookies_path, proxy=None):
+    def _boom(*a, **kw):
         raise RuntimeError("network exploded")
 
     monkeypatch.setattr(queue_mod, "_fetch_refs", _boom)
@@ -569,6 +569,23 @@ def test_luot_rong_van_la_loi_khi_ghi_ly_do_vao_db_truot(tmp_path, monkeypatch):
     monkeypatch.setattr(models, "set_job_stop_reason", truot)
     job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1", [])
     assert job["ly_do_dung"] in (None, "")
+    assert job["trang_thai"] == "failed"
+
+
+def test_luot_hashtag_rong_di_qua_enumerator_that_la_loi(tmp_path, monkeypatch):
+    """Nhánh hashtag cũng phải tới được quyết "Lỗi": nó dùng chung `_note_stop`
+    nên chỉ đúng khi `on_stop` thật sự được nối vào `enumerate_hashtag`. Chạy
+    `enumerate_hashtag` THẬT, chỉ vá hai lời gọi mạng của nó.
+    ĐỘT BIẾN: bỏ `on_stop=_note_stop` khỏi lời gọi `enumerate_hashtag` ⇒ ĐỎ."""
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "123")
+    monkeypatch.setattr(he, "_provider_page",
+                        lambda cid, cursor, proxy=None: ([], cursor, False, True))
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/tag/rong", 20, "a")
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    job = models.get_job(db, job_id)
+    assert job["ly_do_dung"] == "source_empty"
     assert job["trang_thai"] == "failed"
 
 
