@@ -1,6 +1,7 @@
-"""Thư viện vượt trần nạp (`LIBRARY_MAX` = 2000) phải có cảnh báo RÕ trên trang; đúng bằng
-trần thì không. Trình duyệt thật; `/videos` được giả theo trang (limit/offset) để có 2000+
-video mà không dựng DB lớn. Đặt `VIDEODL_SHOT_DIR` để lưu ảnh (`shot-canh-bao-2000.png`).
+"""Thư viện vượt trần nạp (`LIBRARY_MAX`) phải có cảnh báo RÕ trên trang; từ 80 % trần
+(`LIBRARY_CANH_BAO_SOM`) có cảnh báo SỚM; dưới mức đó thì không. Trình duyệt thật; `/videos`
+được giả theo trang (limit/offset) để có hàng nghìn video mà không dựng DB lớn. Đặt
+`VIDEODL_SHOT_DIR` để lưu ảnh. Mọi con số đọc từ `app.js` — đổi trần không phải sửa test.
 """
 from __future__ import annotations
 
@@ -22,6 +23,11 @@ pw_api = pytest.importorskip("playwright.sync_api")
 
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 HARNESS = Path(__file__).parent / "js"
+_SRC = (STATIC / "app.js").read_text(encoding="utf-8")
+TRAN = int(re.search(r"const LIBRARY_MAX = (\d+);", _SRC).group(1))
+TRANG = int(re.search(r"const LIBRARY_PAGE = (\d+);", _SRC).group(1))
+SOM = -(-TRAN * 8 // 10)   # Math.ceil(TRAN * 0.8) — chép lại có chủ đích để test bắt lệch
+OFFSETS = list(range(0, TRAN, TRANG))
 
 
 def _videos(n: int) -> list[dict]:
@@ -89,28 +95,32 @@ def _mo_trang(base_url, tong: int):
     return p, br, pw, goi
 
 
-@pytest.mark.parametrize("tong, co_canh_bao", [(2000, False), (2001, True)])
-def test_canh_bao_chi_hien_khi_vuot_tran_2000(base_url, tong, co_canh_bao):
+@pytest.mark.parametrize("tong, loai", [(SOM - 1, "khong"), (SOM, "som"), (TRAN, "som"),
+                                        (TRAN + 1, "cat")])
+def test_canh_bao_som_tu_80_phan_tram_va_cat_khi_vuot_tran(base_url, tong, loai):
     p, br, pw, goi = _mo_trang(base_url, tong)
     try:
         p.wait_for_function(
             "document.getElementById('library-count').textContent.includes('video')")
         el = p.locator("#canh-bao-gioi-han")
-        if co_canh_bao:
+        if loai == "khong":
+            assert not el.is_visible() and el.inner_text() == ""
+        else:
             assert el.is_visible()
-            assert el.inner_text() == f"Thư viện có {tong} video, lưới chỉ nạp 2000 video mới nhất"
+            assert el.inner_text() == (
+                f"Thư viện có {tong} video, lưới chỉ nạp {TRAN} video mới nhất" if loai == "cat"
+                else f"Thư viện có {tong} video — sắp chạm trần nạp {TRAN}")
             thu_muc = os.environ.get("VIDEODL_SHOT_DIR")
             if thu_muc:
                 # Chỉ phần đầu khối thư viện (cảnh báo + nhãn đếm + hàng thẻ đầu), không cả 40 thẻ.
                 hop = p.locator("section[aria-label='Thư viện creative']").bounding_box()
-                p.screenshot(path=str(Path(thu_muc) / "shot-canh-bao-2000.png"), full_page=True,
+                p.screenshot(path=str(Path(thu_muc) / f"shot-canh-bao-{loai}-{tong}.png"),
+                             full_page=True,
                              clip={"x": hop["x"], "y": hop["y"], "width": hop["width"], "height": 520})
-        else:
-            assert not el.is_visible() and el.inner_text() == ""
-        # Cách nạp KHÔNG đổi: nạp theo trang 500 tới 2000 rồi dừng, không nạp video thứ 2001.
-        assert goi == [0, 500, 1000, 1500], goi
+        # Nạp theo trang `TRANG` tới đủ `tong` hoặc tới trần rồi dừng.
+        assert goi == [o for o in OFFSETS if o < tong], goi
         nhan = p.inner_text("#library-count")
-        assert (f"(đang hiện 2000 trong {tong})" in nhan) is co_canh_bao
+        assert (f"(đang hiện {TRAN} trong {tong})" in nhan) is (loai == "cat")
     finally:
         br.close()
         pw.stop()
@@ -132,21 +142,31 @@ def test_ham_thuan_canh_bao_gioi_han_o_bien():
     ham = src[i:k + 1]
     r = subprocess.run([node, "-e", ham + ";process.stdout.write(JSON.stringify(["
                         "canhBaoGioiHan(2000,2000),canhBaoGioiHan(2001,2000),canhBaoGioiHan(0,2000),"
-                        "canhBaoGioiHan(2001,2000,true),canhBaoGioiHan(2000,2000,true)]))"],
+                        "canhBaoGioiHan(2001,2000,true),canhBaoGioiHan(2000,2000,true),"
+                        "canhBaoGioiHan(3999,5000,false,4000),canhBaoGioiHan(4000,5000,false,4000),"
+                        "canhBaoGioiHan(5000,5000,true,4000),canhBaoGioiHan(5001,5000,false,4000)]))"],
                        capture_output=True, text=True, timeout=20)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) == ["", "Thư viện có 2001 video, lưới chỉ nạp 2000 video mới nhất", "",
-                                    "Có 2001 video đã vào bộ, chỉ nạp 2000 video mới nhất", ""]
+                                    "Có 2001 video đã vào bộ, chỉ nạp 2000 video mới nhất", "",
+                                    "", "Thư viện có 4000 video — sắp chạm trần nạp 5000",
+                                    "Có 5000 video đã vào bộ — sắp chạm trần nạp 5000",
+                                    "Thư viện có 5001 video, lưới chỉ nạp 5000 video mới nhất"]
 
 
-def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
-    """Server lọc theo phía chip (`vao_bo=0|1`): lưới mặc định 2500 video chưa vào bộ,
-    phía "Đã vào bộ" 2100 video. Mỗi phía có trần nạp RIÊNG 2000 + cảnh báo riêng; chip
+def test_moc_canh_bao_som_dung_80_phan_tram_tran():
+    assert re.search(r"const LIBRARY_CANH_BAO_SOM = Math\.ceil\(LIBRARY_MAX \* 0\.8\);", _SRC)
+
+
+def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng(base_url):
+    """Server lọc theo phía chip (`vao_bo=0|1`): lưới mặc định TRAN+500 video chưa vào bộ,
+    phía "Đã vào bộ" TRAN+100 video. Mỗi phía có trần nạp RIÊNG + cảnh báo riêng; chip
     đọc `tong_vao_bo` (lưới mặc định không còn chứa video ẩn để tự đếm)."""
-    kho = {0: _videos(2500),
+    n0, n1 = TRAN + 500, TRAN + 100
+    kho = {0: _videos(n0),
            1: [{**v, "video_id": f"9{v['video_id']}",
                 "vao_bo": {"an_luc": "2026-09-30T00:00:00+00:00", "se_don_luc": None,
-                           "ma_bo": ["N.0110A"]}} for v in _videos(2100)]}
+                           "ma_bo": ["N.0110A"]}} for v in _videos(n1)]}
     goi: list[tuple[int, int]] = []
 
     def tra(route):
@@ -174,20 +194,20 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
                 p.screenshot(path=str(Path(thu_muc) / f"shot-{ten}.png"), full_page=True,
                              clip={"x": hop["x"], "y": hop["y"], "width": hop["width"], "height": 620})
 
-        assert goi == [(0, 0), (0, 500), (0, 1000), (0, 1500)], goi
-        assert p.inner_text("#canh-bao-gioi-han") == "Thư viện có 2500 video, lưới chỉ nạp 2000 video mới nhất"
-        assert p.inner_text("#chip-vao-bo") == "Đã vào bộ (2100)"
-        assert "(đang hiện 2000 trong 2500)" in p.inner_text("#library-count")
-        chup("pr2-luoi-mac-dinh-2500")
+        assert goi == [(0, o) for o in OFFSETS], goi
+        assert p.inner_text("#canh-bao-gioi-han") == f"Thư viện có {n0} video, lưới chỉ nạp {TRAN} video mới nhất"
+        assert p.inner_text("#chip-vao-bo") == f"Đã vào bộ ({n1})"
+        assert f"(đang hiện {TRAN} trong {n0})" in p.inner_text("#library-count")
+        chup(f"pr2-luoi-mac-dinh-{n0}")
 
         goi.clear()
         p.click("#chip-vao-bo")
         p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
-        assert goi == [(1, 0), (1, 500), (1, 1000), (1, 1500)], goi
-        assert p.inner_text("#canh-bao-gioi-han") == "Có 2100 video đã vào bộ, chỉ nạp 2000 video mới nhất"
-        assert "(đang hiện 2000 trong 2100)" in p.inner_text("#library-count")
+        assert goi == [(1, o) for o in OFFSETS], goi
+        assert p.inner_text("#canh-bao-gioi-han") == f"Có {n1} video đã vào bộ, chỉ nạp {TRAN} video mới nhất"
+        assert f"(đang hiện {TRAN} trong {n1})" in p.inner_text("#library-count")
         assert p.locator("#card-grid .bo-ma").count() > 0, "lưới phía chip là video đã vào bộ"
-        chup("pr2-chip-da-vao-bo-2100")
+        chup(f"pr2-chip-da-vao-bo-{n1}")
     finally:
         br.close()
         pw.stop()

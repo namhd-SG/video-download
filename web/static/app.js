@@ -1987,11 +1987,17 @@
     };
   }
 
-  // Trần cứng cho số video giữ trong trình duyệt. Có trần là vì lưới dựng DOM
-  // cho từng thẻ; không có trần thì thư viện lớn dần sẽ làm treo tab của người
-  // dùng, và đó là kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện 2000/5000".
-  const LIBRARY_PAGE = 500;
-  const LIBRARY_MAX = 2000;
+  // Trần cứng cho số video giữ trong trình duyệt MỖI phía chip. Lưới đã phân trang
+  // nên DOM không còn là chi phí; chi phí thật là JSON tải về (~1,2–1,7 KB/video,
+  // đo 02/10) cộng các vòng lọc/đếm chạy trên cả tập. Không có trần thì thư viện
+  // lớn dần sẽ làm treo tab, kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện
+  // 5000/6000". 5000 là phanh tạm cho tới khi lưới phân trang ở server.
+  // `LIBRARY_PAGE` = `MAX_VIDEOS_PAGE_SIZE` của server (web/app.py) — ít lượt hơn.
+  const LIBRARY_PAGE = 1000;
+  const LIBRARY_MAX = 5000;
+  // Từ mức này (80 % trần) băng cảnh báo hiện SỚM — để người dùng và người vận hành
+  // thấy trước khi lưới bắt đầu cắt, không cần ai đi đo tay.
+  const LIBRARY_CANH_BAO_SOM = Math.ceil(LIBRARY_MAX * 0.8);
   // ⚠ Phân trang ở `renderLibrary` KHÔNG kéo dữ liệu: nó cắt trên `state.videos`
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
   // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
@@ -2050,16 +2056,23 @@
   // Thư viện của người xem lớn hơn trần nạp ⇒ lưới CHỈ có `LIBRARY_MAX` video mới nhất. Hàm
   // thuần: trả câu cảnh báo, hoặc "" khi chưa vượt (đúng bằng trần chưa bị cắt: `>` không phải `>=`).
   // `chiVaoBo`: `tong` là số của phía "Đã vào bộ" (trần nạp tính riêng mỗi phía).
-  function canhBaoGioiHan(tong, tran, chiVaoBo) {
-    if (!(tong > tran)) return "";
-    return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
-      : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
+  // `som` (tuỳ chọn): từ mức này trở lên mà CHƯA vượt trần ⇒ cảnh báo sớm.
+  function canhBaoGioiHan(tong, tran, chiVaoBo, som) {
+    if (tong > tran) {
+      return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
+        : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
+    }
+    if (typeof som === "number" && tong >= som) {
+      return chiVaoBo ? `Có ${tong} video đã vào bộ — sắp chạm trần nạp ${tran}`
+        : `Thư viện có ${tong} video — sắp chạm trần nạp ${tran}`;
+    }
+    return "";
   }
 
   function veCanhBaoGioiHan(tong) {
     const el = document.getElementById("canh-bao-gioi-han");
     if (!el) return;
-    const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo);
+    const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo, LIBRARY_CANH_BAO_SOM);
     el.textContent = chu;
     el.hidden = chu === "";
   }
