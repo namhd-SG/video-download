@@ -516,3 +516,55 @@ def test_scrape_music_page_truyen_user_agent_da_ghim(monkeypatch, tmp_path):
                         lambda *a, **k: thay.update(ua=k["user_agent"]) or that(*a, **k))
     scraper_mod.scrape_music_page("u", profile_dir=str(tmp_path / "p6"), user_agent="UA-GHIM")
     assert thay["ua"] == "UA-GHIM"
+
+
+def test_dir_giu_lai_khi_job_chua_ket_thuc_sau_process_job(monkeypatch, db, tmp_path):
+    """Chỉ xoá khi job đã ở trạng thái kết thúc trong DB. Ở đây ghi kết thúc bị
+    chặn (job còn ở trạng thái chưa kết thúc) ⇒ profile phải CÒN để bộ quét/lượt sau quyết.
+    ĐỘT BIẾN: xoá vô điều kiện trong `finally` ⇒ ĐỎ."""
+    _bat_co(monkeypatch)
+    gia_lap_scraper(monkeypatch, lambda url, **kw: [])
+    monkeypatch.setattr(models, "finish_job", lambda *a, **kw: None)
+    jid = _job(db)
+    _chay_process_job(db, tmp_path, jid)
+    assert models.get_job(db, jid)["trang_thai"] not in profile_theo_job.TRANG_THAI_KET_THUC
+    assert (db.parent / "profiles" / str(jid)).is_dir()
+
+
+def test_dir_co_san_0755_bi_siet_ve_0700(db):
+    """Thư mục đã tồn tại với quyền rộng (vd sót từ bản khác) ⇒ phải siết lại.
+    ĐỘT BIẾN: chỉ chmod khi vừa tạo mới ⇒ ĐỎ."""
+    goc = db.parent / "profiles"
+    (goc / "7").mkdir(parents=True)
+    os.chmod(goc, 0o755)
+    os.chmod(goc / "7", 0o755)
+    thu_muc = profile_theo_job.chuan_bi_profile_job(db, 7)
+    assert stat.S_IMODE(os.stat(goc).st_mode) == 0o700
+    assert stat.S_IMODE(os.stat(thu_muc).st_mode) == 0o700
+
+
+def test_bo_quet_chi_go_lien_ket_con_khong_di_theo_ra_ngoai(db, tmp_path):
+    """Mục con tên số là symlink trỏ ra ngoài ⇒ chỉ gỡ link, đích còn nguyên.
+    ĐỘT BIẾN: bỏ nhánh `is_symlink()` trong `_xoa_cay` ⇒ ĐỎ."""
+    ngoai = tmp_path / "ngoai"
+    ngoai.mkdir()
+    (ngoai / "quy.txt").write_text("x")
+    goc = db.parent / "profiles"
+    goc.mkdir(parents=True)
+    (goc / "999").symlink_to(ngoai, target_is_directory=True)
+    dem = profile_theo_job.quet_profile_mo_coi(db)
+    assert dem["da_xoa"] == 1
+    assert not (goc / "999").exists() and not (goc / "999").is_symlink()
+    assert (ngoai / "quy.txt").read_text() == "x"
+
+
+def test_bo_quet_bo_qua_khi_profiles_la_lien_ket(db, tmp_path):
+    """`profiles/` là symlink ⇒ không quét qua nó (nơi nó trỏ không phải của mình)."""
+    ngoai = tmp_path / "ngoai2"
+    (ngoai / "5").mkdir(parents=True)
+    db.parent.mkdir(parents=True, exist_ok=True)
+    (db.parent / "profiles").symlink_to(ngoai, target_is_directory=True)
+    dem = profile_theo_job.quet_profile_mo_coi(db)
+    assert dem["bo_qua"] == 1 and dem["da_xoa"] == 0
+    assert (ngoai / "5").is_dir()
+

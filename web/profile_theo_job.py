@@ -113,6 +113,12 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
     """
     dem = {"da_xoa": 0, "giu": 0, "xoa_truot": 0, "bo_qua": 0}
     goc = thu_muc_profiles(db_path)
+    if goc.is_symlink():
+        # `is_dir()`/`iterdir()` đi theo liên kết: quét qua đó là xoá thư mục con tên
+        # số ở nơi liên kết trỏ tới, ngoài `profiles/` thật. Không phải của mình ⇒ bỏ.
+        log.warning("bộ quét profile: %s là liên kết tượng trưng — bỏ qua", goc)
+        dem["bo_qua"] += 1
+        return dem
     if not goc.is_dir():
         return dem
     try:

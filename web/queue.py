@@ -600,10 +600,20 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
         log.exception("job %s crashed", job_id)
         models.finish_job(db_path, job_id, "failed")
     finally:
-        # Mọi lối ra của job (done/failed/ngoại lệ) đều là trạng thái kết thúc ở bản
-        # này ⇒ profile_dir của job không còn dùng. `xoa_profile_job` không ném: xoá
-        # trượt chỉ log, bộ quét dọn sau, và không đè lên việc đã ghi trạng thái.
-        profile_theo_job.xoa_profile_job(db_path, job_id)
+        # Xoá profile_dir CHỈ khi job đã thật sự ở trạng thái kết thúc — đọc lại từ DB,
+        # không suy từ lối ra. Hôm nay mọi lối ra đều kết thúc, nhưng một trạng thái
+        # chờ (vd chờ người giải captcha) sẽ thoát `process_job` mà vẫn cần profile;
+        # xoá vô điều kiện ở đây là xoá đúng phiên vừa được giải, và hỏng âm thầm.
+        # Đọc DB trượt / chưa kết thúc ⇒ giữ, bộ quét dọn khi job đã kết thúc.
+        # `xoa_profile_job` không ném: xoá trượt chỉ log, không đè việc ghi trạng thái.
+        try:
+            cuoi = models.get_job(db_path, job_id)
+        except Exception:  # noqa: BLE001
+            log.warning("job %s: không đọc lại được trạng thái — giữ profile cho bộ quét",
+                        job_id, exc_info=True)
+            cuoi = None
+        if cuoi is not None and cuoi["trang_thai"] in profile_theo_job.TRANG_THAI_KET_THUC:
+            profile_theo_job.xoa_profile_job(db_path, job_id)
 
 
 class JobWorker:
