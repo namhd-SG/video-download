@@ -69,11 +69,13 @@
     // hiện captcha với trình duyệt tự động; không cookie / cookie khác rỗng y
     // hệt ⇒ KHÔNG được khuyên dán lại cookie (bản cũ khuyên vậy là chỉ sai hướng).
     // "Thường do" chứ không khẳng định: mã này dùng chung cho search/nhạc/trang
-    // cá nhân, còn captcha mới thấy tận mắt ở trang cá nhân.
+    // cá nhân, còn captcha mới thấy tận mắt ở trang cá nhân. Chỉ khuyên HASHTAG:
+    // đường hashtag gọi API bằng urllib (`hashtag_enumerator`), không qua trình
+    // duyệt; khuyên "nhạc/tìm kiếm" là khuyên đổi sang đúng loại trang vừa rỗng.
     feed_rong: "Dừng: TikTok trả kết quả RỖNG cho link này (không phải vì bạn " +
                "đã tải rồi). Thường do TikTok đang đòi xác minh (captcha) với " +
                "trình duyệt tự động — dán lại cookie không chữa được. Đợi một " +
-               "lúc rồi thử lại, hoặc lấy video qua hashtag, nhạc hoặc tìm kiếm.",
+               "lúc rồi thử lại, hoặc lấy video qua link hashtag.",
     cookie_khong_doc_duoc: "Dừng: tệp cookie của bạn không đọc được. Hãy xuất " +
                            "lại từ Cookie-Editor và chọn đúng định dạng JSON " +
                            "(không phải Header String hay Netscape), rồi dán lại.",

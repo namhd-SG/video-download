@@ -1215,6 +1215,10 @@ def test_cau_feed_rong_noi_dung_nguyen_nhan_khong_khuyen_dan_lai_cookie():
     assert "không chữa được" in cau, cau
     assert not re.search(r"dán lại\s+cookie[^.—]*rồi chạy lại", cau), \
         f"câu vẫn khuyên dán lại cookie: {cau}"
+    # Chỉ khuyên hashtag (đi API, không qua trình duyệt). `feed_rong` cũng xảy ra với
+    # chính link nhạc/tìm kiếm ⇒ khuyên đổi sang chúng là khuyên đổi sang nguồn vừa rỗng.
+    assert "hashtag" in cau, cau
+    assert "nhạc hoặc tìm kiếm" not in cau, cau
 
 
 # ===========================================================================
