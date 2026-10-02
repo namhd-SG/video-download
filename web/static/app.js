@@ -38,8 +38,18 @@
              "nguồn này đã hết video TikTok đang cho xem, không phải lỗi.",
     page_cap: "Dừng sớm: đã quét hết số trang cho phép mà chưa đủ số lượng " +
                "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
-    index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
-                  "lỗi giữa chừng — thử lại sau.",
+    // Mã này phát cả khi lỗi ngay trang đầu (lượt 0 video ⇒ "Lỗi") lẫn giữa
+    // chừng (đã có vài video ⇒ "Xong"/"Thiếu"), nên câu phải đúng cả hai ca.
+    index_failed: "Không đọc tiếp được hashtag: nguồn liệt kê bên ngoài (không " +
+                  "phải TikTok) bị lỗi — thử lại sau.",
+    // Mã này phát cả khi trang hashtag KHÔNG TẢI ĐƯỢC (mạng, TikTok chặn/giới
+    // hạn — `_fetch` trả None) lẫn khi tải được mà không có mã. Câu không được
+    // khẳng định "hashtag sai" — lúc lỗi mạng hashtag hoàn toàn đúng.
+    hashtag_khong_tra_duoc: "Không đọc được hashtag: không tra được mã của " +
+                            "hashtag này trên TikTok — có thể TikTok/mạng đang " +
+                            "không phản hồi, hoặc hashtag sai/không tồn tại. " +
+                            "Kiểm lại hashtag; nếu đúng thì đợi một lúc rồi " +
+                            "thử lại.",
     // Ba mã dưới đây sinh ra 21/09 cùng lúc với việc nhánh music/search/profile
     // biết đào sâu. Mỗi câu phải khuyên MỘT việc khác nhau — đó là cả lý do
     // chúng là ba mã chứ không phải một:
@@ -63,7 +73,12 @@
     // thêm lượt gọi TikTok.
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
                    "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
-    source_empty: "Xong: nguồn này hiện không có video nào.",
+    // Lượt rỗng với mã này giờ ghi "Lỗi" (không còn "Xong"), nên câu không được
+    // mở bằng "Xong:". Nhánh hashtag cũng phát mã này khi nguồn hết trang mà
+    // chưa đủ số xin (`hashtag_enumerator.py`), nên câu phải đúng cả hai ca.
+    source_empty: "Nguồn không đưa thêm video nào cho link này. Nếu chưa tải " +
+                  "được video nào: link có thể sai hoặc đã hết hạn, hoặc nguồn " +
+                  "chưa có video — kiểm lại link.",
     // KHÔNG phải "đã tải rồi": feed TikTok trả RỖNG (0 byte) ở mọi lần hỏi,
     // nên việc thư viện có hay không chưa từng được hỏi tới. Đo 01–02/10: trang
     // hiện captcha với trình duyệt tự động; không cookie / cookie khác rỗng y

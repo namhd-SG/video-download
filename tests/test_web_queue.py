@@ -483,7 +483,7 @@ def test_process_job_marks_failed_on_exception_without_crashing_caller(tmp_path,
     job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 5, "a")
     job = models.get_job(db_path, job_id)
 
-    def _boom(url, max_videos, cookies_path, proxy=None):
+    def _boom(*a, **kw):
         raise RuntimeError("network exploded")
 
     monkeypatch.setattr(queue_mod, "_fetch_refs", _boom)
@@ -513,6 +513,176 @@ def test_process_job_with_zero_refs_keeps_the_number_the_user_asked_for(tmp_path
     assert job["trang_thai"] == "done"
     assert job["tong"] == 20, "`tong` là số user xin và không ai được đè nó"
     assert job["tim_thay"] == 0
+
+
+def _chay_luot_rong(monkeypatch, tmp_path, url, tra_ve, da_co=()):
+    """Chạy `process_job` THẬT qua `_fetch_refs` + `scrape_music_page_multi` thật
+    (chỉ vá lớp trong `scrape_music_page`), để lý do dừng do chính tầng sinh ra
+    nó tạo — không phải một fixture tự khai lý do."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    for vid in da_co:
+        models.record_video(db, 999, vid, f"https://x/{vid}")
+    job_id = models.create_job(db, url, 20, "a")
+    gia_lap_scraper(monkeypatch, tra_ve)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    return models.get_job(db, job_id)
+
+
+def test_luot_rong_vi_nguon_khong_dua_gi_la_loi_khong_phai_xong(tmp_path, monkeypatch):
+    """Nguồn trả 0 video ngay lượt đầu (`source_empty`) ⇒ "Lỗi", không phải
+    "Xong". ĐỘT BIẾN: cho lượt rỗng luôn ghi `done` (hành vi cũ) ⇒ ĐỎ."""
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1", [])
+    assert job["ly_do_dung"] == "source_empty"
+    assert job["trang_thai"] == "failed"
+    assert job["tim_thay"] == 0
+
+
+def test_luot_rong_vi_feed_tiktok_rong_la_loi(tmp_path, monkeypatch):
+    """Feed trả 0 byte, video lẻ duy nhất đã có ⇒ `feed_rong` ⇒ "Lỗi" (trước đây
+    thẻ này ghi "Xong · 0/20" — nợ nhãn "Thiếu" cho thẻ `feed_rong`)."""
+    def gia(url, thong_ke_feed=None, **kw):
+        if thong_ke_feed is not None:
+            thong_ke_feed["rong"] = thong_ke_feed.get("rong", 0) + 1
+        return [_fake_ref("v1")]
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/search?q=x", gia,
+                          da_co=["v1"])
+    assert job["ly_do_dung"] == "feed_rong"
+    assert job["trang_thai"] == "failed"
+
+
+def test_luot_rong_vi_thu_vien_da_co_het_van_la_xong(tmp_path, monkeypatch):
+    """Đối chứng: nguồn còn đưa video nhưng thư viện đã có hết (`already_owned`)
+    là xong THẬT. ĐỘT BIẾN: thêm `already_owned` vào tập lý do "Lỗi" ⇒ ĐỎ."""
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1",
+                          [_fake_ref("v1")], da_co=["v1"])
+    assert job["ly_do_dung"] == "already_owned"
+    assert job["trang_thai"] == "done"
+
+
+def test_luot_rong_van_la_loi_khi_ghi_ly_do_vao_db_truot(tmp_path, monkeypatch):
+    """`_note_stop` nuốt lỗi ghi DB để một lần ghi trượt không giết lượt tải. Quyết
+    "Lỗi"/"Xong" vì vậy phải đọc lý do TRONG BỘ NHỚ, không đọc lại từ DB.
+    ĐỘT BIẾN: quyết theo `ly_do_dung` đọc lại từ DB ⇒ ĐỎ (DB không có lý do)."""
+    def truot(*a, **kw):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(models, "set_job_stop_reason", truot)
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1", [])
+    assert job["ly_do_dung"] in (None, "")
+    assert job["trang_thai"] == "failed"
+
+
+def test_luot_hashtag_rong_di_qua_enumerator_that_la_loi(tmp_path, monkeypatch):
+    """Nhánh hashtag cũng phải tới được quyết "Lỗi": nó dùng chung `_note_stop`
+    nên chỉ đúng khi `on_stop` thật sự được nối vào `enumerate_hashtag`. Chạy
+    `enumerate_hashtag` THẬT, chỉ vá hai lời gọi mạng của nó.
+    ĐỘT BIẾN: bỏ `on_stop=_note_stop` khỏi lời gọi `enumerate_hashtag` ⇒ ĐỎ."""
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "123")
+    monkeypatch.setattr(he, "_provider_page",
+                        lambda cid, cursor, proxy=None: ([], cursor, False, True))
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/tag/rong", 20, "a")
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    job = models.get_job(db, job_id)
+    assert job["ly_do_dung"] == "source_empty"
+    assert job["trang_thai"] == "failed"
+
+
+def _chay_hashtag_that(monkeypatch, tmp_path, cid, trang):
+    """`process_job` → `enumerate_hashtag` THẬT; chỉ vá hai lời gọi mạng.
+    `trang` là danh sách kết quả `_provider_page` theo thứ tự trang."""
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: cid)
+    con = list(trang)
+    monkeypatch.setattr(he, "_provider_page", lambda c, cursor, proxy=None: con.pop(0))
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/tag/x", 20, "a")
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    return models.get_job(db, job_id)
+
+
+def test_hashtag_khong_tra_duoc_ma_la_loi_kem_ly_do(tmp_path, monkeypatch):
+    """Không tra được mã hashtag ⇒ trước đây trả rỗng KHÔNG lý do ⇒ "Xong".
+    ĐỘT BIẾN: bỏ `on_stop(STOP_HASHTAG_KHONG_TRA_DUOC)` ở nhánh `challenge_id is None` ⇒ ĐỎ."""
+    job = _chay_hashtag_that(monkeypatch, tmp_path, None, [])
+    assert job["ly_do_dung"] == "hashtag_khong_tra_duoc"
+    assert job["trang_thai"] == "failed"
+
+
+def test_hashtag_nguon_liet_ke_loi_ngay_trang_dau_la_loi(tmp_path, monkeypatch):
+    """Nguồn liệt kê hỏng ngay trang 1 ⇒ 0 video vì lỗi ⇒ "Lỗi".
+    ĐỘT BIẾN: bỏ `STOP_INDEX_FAILED` khỏi tập lý do "Lỗi" ⇒ ĐỎ."""
+    job = _chay_hashtag_that(monkeypatch, tmp_path, "123", [([], 0, True, False)])
+    assert job["ly_do_dung"] == "index_failed"
+    assert job["trang_thai"] == "failed"
+
+
+def test_hashtag_nguon_liet_ke_loi_giua_chung_khi_da_co_video_khong_bi_doi(tmp_path, monkeypatch):
+    """Đối chứng: lỗi ở trang 2 khi trang 1 đã ra video ⇒ lượt KHÔNG rỗng ⇒ không
+    đi qua nhánh lượt rỗng; quyết định cũ (theo số tải được) giữ nguyên."""
+    monkeypatch.setattr(queue_mod, "download_all", lambda refs, out, **kw: None)
+    job = _chay_hashtag_that(monkeypatch, tmp_path, "123", [
+        ([_fake_ref("h1"), _fake_ref("h2")], 2, True, True),
+        ([], 2, True, False),
+    ])
+    assert job["ly_do_dung"] == "index_failed"
+    assert job["tim_thay"] == 2
+    # Lượt có video đi nhánh cũ (quyết theo số tải được): `download_all` giả
+    # không tải gì ⇒ xong 0 ⇒ `failed` như trước bản vá, không do mã dừng.
+    assert job["trang_thai"] == "failed"
+
+
+def test_hashtag_trang_dau_toan_video_da_co_roi_nguon_loi_la_loi(tmp_path, monkeypatch):
+    """Trang 1 chỉ có video thư viện đã có, trang 2 nguồn liệt kê lỗi ⇒ lượt vẫn
+    rỗng, chưa lấy được video MỚI nào, và nguồn có thể còn ⇒ "Lỗi" + "thử lại sau"
+    là đúng ý (không phải `already_owned`: chưa đọc hết nguồn). Chốt hành vi
+    này là CÓ CHỦ ĐÍCH, không phải tình cờ của nhánh `index_failed`."""
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "123")
+    con = [([_fake_ref("cu1")], 1, True, True), ([], 1, True, False)]
+    monkeypatch.setattr(he, "_provider_page", lambda c, cursor, proxy=None: con.pop(0))
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, 999, "cu1", "https://x/cu1")
+    job_id = models.create_job(db, "https://www.tiktok.com/tag/x", 20, "a")
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    job = models.get_job(db, job_id)
+    assert job["ly_do_dung"] == "index_failed"
+    assert job["trang_thai"] == "failed"
+
+
+def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
+    """Mỗi `STOP_*` (trừ `STOP_COMPLETE`) phải có câu trong `STOP_REASON_TEXT` —
+    thiếu thì thẻ hiện "mã chưa dịch — báo cho người phát triển". Thêm mã mới
+    (như `hashtag_khong_tra_duoc`) mà quên câu ⇒ test này ĐỎ."""
+    import re
+    from tiktok_music_downloader import utils as utils_mod
+    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    dau = js.index("const STOP_REASON_TEXT")
+    khoa = set(re.findall(r"^\s{4}(\w+):", js[dau:js.index("};", dau)], re.M))
+    ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
+    ma |= set(cookies_mod.MA_LOI_COOKIE)   # mã cookie cũng vào cột `ly_do_dung`
+    assert ma - khoa == set()
+
+
+@pytest.mark.parametrize("ly_do, mong", [
+    ("feed_rong", "failed"), ("source_empty", "failed"), ("nghi_bi_chan", "failed"),
+    ("index_failed", "failed"), ("hashtag_khong_tra_duoc", "failed"),
+    ("already_owned", "done"), ("het_thoi_gian", "done"), ("stalled", "done"), (None, "done"),
+])
+def test_luot_rong_chon_trang_thai_theo_ly_do_dung(tmp_path, monkeypatch, ly_do, mong):
+    """Bảng đủ các mã: chỉ các mã "không lấy được gì" (`_LY_DO_RONG_LA_LOI`) mới thành "Lỗi"."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/music/x-1", 20, "a")
+
+    def gia_fetch(*a, ly_do_ra=None, **kw):
+        if ly_do is not None and ly_do_ra is not None:
+            ly_do_ra["ly_do"] = ly_do
+        return []
+    monkeypatch.setattr(queue_mod, "_fetch_refs", gia_fetch)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    assert models.get_job(db, job_id)["trang_thai"] == mong
 
 
 def test_process_job_marks_failed_when_every_ref_errors_without_raising(tmp_path, monkeypatch):

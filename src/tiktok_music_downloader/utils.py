@@ -273,3 +273,9 @@ STOP_NGHI_BI_CHAN = "nghi_bi_chan"
 # hiện captcha với trình duyệt tự động, và không cookie / cookie khác rỗng y hệt
 # ⇒ KHÔNG phải do cookie; câu chữ ở `app.js::STOP_REASON_TEXT.feed_rong`.
 STOP_FEED_RONG = "feed_rong"
+# Không tra được mã (challenge id) của hashtag nên chưa đọc được trang nào:
+# trang hashtag không tải được (mạng, TikTok chặn/giới hạn tần suất), hashtag
+# sai/không tồn tại, hoặc trang trả nhiều mã khác nhau
+# (`hashtag_enumerator.resolve_challenge_id`). Trước đây ca này trả rỗng mà
+# không báo lý do ⇒ lượt tải hiện "Xong"/"Thiếu" không một chữ giải thích.
+STOP_HASHTAG_KHONG_TRA_DUOC = "hashtag_khong_tra_duoc"
