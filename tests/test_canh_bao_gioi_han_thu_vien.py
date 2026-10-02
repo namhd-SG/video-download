@@ -539,11 +539,12 @@ def test_lam_moi_cung_so_khong_ghi_lai_bang_canh_bao(base_url):
             new MutationObserver((ds) => { window.__dotBienBang += ds.length; })
               .observe(document.getElementById('canh-bao-gioi-han'),
                        { childList: true, characterData: true, subtree: true }); }""")
-        n = len(goi)
+        # `data-nap-phia` được đặt SAU `veCanhBaoGioiHan`, cùng khối đồng bộ, ở cuối lượt
+        # nạp ⇒ xoá nó trước khi bấm rồi chờ nó quay lại = lượt Làm mới đã vẽ xong thật
+        # (`aria-busy` không dùng được: Làm mới không đặt nó).
+        p.evaluate("document.getElementById('card-grid').dataset.napPhia = ''")
         p.click("#library-refresh")
-        _cho_dieu_kien(p, lambda: len(goi) >= n + len([o for o in OFFSETS if o < SOM]))
-        p.wait_for_selector("#card-grid[aria-busy='false']", state="attached")
-        _cho_vong_su_kien(p)
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
         assert p.evaluate("window.__dotBienBang") == 0
         assert p.get_attribute("#canh-bao-gioi-han", "role") == "status"
     finally:
