@@ -105,7 +105,11 @@ def test_canh_bao_som_tu_80_phan_tram_va_cat_khi_vuot_tran(base_url, tong, loai)
         el = p.locator("#canh-bao-gioi-han")
         if loai == "khong":
             assert not el.is_visible() and el.inner_text() == ""
+            assert el.get_attribute("data-muc") == ""
+            assert "som" not in (el.get_attribute("class") or "").split()
         else:
+            # Chỉ "đã cắt" ngắt ngang trình đọc màn hình; "sắp chạm" là status.
+            assert el.get_attribute("role") == ("alert" if loai == "cat" else "status")
             assert el.is_visible()
             # Hai mức nhìn khác nhau: "som" vàng (class `som`), "cat" đỏ (không class `som`).
             assert el.get_attribute("data-muc") == loai
@@ -139,15 +143,17 @@ def test_ham_thuan_canh_bao_gioi_han_o_bien():
     if node is None:
         pytest.skip("cần node")
     src = (STATIC / "app.js").read_text()
-    i = src.index("function canhBaoGioiHan(")
-    d, k = 0, src.index("{", i)
-    while True:
-        d += src[k] == "{"
-        d -= src[k] == "}"
-        if d == 0:
-            break
-        k += 1
-    ham = src[i:k + 1]
+
+    def trich(ten):
+        i = src.index(f"function {ten}(")
+        d, k = 0, src.index("{", i)
+        while True:
+            d += src[k] == "{"
+            d -= src[k] == "}"
+            if d == 0:
+                return src[i:k + 1]
+            k += 1
+    ham = trich("mucGioiHan") + "\n" + trich("canhBaoGioiHan")
     r = subprocess.run([node, "-e", ham + ";process.stdout.write(JSON.stringify(["
                         "canhBaoGioiHan(2000,2000),canhBaoGioiHan(2001,2000),canhBaoGioiHan(0,2000),"
                         "canhBaoGioiHan(2001,2000,true),canhBaoGioiHan(2000,2000,true),"
@@ -505,12 +511,18 @@ def test_trang_nap_khong_vuot_tran_trang_cua_server_va_chia_het_tran():
 
 
 def test_server_that_nhan_trang_co_limit_bang_LIBRARY_PAGE(tmp_path, monkeypatch):
-    """Gọi route thật với đúng `limit` trang dùng — không qua mock."""
+    """Gọi route thật với đúng `limit` trang dùng, trên TRANG+1 video thật — một trang
+    đầy đẩy TRANG id vào các câu `IN (…)` (nguồn, cụm, vào bộ). Không qua mock."""
     import web.app as app_mod
     from web import models
     db = tmp_path / "jobs.db"
     models.init_db(db)
     monkeypatch.setattr(app_mod, "DB_PATH", db)
     monkeypatch.setattr(app_mod, "_la_admin", lambda email: False)
-    r = app_mod.list_videos(limit=TRANG, offset=0, vao_bo=0, nguoi_tao="a@astronex.ai")
-    assert r["videos"] == [] and r["tong"] == 0
+    toi = "a@astronex.ai"
+    job = models.create_job(db, "https://www.tiktok.com/tag/a", TRANG + 1, toi)
+    for i in range(TRANG + 1):
+        models.record_video(db, job_id=job, video_id=f"v{i:05d}", url=f"https://t.co/{i}",
+                            tao_luc=f"2026-09-01T00:{i // 60 % 60:02d}:{i % 60:02d}+00:00")
+    r = app_mod.list_videos(limit=TRANG, offset=0, vao_bo=0, nguoi_tao=toi)
+    assert len(r["videos"]) == TRANG and r["tong"] == TRANG + 1

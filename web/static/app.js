@@ -2056,13 +2056,22 @@
   // Thư viện của người xem lớn hơn trần nạp ⇒ lưới CHỈ có `LIBRARY_MAX` video mới nhất. Hàm
   // thuần: trả câu cảnh báo, hoặc "" khi chưa vượt (đúng bằng trần chưa bị cắt: `>` không phải `>=`).
   // `chiVaoBo`: `tong` là số của phía "Đã vào bộ" (trần nạp tính riêng mỗi phía).
+  // Mức cảnh báo: "cat" (vượt trần, lưới đang thiếu video) | "som" (từ `som` trở lên mà
+  // CHƯA vượt) | "". MỘT chỗ quyết mức — chữ (`canhBaoGioiHan`) và màu/`role`
+  // (`veCanhBaoGioiHan`) cùng đọc nó, để không thể lệch nhau ở ca biên.
+  function mucGioiHan(tong, tran, som) {
+    if (tong > tran) return "cat";
+    return typeof som === "number" && tong >= som ? "som" : "";
+  }
+
   // `som` (tuỳ chọn): từ mức này trở lên mà CHƯA vượt trần ⇒ cảnh báo sớm.
   function canhBaoGioiHan(tong, tran, chiVaoBo, som) {
-    if (tong > tran) {
+    const muc = mucGioiHan(tong, tran, som);
+    if (muc === "cat") {
       return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
         : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
     }
-    if (typeof som === "number" && tong >= som) {
+    if (muc === "som") {
       return chiVaoBo ? `Có ${tong} video đã vào bộ — sắp chạm trần nạp ${tran}`
         : `Thư viện có ${tong} video — sắp chạm trần nạp ${tran}`;
     }
@@ -2073,13 +2082,17 @@
     const el = document.getElementById("canh-bao-gioi-han");
     if (!el) return;
     const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo, LIBRARY_CANH_BAO_SOM);
-    el.textContent = chu;
+    // Băng được vẽ lại MỖI lượt nạp (Làm mới, job xong, đổi chip…). Ghi lại cùng chữ
+    // thay nút chữ ⇒ trình đọc màn hình đọc lại ⇒ chỉ ghi khi chữ đổi.
+    if (el.textContent !== chu) el.textContent = chu;
     el.hidden = chu === "";
     // Hai mức phải NHÌN khác nhau: vàng = "sắp chạm trần", đỏ = "đã cắt, lưới đang
-    // thiếu video". Cùng màu thì người dùng không phân biệt được "sắp" với "đã".
-    const muc = chu === "" ? "" : tong > LIBRARY_MAX ? "cat" : "som";
+    // thiếu video". Và NGHE khác nhau: chỉ "đã cắt" mới ngắt ngang (`alert`); "sắp"
+    // không gấp nên lịch sự (`status`).
+    const muc = mucGioiHan(tong, LIBRARY_MAX, LIBRARY_CANH_BAO_SOM);
     el.dataset.muc = muc;
     el.classList.toggle("som", muc === "som");
+    el.setAttribute("role", muc === "cat" ? "alert" : "status");
   }
 
   // `lyDoRoi`: vì sao lựa chọn có thể rơi lượt này (đổi phía chip ⇒ nói đúng thế).
