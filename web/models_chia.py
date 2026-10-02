@@ -1747,4 +1747,9 @@ def xay_payload_lo(db_path: Path, cum: dict, chu: str, chi_cua: str | None,
     # `so_video` = số video của lô TRƯỚC khi lọc, đếm cùng lượt với `items` —
     # mẫu số của nhãn "x/N" phải cùng thời điểm với tử số. KHÔNG thuộc hợp
     # đồng gửi Creative Desk: `app.js::moLoCum` tách nó ra trước khi mã hoá URL.
-    return {"v": 1, "items": items, "nhan": nhan, "so_video": len(lo)}
+    # `video_ids` = id MỌI video của lô (kể cả đã dọn), cùng lượt đọc với
+    # `items`. Trang so với lô nó đã cắt từ `khung_cum`: lệch nghĩa là tab khác
+    # đã sửa cụm giữa lúc nạp và lúc bấm ⇒ trang KHÔNG gửi. Cũng không thuộc
+    # hợp đồng gửi Creative Desk — `moLoCum` tách ra như `so_video`.
+    return {"v": 1, "items": items, "nhan": nhan, "so_video": len(lo),
+            "video_ids": [v["video_id"] for v in lo]}

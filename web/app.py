@@ -787,6 +787,9 @@ def liet_ke_cum(nguoi_tao: str = Depends(require_user)) -> dict:
     chi_cua = _pham_vi(nguoi_tao)
     return {
         "cum": models_cum.liet_ke_cum(DB_PATH, nguoi_tao, chi_cua),
+        # Tập cắt lô của mọi cụm — trang cắt lô từ đây, không từ `/videos`
+        # (bị trần `LIBRARY_MAX`). Xem `models_cum.khung_cum`.
+        "khung_cum": models_cum.khung_cum(DB_PATH, nguoi_tao, chi_cua),
         "chua_vao_cum": (models.count_videos(DB_PATH, chi_cua)
                          - models_cum.dem_da_vao_cum(DB_PATH, nguoi_tao, chi_cua)),
     }

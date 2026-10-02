@@ -118,6 +118,25 @@ def video_da_don_trong_cum(db_path: Path, chu: str, chi_cua: str | None) -> list
     return [dict(r) for r in rows]
 
 
+def khung_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
+    """MỌI thành viên các cụm của `chu` trên đúng tập CẮT LÔ:
+    `[{video_id, cum_id, tao_luc, da_don}]`, thứ tự `(cum_id, tao_luc, video_id)`.
+
+    Trang cắt lô Ở CLIENT (`app.js::videoCuaCum` + `chiaLo`) từ khung này thay vì
+    từ `state.videos` — `/videos` chỉ nạp tới `LIBRARY_MAX` video MỚI NHẤT, nên
+    thành viên cũ của cụm rơi khỏi tập nạp và lô phía trang trượt so với
+    `models_chia._video_trong_lo`. Cùng điều kiện + thứ tự với hàm đó; KHÔNG
+    được thêm LIMIT. Trả ở `GET /cum` (không ở `/videos`) vì mọi thao tác sửa
+    cụm chỉ gọi lại `loadCums()`."""
+    with _connect(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT v.video_id, vc.cum_id, v.tao_luc, {DA_DON_DRIVE} AS da_don "
+            "FROM video_cum vc " + _VIDEO_TRONG_LO_CAT + "AND vc.chu = ? "
+            "ORDER BY vc.cum_id, v.tao_luc, v.video_id",
+            (chi_cua, chi_cua, chu)).fetchall()
+    return [{**dict(r), "da_don": bool(r["da_don"])} for r in rows]
+
+
 def liet_ke_cum(db_path: Path, chu: str, chi_cua: str | None) -> list[dict]:
     """Mọi cụm của `chu`, kèm số video, số lô và mốc đã mở từng lô.
 

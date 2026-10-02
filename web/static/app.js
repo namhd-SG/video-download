@@ -126,6 +126,7 @@
     filters: {},              // groupId -> Map<bucketKey, bucketLabel>
     cums: [],                 // GET /cum — cụm CỦA NGƯỜI XEM, kèm `insight` do server ghép
     videosDaDon: [],          // GET /videos → da_don_trong_cum: video đã dọn khỏi Drive, GIỮ CHỖ trong lô
+    khungCum: undefined,      // GET /cum → khung_cum: tập cắt lô của mọi cụm (undefined = server cũ)
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
@@ -1344,7 +1345,22 @@
   // vẫn GIỮ CHỖ ở đây, đánh dấu `da_don: true` — cùng tập với server cắt lô
   // (`models_chia._video_trong_lo`, video cũ nhất trước theo (tao_luc, video_id)).
   // Người dùng của hàm này tự bỏ chúng khi đếm video còn sống / gửi đi.
+  //
+  // Server có `khung_cum` (`GET /cum`) ⇒ cắt từ khung đó: MỌI thành viên của
+  // cụm, đúng thứ tự server, kể cả video cũ nằm ngoài `LIBRARY_MAX` video mới
+  // nhất đã nạp (không có khung thì các video đó rơi khỏi lô ⇒ lô trượt). Giữ
+  // NGUYÊN thứ tự khung, không sắp lại. Đắp đối tượng đầy đủ từ `state.videos`
+  // nếu có; không có thì dùng phần tử khung (người dùng chỉ đọc `.da_don` +
+  // độ dài). Server cũ không trả khung ⇒ đường cũ bên dưới.
   function videoCuaCum(cumId) {
+    if (Array.isArray(state.khungCum)) {
+      const daNap = new Map(state.videos.map((v) => [v.video_id, v]));
+      return state.khungCum.filter((g) => g.cum_id === cumId).map((g) => {
+        const v = daNap.get(g.video_id);
+        if (v && !g.da_don) return v;
+        return { video_id: g.video_id, tao_luc: g.tao_luc, cum_id: g.cum_id, da_don: !!g.da_don };
+      });
+    }
     const song = state.videos.filter((v) => v.cum_id === cumId).reverse();
     const da = (state.videosDaDon || []).filter((g) => g.cum_id === cumId)
       .map((g) => ({ video_id: g.video_id, tao_luc: g.tao_luc, cum_id: g.cum_id, da_don: true }));
@@ -1420,6 +1436,11 @@
     if (!cum) { head.innerHTML = ""; return; }
     const lo = chiaLo(videoCuaCum(cum.id), HANDOFF_MAX);
     const tong = lo.length;
+    // Bất biến: lô cắt ở trang = số lô server đếm (`so_lo`, cùng response
+    // `/cum`). Lệch (server cũ không có khung, thư viện > LIBRARY_MAX) ⇒ ghi lại
+    // và nhãn "Bộ i/N" dùng N của server — server mới là bên dựng payload.
+    const tongNhan = typeof cum.so_lo === "number" ? cum.so_lo : tong;
+    if (tongNhan !== tong) console.warn(`cụm ${cum.id}: trang cắt ${tong} lô, server đếm ${cum.so_lo}`);
     // Video đã dọn giữ chỗ trong lô nhưng không tính vào "N video" của cụm.
     const nSong = (l) => l.filter((v) => !v.da_don).length;
     const n = lo.reduce((a, l) => a + nSong(l), 0);
@@ -1434,7 +1455,7 @@
     const dsLo = tong > 1 ? `<div class="bo-list">${lo.map((l, i) => {
       const m = moLuc.get(i + 1);
       const nhanN = nhanSoVideo(m, nhanLoChuaMo(l));
-      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tong}</b><span>${nhanN} video</span>` +
+      return `<div class="bo-row" data-lo="${i + 1}"><b>Bộ ${i + 1}/${tongNhan}</b><span>${nhanN} video</span>` +
         `<span class="muted">${m ? `đã mở Creative Desk lúc ${fmtDateTime(m.mo_luc)}` : "chưa mở"}</span><span class="grow"></span>` +
         `<button type="button" class="btn ghost" data-mo-lo="${i + 1}">${m ? "Mở lại" : "Mở Creative Desk"}</button></div>`;
     }).join("")}</div>` : "";
@@ -1474,6 +1495,8 @@
   async function loadCums() {
     const res = await apiGet("/cum");
     state.cums = res.cum;
+    // Tập cắt lô (xem `videoCuaCum`). Server cũ không trả ⇒ undefined ⇒ đường cũ.
+    state.khungCum = Array.isArray(res.khung_cum) ? res.khung_cum : undefined;
     state.cumsDaNap = true;
     // Cụm đang xem vừa bị xoá (tab khác) ⇒ về "Tất cả" thay vì lưới rỗng câm.
     if (typeof state.cumLoc === "number" && !state.cums.some((c) => c.id === state.cumLoc)) {
@@ -1499,6 +1522,11 @@
   // một tab khác vừa đổi số video của cụm) ⇒ ĐÓNG tab trống lại (đừng để lại
   // một tab "about:blank" mồ côi) và báo lý do — im lặng nuốt lỗi là đúng lỗ
   // đã sửa ở đây.
+  // Hai danh sách id cùng phần tử, cùng thứ tự.
+  function cungLo(a, b) {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
+  }
+
   async function moLoCum(cumId, thu) {
     const cum = state.cums.find((c) => c.id === cumId);
     if (!cum) return "rong";
@@ -1532,7 +1560,20 @@
     // "x/N", CÙNG thời điểm với `items` — không thuộc hợp đồng v:1 gửi Creative
     // Desk nên tách ra TRƯỚC khi mã hoá URL. Server cũ không trả ⇒ rơi về độ
     // dài lô phía trang cho toast, và không gửi kèm (mốc ghi NULL).
-    const { so_video: soVideoLo, ...guiDi } = payload;
+    // `video_ids` (id mọi video của lô server vừa cắt) cũng tách ra như vậy.
+    const { so_video: soVideoLo, video_ids: idsLo, ...guiDi } = payload;
+    // Lô server ≠ lô trang đã hiện (tab khác vừa gán/gỡ video của cụm giữa lúc
+    // nạp và lúc bấm) ⇒ KHÔNG gửi: người dùng đã soát lô này, gửi lô khác là
+    // gửi nhầm bộ. Nạp lại để lần bấm sau đúng. Server cũ không trả ⇒ bỏ qua.
+    if (Array.isArray(idsLo) && !cungLo(idsLo, muc.map((v) => v.video_id))) {
+      tab.close();
+      showToast("Lô đã đổi (tab khác vừa sửa cụm) — đã nạp lại, bấm lại.");
+      try { await loadCums(); } catch (err) {
+        if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+      }
+      renderLibrary();
+      return "loi";
+    }
     const soVideo = typeof soVideoLo === "number" ? soVideoLo : muc.length;
     if (!guiDi.items.length) {
       tab.close();
