@@ -246,8 +246,10 @@ REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
 # Nén phản hồi khi trình duyệt xin (`Accept-Encoding: gzip`). `/videos` của một thư viện
 # lớn là hàng MB JSON (đo 02/10: 1000 video thật 1,73 MB ⇒ 0,24 MB gzip) đi qua tunnel
 # mini ⇒ Cloudflare. Danh sách loại trừ mặc định của Starlette đã có `text/event-stream`
-# (SSE `/jobs/{id}/events` — nén thì sự kiện bị đệm, tiến độ đứng) và `image/webp`
-# (thumbnail đã nén sẵn); Starlette cũng bỏ qua 206 (Range) và body < `minimum_size`.
+# (SSE `/jobs/{id}/events`) và `image/webp` (thumbnail đã nén sẵn); Starlette cũng bỏ qua
+# 206 (Range) và body < `minimum_size`. Về SSE: TẠI SERVER, Starlette flush mỗi chunk
+# (`Z_SYNC_FLUSH`) nên sự kiện KHÔNG bị đệm (reviewer đo 02/10); loại trừ là để tầng giữa
+# (cloudflared / Cloudflare edge) không có lý do đệm một stream nén — vế tầng giữa CHƯA ĐO.
 #
 # ⚠ Thêm TRƯỚC `add_revalidate_header` ⇒ GZip nằm TRONG nó. Đặt ngoài thì GZip chỉ thấy
 # body dạng stream do `BaseHTTPMiddleware` sinh ra (`more_body=True`) ⇒ bỏ qua

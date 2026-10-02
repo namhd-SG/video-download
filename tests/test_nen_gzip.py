@@ -2,7 +2,7 @@
 `http.client` (không tự giải nén) để thấy đúng thứ trình duyệt/Cloudflare nhận.
 
 Phải nén: JSON lớn (`/videos`), tài nguyên tĩnh lớn (`/app.js`) khi có `Accept-Encoding: gzip`.
-KHÔNG được nén: SSE tiến độ job (nén ⇒ đệm ⇒ tiến độ đứng), 206 (Range), HEAD, body nhỏ,
+KHÔNG được nén: SSE tiến độ job (loại trừ để tầng giữa không đệm stream nén), 206 (Range), HEAD, body nhỏ,
 client không xin nén. `Cache-Control: no-cache` + 304 của tài nguyên tĩnh phải còn.
 """
 from __future__ import annotations
@@ -30,7 +30,8 @@ def may_chu():
     from web import models
     from web.auth import require_user
 
-    tmp = Path(tempfile.mkdtemp(prefix="videodl-gzip-"))
+    tmp_ctx = tempfile.TemporaryDirectory(prefix="videodl-gzip-")
+    tmp = Path(tmp_ctx.name)
     cu = {k: getattr(app_mod, k) for k in
           ("DATA_DIR", "DB_PATH", "DOWNLOADS_DIR", "COOKIES_DIR", "COOKIE_TMP_DIR", "SSE_POLL_SECONDS")}
     app_mod.DATA_DIR, app_mod.DB_PATH = tmp, tmp / "jobs.db"
@@ -51,7 +52,9 @@ def may_chu():
     server = uvicorn.Server(uvicorn.Config(app_mod.app, host="127.0.0.1", port=port, log_level="warning"))
     t = threading.Thread(target=server.run, daemon=True)
     t.start()
+    het = time.monotonic() + 10
     while not server.started:
+        assert t.is_alive() and time.monotonic() < het, "uvicorn không khởi động được"
         time.sleep(0.05)
     yield port, app_mod, job
     server.should_exit = True
@@ -60,6 +63,7 @@ def may_chu():
     app_mod.worker.start, app_mod.worker.stop = start, stop
     for k, v in cu.items():
         setattr(app_mod, k, v)
+    tmp_ctx.cleanup()
 
 
 def _goi(port, method, path, headers=None):
@@ -124,8 +128,10 @@ def test_head_khong_nen_content_length_bang_tep(may_chu):
 
 
 def test_sse_tien_do_khong_nen_va_toi_tung_su_kien(may_chu):
-    """SSE nén ⇒ sự kiện bị đệm trong bộ nén ⇒ trang không thấy tiến độ tới khi stream đóng.
-    Đọc sự kiện ĐẦU khi job còn chạy, rồi mới cho job xong và đọc sự kiện thứ hai."""
+    """SSE KHÔNG nén (header là thứ phân định — đột biến bỏ loại trừ ⇒ có `content-encoding`).
+    Đọc sự kiện ĐẦU khi job còn chạy, rồi mới cho job xong và đọc sự kiện thứ hai: đường
+    không nén phải stream được từng sự kiện. (Tại server, Starlette flush mỗi chunk nên nén
+    cũng không đệm — loại trừ là vì tầng giữa, xem `web/app.py`.)"""
     port, app_mod, job = may_chu
     from web import models
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=10)
