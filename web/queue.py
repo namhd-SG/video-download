@@ -23,7 +23,8 @@ from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
-    STOP_FEED_RONG, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, parse_tag_slug,
+    STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN,
+    STOP_SOURCE_EMPTY, VideoRef, parse_tag_slug,
 )
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
@@ -38,10 +39,14 @@ log = logging.getLogger("videodl.web")
 
 POLL_INTERVAL_SECONDS = 1.0
 
-# Lý do dừng mà một lượt RỖNG (0 video) phải ghi "Lỗi", không phải "Xong": cả ba
-# đều là "không lấy được gì" chứ không phải "đã làm xong". `already_owned` không
-# nằm đây — thư viện đã có hết những gì nguồn đưa ra là xong thật.
-_LY_DO_RONG_LA_LOI = frozenset({STOP_FEED_RONG, STOP_SOURCE_EMPTY, STOP_NGHI_BI_CHAN})
+# Lý do dừng mà một lượt RỖNG (0 video) phải ghi "Lỗi", không phải "Xong": tất cả
+# đều là "không lấy được gì" chứ không phải "đã làm xong" — kể cả hai ca hashtag
+# lỗi ngay đầu (nguồn liệt kê hỏng, không tra được mã hashtag). `already_owned`
+# không nằm đây — thư viện đã có hết những gì nguồn đưa ra là xong thật.
+_LY_DO_RONG_LA_LOI = frozenset({
+    STOP_FEED_RONG, STOP_SOURCE_EMPTY, STOP_NGHI_BI_CHAN,
+    STOP_INDEX_FAILED, STOP_HASHTAG_KHONG_TRA_DUOC,
+})
 # Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
 # Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
 # trong vòng một phút sau khi hết lỗi.

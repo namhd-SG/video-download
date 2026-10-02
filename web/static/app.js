@@ -38,8 +38,14 @@
              "nguồn này đã hết video TikTok đang cho xem, không phải lỗi.",
     page_cap: "Dừng sớm: đã quét hết số trang cho phép mà chưa đủ số lượng " +
                "yêu cầu — nguồn có thể còn video, thử chạy lại lượt tải này.",
-    index_failed: "Dừng sớm: nguồn liệt kê bên ngoài (không phải TikTok) bị " +
-                  "lỗi giữa chừng — thử lại sau.",
+    // Mã này phát cả khi lỗi ngay trang đầu (lượt 0 video ⇒ "Lỗi") lẫn giữa
+    // chừng (đã có vài video ⇒ "Xong"/"Thiếu"), nên câu phải đúng cả hai ca.
+    index_failed: "Không đọc tiếp được hashtag: nguồn liệt kê bên ngoài (không " +
+                  "phải TikTok) bị lỗi — thử lại sau.",
+    hashtag_khong_tra_duoc: "Không đọc được hashtag: không tra được mã của " +
+                            "hashtag này trên TikTok (hashtag sai, không tồn " +
+                            "tại, hoặc TikTok không trả mã) — kiểm lại hashtag " +
+                            "rồi thử lại.",
     // Ba mã dưới đây sinh ra 21/09 cùng lúc với việc nhánh music/search/profile
     // biết đào sâu. Mỗi câu phải khuyên MỘT việc khác nhau — đó là cả lý do
     // chúng là ba mã chứ không phải một:

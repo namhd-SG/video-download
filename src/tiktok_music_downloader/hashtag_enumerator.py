@@ -32,6 +32,7 @@ from typing import Callable
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_COMPLETE,
+    STOP_HASHTAG_KHONG_TRA_DUOC,
     STOP_INDEX_FAILED,
     STOP_PAGE_CAP,
     STOP_STALLED,
@@ -215,6 +216,8 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
         return []
     challenge_id = resolve_challenge_id(tag, proxy=proxy)
     if challenge_id is None:
+        if on_stop is not None:
+            on_stop(STOP_HASHTAG_KHONG_TRA_DUOC)
         return []
     log.info("hashtag #%s -> challenge_id %s", tag, challenge_id)
 
