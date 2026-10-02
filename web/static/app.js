@@ -2075,6 +2075,11 @@
     const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo, LIBRARY_CANH_BAO_SOM);
     el.textContent = chu;
     el.hidden = chu === "";
+    // Hai mức phải NHÌN khác nhau: vàng = "sắp chạm trần", đỏ = "đã cắt, lưới đang
+    // thiếu video". Cùng màu thì người dùng không phân biệt được "sắp" với "đã".
+    const muc = chu === "" ? "" : tong > LIBRARY_MAX ? "cat" : "som";
+    el.dataset.muc = muc;
+    el.classList.toggle("som", muc === "som");
   }
 
   // `lyDoRoi`: vì sao lựa chọn có thể rơi lượt này (đổi phía chip ⇒ nói đúng thế).

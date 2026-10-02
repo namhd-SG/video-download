@@ -107,6 +107,14 @@ def test_canh_bao_som_tu_80_phan_tram_va_cat_khi_vuot_tran(base_url, tong, loai)
             assert not el.is_visible() and el.inner_text() == ""
         else:
             assert el.is_visible()
+            # Hai mức nhìn khác nhau: "som" vàng (class `som`), "cat" đỏ (không class `som`).
+            assert el.get_attribute("data-muc") == loai
+            assert ("som" in (el.get_attribute("class") or "").split()) is (loai == "som")
+            mau = p.evaluate("getComputedStyle(document.getElementById('canh-bao-gioi-han')).color")
+            mau_warn = p.evaluate("(() => { const d = document.createElement('div'); d.style.color = 'var(--warn)';"
+                                  " document.body.appendChild(d); const c = getComputedStyle(d).color; d.remove();"
+                                  " return c; })()")
+            assert (mau == mau_warn) is (loai == "som"), (loai, mau, mau_warn)
             assert el.inner_text() == (
                 f"Thư viện có {tong} video, lưới chỉ nạp {TRAN} video mới nhất" if loai == "cat"
                 else f"Thư viện có {tong} video — sắp chạm trần nạp {TRAN}")
