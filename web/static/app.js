@@ -2122,6 +2122,11 @@
           veChipVaoBo();
         }
       }
+      // Lượt đã bị thay chỗ: lỗi của nó không còn là sự thật về thư viện (lượt
+      // mới hơn có thể đã nạp xong) ⇒ đừng ném cho bên gọi toast "không tải lại
+      // được", đè mất câu báo của lượt mới (vd "Đã bỏ N video…"). Hết phiên thì
+      // vẫn ném — đó là sự thật về phiên, không về lượt.
+      if (luot !== state.luotNapVideo && !(err instanceof PhienHetHan)) return;
       throw err;
     }
     // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó ghi và vẽ.

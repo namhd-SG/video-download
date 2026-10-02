@@ -194,7 +194,7 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
 
 
 def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: bool = False,
-                 loi_phia0_sau_lan_dau: bool = False):
+                 loi_phia0_sau_lan_dau: bool = False, giu_phia0_sau_lan_dau: list | None = None):
     """Trang thật; `/videos` giả theo phía `vao_bo` với `so[phia]` video. `giu_phia1` (một
     list) ⇒ request phía 1 bị GIỮ lại trong list, người gọi tự `tra_lai(route)` sau.
     `loi_phia1` ⇒ phía 1 trả 500; `loi_phia0_sau_lan_dau` ⇒ phía 0 trả 500 từ lượt nạp thứ
@@ -218,6 +218,9 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: b
             so_lan_phia0[0] += 1
             if loi_phia0_sau_lan_dau and so_lan_phia0[0] > 1:
                 route.fulfill(status=500, body="loi")
+                return
+            if giu_phia0_sau_lan_dau is not None and so_lan_phia0[0] > 1:
+                giu_phia0_sau_lan_dau.append(route)
                 return
         if loi_phia1 and "vao_bo=1" in route.request.url:
             route.fulfill(status=500, body="loi")
@@ -434,6 +437,31 @@ def test_lan_dau_loi_roi_bam_chip_cung_loi_chip_ve_tat_het_dang_nap(base_url):
         assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
         assert p.get_attribute("#card-grid", "aria-busy") == "false"
         assert not p.locator("#empty-state").is_visible()
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_luot_bi_thay_loi_khong_de_mat_cau_bao_cua_luot_moi(base_url):
+    """Bấm "Làm mới" (lượt phía 0 bị giữ), rồi bấm chip: lượt phía 1 nạp xong và báo "Đã bỏ
+    2 video…". Lượt "Làm mới" (đã bị thay) sau đó lỗi 500 ⇒ KHÔNG được toast "Không tải
+    lại được thư viện" đè lên — thư viện đã nạp được."""
+    giu: list = []
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia0_sau_lan_dau=giu)
+    try:
+        the = p.locator("#card-grid .card")
+        the.nth(0).click()
+        the.nth(1).click()
+        p.click("#library-refresh")
+        _cho_dieu_kien(p, lambda: len(giu) == 1)
+        p.click("#chip-vao-bo")
+        p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
+        assert p.inner_text("#toast").startswith("Đã bỏ 2 video")
+        with p.expect_response(lambda r: "vao_bo=0" in r.url):
+            giu.pop().fulfill(status=500, body="loi")
+        _cho_vong_su_kien(p)
+        assert p.inner_text("#toast").startswith("Đã bỏ 2 video"), p.inner_text("#toast")
+        assert p.get_attribute("#card-grid", "data-nap-phia") == "1"
     finally:
         br.close()
         pw.stop()
