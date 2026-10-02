@@ -559,8 +559,9 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
         models.set_job_found(db_path, job_id, len(refs))
         if not refs:
             # Lượt rỗng KHÔNG mặc nhiên là "Xong": nguồn trả 0 video, feed TikTok
-            # rỗng, hay nghi bị chặn đều là "không lấy được gì" — ghi "Xong" cho
-            # chúng là bảo user việc đã hoàn thành trong khi chưa tải được gì.
+            # rỗng, nghi bị chặn, nguồn liệt kê hashtag lỗi hay không tra được
+            # hashtag đều là "không lấy được gì" (`_LY_DO_RONG_LA_LOI`) — ghi
+            # "Xong" cho chúng là bảo user việc đã hoàn thành khi chưa tải gì.
             # Chỉ `already_owned` (thư viện đã có hết những gì nguồn đưa ra) và
             # lượt không báo lý do mới là xong thật.
             ket_qua = "failed" if dung.get("ly_do") in _LY_DO_RONG_LA_LOI else "done"

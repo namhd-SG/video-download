@@ -633,6 +633,24 @@ def test_hashtag_nguon_liet_ke_loi_giua_chung_khi_da_co_video_khong_bi_doi(tmp_p
     assert job["trang_thai"] == "failed"
 
 
+def test_hashtag_trang_dau_toan_video_da_co_roi_nguon_loi_la_loi(tmp_path, monkeypatch):
+    """Trang 1 chỉ có video thư viện đã có, trang 2 nguồn liệt kê lỗi ⇒ lượt vẫn
+    rỗng, chưa lấy được video MỚI nào, và nguồn có thể còn ⇒ "Lỗi" + "thử lại sau"
+    là đúng ý (không phải `already_owned`: chưa đọc hết nguồn). Chốt hành vi
+    này là CÓ CHỦ ĐÍCH, không phải tình cờ của nhánh `index_failed`."""
+    monkeypatch.setattr(he, "resolve_challenge_id", lambda tag, proxy=None: "123")
+    con = [([_fake_ref("cu1")], 1, True, True), ([], 1, True, False)]
+    monkeypatch.setattr(he, "_provider_page", lambda c, cursor, proxy=None: con.pop(0))
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    models.record_video(db, 999, "cu1", "https://x/cu1")
+    job_id = models.create_job(db, "https://www.tiktok.com/tag/x", 20, "a")
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    job = models.get_job(db, job_id)
+    assert job["ly_do_dung"] == "index_failed"
+    assert job["trang_thai"] == "failed"
+
+
 def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
     """Mỗi `STOP_*` (trừ `STOP_COMPLETE`) phải có câu trong `STOP_REASON_TEXT` —
     thiếu thì thẻ hiện "mã chưa dịch — báo cho người phát triển". Thêm mã mới
@@ -643,6 +661,7 @@ def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
     dau = js.index("const STOP_REASON_TEXT")
     khoa = set(re.findall(r"^\s{4}(\w+):", js[dau:js.index("};", dau)], re.M))
     ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
+    ma |= set(cookies_mod.MA_LOI_COOKIE)   # mã cookie cũng vào cột `ly_do_dung`
     assert ma - khoa == set()
 
 
@@ -652,7 +671,7 @@ def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
     ("already_owned", "done"), ("het_thoi_gian", "done"), ("stalled", "done"), (None, "done"),
 ])
 def test_luot_rong_chon_trang_thai_theo_ly_do_dung(tmp_path, monkeypatch, ly_do, mong):
-    """Bảng đủ các mã: chỉ ba mã "không lấy được gì" mới thành "Lỗi"."""
+    """Bảng đủ các mã: chỉ các mã "không lấy được gì" (`_LY_DO_RONG_LA_LOI`) mới thành "Lỗi"."""
     db = tmp_path / "jobs.db"
     models.init_db(db)
     job_id = models.create_job(db, "https://www.tiktok.com/music/x-1", 20, "a")

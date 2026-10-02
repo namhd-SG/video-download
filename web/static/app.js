@@ -42,10 +42,14 @@
     // chừng (đã có vài video ⇒ "Xong"/"Thiếu"), nên câu phải đúng cả hai ca.
     index_failed: "Không đọc tiếp được hashtag: nguồn liệt kê bên ngoài (không " +
                   "phải TikTok) bị lỗi — thử lại sau.",
+    // Mã này phát cả khi trang hashtag KHÔNG TẢI ĐƯỢC (mạng, TikTok chặn/giới
+    // hạn — `_fetch` trả None) lẫn khi tải được mà không có mã. Câu không được
+    // khẳng định "hashtag sai" — lúc lỗi mạng hashtag hoàn toàn đúng.
     hashtag_khong_tra_duoc: "Không đọc được hashtag: không tra được mã của " +
-                            "hashtag này trên TikTok (hashtag sai, không tồn " +
-                            "tại, hoặc TikTok không trả mã) — kiểm lại hashtag " +
-                            "rồi thử lại.",
+                            "hashtag này trên TikTok — có thể TikTok/mạng đang " +
+                            "không phản hồi, hoặc hashtag sai/không tồn tại. " +
+                            "Kiểm lại hashtag; nếu đúng thì đợi một lúc rồi " +
+                            "thử lại.",
     // Ba mã dưới đây sinh ra 21/09 cùng lúc với việc nhánh music/search/profile
     // biết đào sâu. Mỗi câu phải khuyên MỘT việc khác nhau — đó là cả lý do
     // chúng là ba mã chứ không phải một:
