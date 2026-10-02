@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 from pathlib import Path
 from typing import Callable, Iterable
@@ -406,6 +407,38 @@ def _auto_scroll(
     return seen
 
 
+# Registry "một dir — một context" (RAM, theo tiến trình). Đo 02/10: mở persistent
+# context thứ hai lên CÙNG `user_data_dir` khi cái đầu còn mở KHÔNG báo lỗi, chỉ thấy
+# 0 cookie ⇒ hỏng ÂM THẦM. Nên chặn ở đây, ồn ào. Khoá dùng đường dẫn đã `resolve()`
+# để `a/../a` và symlink không lách được.
+_PROFILE_DANG_MO: set[str] = set()
+_PROFILE_KHOA = threading.Lock()
+
+
+def _khoa_profile_dir(profile_dir: Path) -> str:
+    return str(profile_dir.resolve())
+
+
+def _giu_profile_dir(profile_dir: Path) -> str:
+    khoa = _khoa_profile_dir(profile_dir)
+    with _PROFILE_KHOA:
+        if khoa in _PROFILE_DANG_MO:
+            raise RuntimeError(
+                f"profile_dir đang được một context khác mở: {khoa} — "
+                "mở lần hai lên cùng thư mục sẽ hỏng âm thầm (không cookie)"
+            )
+        _PROFILE_DANG_MO.add(khoa)
+    return khoa
+
+
+def _nha_profile_dir(profile_dir: Path | None) -> None:
+    """Nhả khoá của `profile_dir` (idempotent; None = context tạm, không có gì để nhả)."""
+    if profile_dir is None:
+        return
+    with _PROFILE_KHOA:
+        _PROFILE_DANG_MO.discard(_khoa_profile_dir(profile_dir))
+
+
 def _open_context(
     pw,
     headless: bool,
@@ -423,13 +456,19 @@ def _open_context(
 
     if profile_dir is not None:
         profile_dir.mkdir(parents=True, exist_ok=True)
-        ctx = pw.chromium.launch_persistent_context(
-            user_data_dir=str(profile_dir),
-            headless=headless,
-            proxy=proxy_cfg,
-            **common_kwargs,
-        )
-        ctx.add_init_script(STEALTH_INIT_JS)
+        _giu_profile_dir(profile_dir)
+        try:
+            ctx = pw.chromium.launch_persistent_context(
+                user_data_dir=str(profile_dir),
+                headless=headless,
+                proxy=proxy_cfg,
+                **common_kwargs,
+            )
+            ctx.add_init_script(STEALTH_INIT_JS)
+        except BaseException:
+            # Mở trượt thì không có context nào để đóng ⇒ không ai nhả khoá sau này.
+            _nha_profile_dir(profile_dir)
+            raise
         return None, ctx
 
     browser = pw.chromium.launch(headless=headless, proxy=proxy_cfg)
@@ -522,14 +561,19 @@ def scrape_music_page(
     profile_dir: str | None = None,
     dem_trang: Callable[[], None] | None = None,
     thong_ke_feed: dict[str, int] | None = None,
+    user_agent: str | None = None,
 ) -> list[VideoRef]:
     """Open music page, scroll, return up-to-max unique VideoRefs (newest-first as rendered).
 
     `dem_trang` fires once per feed request this visit makes — see
     `_watch_feed_api`. Callers that meter a daily request budget must pass it;
     the CLI and the desktop GUI do not meter, so they leave it off.
+
+    `user_agent=None` giữ hành vi cũ (bốc ngẫu nhiên mỗi lần gọi). Lớp web truyền UA
+    đã ghim theo job khi dùng profile persist — profile giữ nguyên mà UA đổi mỗi
+    lượt là tín hiệu bất thường.
     """
-    ua = random_user_agent()
+    ua = user_agent or random_user_agent()
     log.info(
         "scraping %s (max=%d, headless=%s, proxy=%s, profile=%s)",
         music_url,
@@ -539,29 +583,35 @@ def scrape_music_page(
         bool(profile_dir),
     )
 
+    profile_path = Path(profile_dir) if profile_dir else None
     with sync_playwright() as pw:
         browser, ctx = _open_context(
             pw,
             headless=headless,
             proxy=proxy,
-            profile_dir=Path(profile_dir) if profile_dir else None,
+            profile_dir=profile_path,
             user_agent=ua,
         )
-        if cookies_path:
-            ctx.add_cookies(_load_cookies(Path(cookies_path)))
-
-        page = ctx.new_page()
         # Bộ đếm RIÊNG của lượt này: lượt hâm cần biết lượt NÀY đã rỗng chưa,
         # không phải cộng dồn của người gọi. Cộng vào `thong_ke_feed` ở finally.
         feed_luot: dict[str, int] = {}
-        _watch_feed_api(page, dem_trang, feed_luot)
+        # Mọi thứ sau khi context đã mở nằm TRONG try: `add_cookies`/`new_page` trượt
+        # mà đứng ngoài thì context không bao giờ đóng và khoá profile_dir không bao
+        # giờ nhả (job sau cùng dir bị chặn mãi).
         try:
+            if cookies_path:
+                ctx.add_cookies(_load_cookies(Path(cookies_path)))
+            page = ctx.new_page()
+            _watch_feed_api(page, dem_trang, feed_luot)
             _mo_trang_co_ham_phien(page, music_url, feed_luot)
             refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
         finally:
-            ctx.close()
-            if browser is not None:
-                browser.close()
+            try:
+                ctx.close()
+                if browser is not None:
+                    browser.close()
+            finally:
+                _nha_profile_dir(profile_path)
             if thong_ke_feed is not None:
                 for o in ("rong", "co_du_lieu"):
                     thong_ke_feed[o] = thong_ke_feed.get(o, 0) + feed_luot.get(o, 0)

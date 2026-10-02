@@ -487,6 +487,11 @@ def init_db(db_path: Path) -> None:
         # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
         # = chưa từng bật (mọi job cũ); 1 = đã bật.
         _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
+        # User-Agent GHIM theo job (chỉ job profile khi bật `VIDEODL_PROFILE_CAPTCHA`).
+        # Phải nằm trong DB chứ không trong RAM: context đóng giữa các lượt và tiến
+        # trình có thể restart, mà profile persist + UA đổi mỗi lượt là tín hiệu bất
+        # thường. NULL = chưa ghim (mọi job cũ, mọi job không phải profile).
+        _add_column_if_missing(conn, "jobs", "ua_job", "TEXT")
         # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
         # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
         # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
@@ -920,6 +925,25 @@ def set_job_drive_folder_link(db_path: Path, job_id: int, link: str) -> None:
             "UPDATE jobs SET drive_folder_link = ? WHERE id = ?",
             (link, job_id),
         )
+
+
+def chon_ua_job(db_path: Path, job_id: int, chon_moi) -> str:
+    """UA đã ghim cho job; chưa có thì gọi `chon_moi()` MỘT lần, lưu rồi trả.
+
+    `UPDATE ... WHERE ua_job IS NULL` rồi đọc lại: hai lời gọi đua nhau cùng thấy
+    NULL thì chỉ một bên ghi được, cả hai trả về giá trị đã ghi. Job không tồn
+    tại thì không có chỗ ghim — trả UA vừa chọn (không bền) thay vì ném lỗi.
+    """
+    with _connect(db_path) as conn:
+        row = conn.execute("SELECT ua_job FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is None:
+            return chon_moi()
+        if row["ua_job"]:
+            return row["ua_job"]
+        conn.execute("UPDATE jobs SET ua_job = ? WHERE id = ? AND ua_job IS NULL",
+                     (chon_moi(), job_id))
+        return conn.execute("SELECT ua_job FROM jobs WHERE id = ?",
+                            (job_id,)).fetchone()["ua_job"]
 
 
 def finish_job(db_path: Path, job_id: int, trang_thai: str) -> None:
