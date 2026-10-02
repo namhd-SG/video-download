@@ -131,6 +131,7 @@
     chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     tongVaoBo: undefined,     // GET /videos → tong_vao_bo: số trên chip (undefined = server cũ, tự đếm)
     luotNapVideo: 0,          // lượt `loadVideos` mới nhất — lượt cũ về trễ thì bỏ
+    boHuyNap: null,           // AbortController của lượt nạp mới nhất (`batDauLuotNap`)
     phiaDaVe: undefined,      // phía chip mà lưới ĐANG thật sự vẽ (0/1; undefined = chưa vẽ lần nào)
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
@@ -289,12 +290,13 @@
   // được, còn thử lại ngầm thì không bao giờ khỏi.
   class PhienHetHan extends Error {}
 
-  async function apiGet(path) {
+  // `signal` (tuỳ chọn): huỷ request — chỉ lượt nạp thư viện dùng (`batDauLuotNap`).
+  async function apiGet(path, { signal } = {}) {
     // `redirect: "manual"` là phần quan trọng. Khi phiên Access hết hạn,
     // Cloudflare trả 302 sang trang đăng nhập; `fetch` mặc định đi theo, gặp
     // CORS và ném `TypeError` — mà vòng poll 5 giây lại nuốt mọi lỗi, nên
     // hàng đợi đứng hình vĩnh viễn, không một lời nào trên màn hình.
-    const res = await fetch(path, { redirect: "manual" });
+    const res = await fetch(path, { redirect: "manual", signal });
     if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
     if (!res.ok) {
       const err = new Error(`GET ${path} -> ${res.status}`);
@@ -915,11 +917,7 @@
     grid.setAttribute("aria-busy", "true");
     grid.dataset.napPhia = "";
     // Nạp hỏng thì `loadVideos` tự đưa chip/lưới về phía đã vẽ; ở đây chỉ báo.
-    return loadVideos({ lyDoRoi: "vì đang xem phía khác của chip “Đã vào bộ”" })
-      .catch((err) => {
-        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
-        showToast("Không tải lại được thư viện: " + err.message);
-      });
+    return napLaiThuVien({ lyDoRoi: "vì đang xem phía khác của chip “Đã vào bộ”" });
   }
 
   document.getElementById("chip-vao-bo").addEventListener("click", () => {
@@ -1530,7 +1528,13 @@
   }
 
   async function loadCums() {
-    const res = await apiGet("/cum");
+    apDungCum(await apiGet("/cum"));
+  }
+
+  // Ghi một response `GET /cum` vào `state`. Tách khỏi `loadCums` để lượt nạp thư viện
+  // lấy `/cum` về TRƯỚC rồi chỉ ghi khi nó còn là lượt mới nhất — `/cum` của một lượt
+  // đã bị thay chỗ không được đè dữ liệu cụm của lượt mới hơn.
+  function apDungCum(res) {
     state.cums = res.cum;
     // Tập cắt lô (xem `videoCuaCum`). Server cũ không trả ⇒ undefined ⇒ đường cũ.
     state.khungCum = Array.isArray(res.khung_cum) ? res.khung_cum : undefined;
@@ -1885,7 +1889,10 @@
       }
     }
 
-    if (loDaGui > 0) await loadVideos();
+    // Nạp lại hỏng KHÔNG được nuốt câu tóm tắt: tệp đã vào Thùng rác, người dùng phải
+    // biết số đã bỏ — câu "không tải lại được" gộp vào cùng toast (không đè nó).
+    const nap = loDaGui > 0 ? await napLaiThuVien({ imLoi: true }) : "ok";
+    if (nap === "het_phien") return;
     renderSelectionBar();
     // Báo đủ ba con số, không gộp thành một chữ "xong": Drive trượt mà im
     // lặng thì người dùng tưởng đã dọn trong khi tệp còn nguyên.
@@ -1896,6 +1903,7 @@
       phan.push(`dừng ở lô ${loDaGui + 1}/${soLo}: ${lyDoLoiLoai(loi)}`,
                 `còn ${state.selected.size} video đang chọn — bấm lại để tiếp`);
     }
+    if (nap === "loi") phan.push("không tải lại được thư viện — bấm Làm mới");
     showToast(phan.join(" · "));
   }
 
@@ -1911,7 +1919,7 @@
   }));
 
   document.getElementById("library-refresh").addEventListener("click", () => {
-    loadVideos().catch((err) => showToast("Không tải lại được thư viện: " + err.message));
+    napLaiThuVien();
   });
 
   // ========================================================================
@@ -1973,10 +1981,7 @@
         // (nếu có) xuất hiện mà không cần user tự bấm "Làm mới".
         // Lỗi thường cũng phải NÓI: nạp hỏng có thể vừa đưa chip về phía đang vẽ
         // (xem `loadVideos`) — chip tự lật mà im lặng thì người dùng không biết vì sao.
-        loadVideos().catch((e) => {
-          if (e instanceof PhienHetHan) { baoPhienHetHan(); return; }
-          showToast("Không tải lại được thư viện: " + e.message);
-        });
+        napLaiThuVien();
       }
     });
     es.onerror = () => {
@@ -2111,26 +2116,30 @@
     // Mọi thứ nạp về giữ ở biến cục bộ tới SAU lần chờ cuối (`/cum`), rồi mới
     // kiểm lượt và ghi — ghi sớm thì lượt cũ để lại `state` lệch DOM khi lượt
     // mới hỏng.
-    const luot = ++state.luotNapVideo;
+    const { luot, signal } = batDauLuotNap();
     const phia = state.chiVaoBo ? 1 : 0;
     const url = (offset) => `/videos?limit=${LIBRARY_PAGE}&offset=${offset}&vao_bo=${phia}`;
-    let first, videos, tong;
+    let first, videos, tong, resCum = null;
     try {
-      first = await apiGet(url(0));
+      first = await apiGet(url(0), { signal });
       videos = first.videos.slice();
       tong = first.tong;
       while (luot === state.luotNapVideo && videos.length < tong && videos.length < LIBRARY_MAX) {
-        const next = await apiGet(url(videos.length));
+        const next = await apiGet(url(videos.length), { signal });
         if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
         videos.push(...next.videos);
       }
-      if (luot !== state.luotNapVideo) return;
-      // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
+      if (luot !== state.luotNapVideo) return false;
+      // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Lấy về ở đây, GHI
+      // ở bước commit (`apDungCum`) — lượt bị thay không được đè cụm. Cụm lỗi thì
       // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
       try {
-        await loadCums();
+        resCum = await apiGet("/cum", { signal });
       } catch (err) {
         if (err instanceof PhienHetHan) throw err;
+        // Lượt đã bị thay (kể cả bị abort ở đây) ⇒ lỗi /cum của nó không phải sự
+        // thật về thư viện ⇒ im.
+        if (luot !== state.luotNapVideo) return false;
         showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
       }
     } catch (err) {
@@ -2154,17 +2163,19 @@
           state.chiVaoBo = false;
           veChipVaoBo();
         }
+        g.dataset.luotXong = String(luot);
       }
       // Lượt đã bị thay chỗ: lỗi của nó không còn là sự thật về thư viện (lượt
       // mới hơn có thể đã nạp xong) ⇒ đừng ném cho bên gọi toast "không tải lại
       // được", đè mất câu báo của lượt mới (vd "Đã bỏ N video…"). Hết phiên thì
       // vẫn ném — đó là sự thật về phiên, không về lượt.
-      if (luot !== state.luotNapVideo && !(err instanceof PhienHetHan)) return;
+      if (luot !== state.luotNapVideo && !(err instanceof PhienHetHan)) return false;
       throw err;
     }
     // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó ghi và vẽ.
-    if (luot !== state.luotNapVideo) return;
+    if (luot !== state.luotNapVideo) return false;
 
+    if (resCum) apDungCum(resCum);
     state.videos = videos;
     state.phiaDaVe = phia;   // cùng lúc với `state.videos`: phục hồi vẽ lại từ đúng tập này
     state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
@@ -2188,7 +2199,40 @@
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "false");
     grid.dataset.napPhia = String(phia);
+    // Mốc "lượt `luot` đã kết thúc" (thành công hay hỏng) — tín hiệu chắc chắn cho test.
+    grid.dataset.luotXong = String(luot);
     loadBadgeDonLoi().catch(() => { /* phiên hết hạn đã được các lời gọi khác báo */ });
+    return true;
+  }
+
+  // Bắt đầu một lượt nạp thư viện. ĐỒNG BỘ, không `await` nào xen giữa: tăng số lượt,
+  // huỷ request của lượt cũ, tạo bộ huỷ mới. `abort()` chỉ xếp hàng lỗi cho lượt cũ
+  // — `catch` của nó chạy SAU khối này, lúc số lượt đã tăng ⇒ nó thấy mình đã bị thay
+  // và im. Bất biến: mọi `catch` của lượt nạp kiểm số lượt TRƯỚC khi phục hồi/báo.
+  function batDauLuotNap() {
+    const luot = ++state.luotNapVideo;
+    if (state.boHuyNap) state.boHuyNap.abort();
+    state.boHuyNap = new AbortController();
+    return { luot, signal: state.boHuyNap.signal };
+  }
+
+  // MỘT chỗ duy nhất bắt lỗi nạp lại thư viện cho mọi nơi gọi (đổi chip, Làm mới, job
+  // xong, sau Bỏ, lần đầu). Trả "ok" | "bi_thay" | "loi" | "het_phien".
+  // `imLoi`: bên gọi tự nói lỗi (vd `loaiDaChon` gộp vào toast tóm tắt của nó).
+  async function napLaiThuVien({ lyDoRoi, imLoi = false } = {}) {
+    try {
+      return (await loadVideos({ lyDoRoi })) ? "ok" : "bi_thay";
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+      // Chưa vẽ lần nào (lần nạp đầu hỏng): toast 2,6 s rồi trang trống là im lặng
+      // ⇒ ghi vào ô lỗi thường trực.
+      if (state.phiaDaVe === undefined) {
+        document.getElementById("error").textContent = "Không tải được thư viện: " + err.message;
+      } else if (!imLoi) {
+        showToast("Không tải lại được thư viện: " + err.message);
+      }
+      return "loi";
+    }
   }
 
   // Thuần, không đụng DOM — tách riêng để `tests/js/` gọi được thẳng bằng
@@ -2308,7 +2352,8 @@
   // INIT
   // ========================================================================
   renderFilterBar();
-  Promise.all([loadJobs(), loadVideos(), loadBannerCookie()]).catch((err) => {
+  // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
+  Promise.all([loadJobs(), napLaiThuVien(), loadBannerCookie()]).catch((err) => {
     document.getElementById("error").textContent = "Không tải được dữ liệu ban đầu: " + err.message;
   });
   // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel

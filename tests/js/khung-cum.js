@@ -62,7 +62,7 @@ async function main() {
     return { mo_luc: "2026-10-02T10:00:00+00:00", so_item: body?.so_item ?? null,
              so_video: body?.so_video ?? null };
   };
-  eval(["chiaLo", "videoCuaCum", "loadCums", "cungLo", "napLaiVi", "moLoCum", "itemBanGiao", "dungPayload",
+  eval(["chiaLo", "videoCuaCum", "loadCums", "apDungCum", "cungLo", "napLaiVi", "moLoCum", "itemBanGiao", "dungPayload",
         "maHoaPayload", "urlBanGiao", "moTabTrong", "dieuHuongTab", "moTabCreativeDesk"]
     .map((n) => { try { return grab(n); } catch (e) { return ""; } }).join("\n"));
 
