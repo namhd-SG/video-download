@@ -20,6 +20,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
@@ -242,12 +243,32 @@ REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
                               "/settings.html", "/settings.js"})
 
 
+# Nén phản hồi khi trình duyệt xin (`Accept-Encoding: gzip`). `/videos` của một thư viện
+# lớn là hàng MB JSON (đo 02/10: 1000 video thật 1,73 MB ⇒ 0,24 MB gzip) đi qua tunnel
+# mini ⇒ Cloudflare. Danh sách loại trừ mặc định của Starlette đã có `text/event-stream`
+# (SSE `/jobs/{id}/events`) và `image/webp` (thumbnail đã nén sẵn); Starlette cũng bỏ qua
+# 206 (Range) và body < `minimum_size`. Về SSE: TẠI SERVER, Starlette flush mỗi chunk
+# (`Z_SYNC_FLUSH`) nên sự kiện KHÔNG bị đệm (reviewer đo 02/10); loại trừ là để tầng giữa
+# (cloudflared / Cloudflare edge) không có lý do đệm một stream nén — vế tầng giữa CHƯA ĐO.
+#
+# ⚠ Thêm TRƯỚC `add_revalidate_header` ⇒ GZip nằm TRONG nó. Đặt ngoài thì GZip chỉ thấy
+# body dạng stream do `BaseHTTPMiddleware` sinh ra (`more_body=True`) ⇒ bỏ qua
+# `minimum_size`, nén cả `/healthz` 56 byte (đo 02/10). `Cache-Control` vẫn do lớp ngoài đặt.
+#
+# `compresslevel=4` (mặc định Starlette là 9): đo 02/10 trên mini, `/videos` 1000 hàng thật
+# 1,73 MB ⇒ mức 9: 244 KB / 20,0 ms · mức 6: +1,1 % / 14,0 ms · mức 4: +8,1 % / 8,7 ms ·
+# mức 1: +29,5 % / 5,6 ms. Mini dùng chung với autotest (load có lúc ~20) ⇒ chọn mức nhỏ
+# nhất mà kích thước tăng ≤ ~10 %.
+app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
+
+
 @app.middleware("http")
 async def add_revalidate_header(request, call_next):
     response = await call_next(request)
     if request.url.path in REVALIDATE_PATHS:
         response.headers["Cache-Control"] = "no-cache"
     return response
+
 
 
 class CreateJobRequest(BaseModel):
