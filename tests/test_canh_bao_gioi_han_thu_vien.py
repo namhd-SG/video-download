@@ -88,10 +88,17 @@ def _mo_trang(base_url, tong: int):
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
-    p = br.new_page(viewport={"width": 1200, "height": 900})
-    p.route("**/videos?*", tra)
-    p.goto(base_url)
-    p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+    # Lỗi giữa chừng (goto chậm khi máy bận) mà không đóng ⇒ vòng Playwright rò ⇒ MỌI test
+    # trình duyệt chạy sau đó đỏ dây chuyền ("Sync API inside the asyncio loop").
+    try:
+        p = br.new_page(viewport={"width": 1200, "height": 900})
+        p.route("**/videos?*", tra)
+        p.goto(base_url)
+        p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+    except Exception:
+        br.close()
+        pw.stop()
+        raise
     return p, br, pw, goi
 
 
