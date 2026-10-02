@@ -88,10 +88,17 @@ def _mo_trang(base_url, tong: int):
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
-    p = br.new_page(viewport={"width": 1200, "height": 900})
-    p.route("**/videos?*", tra)
-    p.goto(base_url)
-    p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+    # Lỗi giữa chừng (goto chậm khi máy bận) mà không đóng ⇒ vòng Playwright rò ⇒ MỌI test
+    # trình duyệt chạy sau đó đỏ dây chuyền ("Sync API inside the asyncio loop").
+    try:
+        p = br.new_page(viewport={"width": 1200, "height": 900})
+        p.route("**/videos?*", tra)
+        p.goto(base_url)
+        p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
+    except Exception:
+        br.close()
+        pw.stop()
+        raise
     return p, br, pw, goi
 
 
@@ -263,7 +270,7 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: b
             giu_phia1.append(route)
             return
         tra_lai(route)
-    giu_cum = {"bat": False, "ds": []}
+    giu_cum = {"bat": False, "ds": [], "huy": []}
 
     def tra_cum(route):
         if giu_cum["bat"]:
@@ -280,6 +287,8 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: b
         p = br.new_page(viewport={"width": 1280, "height": 900})
         p.route("**/videos?*", tra)
         p.route("**/cum", tra_cum)
+        # Request bị trang HUỶ (AbortController của lượt nạp bị thay) — bất biến pha 1.
+        p.on("requestfailed", lambda r: giu_cum["huy"].append(r.url))
         p.goto(base_url)
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
     except Exception:
@@ -293,7 +302,7 @@ def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
     """Bật chip (phía 1 trả trễ) rồi tắt ngay: lượt phía 1 về SAU lượt phía 0 không được
     ghi đè lưới — lưới cuối cùng là phía 0, đúng trạng thái chip."""
     giu: list = []
-    p, br, pw, tra_lai, _ = _mo_hai_phia(base_url, {0: 30, 1: 5}, giu_phia1=giu)
+    p, br, pw, tra_lai, gc = _mo_hai_phia(base_url, {0: 30, 1: 5}, giu_phia1=giu)
     try:
         p.click("#chip-vao-bo")                     # lượt phía 1: bị giữ
         p.wait_for_function("document.getElementById('card-grid').dataset.napPhia === ''")
@@ -302,8 +311,9 @@ def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
         assert len(giu) == 1
         cum_sau = []
         p.on("request", lambda r: cum_sau.append(r.url) if r.url.endswith("/cum") else None)
-        with p.expect_response(lambda r: "vao_bo=1" in r.url):
-            tra_lai(giu.pop())                      # lượt phía 1 về SAU
+        # Lượt phía 1 bị thay ⇒ request của nó phải bị HUỶ, không chỉ bị bỏ qua.
+        _cho_dieu_kien(p, lambda: any("vao_bo=1" in u for u in gc["huy"]))
+        _tha(giu.pop(), tra_lai)                    # lượt phía 1 "về" SAU (đã huỷ)
         het = time.monotonic() + 1.5
         while time.monotonic() < het and not cum_sau:
             p.wait_for_timeout(50)
@@ -326,6 +336,14 @@ def test_chip_bat_ma_chua_co_video_nao_vao_bo_la_khong_khop_khong_phai_thu_vien_
     finally:
         br.close()
         pw.stop()
+
+
+def _tha(route, ham):
+    """Thả một route đang giữ. Request đã bị trang huỷ thì route có thể đã đóng ⇒ bỏ qua."""
+    try:
+        ham(route)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _cho_vong_su_kien(p):
@@ -354,10 +372,12 @@ def test_luot_cu_cho_cum_ve_sau_khong_ve_de_luot_moi(base_url):
         p.click("#chip-vao-bo")                     # lượt phía 0: chờ /cum
         _cho_dieu_kien(p, lambda: len(giu_cum["ds"]) == 2)
         giu_cum["bat"] = False
-        with p.expect_response("**/cum"):
-            giu_cum["ds"].pop(0).continue_()        # /cum của lượt CŨ (phía 1) về trước
+        # /cum của lượt CŨ phải bị HUỶ khi lượt mới bắt đầu.
+        _cho_dieu_kien(p, lambda: any(u.endswith("/cum") for u in giu_cum["huy"]))
+        _tha(giu_cum["ds"].pop(0), lambda r: r.continue_())   # /cum của lượt CŨ "về" trước
         _cho_vong_su_kien(p)
         assert p.get_attribute("#card-grid", "data-nap-phia") == "", "lượt cũ không đặt tín hiệu"
+        assert "danh sách cụm" not in p.inner_text("#toast"), "/cum bị huỷ của lượt cũ không được báo lỗi"
         assert p.get_attribute("#card-grid", "aria-busy") == "true"
         giu_cum["ds"].pop(0).continue_()
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
@@ -372,8 +392,8 @@ def test_bam_chip_hai_lan_luot_sau_loi_chip_ve_phia_luoi_dang_ve(base_url):
     là phía 0 ⇒ chip phải TẮT — về phía lưới đang vẽ, không phải "phía trước lần bấm cuối"
     (là phía 1)."""
     giu: list = []
-    p, br, pw, tra_lai, _ = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia1=giu,
-                                         loi_phia0_sau_lan_dau=True)
+    p, br, pw, tra_lai, gc = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia1=giu,
+                                          loi_phia0_sau_lan_dau=True)
     try:
         with p.expect_request(lambda r: "vao_bo=1" in r.url):
             p.click("#chip-vao-bo")
@@ -385,8 +405,8 @@ def test_bam_chip_hai_lan_luot_sau_loi_chip_ve_phia_luoi_dang_ve(base_url):
         assert p.get_attribute("#card-grid", "aria-busy") == "false"
         cum_sau = []
         p.on("request", lambda r: cum_sau.append(r.url) if r.url.endswith("/cum") else None)
-        with p.expect_response(lambda r: "vao_bo=1" in r.url):
-            tra_lai(giu.pop())                      # lượt phía 1 (đã bị thay) về muộn
+        _cho_dieu_kien(p, lambda: any("vao_bo=1" in u for u in gc["huy"]))
+        _tha(giu.pop(), tra_lai)                    # lượt phía 1 (đã bị thay, đã huỷ) về muộn
         # Lượt bị thay phải DỪNG trước `/cum`. Không có chốt thì nó gọi `/cum` rồi vẽ đè
         # ⇒ đếm request `/cum` trong một cửa sổ có trần (phép âm cần cửa sổ; đột biến
         # bỏ chốt đã chạy và ĐỎ ở đây).
@@ -446,6 +466,16 @@ def test_lan_nap_dau_loi_khong_noi_thu_vien_trong(base_url):
             p.goto(base_url)
         _cho_vong_su_kien(p)
         assert not p.locator("#empty-state").is_visible()
+        # Lần đầu hỏng: toast 2,6 s rồi trang trống là im lặng ⇒ ô lỗi thường trực.
+        assert p.inner_text("#error").startswith("Không tải được thư viện")
+        # Làm mới nạp được ⇒ câu lỗi cũ thành SAI ⇒ phải gỡ.
+        p.unroute("**/videos?*")
+        p.route("**/videos?*", lambda route: route.fulfill(json={
+            "tong": 3, "tong_vao_bo": 0, "videos": _videos(3), "da_don_trong_cum": []}))
+        truoc = p.get_attribute("#card-grid", "data-luot-xong")
+        p.click("#library-refresh")
+        p.wait_for_function(f"document.getElementById('card-grid').dataset.luotXong !== '{truoc}'")
+        assert p.inner_text("#error") == ""
     finally:
         br.close()
         pw.stop()
@@ -481,7 +511,7 @@ def test_luot_bi_thay_loi_khong_de_mat_cau_bao_cua_luot_moi(base_url):
     2 video…". Lượt "Làm mới" (đã bị thay) sau đó lỗi 500 ⇒ KHÔNG được toast "Không tải
     lại được thư viện" đè lên — thư viện đã nạp được."""
     giu: list = []
-    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia0_sau_lan_dau=giu)
+    p, br, pw, _, gc = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia0_sau_lan_dau=giu)
     try:
         the = p.locator("#card-grid .card")
         the.nth(0).click()
@@ -491,8 +521,10 @@ def test_luot_bi_thay_loi_khong_de_mat_cau_bao_cua_luot_moi(base_url):
         p.click("#chip-vao-bo")
         p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
         assert p.inner_text("#toast").startswith("Đã bỏ 2 video")
-        with p.expect_response(lambda r: "vao_bo=0" in r.url):
-            giu.pop().fulfill(status=500, body="loi")
+        # Lượt "Làm mới" bị thay ⇒ request của nó bị HUỶ; thả nó với 500 cũng không được
+        # sinh toast nào.
+        _cho_dieu_kien(p, lambda: any("vao_bo=0" in u for u in gc["huy"]))
+        _tha(giu.pop(), lambda r: r.fulfill(status=500, body="loi"))
         _cho_vong_su_kien(p)
         assert p.inner_text("#toast").startswith("Đã bỏ 2 video"), p.inner_text("#toast")
         assert p.get_attribute("#card-grid", "data-nap-phia") == "1"
@@ -547,6 +579,83 @@ def test_lam_moi_cung_so_khong_ghi_lai_bang_canh_bao(base_url):
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
         assert p.evaluate("window.__dotBienBang") == 0
         assert p.get_attribute("#canh-bao-gioi-han", "role") == "status"
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_lam_moi_het_phien_ra_man_het_phien_khong_ra_toast_rong(base_url):
+    """Phiên Access hết hạn (302) lúc bấm Làm mới ⇒ màn "hết phiên", không phải toast
+    "Không tải lại được thư viện: " với chữ rỗng."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
+    try:
+        p.unroute("**/videos?*")
+        p.route("**/videos?*", lambda r: r.fulfill(status=302, headers={"location": "/cdn-cgi/access/login"}))
+        p.evaluate("document.getElementById('toast').textContent = ''")
+        p.click("#library-refresh")
+        p.wait_for_selector("#session-expired:not([hidden])")
+        assert "Không tải lại được thư viện" not in p.inner_text("#toast")
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_bo_video_roi_nap_lai_hong_van_bao_so_da_bo(base_url):
+    """Bỏ 2 video xong (tệp đã vào Thùng rác) mà lượt nạp lại thư viện hỏng ⇒ toast tóm
+    tắt VẪN ra số đã bỏ, kèm "không tải lại được thư viện" — không mất câu xác nhận."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 6, 1: 0}, loi_phia0_sau_lan_dau=True)
+    try:
+        p.route("**/videos/loai", lambda r: r.fulfill(json={
+            "da_loai": json.loads(r.request.post_data)["video_ids"], "khong_phai_cua_ban": [], "drive_truot": []}))
+        p.on("dialog", lambda d: d.accept())
+        the = p.locator("#card-grid .card")
+        the.nth(0).click()
+        the.nth(1).click()
+        p.click('[data-action="loai"]')
+        p.wait_for_function("document.getElementById('toast').textContent.includes('đã bỏ 2')")
+        chu = p.inner_text("#toast")
+        assert "không tải lại được thư viện" in chu, chu
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_bo_video_roi_het_phien_van_bao_so_da_bo(base_url):
+    """Bỏ 2 video xong (tệp đã vào Thùng rác) mà lúc nạp lại thì phiên hết ⇒ màn hết phiên
+    VÀ toast tóm tắt vẫn ra số đã bỏ — không mất câu xác nhận việc đã làm."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 6, 1: 0})
+    try:
+        p.route("**/videos/loai", lambda r: r.fulfill(json={
+            "da_loai": json.loads(r.request.post_data)["video_ids"], "khong_phai_cua_ban": [], "drive_truot": []}))
+        p.on("dialog", lambda d: d.accept())
+        the = p.locator("#card-grid .card")
+        the.nth(0).click()
+        the.nth(1).click()
+        p.unroute("**/videos?*")
+        p.route("**/videos?*", lambda r: r.fulfill(status=302, headers={"location": "/cdn-cgi/access/login"}))
+        p.click('[data-action="loai"]')
+        p.wait_for_selector("#session-expired:not([hidden])")
+        p.wait_for_function("document.getElementById('toast').textContent.includes('đã bỏ 2')")
+        assert "phiên đã hết hạn" in p.inner_text("#toast")
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_cum_di_dang_chi_bao_loi_cum_thu_vien_van_ve(base_url):
+    """`/cum` trả JSON không có mảng `cum` ⇒ lưới vẫn vẽ (chỉ là lỗi cụm), không kẹt
+    `aria-busy`, không "Không tải lại được thư viện"."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
+    try:
+        p.unroute("**/cum")
+        p.route("**/cum", lambda r: r.fulfill(json={"loi": "dị dạng"}))
+        truoc = p.get_attribute("#card-grid", "data-luot-xong")
+        p.click("#library-refresh")
+        p.wait_for_function(f"document.getElementById('card-grid').dataset.luotXong !== '{truoc}'")
+        assert "danh sách cụm" in p.inner_text("#toast")
+        assert "Không tải lại được thư viện" not in p.inner_text("#toast")
+        assert p.get_attribute("#card-grid", "aria-busy") == "false"
+        assert p.locator("#card-grid .card").count() == 5
     finally:
         br.close()
         pw.stop()

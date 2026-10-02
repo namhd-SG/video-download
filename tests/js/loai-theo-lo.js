@@ -30,7 +30,8 @@ async function chay({ soId, loLoi = null }) {
     if (loLoi !== null && goi.length === loLoi) nem(500);
     return { da_loai: body.video_ids, drive_truot: [], khong_phai_cua_ban: [] };
   };
-  const loadVideos = async () => { lanNap++; };
+  // `loaiDaChon` nạp lại qua `napLaiThuVien` (một chỗ bắt lỗi cho mọi nơi gọi).
+  const napLaiThuVien = async () => { lanNap++; return "ok"; };
   const renderSelectionBar = () => {};
   const showToast = (m) => toast.push(m);
   const baoPhienHetHan = () => {};
