@@ -193,10 +193,12 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
         pw.stop()
 
 
-def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: bool = False):
+def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: bool = False,
+                 loi_phia0_sau_lan_dau: bool = False):
     """Trang thật; `/videos` giả theo phía `vao_bo` với `so[phia]` video. `giu_phia1` (một
     list) ⇒ request phía 1 bị GIỮ lại trong list, người gọi tự `tra_lai(route)` sau.
-    `loi_phia1` ⇒ phía 1 trả 500. Trả thêm `giu_cum`: bật `giu_cum["bat"]` ⇒ mọi
+    `loi_phia1` ⇒ phía 1 trả 500; `loi_phia0_sau_lan_dau` ⇒ phía 0 trả 500 từ lượt nạp thứ
+    hai (lượt đầu lúc mở trang vẫn được). Trả thêm `giu_cum`: bật `giu_cum["bat"]` ⇒ mọi
     `GET /cum` sau đó bị giữ trong `giu_cum["ds"]` (người gọi `route.continue_()`)."""
     kho = {0: _videos(so[0]),
            1: [{**v, "video_id": f"9{v['video_id']}",
@@ -209,7 +211,14 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: b
         route.fulfill(json={"tong": len(kho[phia]), "tong_vao_bo": len(kho[1]),
                             "videos": kho[phia][offset:offset + limit], "da_don_trong_cum": []})
 
+    so_lan_phia0 = [0]
+
     def tra(route):
+        if "vao_bo=0" in route.request.url and "offset=0&" in route.request.url:
+            so_lan_phia0[0] += 1
+            if loi_phia0_sau_lan_dau and so_lan_phia0[0] > 1:
+                route.fulfill(status=500, body="loi")
+                return
         if loi_phia1 and "vao_bo=1" in route.request.url:
             route.fulfill(status=500, body="loi")
             return
@@ -276,27 +285,66 @@ def test_chip_bat_ma_chua_co_video_nao_vao_bo_la_khong_khop_khong_phai_thu_vien_
         pw.stop()
 
 
+def _cho_vong_su_kien(p):
+    """Chờ trang chạy hết các việc đã xếp hàng (promise + macrotask) — thay cho chờ theo giờ."""
+    p.evaluate("() => new Promise((r) => setTimeout(r, 0))")
+    p.evaluate("() => new Promise((r) => setTimeout(r, 0))")
+
+
+def _cho_dieu_kien(p, dk, tran_s: float = 10.0):
+    """Bơm vòng sự kiện Playwright (callback route chạy ở phía Python) tới khi `dk()` đúng.
+    Chờ theo ĐIỀU KIỆN, có trần — không phải chờ một khoảng giờ cố định."""
+    het = time.monotonic() + tran_s
+    while not dk():
+        assert time.monotonic() < het, "quá trần chờ điều kiện"
+        p.wait_for_timeout(20)
+
+
 def test_luot_cu_cho_cum_ve_sau_khong_ve_de_luot_moi(base_url):
     """Lượt bật chip đã nhận video nhưng còn chờ `/cum`; người dùng tắt chip ngay. `/cum`
     của lượt CŨ về trước ⇒ lượt cũ không được vẽ lưới hay đặt `data-nap-phia`."""
     p, br, pw, _, giu_cum = _mo_hai_phia(base_url, {0: 30, 1: 5})
     try:
         giu_cum["bat"] = True
-        p.click("#chip-vao-bo")
-        p.wait_for_function("() => true")
-        p.wait_for_timeout(300)
-        assert len(giu_cum["ds"]) == 1, "lượt phía 1 đang chờ /cum"
-        p.click("#chip-vao-bo")
-        p.wait_for_timeout(300)
-        assert len(giu_cum["ds"]) == 2, "lượt phía 0 cũng đang chờ /cum"
+        p.click("#chip-vao-bo")                     # lượt phía 1: chờ /cum
+        _cho_dieu_kien(p, lambda: len(giu_cum["ds"]) == 1)
+        p.click("#chip-vao-bo")                     # lượt phía 0: chờ /cum
+        _cho_dieu_kien(p, lambda: len(giu_cum["ds"]) == 2)
         giu_cum["bat"] = False
-        giu_cum["ds"].pop(0).continue_()          # /cum của lượt CŨ (phía 1) về trước
-        p.wait_for_timeout(500)
+        with p.expect_response("**/cum"):
+            giu_cum["ds"].pop(0).continue_()        # /cum của lượt CŨ (phía 1) về trước
+        _cho_vong_su_kien(p)
         assert p.get_attribute("#card-grid", "data-nap-phia") == "", "lượt cũ không đặt tín hiệu"
         assert p.get_attribute("#card-grid", "aria-busy") == "true"
         giu_cum["ds"].pop(0).continue_()
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
         assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_bam_chip_hai_lan_luot_sau_loi_chip_ve_phia_luoi_dang_ve(base_url):
+    """Lưới đang phía 0. Bật chip (phía 1 bị giữ) rồi tắt ngay (phía 0 lỗi 500): lưới vẫn
+    là phía 0 ⇒ chip phải TẮT — về phía lưới đang vẽ, không phải "phía trước lần bấm cuối"
+    (là phía 1)."""
+    giu: list = []
+    p, br, pw, tra_lai, _ = _mo_hai_phia(base_url, {0: 8, 1: 3}, giu_phia1=giu,
+                                         loi_phia0_sau_lan_dau=True)
+    try:
+        with p.expect_request(lambda r: "vao_bo=1" in r.url):
+            p.click("#chip-vao-bo")
+        with p.expect_response(lambda r: "vao_bo=0" in r.url):
+            p.click("#chip-vao-bo")
+        p.wait_for_function("document.getElementById('toast').textContent.includes('Không tải lại được thư viện')")
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+        assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
+        assert p.get_attribute("#card-grid", "aria-busy") == "false"
+        tra_lai(giu.pop())                          # lượt phía 1 (đã bị thay) về muộn
+        _cho_vong_su_kien(p)
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+        assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
+        assert p.locator("#card-grid .card").count() == 8
     finally:
         br.close()
         pw.stop()
@@ -324,6 +372,27 @@ def test_moi_video_da_vao_bo_luoi_mac_dinh_la_khong_khop_khong_phai_thu_vien_tro
     try:
         assert p.inner_text("#chip-vao-bo") == "Đã vào bộ (4)"
         assert p.locator("#no-match-state").is_visible()
+        assert not p.locator("#empty-state").is_visible()
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_lan_nap_dau_loi_khong_noi_thu_vien_trong(base_url):
+    """Lần nạp ĐẦU `/videos` lỗi ⇒ chưa có gì để quay về: KHÔNG được hiện "Thư viện chưa
+    có video nào" (thư viện chưa nạp được, không phải trống)."""
+    pw = pw_api.sync_playwright().start()
+    try:
+        br = pw.chromium.launch()
+    except Exception as exc:  # noqa: BLE001
+        pw.stop()
+        pytest.skip(f"không mở được Chromium: {exc}")
+    try:
+        p = br.new_page(viewport={"width": 1280, "height": 900})
+        with p.expect_response(lambda r: "/videos?" in r.url):
+            p.route("**/videos?*", lambda route: route.fulfill(status=500, body="loi"))
+            p.goto(base_url)
+        _cho_vong_su_kien(p)
         assert not p.locator("#empty-state").is_visible()
     finally:
         br.close()

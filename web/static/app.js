@@ -131,6 +131,7 @@
     chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     tongVaoBo: undefined,     // GET /videos → tong_vao_bo: số trên chip (undefined = server cũ, tự đếm)
     luotNapVideo: 0,          // lượt `loadVideos` mới nhất — lượt cũ về trễ thì bỏ
+    phiaDaVe: undefined,      // phía chip mà lưới ĐANG thật sự vẽ (0/1; undefined = chưa vẽ lần nào)
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
@@ -913,22 +914,11 @@
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "true");
     grid.dataset.napPhia = "";
-    // `loadVideos` tăng `luotNapVideo` ĐỒNG BỘ trước `await` đầu tiên ⇒ đây là số
-    // của chính lượt sắp chạy.
-    const luot = state.luotNapVideo + 1;
+    // Nạp hỏng thì `loadVideos` tự đưa chip/lưới về phía đã vẽ; ở đây chỉ báo.
     return loadVideos({ lyDoRoi: "vì đang xem phía khác của chip “Đã vào bộ”" })
       .catch((err) => {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
         showToast("Không tải lại được thư viện: " + err.message);
-        // Nạp hỏng ⇒ lưới, nhãn và lựa chọn vẫn là phía CŨ. Trả chip về phía đó
-        // để chip khớp thứ đang hiện — để chip phía mới trên lưới phía cũ thì
-        // "Bỏ" thao tác trên đúng video người dùng không tưởng là mình đang xem.
-        // Lượt khác đã thay chỗ (bấm tiếp) thì để lượt đó quyết.
-        if (luot !== state.luotNapVideo) return;
-        state.chiVaoBo = !chiVaoBo;
-        veChipVaoBo();
-        grid.setAttribute("aria-busy", "false");
-        grid.dataset.napPhia = String(state.chiVaoBo ? 1 : 0);
       });
   }
 
@@ -2079,21 +2069,51 @@
     //
     // Chỉ nạp phía chip đang xem (`vao_bo=0|1`): video đã vào bộ không chiếm suất
     // `LIBRARY_MAX` của lưới mặc định, và phía "Đã vào bộ" có trần riêng. Bấm chip
-    // liên tiếp ⇒ nhiều lượt chồng nhau: chỉ lượt MỚI NHẤT được ghi vào `state`.
+    // liên tiếp ⇒ nhiều lượt chồng nhau: chỉ lượt MỚI NHẤT được đụng `state`/DOM.
+    // Mọi thứ nạp về giữ ở biến cục bộ tới SAU lần chờ cuối (`/cum`), rồi mới
+    // kiểm lượt và ghi — ghi sớm thì lượt cũ để lại `state` lệch DOM khi lượt
+    // mới hỏng.
     const luot = ++state.luotNapVideo;
     const phia = state.chiVaoBo ? 1 : 0;
     const url = (offset) => `/videos?limit=${LIBRARY_PAGE}&offset=${offset}&vao_bo=${phia}`;
-    const first = await apiGet(url(0));
-    if (luot !== state.luotNapVideo) return;
-    const videos = first.videos.slice();
-    const tong = first.tong;
-
-    while (videos.length < tong && videos.length < LIBRARY_MAX) {
-      const next = await apiGet(url(videos.length));
+    let first, videos, tong;
+    try {
+      first = await apiGet(url(0));
+      videos = first.videos.slice();
+      tong = first.tong;
+      while (luot === state.luotNapVideo && videos.length < tong && videos.length < LIBRARY_MAX) {
+        const next = await apiGet(url(videos.length));
+        if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
+        videos.push(...next.videos);
+      }
       if (luot !== state.luotNapVideo) return;
-      if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
-      videos.push(...next.videos);
+      // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
+      // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
+      try {
+        await loadCums();
+      } catch (err) {
+        if (err instanceof PhienHetHan) throw err;
+        showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
+      }
+    } catch (err) {
+      // Lượt mới nhất hỏng ⇒ `state.videos`, lưới và lựa chọn vẫn là phía ĐÃ VẼ.
+      // Đưa chip về đúng phía đó (không phải "phía trước lần bấm này" — bấm hai
+      // lần nhanh thì hai thứ đó khác nhau) và vẽ lại cho chip, bộ lọc, trang
+      // khớp nhau. Để chip phía mới trên lưới phía cũ thì "Bỏ" thao tác trên
+      // video người dùng không tưởng là mình đang xem.
+      // Chưa vẽ lần nào (lần nạp đầu hỏng) ⇒ không có gì để quay về; vẽ lúc này
+      // sẽ hiện "Thư viện chưa có video nào" — nói sai, thư viện chưa NẠP được.
+      if (luot === state.luotNapVideo && state.phiaDaVe !== undefined) {
+        state.chiVaoBo = state.phiaDaVe === 1;
+        renderLibrary();
+        const g = document.getElementById("card-grid");
+        g.setAttribute("aria-busy", "false");
+        g.dataset.napPhia = String(state.phiaDaVe);
+      }
+      throw err;
     }
+    // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó ghi và vẽ.
+    if (luot !== state.luotNapVideo) return;
 
     state.videos = videos;
     state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
@@ -2112,17 +2132,8 @@
     if (roi.length) {
       showToast(`Đã bỏ ${roi.length} video khỏi lựa chọn ${lyDoRoi || "vì không còn trong thư viện đang hiện"}.`);
     }
-    // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
-    // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
-    try {
-      await loadCums();
-    } catch (err) {
-      if (err instanceof PhienHetHan) throw err;
-      showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
-    }
-    // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó vẽ và đặt tín hiệu.
-    if (luot !== state.luotNapVideo) return;
     renderLibrary();
+    state.phiaDaVe = phia;
     // Tín hiệu "lưới đã vẽ xong phía này" — cho người đọc màn hình và cho test.
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "false");
