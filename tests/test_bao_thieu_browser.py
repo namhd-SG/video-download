@@ -405,3 +405,21 @@ def test_co_hang_loat_an_nut_chay_lai_va_cau_ra_them_chi_con_khung_do(trang, db)
     assert h.locator(".lo-ht").count() == 1
     assert h.get_by_role("button", name="Chép link").count() == 1
     assert h.locator(".status-badge").inner_text() == "Thiếu"
+
+
+def test_the_feed_rong_hien_cau_xac_minh_khong_khuyen_dan_cookie(trang, db, tmp_path):
+    """Thẻ hàng đợi THẬT của một lượt dừng vì `feed_rong` (profile, 0 video): khung lý do
+    dừng nói "đòi xác minh (captcha)" và KHÔNG khuyên dán lại cookie — đo 01–02/10 cho
+    thấy không cookie / cookie khác rỗng y hệt. Không gọi TikTok thật (DB tạm, worker tắt).
+    Ảnh: `$VIDEODL_SHOT_DIR/the-feed-rong.png` nếu đặt biến đó (để người duyệt tự mở)."""
+    import os
+    job = _job(db, tong=20, tim=0, bo_qua=0, xong=0, ly_do="feed_rong",
+               url="https://www.tiktok.com/@vidu.profile")
+    p, _ = trang()
+    h = _hang(p, job)
+    cau = h.locator(".stop-reason").inner_text()
+    assert "xác minh" in cau and "không chữa được" in cau, cau
+    assert "dán lại cookie TikTok mới" not in cau, cau
+    thu_muc = Path(os.environ.get("VIDEODL_SHOT_DIR", tmp_path))
+    thu_muc.mkdir(parents=True, exist_ok=True)
+    h.screenshot(path=str(thu_muc / "the-feed-rong.png"))

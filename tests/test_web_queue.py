@@ -1199,6 +1199,24 @@ def test_every_cookie_code_has_a_sentence_in_the_ui(tmp_path):
     assert thieu == [], f"mã không có câu trong UI: {thieu}"
 
 
+def test_cau_feed_rong_noi_dung_nguyen_nhan_khong_khuyen_dan_lai_cookie():
+    """`feed_rong` = TikTok trả feed 0 byte. Đo 01–02/10: trang hiện captcha với
+    trình duyệt tự động, và chạy KHÔNG cookie / bằng cookie khác cũng rỗng y hệt
+    ⇒ câu cũ ("dán lại cookie TikTok mới rồi chạy lại") chỉ sai hướng, người dùng
+    đi dán cookie vô ích. Trả câu cũ về ⇒ test này ĐỎ."""
+    import re
+    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    dau = js.index("const STOP_REASON_TEXT")
+    khoi = js[dau:js.index("};", dau)]
+    m = re.search(r"^\s{4}feed_rong:((?:\s*\"[^\"]*\"\s*\+?)+),", khoi, re.M)
+    assert m, "không thấy câu feed_rong trong STOP_REASON_TEXT"
+    cau = "".join(re.findall(r"\"([^\"]*)\"", m.group(1)))
+    assert "xác minh" in cau, cau
+    assert "không chữa được" in cau, cau
+    assert not re.search(r"dán lại\s+cookie[^.—]*rồi chạy lại", cau), \
+        f"câu vẫn khuyên dán lại cookie: {cau}"
+
+
 # ===========================================================================
 # Metadata từ yt-dlp — T1.2
 # ===========================================================================
