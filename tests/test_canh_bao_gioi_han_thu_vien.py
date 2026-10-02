@@ -131,7 +131,128 @@ def test_ham_thuan_canh_bao_gioi_han_o_bien():
         k += 1
     ham = src[i:k + 1]
     r = subprocess.run([node, "-e", ham + ";process.stdout.write(JSON.stringify(["
-                        "canhBaoGioiHan(2000,2000),canhBaoGioiHan(2001,2000),canhBaoGioiHan(0,2000)]))"],
+                        "canhBaoGioiHan(2000,2000),canhBaoGioiHan(2001,2000),canhBaoGioiHan(0,2000),"
+                        "canhBaoGioiHan(2001,2000,true),canhBaoGioiHan(2000,2000,true)]))"],
                        capture_output=True, text=True, timeout=20)
     assert r.returncode == 0, r.stderr
-    assert json.loads(r.stdout) == ["", "Thư viện có 2001 video, lưới chỉ nạp 2000 video mới nhất", ""]
+    assert json.loads(r.stdout) == ["", "Thư viện có 2001 video, lưới chỉ nạp 2000 video mới nhất", "",
+                                    "Có 2001 video đã vào bộ, chỉ nạp 2000 video mới nhất", ""]
+
+
+def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
+    """Server lọc theo phía chip (`vao_bo=0|1`): lưới mặc định 2500 video chưa vào bộ,
+    phía "Đã vào bộ" 2100 video. Mỗi phía có trần nạp RIÊNG 2000 + cảnh báo riêng; chip
+    đọc `tong_vao_bo` (lưới mặc định không còn chứa video ẩn để tự đếm)."""
+    kho = {0: _videos(2500),
+           1: [{**v, "video_id": f"9{v['video_id']}",
+                "vao_bo": {"an_luc": "2026-09-30T00:00:00+00:00", "se_don_luc": None,
+                           "ma_bo": ["N.0110A"]}} for v in _videos(2100)]}
+    goi: list[tuple[int, int]] = []
+
+    def tra(route):
+        q = parse_qs(urlparse(route.request.url).query)
+        limit, offset, phia = int(q["limit"][0]), int(q["offset"][0]), int(q["vao_bo"][0])
+        goi.append((phia, offset))
+        route.fulfill(json={"tong": len(kho[phia]), "tong_vao_bo": len(kho[1]),
+                            "videos": kho[phia][offset:offset + limit], "da_don_trong_cum": []})
+    pw = pw_api.sync_playwright().start()
+    try:
+        br = pw.chromium.launch()
+    except Exception as exc:  # noqa: BLE001
+        pw.stop()
+        pytest.skip(f"không mở được Chromium: {exc}")
+    try:
+        p = br.new_page(viewport={"width": 1280, "height": 900})
+        p.route("**/videos?*", tra)
+        p.goto(base_url)
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+        thu_muc = os.environ.get("VIDEODL_SHOT_DIR")
+
+        def chup(ten):
+            if thu_muc:
+                hop = p.locator("section[aria-label='Thư viện creative']").bounding_box()
+                p.screenshot(path=str(Path(thu_muc) / f"shot-{ten}.png"), full_page=True,
+                             clip={"x": hop["x"], "y": hop["y"], "width": hop["width"], "height": 620})
+
+        assert goi == [(0, 0), (0, 500), (0, 1000), (0, 1500)], goi
+        assert p.inner_text("#canh-bao-gioi-han") == "Thư viện có 2500 video, lưới chỉ nạp 2000 video mới nhất"
+        assert p.inner_text("#chip-vao-bo") == "Đã vào bộ (2100)"
+        assert "(đang hiện 2000 trong 2500)" in p.inner_text("#library-count")
+        chup("pr2-luoi-mac-dinh-2500")
+
+        goi.clear()
+        p.click("#chip-vao-bo")
+        p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
+        assert goi == [(1, 0), (1, 500), (1, 1000), (1, 1500)], goi
+        assert p.inner_text("#canh-bao-gioi-han") == "Có 2100 video đã vào bộ, chỉ nạp 2000 video mới nhất"
+        assert "(đang hiện 2000 trong 2100)" in p.inner_text("#library-count")
+        assert p.locator("#card-grid .bo-ma").count() > 0, "lưới phía chip là video đã vào bộ"
+        chup("pr2-chip-da-vao-bo-2100")
+    finally:
+        br.close()
+        pw.stop()
+
+
+def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None):
+    """Trang thật; `/videos` giả theo phía `vao_bo` với `so[phia]` video. `giu_phia1` (một
+    list) ⇒ request phía 1 bị GIỮ lại trong list, người gọi tự `tra_lai(route)` sau."""
+    kho = {0: _videos(so[0]),
+           1: [{**v, "video_id": f"9{v['video_id']}",
+                "vao_bo": {"an_luc": "2026-09-30T00:00:00+00:00", "se_don_luc": None, "ma_bo": []}}
+               for v in _videos(so[1])]}
+
+    def tra_lai(route):
+        q = parse_qs(urlparse(route.request.url).query)
+        limit, offset, phia = int(q["limit"][0]), int(q["offset"][0]), int(q["vao_bo"][0])
+        route.fulfill(json={"tong": len(kho[phia]), "tong_vao_bo": len(kho[1]),
+                            "videos": kho[phia][offset:offset + limit], "da_don_trong_cum": []})
+
+    def tra(route):
+        if giu_phia1 is not None and "vao_bo=1" in route.request.url:
+            giu_phia1.append(route)
+            return
+        tra_lai(route)
+    pw = pw_api.sync_playwright().start()
+    try:
+        br = pw.chromium.launch()
+    except Exception as exc:  # noqa: BLE001
+        pw.stop()
+        pytest.skip(f"không mở được Chromium: {exc}")
+    p = br.new_page(viewport={"width": 1280, "height": 900})
+    p.route("**/videos?*", tra)
+    p.goto(base_url)
+    p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+    return p, br, pw, tra_lai
+
+
+def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
+    """Bật chip (phía 1 trả trễ) rồi tắt ngay: lượt phía 1 về SAU lượt phía 0 không được
+    ghi đè lưới — lưới cuối cùng là phía 0, đúng trạng thái chip."""
+    giu: list = []
+    p, br, pw, tra_lai = _mo_hai_phia(base_url, {0: 30, 1: 5}, giu_phia1=giu)
+    try:
+        p.click("#chip-vao-bo")                     # lượt phía 1: bị giữ
+        p.wait_for_function("document.getElementById('card-grid').dataset.napPhia === ''")
+        p.click("#chip-vao-bo")                     # lượt phía 0: về ngay
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+        assert len(giu) == 1
+        tra_lai(giu.pop())                          # lượt phía 1 về SAU
+        p.wait_for_timeout(800)
+        assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+        assert p.locator("#card-grid .card").count() > 0
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_chip_bat_ma_chua_co_video_nao_vao_bo_la_khong_khop_khong_phai_thu_vien_trong(base_url):
+    p, br, pw, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
+    try:
+        p.click("#chip-vao-bo")
+        p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
+        assert p.locator("#no-match-state").is_visible()
+        assert not p.locator("#empty-state").is_visible()
+    finally:
+        br.close()
+        pw.stop()

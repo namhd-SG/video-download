@@ -141,6 +141,17 @@ def _chup(p, ten: str) -> None:
             path=str(Path(thu_muc) / f"shot-{ten}.png"))
 
 
+def _cho_phia(p, phia: int) -> None:
+    """Đổi phía chip nạp lại thư viện từ server (`/videos?vao_bo=`) — chờ lưới vẽ
+    xong ĐÚNG phía đó (`data-nap-phia`) trước khi đọc."""
+    p.wait_for_selector(f"#card-grid[data-nap-phia='{phia}']", state="attached")
+
+
+def _bam_chip(p, phia: int) -> None:
+    p.click("#chip-vao-bo")
+    _cho_phia(p, phia)
+
+
 def _ids_tren_luoi(p) -> set[str]:
     return set(p.eval_on_selector_all("#card-grid .card", "els => els.map(e => e.dataset.videoId)"))
 
@@ -163,7 +174,7 @@ def test_luoi_mac_dinh_an_video_da_vao_bo_va_khong_hien_video_da_don(page):
 
 
 def test_chip_da_vao_bo_chi_hien_ba_video_do_moi_the_co_ma_bo_va_ngay_xoa(page):
-    page.click("#chip-vao-bo")
+    _bam_chip(page, 1)
     assert _ids_tren_luoi(page) == {_id(65), _id(66), _id(67)}
     assert page.inner_text("#library-count") == "3 video đã vào bộ"
     assert page.get_attribute("#chip-vao-bo", "aria-pressed") == "true"
@@ -188,20 +199,21 @@ def test_chip_da_vao_bo_chi_hien_ba_video_do_moi_the_co_ma_bo_va_ngay_xoa(page):
 
 
 def test_bam_chip_lan_nua_ve_luoi_mac_dinh(page):
-    page.click("#chip-vao-bo")
-    page.click("#chip-vao-bo")
+    _bam_chip(page, 1)
+    _bam_chip(page, 0)
     assert len(_ids_tren_luoi(page)) == 66
     assert page.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
 
 
 def test_xoa_het_bo_loc_thoat_khoi_che_do_da_vao_bo(page):
-    page.click("#chip-vao-bo")
+    _bam_chip(page, 1)
     # Chọn cụm "Badaboum couple": không có video đã vào bộ nào trong đó ⇒ không khớp gì
     # ⇒ hiện nút "Xoá hết bộ lọc", và bấm nó phải đưa chip về trạng thái tắt.
     page.click("#cum-rail .cum-sub")
     page.wait_for_selector("#no-match-state:not([hidden])")
     page.click("#clear-filters-btn")
     assert page.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+    _cho_phia(page, 0)
     assert len(_ids_tren_luoi(page)) == 66
 
 
@@ -241,7 +253,7 @@ def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
     try:
         page.click("#library-refresh")
         page.wait_for_function("document.getElementById('chip-vao-bo').textContent === 'Đã vào bộ (3)'")
-        page.click("#chip-vao-bo")
+        _bam_chip(page, 1)
         assert page.locator("#card-grid .bo-ma").count() == 3
         assert page.locator("#card-grid .bo-don").count() == 0, "tắt ⇒ không hứa ngày xoá"
         _chup(page, "02-chip-da-vao-bo-don-ngay7-tat")
@@ -252,3 +264,25 @@ def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
 def test_admin_thay_badge_do_loi_lap_chi_dem_khong_nguong(page):
     page.wait_for_selector("#badge-do-loi-lap:not([hidden])")
     assert page.inner_text("#badge-do-loi-lap") == "2 id đo lỗi lặp, lâu nhất 4 lần"
+
+
+def test_doi_phia_chip_bo_lua_chon_phia_kia_va_noi_so(page):
+    """Lưới chỉ nạp MỘT phía chip ⇒ video chọn ở phía kia không còn trong tập đã nạp ⇒
+    rơi khỏi lựa chọn (giữ lại là mở đường Xoá mù), và trang NÓI số bị rơi."""
+    the = page.locator("#card-grid .card")
+    the.nth(0).click()
+    the.nth(1).click()
+    page.wait_for_selector("#selection-bar:not([hidden])")
+    _bam_chip(page, 1)
+    page.wait_for_function("document.getElementById('toast').textContent.includes('Đã bỏ 2 video')")
+    assert page.inner_text("#toast") == ("Đã bỏ 2 video khỏi lựa chọn vì đang xem phía khác "
+                                         "của chip “Đã vào bộ”.")
+    assert page.evaluate("document.getElementById('selection-bar').hidden"), "không còn gì được chọn"
+
+
+def test_api_videos_chi_tra_phia_chip_duoc_hoi(page):
+    """Trang gọi `/videos` kèm `vao_bo` của phía đang xem — không nạp cả hai phía."""
+    goi = []
+    page.on("request", lambda r: goi.append(r.url) if "/videos?" in r.url else None)
+    _bam_chip(page, 1)
+    assert goi and all("vao_bo=1" in u for u in goi), goi
