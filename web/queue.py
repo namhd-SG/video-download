@@ -311,6 +311,9 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             "headless": not profile_theo_job.profile_headful_dang_bat(),
             # Ghim theo job trong DB: mọi lượt (và mọi lượt đào sâu) dùng CÙNG UA.
             "user_agent": models.chon_ua_job(db_path, job_id, random_user_agent),
+            # Trang profile bị chặn vẫn lộ một link lạc ⇒ kiểm feed rỗng ở cuối vòng
+            # không bắt được; dừng ngay sau lượt đầu, đừng chạm lại trang bị chặn.
+            "dung_som_khi_feed_rong": True,
         }
     refs = scrape_music_page_multi(
         url,
@@ -606,14 +609,20 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
         # xoá vô điều kiện ở đây là xoá đúng phiên vừa được giải, và hỏng âm thầm.
         # Đọc DB trượt / chưa kết thúc ⇒ giữ, bộ quét dọn khi job đã kết thúc.
         # `xoa_profile_job` không ném: xoá trượt chỉ log, không đè việc ghi trạng thái.
-        try:
-            cuoi = models.get_job(db_path, job_id)
-        except Exception:  # noqa: BLE001
-            log.warning("job %s: không đọc lại được trạng thái — giữ profile cho bộ quét",
-                        job_id, exc_info=True)
-            cuoi = None
-        if cuoi is not None and cuoi["trang_thai"] in profile_theo_job.TRANG_THAI_KET_THUC:
-            profile_theo_job.xoa_profile_job(db_path, job_id)
+        #
+        # CHỈ khi cờ BẬT: cờ TẮT thì không có gì của mình để dọn, mà `profiles/<job_id>`
+        # có thể là của thứ khác ⇒ không SELECT, không `stat`, không xoá. Hệ quả đã
+        # chấp nhận: tắt cờ SAU khi đã bật thì thư mục sót không được dọn cho tới khi
+        # bật lại.
+        if profile_theo_job.profile_captcha_dang_bat():
+            try:
+                cuoi = models.get_job(db_path, job_id)
+            except Exception:  # noqa: BLE001
+                log.warning("job %s: không đọc lại được trạng thái — giữ profile cho bộ quét",
+                            job_id, exc_info=True)
+                cuoi = None
+            if cuoi is not None and cuoi["trang_thai"] in profile_theo_job.TRANG_THAI_KET_THUC:
+                profile_theo_job.xoa_profile_job(db_path, job_id)
 
 
 class JobWorker:
@@ -665,6 +674,7 @@ class JobWorker:
         # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
         # chạy `finally`) phải dọn trước khi nhận job.
         self._quet_profile_dinh_ky(buoc_ep=True)
+        self._canh_bao_profiles_khi_co_tat()
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="videodl-worker", daemon=True)
         self._thread.start()
@@ -742,6 +752,21 @@ class JobWorker:
                                   "mỗi vòng", job["id"], exc_info=True)
                 self._stop.wait(self.nghi_sau_loi(self._so_lan_nghi))
 
+    def _canh_bao_profiles_khi_co_tat(self) -> None:
+        """Cờ TẮT mà `profiles/` còn thư mục con ⇒ đúng MỘT dòng WARNING kèm SỐ đếm (lúc
+        khởi động). Bộ quét/`finally` không chạy khi cờ tắt nên chúng sẽ nằm đó mãi; dòng
+        này để người vận hành biết có cookie sót trên đĩa. Chỉ đếm: không in tên, không
+        xoá, không SELECT. Không bao giờ ném."""
+        if profile_theo_job.profile_captcha_dang_bat():
+            return
+        try:
+            so = profile_theo_job.dem_thu_muc_con_profiles(self._db_path)
+        except Exception:  # noqa: BLE001 — chỉ là cảnh báo, không được chặn khởi động
+            return
+        if so > 0:
+            log.warning("profiles/ còn %d thư mục con trong khi cờ %s TẮT — không ai dọn "
+                        "chúng cho tới khi bật cờ lại", so, profile_theo_job.ENV_PROFILE_CAPTCHA)
+
     def _quet_profile_dinh_ky(self, bay_gio: float | None = None, buoc_ep: bool = False
                               ) -> dict[str, int] | None:
         """Quét profile mồ côi nếu đã tới nhịp (`NHIP_QUET_PROFILE_GIAY`); `buoc_ep`
@@ -751,6 +776,11 @@ class JobWorker:
         không đụng `_loi_lien_tiep`), và mốc nhịp ghi TRƯỚC khi quét để một lần quét hỏng
         không bị thử lại mỗi vòng 1 s.
         """
+        # Cờ TẮT ⇒ không đụng `profiles/` (không `iterdir`, không SELECT, không xoá) và
+        # không ghi mốc nhịp. Tắt cờ sau khi đã bật thì thư mục sót không được dọn cho
+        # tới khi bật lại (đã chấp nhận). Mất cờ lúc chạy ⇒ trả None như "chưa tới nhịp".
+        if not profile_theo_job.profile_captcha_dang_bat():
+            return None
         bay_gio = time.monotonic() if bay_gio is None else bay_gio
         if (not buoc_ep and self._quet_profile_luc is not None
                 and bay_gio - self._quet_profile_luc < NHIP_QUET_PROFILE_GIAY):
@@ -764,8 +794,10 @@ class JobWorker:
         # Chỉ lên mức INFO khi có gì xảy ra — trên prod cờ TẮT, mỗi phút một dòng toàn 0
         # là rác. Số đếm vẫn nằm trong giá trị trả về và ở mức DEBUG.
         log.log(logging.INFO if any(dem.values()) else logging.DEBUG,
-                "bộ quét profile: đã xoá %d, giữ %d, xoá trượt %d, bỏ qua %d",
-                dem["da_xoa"], dem["giu"], dem["xoa_truot"], dem["bo_qua"])
+                "bộ quét profile: đã xoá %d, giữ %d, giữ vì Chromium đang mở %d, "
+                "xoá trượt %d, bỏ qua %d",
+                dem["da_xoa"], dem["giu"], dem.get("giu_dang_mo", 0),
+                dem["xoa_truot"], dem["bo_qua"])
         return dem
 
     def _thu_lai_danh_dau(self) -> None:

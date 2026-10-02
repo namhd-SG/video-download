@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 from pathlib import Path
 
 from web import models
@@ -101,6 +102,60 @@ def xoa_profile_job(db_path: Path, job_id: int) -> bool:
     return _xoa_cay(thu_muc)
 
 
+# Kết quả đọc `SingletonLock` của một thư mục profile.
+_LOCK_KHONG_CO = "khong_co"    # không có khoá ⇒ không Chromium nào đang giữ thư mục
+_LOCK_CHET = "chet"            # khoá của máy NÀY, pid đã chết ⇒ khoá mồ côi
+_LOCK_SONG = "song"            # khoá của máy NÀY, pid còn sống ⇒ Chromium đang mở
+_LOCK_KHONG_RO = "khong_ro"    # không đọc/đoán được ⇒ KHÔNG được xoá
+
+
+def _doc_singleton_lock(thu_muc: Path) -> str:
+    """Chromium giữ thư mục profile bằng symlink `SingletonLock` trỏ tới chuỗi
+    `"<hostname>-<pid>"` (đích không phải file thật nên symlink luôn "treo" — đọc bằng
+    `os.readlink`, KHÔNG đi theo). Trả một trong bốn hằng `_LOCK_*`.
+
+    Tách ở dấu `-` CUỐI CÙNG vì hostname có thể chứa `-`. Phải khớp CẢ host lẫn pid:
+    pid chỉ có nghĩa trên máy sinh ra nó, nên host khác ⇒ không xác định được ⇒
+    `_LOCK_KHONG_RO` (giữ), đừng đem pid của máy khác đi hỏi `os.kill` ở đây.
+    Pid còn sống nhưng bị tái dùng cho tiến trình khác ⇒ vẫn giữ (nghiêng về giữ; thư
+    mục sót được dọn ở lượt sau khi pid đó chết).
+    """
+    try:
+        dich = os.readlink(thu_muc / "SingletonLock")
+    except FileNotFoundError:
+        return _LOCK_KHONG_CO
+    except OSError:  # có mục tên đó nhưng không phải symlink, hoặc không đọc được
+        return _LOCK_KHONG_RO
+    host, _, pid_txt = dich.rpartition("-")
+    if not host or not pid_txt.isascii() or not pid_txt.isdigit() or int(pid_txt) <= 0:
+        return _LOCK_KHONG_RO
+    try:
+        host_may = socket.gethostname()
+    except OSError:
+        return _LOCK_KHONG_RO
+    if host != host_may:
+        return _LOCK_KHONG_RO
+    try:
+        os.kill(int(pid_txt), 0)
+    except ProcessLookupError:
+        return _LOCK_CHET
+    except PermissionError:
+        return _LOCK_SONG  # tiến trình có thật, chỉ không thuộc user này
+    except (OSError, OverflowError, ValueError):
+        return _LOCK_KHONG_RO
+    return _LOCK_SONG
+
+
+def dem_thu_muc_con_profiles(db_path: Path) -> int:
+    """Số thư mục con trực tiếp của `profiles/` (0 nếu không có/không liệt được).
+    Chỉ đếm: không đọc tên ra ngoài, không SELECT, không xoá."""
+    try:
+        with os.scandir(thu_muc_profiles(db_path)) as it:
+            return sum(1 for e in it if e.is_dir(follow_symlinks=False))
+    except OSError:
+        return 0
+
+
 def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
     """Xoá thư mục con của `profiles/` mà job tương ứng không còn hoặc đã kết thúc.
 
@@ -108,8 +163,16 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
       · `da_xoa`    thư mục mồ côi đã xoá
       · `giu`       job còn sống (running/pending/trạng thái khác) ⇒ không đụng
       · `xoa_truot` mồ côi nhưng xoá trượt (quét lượt sau thử lại)
-      · `bo_qua`    tên không phải số nguyên, hoặc không đọc được DB để biết job
-                    ⇒ không xoá (không biết là của ai thì không phải của mình)
+      · `bo_qua`    tên không phải số nguyên, hoặc không đọc được DB để biết job,
+                    hoặc `SingletonLock` không xác định được (host khác máy này, sai
+                    định dạng, pid không phải số) ⇒ không xoá (không biết là của ai
+                    thì không phải của mình). Chọn `bo_qua` chứ không `giu_dang_mo`
+                    cho host khác: ta KHÔNG biết có Chromium đang sống, nói "đang mở"
+                    là khai điều chưa đo.
+      · `giu_dang_mo` chỉ XUẤT HIỆN khi > 0: job đã kết thúc/không còn nhưng
+                    `SingletonLock` trỏ `<host máy này>-<pid>` còn sống (launchd dựng
+                    tiến trình mới khi tiến trình cũ chưa chết hẳn ⇒ Chromium của
+                    tiến trình cũ vẫn đang giữ thư mục) ⇒ GIỮ, lượt sau thử lại.
     """
     dem = {"da_xoa": 0, "giu": 0, "xoa_truot": 0, "bo_qua": 0}
     goc = thu_muc_profiles(db_path)
@@ -141,6 +204,16 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
             continue
         if job is not None and job["trang_thai"] not in TRANG_THAI_KET_THUC:
             dem["giu"] += 1
+            continue
+        # Mục là symlink/không phải thư mục thì chỉ gỡ liên kết (`_xoa_cay`), và đọc
+        # `<m>/SingletonLock` sẽ đi theo liên kết ra ngoài ⇒ bỏ qua kiểm khoá.
+        trang_lock = (_doc_singleton_lock(m) if m.is_dir() and not m.is_symlink()
+                      else _LOCK_KHONG_CO)
+        if trang_lock == _LOCK_SONG:
+            dem["giu_dang_mo"] = dem.get("giu_dang_mo", 0) + 1
+        elif trang_lock == _LOCK_KHONG_RO:
+            log.info("bộ quét profile: %s có SingletonLock không xác định được — giữ", m.name)
+            dem["bo_qua"] += 1
         elif _xoa_cay(m):
             dem["da_xoa"] += 1
         else:

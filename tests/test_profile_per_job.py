@@ -303,6 +303,7 @@ def _worker(db, tmp_path, **kw):
 
 
 def test_bo_quet_nhip_it_nhat_60_giay(monkeypatch, db, tmp_path):
+    _bat_co(monkeypatch)
     goi = []
     that = profile_theo_job.quet_profile_mo_coi
     monkeypatch.setattr(profile_theo_job, "quet_profile_mo_coi", lambda p: goi.append(1) or that(p))
@@ -316,6 +317,7 @@ def test_bo_quet_nhip_it_nhat_60_giay(monkeypatch, db, tmp_path):
 
 
 def test_bo_quet_hong_khong_ne_ra_khoi_worker(monkeypatch, db, tmp_path):
+    _bat_co(monkeypatch)
     def no(_p):
         raise RuntimeError("quét nổ")
     monkeypatch.setattr(profile_theo_job, "quet_profile_mo_coi", no)
@@ -331,7 +333,8 @@ def _cho(dieu_kien, giay=5.0):
     return dieu_kien()
 
 
-def test_bo_quet_chay_luc_khoi_dong(db, tmp_path):
+def test_bo_quet_chay_luc_khoi_dong(monkeypatch, db, tmp_path):
+    _bat_co(monkeypatch)
     goc = db.parent / "profiles"
     (goc / "777").mkdir(parents=True)
     w = _worker(db, tmp_path, disk_guard_fn=lambda p: SimpleNamespace(ok=False, reason="đầy"))
@@ -345,6 +348,7 @@ def test_bo_quet_chay_luc_khoi_dong(db, tmp_path):
 def test_bo_quet_van_chay_khi_dia_duoi_nguong(monkeypatch, db, tmp_path):
     """Cổng đĩa `continue` TRƯỚC `claim` ⇒ bộ quét đặt sau cổng sẽ không bao giờ chạy
     đúng lúc đĩa cạn."""
+    _bat_co(monkeypatch)
     monkeypatch.setattr(queue_mod, "NHIP_QUET_PROFILE_GIAY", 0.0)
     goc = db.parent / "profiles"
     w = _worker(db, tmp_path, poll_interval=0.01,
@@ -359,6 +363,7 @@ def test_bo_quet_van_chay_khi_dia_duoi_nguong(monkeypatch, db, tmp_path):
 
 
 def test_bo_quet_chay_ca_khi_hang_co_job_pending(monkeypatch, db, tmp_path):
+    _bat_co(monkeypatch)
     monkeypatch.setattr(queue_mod, "NHIP_QUET_PROFILE_GIAY", 0.0)
     goc = db.parent / "profiles"
     xong = threading.Event()
