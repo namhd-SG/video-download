@@ -263,8 +263,14 @@ def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
         p.click("#chip-vao-bo")                     # lượt phía 0: về ngay
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
         assert len(giu) == 1
-        tra_lai(giu.pop())                          # lượt phía 1 về SAU
-        p.wait_for_timeout(800)
+        cum_sau = []
+        p.on("request", lambda r: cum_sau.append(r.url) if r.url.endswith("/cum") else None)
+        with p.expect_response(lambda r: "vao_bo=1" in r.url):
+            tra_lai(giu.pop())                      # lượt phía 1 về SAU
+        het = time.monotonic() + 1.5
+        while time.monotonic() < het and not cum_sau:
+            p.wait_for_timeout(50)
+        assert cum_sau == [], "lượt bị thay không được đi tiếp tới /cum"
         assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
         assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
         assert p.locator("#card-grid .card").count() > 0
@@ -340,8 +346,17 @@ def test_bam_chip_hai_lan_luot_sau_loi_chip_ve_phia_luoi_dang_ve(base_url):
         assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
         assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
         assert p.get_attribute("#card-grid", "aria-busy") == "false"
-        tra_lai(giu.pop())                          # lượt phía 1 (đã bị thay) về muộn
-        _cho_vong_su_kien(p)
+        cum_sau = []
+        p.on("request", lambda r: cum_sau.append(r.url) if r.url.endswith("/cum") else None)
+        with p.expect_response(lambda r: "vao_bo=1" in r.url):
+            tra_lai(giu.pop())                      # lượt phía 1 (đã bị thay) về muộn
+        # Lượt bị thay phải DỪNG trước `/cum`. Không có chốt thì nó gọi `/cum` rồi vẽ đè
+        # ⇒ đếm request `/cum` trong một cửa sổ có trần (phép âm cần cửa sổ; đột biến
+        # bỏ chốt đã chạy và ĐỎ ở đây).
+        het = time.monotonic() + 1.5
+        while time.monotonic() < het and not cum_sau:
+            p.wait_for_timeout(50)
+        assert cum_sau == [], "lượt bị thay không được gọi /cum"
         assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
         assert p.get_attribute("#card-grid", "data-nap-phia") == "0"
         assert p.locator("#card-grid .card").count() == 8
@@ -393,6 +408,31 @@ def test_lan_nap_dau_loi_khong_noi_thu_vien_trong(base_url):
             p.route("**/videos?*", lambda route: route.fulfill(status=500, body="loi"))
             p.goto(base_url)
         _cho_vong_su_kien(p)
+        assert not p.locator("#empty-state").is_visible()
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_lan_dau_loi_roi_bam_chip_cung_loi_chip_ve_tat_het_dang_nap(base_url):
+    """Lần nạp đầu lỗi, người dùng bấm chip, lượt đó cũng lỗi ⇒ chip về tắt, lưới hết
+    `aria-busy` (không kẹt "đang nạp" mãi)."""
+    pw = pw_api.sync_playwright().start()
+    try:
+        br = pw.chromium.launch()
+    except Exception as exc:  # noqa: BLE001
+        pw.stop()
+        pytest.skip(f"không mở được Chromium: {exc}")
+    try:
+        p = br.new_page(viewport={"width": 1280, "height": 900})
+        p.route("**/videos?*", lambda route: route.fulfill(status=500, body="loi"))
+        with p.expect_response(lambda r: "/videos?" in r.url):
+            p.goto(base_url)
+        with p.expect_response(lambda r: "vao_bo=1" in r.url):
+            p.click("#chip-vao-bo")
+        _cho_vong_su_kien(p)
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+        assert p.get_attribute("#card-grid", "aria-busy") == "false"
         assert not p.locator("#empty-state").is_visible()
     finally:
         br.close()

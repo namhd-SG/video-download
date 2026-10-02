@@ -1971,7 +1971,12 @@
         state.openStreams.delete(jobId);
         // Job vừa xong (hoặc lỗi/bị ngắt) — nạp lại thư viện để creative mới
         // (nếu có) xuất hiện mà không cần user tự bấm "Làm mới".
-        loadVideos().catch((e) => { if (e instanceof PhienHetHan) baoPhienHetHan(); });
+        // Lỗi thường cũng phải NÓI: nạp hỏng có thể vừa đưa chip về phía đang vẽ
+        // (xem `loadVideos`) — chip tự lật mà im lặng thì người dùng không biết vì sao.
+        loadVideos().catch((e) => {
+          if (e instanceof PhienHetHan) { baoPhienHetHan(); return; }
+          showToast("Không tải lại được thư viện: " + e.message);
+        });
       }
     });
     es.onerror = () => {
@@ -2103,12 +2108,19 @@
       // video người dùng không tưởng là mình đang xem.
       // Chưa vẽ lần nào (lần nạp đầu hỏng) ⇒ không có gì để quay về; vẽ lúc này
       // sẽ hiện "Thư viện chưa có video nào" — nói sai, thư viện chưa NẠP được.
-      if (luot === state.luotNapVideo && state.phiaDaVe !== undefined) {
-        state.chiVaoBo = state.phiaDaVe === 1;
-        renderLibrary();
+      if (luot === state.luotNapVideo) {
         const g = document.getElementById("card-grid");
         g.setAttribute("aria-busy", "false");
-        g.dataset.napPhia = String(state.phiaDaVe);
+        if (state.phiaDaVe !== undefined) {
+          state.chiVaoBo = state.phiaDaVe === 1;
+          renderLibrary();
+          g.dataset.napPhia = String(state.phiaDaVe);
+        } else {
+          // Chưa vẽ lần nào: không vẽ, nhưng chip vẫn về mặc định (tắt) cho khớp
+          // lưới rỗng, và hết "đang nạp".
+          state.chiVaoBo = false;
+          veChipVaoBo();
+        }
       }
       throw err;
     }
@@ -2116,6 +2128,7 @@
     if (luot !== state.luotNapVideo) return;
 
     state.videos = videos;
+    state.phiaDaVe = phia;   // cùng lúc với `state.videos`: phục hồi vẽ lại từ đúng tập này
     state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
     state.videosTotal = tong;
     veCanhBaoGioiHan(tong);
@@ -2133,7 +2146,6 @@
       showToast(`Đã bỏ ${roi.length} video khỏi lựa chọn ${lyDoRoi || "vì không còn trong thư viện đang hiện"}.`);
     }
     renderLibrary();
-    state.phiaDaVe = phia;
     // Tín hiệu "lưới đã vẽ xong phía này" — cho người đọc màn hình và cho test.
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "false");
