@@ -317,6 +317,23 @@ def test_tao_cum_40_video_khong_tai_lai_dau_cum_hien_2_lo(page):
     assert nut.is_enabled()
 
 
+def test_cum_co_bot_lo_o_tab_khac_bam_bo_khong_con_thi_nap_lai(page, may_chu):
+    """31 video ⇒ 2 bộ. Tab khác gỡ 1 video ⇒ cụm còn 1 lô; bấm "Bộ 2" ⇒ server
+    400 (qua `apiGet` THẬT) ⇒ trang nạp lại `/cum`, hết hiện danh sách 2 bộ."""
+    _, db = may_chu
+    _chon(page, 31)
+    _dua_vao_cum_moi(page, "Badaboum", "Dance", "co lai")
+    cum_id = _cum_api(page)[0]["id"]
+    with models._connect(db) as conn:
+        conn.execute("DELETE FROM video_cum WHERE cum_id = ? AND video_id = ?",
+                     (cum_id, _video_cua_cum(db, cum_id)[-1]))
+    with page.expect_response(lambda r: r.url.endswith("/cum") and r.request.method == "GET"):
+        page.click("#cum-head [data-mo-lo='2']")
+    page.wait_for_function("document.body.innerText.includes('Bộ này không còn')")
+    page.wait_for_function("!document.querySelector('#cum-head .bo-list')")
+    assert page.locator("#cum-head [data-mo-lo='1']").count() == 1
+
+
 def test_tao_cum_dua_3_video_vao_va_ban_giao_mo_tab_dung_nhan(page):
     _chon(page, 3)
     _dua_vao_cum_moi(page, "Badaboum", "Dance", "  couple ")

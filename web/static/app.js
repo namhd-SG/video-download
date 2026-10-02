@@ -289,7 +289,11 @@
     // hàng đợi đứng hình vĩnh viễn, không một lời nào trên màn hình.
     const res = await fetch(path, { redirect: "manual" });
     if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
-    if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
+    if (!res.ok) {
+      const err = new Error(`GET ${path} -> ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
     return res.json();
   }
 
@@ -1527,6 +1531,21 @@
     return a.length === b.length && a.every((x, i) => x === b[i]);
   }
 
+  // Lô phía trang đã cũ ⇒ nạp lại cụm rồi báo. Chỉ nói "đã nạp lại" SAU khi
+  // nạp xong — nạp hỏng thì khung vẫn cũ và bấm lại sẽ bị từ chối tiếp, nên
+  // phải nói đúng thế. Trả giá trị cho `moLoCum` (dừng `moHetLoCum`).
+  async function napLaiVi(lyDo) {
+    try {
+      await loadCums();
+      showToast(`${lyDo} — đã nạp lại, bấm lại.`);
+    } catch (err) {
+      if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+      showToast(`${lyDo} nhưng không nạp lại được — tải lại trang (F5).`);
+    }
+    renderLibrary();
+    return "loi";
+  }
+
   async function moLoCum(cumId, thu) {
     const cum = state.cums.find((c) => c.id === cumId);
     if (!cum) return "rong";
@@ -1547,6 +1566,10 @@
       // trong số đó có cơ hội thành công. Trả một giá trị RIÊNG để vòng lặp
       // "Mở tất cả" DỪNG ngay ở lô đầu tiên gặp hết phiên.
       if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
+      // 400 = lô ngoài khoảng: tab khác vừa làm cụm co bớt lô. Cùng lớp với
+      // vế kiểm id lô bên dưới ⇒ nạp lại để trang hết hiện bộ không còn, và chỉ
+      // nói "đã nạp lại" sau khi nạp xong.
+      if (err && err.status === 400) return napLaiVi("Bộ này không còn (tab khác vừa sửa cụm)");
       showToast(`Không mở được Creative Desk cho bộ này: ${err.message || err}`);
       return "loi";
     }
@@ -1567,17 +1590,7 @@
     // gửi nhầm bộ. Nạp lại để lần bấm sau đúng. Server cũ không trả ⇒ bỏ qua.
     if (Array.isArray(idsLo) && !cungLo(idsLo, muc.map((v) => v.video_id))) {
       tab.close();
-      // Chỉ nói "đã nạp lại" SAU khi nạp xong — nạp hỏng thì khung vẫn cũ và
-      // bấm lại sẽ bị từ chối tiếp, nên phải nói đúng thế.
-      try {
-        await loadCums();
-        showToast("Lô đã đổi (tab khác vừa sửa cụm) — đã nạp lại, bấm lại.");
-      } catch (err) {
-        if (err instanceof PhienHetHan) { baoPhienHetHan(); return "het_phien"; }
-        showToast("Lô đã đổi (tab khác vừa sửa cụm) nhưng không nạp lại được — tải lại trang (F5).");
-      }
-      renderLibrary();
-      return "loi";
+      return napLaiVi("Lô đã đổi (tab khác vừa sửa cụm)");
     }
     const soVideo = typeof soVideoLo === "number" ? soVideoLo : muc.length;
     if (!guiDi.items.length) {

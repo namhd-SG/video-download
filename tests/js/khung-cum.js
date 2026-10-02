@@ -49,6 +49,11 @@ async function main() {
       if (vao.loiNapCum) throw new Error("mạng chập");
       return vao.resCum || vao.res;
     }
+    if (/^\/cum\/\d+\/lo\/\d+\/payload$/.test(path) && vao.loiPayloadStatus) {
+      const err = new Error(`GET ${path} -> ${vao.loiPayloadStatus}`);
+      err.status = vao.loiPayloadStatus;
+      throw err;
+    }
     if (/^\/cum\/\d+\/lo\/\d+\/payload$/.test(path)) return JSON.parse(JSON.stringify(vao.payload));
     throw new Error(`apiGet không mong đợi: ${path}`);
   };
@@ -57,7 +62,7 @@ async function main() {
     return { mo_luc: "2026-10-02T10:00:00+00:00", so_item: body?.so_item ?? null,
              so_video: body?.so_video ?? null };
   };
-  eval(["chiaLo", "videoCuaCum", "loadCums", "cungLo", "moLoCum", "itemBanGiao", "dungPayload",
+  eval(["chiaLo", "videoCuaCum", "loadCums", "cungLo", "napLaiVi", "moLoCum", "itemBanGiao", "dungPayload",
         "maHoaPayload", "urlBanGiao", "moTabTrong", "dieuHuongTab", "moTabCreativeDesk"]
     .map((n) => { try { return grab(n); } catch (e) { return ""; } }).join("\n"));
 

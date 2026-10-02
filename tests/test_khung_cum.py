@@ -254,6 +254,30 @@ def test_lo_doi_ma_nap_lai_hong_thi_khong_noi_da_nap_lai(app_mod, cum31, tmp_pat
     assert any("không nạp lại được" in t for t in js["toast"])
 
 
+def test_cum_co_bot_lo_o_tab_khac_bam_lo_khong_con_thi_nap_lai(app_mod, cum31, tmp_path):
+    """Trang hiện 2 bộ; tab khác gỡ 1 video ⇒ cụm còn 1 lô ⇒ server trả 400 cho
+    lô 2. Trang phải nạp lại `/cum` (hết hiện "Bộ 2/2"), không ghi mốc, báo sau
+    khi nạp xong — không để người dùng kẹt vòng lỗi tới khi F5."""
+    from fastapi import HTTPException
+    db, c = cum31
+    res_truoc = app_mod.liet_ke_cum(nguoi_tao=TOI)
+    videos, _ = _videos_trang(app_mod, TOI)
+    with models._connect(db) as conn:
+        conn.execute("DELETE FROM video_cum WHERE cum_id = ? AND video_id = 'y40'", (c,))
+    with pytest.raises(HTTPException) as e:
+        app_mod.payload_lo_cum(c, 2, nguoi_tao=TOI)
+    assert e.value.status_code == 400, "server thật trả 400 cho lô không còn"
+    res_sau = app_mod.liet_ke_cum(nguoi_tao=TOI)
+    js = _node({"che_do": "moLo", "videos": videos, "khungCum": res_truoc["khung_cum"],
+                "cum": next(x for x in res_truoc["cum"] if x["id"] == c), "thu": 2,
+                "payload": None, "loiPayloadStatus": 400, "resCum": res_sau}, tmp_path)
+    assert js["kq"] == "loi" and js["payload"] is None
+    assert "close" in js["nhatKy"] and "GET /cum" in js["nhatKy"]
+    assert not any("da-mo" in x for x in js["nhatKy"])
+    assert any("Bộ này không còn" in t and "đã nạp lại" in t for t in js["toast"]), js["toast"]
+    assert js["khung_sau"] == res_sau["khung_cum"] and len(js["khung_sau"]) == 30
+
+
 def test_khung_danh_da_don_thang_ban_da_nap_cu(tmp_path):
     """Khung mới hơn `state.videos`: video vừa bị dọn sau lượt nạp `/videos` vẫn
     nằm trong `state.videos`, nhưng khung đánh `da_don` ⇒ lô coi nó là đã dọn."""
