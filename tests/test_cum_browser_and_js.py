@@ -305,6 +305,35 @@ def _dua_vao_cum_moi(p, goc: str, usecase: str, kieu: str) -> None:
     p.wait_for_function("document.getElementById('cum-head') && !document.getElementById('cum-head').hidden")
 
 
+def test_tao_cum_40_video_khong_tai_lai_dau_cum_hien_2_lo(page):
+    """Tạo cụm chỉ gọi lại `GET /cum` (không nạp lại `/videos`) — đầu cụm cắt lô
+    từ `khung_cum` của chính response đó ⇒ ngay lập tức 40 video / 2 bộ, nút bật."""
+    _chon(page, 40)
+    _dua_vao_cum_moi(page, "Badaboum", "Dance", "bon muoi")
+    page.wait_for_function("document.querySelector('#cum-head .muted') "
+                           "&& document.querySelector('#cum-head .muted').innerText === '40 video'")
+    nut = page.locator("#cum-head [data-mo-het]")
+    assert nut.inner_text() == "Tạo 2 bộ tự tìm (30 + 10)"
+    assert nut.is_enabled()
+
+
+def test_cum_co_bot_lo_o_tab_khac_bam_bo_khong_con_thi_nap_lai(page, may_chu):
+    """31 video ⇒ 2 bộ. Tab khác gỡ 1 video ⇒ cụm còn 1 lô; bấm "Bộ 2" ⇒ server
+    400 (qua `apiGet` THẬT) ⇒ trang nạp lại `/cum`, hết hiện danh sách 2 bộ."""
+    _, db = may_chu
+    _chon(page, 31)
+    _dua_vao_cum_moi(page, "Badaboum", "Dance", "co lai")
+    cum_id = _cum_api(page)[0]["id"]
+    with models._connect(db) as conn:
+        conn.execute("DELETE FROM video_cum WHERE cum_id = ? AND video_id = ?",
+                     (cum_id, _video_cua_cum(db, cum_id)[-1]))
+    with page.expect_response(lambda r: r.url.endswith("/cum") and r.request.method == "GET"):
+        page.click("#cum-head [data-mo-lo='2']")
+    page.wait_for_function("document.body.innerText.includes('Bộ này không còn')")
+    page.wait_for_function("!document.querySelector('#cum-head .bo-list')")
+    assert page.locator("#cum-head [data-mo-lo='1']").count() == 1
+
+
 def test_tao_cum_dua_3_video_vao_va_ban_giao_mo_tab_dung_nhan(page):
     _chon(page, 3)
     _dua_vao_cum_moi(page, "Badaboum", "Dance", "  couple ")
@@ -553,11 +582,11 @@ def test_chon_tay_tao_bo_tu_tim_mo_tab_that_khong_nhan_va_bo_chon(page):
 
 
 
-def test_lo_bi_bot_video_o_tab_khac_truoc_khi_mo_van_ghi_moc_va_khong_bia_x_tren_n(page, may_chu):
+def test_lo_bi_bot_video_o_tab_khac_truoc_khi_mo_khong_gui_roi_bam_lai_khong_bia_x_tren_n(page, may_chu):
     """Trang đang hiện lô 4 video; tab khác gỡ 1 video khỏi cụm (trang này
-    CHƯA tải lại) rồi mới bấm mở. Tử/mẫu phải cùng lấy từ payload server
-    (3 item / 3 video) ⇒ mốc VẪN ghi (không 400), DB giữ (3, 3), và nhãn
-    KHÔNG ra "3/4" — không có video nào bị lọc vì Drive."""
+    CHƯA tải lại) rồi mới bấm mở. Lô server (3) ≠ lô trang đã hiện (4) ⇒ lần
+    bấm đầu KHÔNG gửi, không ghi mốc, báo "Lô đã đổi" và nạp lại cụm. Bấm lại ⇒
+    gửi 3 item / 3 video, DB giữ (3, 3), nhãn KHÔNG ra "3/4"."""
     _, db = may_chu
     _chon(page, 4)
     _dua_vao_cum_moi(page, "Strom", "Portrait", "vest")
@@ -565,6 +594,15 @@ def test_lo_bi_bot_video_o_tab_khac_truoc_khi_mo_van_ghi_moc_va_khong_bia_x_tren
     bo = _video_cua_cum(db, cum_id)[0]
     with models._connect(db) as conn:   # "tab khác" gỡ video, trang này không biết
         conn.execute("DELETE FROM video_cum WHERE cum_id = ? AND video_id = ?", (cum_id, bo))
+    da_mo = []
+    page.on("request", lambda r: da_mo.append(r.url) if "/da-mo" in r.url else None)
+    with page.expect_response(lambda r: r.url.endswith("/cum") and r.request.method == "GET"):
+        page.click("#cum-head [data-mo-lo='1']")
+    page.wait_for_function("document.body.innerText.includes('Lô đã đổi')")
+    assert da_mo == [], "lô đã đổi ⇒ không ghi mốc đã mở"
+    assert _cum_api(page)[0]["lo_mo"] == []
+    page.wait_for_function("document.querySelector('#cum-head .muted') "
+                           "&& document.querySelector('#cum-head .muted').innerText === '3 video'")
     with page.context.expect_page() as tab_moi:
         with page.expect_response(lambda r: "/da-mo" in r.url) as tl:
             page.click("#cum-head [data-mo-lo='1']")

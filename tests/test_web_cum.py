@@ -212,7 +212,7 @@ def test_deleting_a_cluster_returns_its_videos_to_no_cluster(kho):
     app_mod.ghi_lo_da_mo(a, 1, nguoi_tao=TOI)
     assert app_mod.xoa_cum(a, nguoi_tao=TOI) == {"da_xoa": a}
 
-    assert app_mod.liet_ke_cum(nguoi_tao=TOI) == {"cum": [], "chua_vao_cum": 5}
+    assert app_mod.liet_ke_cum(nguoi_tao=TOI) == {"cum": [], "khung_cum": [], "chua_vao_cum": 5}
     assert all(v["cum_id"] is None for v in app_mod.list_videos(nguoi_tao=TOI)["videos"])
     with sqlite3.connect(kho) as conn:
         assert conn.execute("SELECT COUNT(*) FROM video_cum").fetchone()[0] == 0

@@ -627,6 +627,8 @@ def test_payload_server_khop_byte_voi_ban_js_cu_tren_cung_cum(kho):
         # `so_video` là mẫu số nhãn "x/N" cho chính Video Desk; `app.js::moLoCum`
         # tách nó ra TRƯỚC khi mã hoá URL ⇒ phần GỬI Creative Desk phải y hệt cũ.
         assert tra_ve.pop("so_video") == so_video, f"lô {thu}: so_video = số video của lô trước lọc Drive"
+        # `video_ids` cũng tách ra trước khi mã hoá (vế kiểm lô của `moLoCum`).
+        assert len(tra_ve.pop("video_ids")) == so_video
         moi = _py_json_compact(tra_ve)
         assert moi == cu, f"lô {thu}: phần gửi Creative Desk phải byte-equal với bản JS cũ"
 
