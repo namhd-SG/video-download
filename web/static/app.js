@@ -913,10 +913,22 @@
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "true");
     grid.dataset.napPhia = "";
+    // `loadVideos` tăng `luotNapVideo` ĐỒNG BỘ trước `await` đầu tiên ⇒ đây là số
+    // của chính lượt sắp chạy.
+    const luot = state.luotNapVideo + 1;
     return loadVideos({ lyDoRoi: "vì đang xem phía khác của chip “Đã vào bộ”" })
       .catch((err) => {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
         showToast("Không tải lại được thư viện: " + err.message);
+        // Nạp hỏng ⇒ lưới, nhãn và lựa chọn vẫn là phía CŨ. Trả chip về phía đó
+        // để chip khớp thứ đang hiện — để chip phía mới trên lưới phía cũ thì
+        // "Bỏ" thao tác trên đúng video người dùng không tưởng là mình đang xem.
+        // Lượt khác đã thay chỗ (bấm tiếp) thì để lượt đó quyết.
+        if (luot !== state.luotNapVideo) return;
+        state.chiVaoBo = !chiVaoBo;
+        veChipVaoBo();
+        grid.setAttribute("aria-busy", "false");
+        grid.dataset.napPhia = String(state.chiVaoBo ? 1 : 0);
       });
   }
 
@@ -940,8 +952,10 @@
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
     state.cumLoc = "tat_ca";
-    if (state.chiVaoBo) doiPhiaVaoBo(false);
-    else sauKhiDoiBoLoc();
+    if (state.chiVaoBo) {
+      renderFilterBar();   // huy hiệu số trên nút nhóm — lưới vẽ lại khi phía 0 về
+      doiPhiaVaoBo(false);
+    } else sauKhiDoiBoLoc();
   });
 
   function dongPopoverCum() {
@@ -2106,6 +2120,8 @@
       if (err instanceof PhienHetHan) throw err;
       showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
     }
+    // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó vẽ và đặt tín hiệu.
+    if (luot !== state.luotNapVideo) return;
     renderLibrary();
     // Tín hiệu "lưới đã vẽ xong phía này" — cho người đọc màn hình và cho test.
     const grid = document.getElementById("card-grid");

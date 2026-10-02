@@ -193,9 +193,11 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng_2000(base_url):
         pw.stop()
 
 
-def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None):
+def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: bool = False):
     """Trang thật; `/videos` giả theo phía `vao_bo` với `so[phia]` video. `giu_phia1` (một
-    list) ⇒ request phía 1 bị GIỮ lại trong list, người gọi tự `tra_lai(route)` sau."""
+    list) ⇒ request phía 1 bị GIỮ lại trong list, người gọi tự `tra_lai(route)` sau.
+    `loi_phia1` ⇒ phía 1 trả 500. Trả thêm `giu_cum`: bật `giu_cum["bat"]` ⇒ mọi
+    `GET /cum` sau đó bị giữ trong `giu_cum["ds"]` (người gọi `route.continue_()`)."""
     kho = {0: _videos(so[0]),
            1: [{**v, "video_id": f"9{v['video_id']}",
                 "vao_bo": {"an_luc": "2026-09-30T00:00:00+00:00", "se_don_luc": None, "ma_bo": []}}
@@ -208,28 +210,44 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None):
                             "videos": kho[phia][offset:offset + limit], "da_don_trong_cum": []})
 
     def tra(route):
+        if loi_phia1 and "vao_bo=1" in route.request.url:
+            route.fulfill(status=500, body="loi")
+            return
         if giu_phia1 is not None and "vao_bo=1" in route.request.url:
             giu_phia1.append(route)
             return
         tra_lai(route)
+    giu_cum = {"bat": False, "ds": []}
+
+    def tra_cum(route):
+        if giu_cum["bat"]:
+            giu_cum["ds"].append(route)
+            return
+        route.continue_()
     pw = pw_api.sync_playwright().start()
     try:
         br = pw.chromium.launch()
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
-    p = br.new_page(viewport={"width": 1280, "height": 900})
-    p.route("**/videos?*", tra)
-    p.goto(base_url)
-    p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
-    return p, br, pw, tra_lai
+    try:
+        p = br.new_page(viewport={"width": 1280, "height": 900})
+        p.route("**/videos?*", tra)
+        p.route("**/cum", tra_cum)
+        p.goto(base_url)
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+    except Exception:
+        br.close()
+        pw.stop()
+        raise
+    return p, br, pw, tra_lai, giu_cum
 
 
 def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
     """Bật chip (phía 1 trả trễ) rồi tắt ngay: lượt phía 1 về SAU lượt phía 0 không được
     ghi đè lưới — lưới cuối cùng là phía 0, đúng trạng thái chip."""
     giu: list = []
-    p, br, pw, tra_lai = _mo_hai_phia(base_url, {0: 30, 1: 5}, giu_phia1=giu)
+    p, br, pw, tra_lai, _ = _mo_hai_phia(base_url, {0: 30, 1: 5}, giu_phia1=giu)
     try:
         p.click("#chip-vao-bo")                     # lượt phía 1: bị giữ
         p.wait_for_function("document.getElementById('card-grid').dataset.napPhia === ''")
@@ -247,10 +265,64 @@ def test_bam_chip_hai_lan_nhanh_luot_cu_ve_tre_khong_ghi_de(base_url):
 
 
 def test_chip_bat_ma_chua_co_video_nao_vao_bo_la_khong_khop_khong_phai_thu_vien_trong(base_url):
-    p, br, pw, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
     try:
         p.click("#chip-vao-bo")
         p.wait_for_selector("#card-grid[data-nap-phia='1']", state="attached")
+        assert p.locator("#no-match-state").is_visible()
+        assert not p.locator("#empty-state").is_visible()
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_luot_cu_cho_cum_ve_sau_khong_ve_de_luot_moi(base_url):
+    """Lượt bật chip đã nhận video nhưng còn chờ `/cum`; người dùng tắt chip ngay. `/cum`
+    của lượt CŨ về trước ⇒ lượt cũ không được vẽ lưới hay đặt `data-nap-phia`."""
+    p, br, pw, _, giu_cum = _mo_hai_phia(base_url, {0: 30, 1: 5})
+    try:
+        giu_cum["bat"] = True
+        p.click("#chip-vao-bo")
+        p.wait_for_function("() => true")
+        p.wait_for_timeout(300)
+        assert len(giu_cum["ds"]) == 1, "lượt phía 1 đang chờ /cum"
+        p.click("#chip-vao-bo")
+        p.wait_for_timeout(300)
+        assert len(giu_cum["ds"]) == 2, "lượt phía 0 cũng đang chờ /cum"
+        giu_cum["bat"] = False
+        giu_cum["ds"].pop(0).continue_()          # /cum của lượt CŨ (phía 1) về trước
+        p.wait_for_timeout(500)
+        assert p.get_attribute("#card-grid", "data-nap-phia") == "", "lượt cũ không đặt tín hiệu"
+        assert p.get_attribute("#card-grid", "aria-busy") == "true"
+        giu_cum["ds"].pop(0).continue_()
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_nap_phia_chip_loi_thi_chip_ve_phia_cu(base_url):
+    """`/videos?vao_bo=1` lỗi ⇒ lưới vẫn là phía 0 ⇒ chip phải về lại phía 0 (không để
+    chip "Đã vào bộ" bật trên lưới mặc định), hết `aria-busy`, và nói lỗi."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 8, 1: 3}, loi_phia1=True)
+    try:
+        p.click("#chip-vao-bo")
+        p.wait_for_function("document.getElementById('toast').textContent.includes('Không tải lại được thư viện')")
+        p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
+        assert p.get_attribute("#chip-vao-bo", "aria-pressed") == "false"
+        assert p.get_attribute("#card-grid", "aria-busy") == "false"
+        assert p.locator("#card-grid .card").count() == 8
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_moi_video_da_vao_bo_luoi_mac_dinh_la_khong_khop_khong_phai_thu_vien_trong(base_url):
+    """Phía 0 rỗng, phía 1 có 4 ⇒ chip tắt: thư viện KHÔNG trống — "không khớp bộ lọc"."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 0, 1: 4})
+    try:
+        assert p.inner_text("#chip-vao-bo") == "Đã vào bộ (4)"
         assert p.locator("#no-match-state").is_visible()
         assert not p.locator("#empty-state").is_visible()
     finally:

@@ -677,11 +677,11 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | No
     # Video đã vào bộ tự tìm (đang ẩn 7 ngày): `{an_luc, se_don_luc, ma_bo}`. Có
     # trong trang khi phía được hỏi gồm chúng; `count_videos` lọc cùng phía, nên
     # `tong` khớp số hàng mọi trang.
-    vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
+    da_vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
         video["cum_id"] = cums.get(video["video_id"])
-        video["vao_bo"] = vao_bo.get(video["video_id"])
+        video["vao_bo"] = da_vao_bo.get(video["video_id"])
     return {
         "tong": models.count_videos(DB_PATH, chi_cua, vao_bo=phia),
         # Số trên chip "Đã vào bộ (N)" — lưới mặc định không còn chứa video ẩn

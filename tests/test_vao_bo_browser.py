@@ -286,3 +286,18 @@ def test_api_videos_chi_tra_phia_chip_duoc_hoi(page):
     page.on("request", lambda r: goi.append(r.url) if "/videos?" in r.url else None)
     _bam_chip(page, 1)
     assert goi and all("vao_bo=1" in u for u in goi), goi
+
+
+def test_xoa_het_bo_loc_khi_chip_bat_xoa_ca_huy_hieu_nhom_loc(page):
+    """Chip bật + đã tick một mục lọc ⇒ "Xoá hết bộ lọc": huy hiệu số trên nút nhóm phải
+    mất ngay (bộ lọc đã rỗng), không chờ/không phụ thuộc lượt nạp phía 0."""
+    _bam_chip(page, 1)
+    page.locator(".filter-trigger").first.click()
+    page.locator(".filter-panel:not([hidden]) input[type=checkbox]").first.click()
+    page.wait_for_selector(".filter-trigger .count")
+    page.click("#cum-rail .cum-sub")
+    page.wait_for_selector("#no-match-state:not([hidden])")
+    page.click("#clear-filters-btn")
+    assert page.locator(".filter-trigger .count").count() == 0
+    _cho_phia(page, 0)
+    assert len(_ids_tren_luoi(page)) == 66
