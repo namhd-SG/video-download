@@ -24,10 +24,10 @@ from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
     STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN,
-    STOP_SOURCE_EMPTY, VideoRef, parse_tag_slug,
+    STOP_SOURCE_EMPTY, VideoRef, is_profile_page, parse_tag_slug, random_user_agent,
 )
 from tiktok_music_downloader.watermark import find_ffmpeg
-from web import models
+from web import models, profile_theo_job
 # Re-exported: `cookies_path_for_user` moved to `web/cookies.py` so
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
@@ -38,6 +38,10 @@ from web.lifecycle import check_disk_guard, on_video_verified
 log = logging.getLogger("videodl.web")
 
 POLL_INTERVAL_SECONDS = 1.0
+
+# Nhịp bộ quét profile mồ côi. `POLL_INTERVAL_SECONDS` chỉ 1 s nên không thể quét
+# mỗi vòng; theo `time.monotonic` để đổi giờ hệ thống không làm lệch nhịp.
+NHIP_QUET_PROFILE_GIAY = 60.0
 
 # Lý do dừng mà một lượt RỖNG (0 video) phải ghi "Lỗi", không phải "Xong": tất cả
 # đều là "không lấy được gì" chứ không phải "đã làm xong" — kể cả hai ca hashtag
@@ -184,12 +188,14 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     reaches the download path, so this is the only moment its source for this
     run can be recorded, and the source filter reads exactly that table.
 
-    `profile_dir` is HARDCODED to None on the scrape call below — never
-    threaded in from any caller. `launch_persistent_context` (used only when
-    profile_dir is set) keeps cookies on disk across runs; on a shared web
-    service that would leak one user's TikTok session into the next user's
-    job. See phase-02 constraint 6, and
-    `test_web_queue.py::test_scraper_call_always_passes_profile_dir_none`.
+    `profile_dir` là None cho MỌI job, TRỪ job trang profile khi bật cờ
+    `VIDEODL_PROFILE_CAPTCHA`. `launch_persistent_context` (chỉ dùng khi có
+    profile_dir) giữ cookie trên đĩa qua các lượt; trên dịch vụ web dùng chung
+    một thư mục chung sẽ rò phiên TikTok của người này sang job người khác. Nên
+    ngoại lệ duy nhất là thư mục RIÊNG của đúng job đó (`profiles/<job_id>`,
+    0700, xoá khi job kết thúc — xem `web/profile_theo_job.py`). Không tham số
+    nào của người gọi chọn được thư mục này. Xem
+    `test_profile_per_job.py::test_scraper_call_profile_dir_none_except_profile_job_when_flag_on`.
 
     `ly_do_ra`, khi được truyền, nhận lý do dừng (`ly_do_ra["ly_do"]`) NGAY trong
     bộ nhớ. `process_job` quyết "Xong" hay "Lỗi" cho lượt rỗng từ chính giá trị
@@ -295,6 +301,17 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # lại thứ đã chạy thật, không phải viết mới một cơ chế phân trang — và nhờ
     # vậy giữ nguyên phần chống chặn đã đo: đóng hẳn context giữa các lượt,
     # nghỉ jitter 60-180s, dừng khi độ mới tụt, dừng khi nghi bị chặn mềm.
+    # Cờ TẮT (mặc định) ⇒ đúng bộ kwargs của bản trước: chỉ `profile_dir=None`,
+    # KHÔNG thêm `headless`/`user_agent`.
+    kw_profile: dict = {"profile_dir": None}
+    if (profile_theo_job.profile_captcha_dang_bat() and is_profile_page(url)
+            and db_path is not None and job_id is not None):
+        kw_profile = {
+            "profile_dir": str(profile_theo_job.chuan_bi_profile_job(db_path, job_id)),
+            "headless": not profile_theo_job.profile_headful_dang_bat(),
+            # Ghim theo job trong DB: mọi lượt (và mọi lượt đào sâu) dùng CÙNG UA.
+            "user_agent": models.chon_ua_job(db_path, job_id, random_user_agent),
+        }
     refs = scrape_music_page_multi(
         url,
         passes=SO_VONG_DAO_SAU,
@@ -305,8 +322,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         on_stop=_note_stop,
         cookies_path=cookies_path,
         proxy=proxy,
-        profile_dir=None,
         dem_trang=_dem_mot_trang,
+        **kw_profile,
     )
     # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
     # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
@@ -582,6 +599,11 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     except Exception:  # noqa: BLE001 — isolate one job's failure from the loop
         log.exception("job %s crashed", job_id)
         models.finish_job(db_path, job_id, "failed")
+    finally:
+        # Mọi lối ra của job (done/failed/ngoại lệ) đều là trạng thái kết thúc ở bản
+        # này ⇒ profile_dir của job không còn dùng. `xoa_profile_job` không ném: xoá
+        # trượt chỉ log, bộ quét dọn sau, và không đè lên việc đã ghi trạng thái.
+        profile_theo_job.xoa_profile_job(db_path, job_id)
 
 
 class JobWorker:
@@ -618,6 +640,8 @@ class JobWorker:
         # Job dở chưa ghi được 'interrupted'. `frozenset` và chỉ GÁN LẠI cả tập: luồng web
         # đọc nó trong `trang_thai()`, sửa tại chỗ sẽ làm phép duyệt bên đó nổ.
         self._cho_danh_dau: frozenset[int] = frozenset()
+        # Mốc `time.monotonic` của lượt quét profile mồ côi gần nhất (None = chưa quét).
+        self._quet_profile_luc: float | None = None
 
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
@@ -628,6 +652,9 @@ class JobWorker:
                 "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
                 interrupted,
             )
+        # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
+        # chạy `finally`) phải dọn trước khi nhận job.
+        self._quet_profile_dinh_ky(buoc_ep=True)
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, name="videodl-worker", daemon=True)
         self._thread.start()
@@ -656,6 +683,10 @@ class JobWorker:
         while not self._stop.is_set():
             job = None
             self._thu_lai_danh_dau()
+            # TRƯỚC cổng đĩa: nhánh chờ đĩa `continue` trước `claim`, đặt bộ quét sau
+            # cổng thì đúng lúc đĩa cạn — lúc dir profile (cookie) cần được dọn nhất —
+            # nó không bao giờ chạy. Chạy cả khi hàng có job pending.
+            self._quet_profile_dinh_ky()
             try:
                 # Cổng đĩa LÚC NHẬN job, cùng ngưỡng với cổng lúc tạo job (`POST /jobs`):
                 # job đã chờ trước khi đĩa tụt không được bắt đầu tải khi đĩa đã cạn.
@@ -700,6 +731,32 @@ class JobWorker:
                         log.error("worker: chưa ghi được 'interrupted' cho job %s — thử lại "
                                   "mỗi vòng", job["id"], exc_info=True)
                 self._stop.wait(self.nghi_sau_loi(self._so_lan_nghi))
+
+    def _quet_profile_dinh_ky(self, bay_gio: float | None = None, buoc_ep: bool = False
+                              ) -> dict[str, int] | None:
+        """Quét profile mồ côi nếu đã tới nhịp (`NHIP_QUET_PROFILE_GIAY`); `buoc_ep`
+        bỏ qua nhịp (lúc khởi động). Trả số đếm, hoặc None nếu chưa tới nhịp / quét hỏng.
+
+        Không bao giờ ném: bộ quét hỏng không được tính là lỗi worker (không làm nghỉ lùi,
+        không đụng `_loi_lien_tiep`), và mốc nhịp ghi TRƯỚC khi quét để một lần quét hỏng
+        không bị thử lại mỗi vòng 1 s.
+        """
+        bay_gio = time.monotonic() if bay_gio is None else bay_gio
+        if (not buoc_ep and self._quet_profile_luc is not None
+                and bay_gio - self._quet_profile_luc < NHIP_QUET_PROFILE_GIAY):
+            return None
+        self._quet_profile_luc = bay_gio
+        try:
+            dem = profile_theo_job.quet_profile_mo_coi(self._db_path)
+        except Exception:  # noqa: BLE001 — bộ quét không được giết vòng worker
+            log.warning("bộ quét profile hỏng", exc_info=True)
+            return None
+        # Chỉ lên mức INFO khi có gì xảy ra — trên prod cờ TẮT, mỗi phút một dòng toàn 0
+        # là rác. Số đếm vẫn nằm trong giá trị trả về và ở mức DEBUG.
+        log.log(logging.INFO if any(dem.values()) else logging.DEBUG,
+                "bộ quét profile: đã xoá %d, giữ %d, xoá trượt %d, bỏ qua %d",
+                dem["da_xoa"], dem["giu"], dem["xoa_truot"], dem["bo_qua"])
+        return dem
 
     def _thu_lai_danh_dau(self) -> None:
         """Job bị bỏ dở mà lần trước chưa ghi được 'interrupted' (DB còn hỏng lúc đó): thử

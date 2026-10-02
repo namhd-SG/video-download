@@ -399,6 +399,9 @@ def test_verify_video_stream_against_real_ffmpeg_on_a_generated_clip(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_scraper_call_always_passes_profile_dir_none(monkeypatch):
+    """Cờ `VIDEODL_PROFILE_CAPTCHA` TẮT (mặc định): None cho MỌI job. Ca cờ BẬT
+    (job profile có dir riêng, các job khác vẫn None) nằm ở `test_profile_per_job.py`."""
+    monkeypatch.delenv("VIDEODL_PROFILE_CAPTCHA", raising=False)
     captured = {}
 
     def fake_scrape_music_page(url, max_videos=None, cookies_path=None, proxy=None,
