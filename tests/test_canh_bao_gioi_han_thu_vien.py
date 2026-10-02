@@ -493,3 +493,24 @@ def test_luot_bi_thay_loi_khong_de_mat_cau_bao_cua_luot_moi(base_url):
     finally:
         br.close()
         pw.stop()
+
+
+def test_trang_nap_khong_vuot_tran_trang_cua_server_va_chia_het_tran():
+    """`LIBRARY_PAGE` > `MAX_VIDEOS_PAGE_SIZE` ⇒ server trả 400 ngay trang 0 ⇒ lưới trắng — mà
+    mọi test trình duyệt đều giả `/videos` nên không bắt được. Và trần không chia hết trang
+    ⇒ vòng nạp vượt trần (nạp 5000 trong khi băng nói 4500)."""
+    import web.app as app_mod
+    assert TRANG <= app_mod.MAX_VIDEOS_PAGE_SIZE, (TRANG, app_mod.MAX_VIDEOS_PAGE_SIZE)
+    assert TRAN % TRANG == 0, (TRAN, TRANG)
+
+
+def test_server_that_nhan_trang_co_limit_bang_LIBRARY_PAGE(tmp_path, monkeypatch):
+    """Gọi route thật với đúng `limit` trang dùng — không qua mock."""
+    import web.app as app_mod
+    from web import models
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    monkeypatch.setattr(app_mod, "_la_admin", lambda email: False)
+    r = app_mod.list_videos(limit=TRANG, offset=0, vao_bo=0, nguoi_tao="a@astronex.ai")
+    assert r["videos"] == [] and r["tong"] == 0

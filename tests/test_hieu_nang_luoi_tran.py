@@ -3,7 +3,10 @@
 Đổi trần là đổi tải thật lên trình duyệt người dùng, nên số phải đo, không đoán. Trình duyệt
 thật, `/videos` giả theo trang với video tổng hợp ĐỆM cho đúng cỡ JSON đo trên prod
 (~1,2–1,7 KB/video, 02/10). In một dòng JSON số đo; assert chỉ chặn "treo" (trần rộng), không
-chặn số đẹp — số để người đọc PR phán.
+chặn số đẹp — số để người đọc PR phán. Đọc số cho đúng: chạy trên LOCALHOST (không mạng,
+không tunnel, không nén); thời gian tính cả việc Python dựng + chuyển body qua Playwright; heap
+là `usedJSHeapSize` trước GC (chỉ báo thô); thời gian thao tác là cận trên (cộng 1 vòng
+đi-về của Playwright).
 """
 from __future__ import annotations
 
@@ -89,7 +92,8 @@ def test_do_luoi_o_muc_tran(base_url):
 
     with pw_api.sync_playwright() as pw:
         try:
-            br = pw.chromium.launch()
+            # Cờ này cho `performance.memory` số thật thay vì số làm tròn theo bậc.
+            br = pw.chromium.launch(args=["--enable-precise-memory-info"])
         except Exception as exc:  # noqa: BLE001
             pytest.skip(f"không mở được Chromium: {exc}")
         p = br.new_page(viewport={"width": 1280, "height": 900})

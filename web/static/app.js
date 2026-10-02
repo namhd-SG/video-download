@@ -517,7 +517,7 @@
   // ========================================================================
   // ---- Phân trang thư viện (user 23/09: "phân ra theo trang 10/20/40/100";
   // 26/09 thêm 30: "thêm phần 30 video/page").
-  // `loadVideos` đã nạp TRỌN thư viện (lô 500, trần 2000), bộ lọc chạy ở đây ⇒
+  // `loadVideos` đã nạp TRỌN thư viện (lô `LIBRARY_PAGE`, trần `LIBRARY_MAX` mỗi phía chip), bộ lọc chạy ở đây ⇒
   // phân trang cắt trên danh sách ĐÃ LỌC, không cần tham số trang ở API.
   const SO_MOI_TRANG = Object.freeze([10, 20, 30, 40, 100]);
   const SO_MOI_TRANG_MAC_DINH = 40;
@@ -540,8 +540,8 @@
     } catch (e) { return SO_MOI_TRANG_MAC_DINH; }  // private mode
   }
 
-  // Dải nút trang THU GỌN: 1 … t-2..t+2 … cuối. Trần nạp 2000 ở 10/trang là
-  // 200 trang — in đủ 200 nút là thanh điều hướng dài hơn cả lưới.
+  // Dải nút trang THU GỌN: 1 … t-2..t+2 … cuối. Trần nạp 5000 ở 10/trang là
+  // 500 trang — in đủ 500 nút là thanh điều hướng dài hơn cả lưới.
   function dayTrang(t, soTrang) {
     const giu = new Set([1, soTrang]);
     for (let i = t - 2; i <= t + 2; i++) if (i >= 1 && i <= soTrang) giu.add(i);
@@ -2000,7 +2000,7 @@
   const LIBRARY_CANH_BAO_SOM = Math.ceil(LIBRARY_MAX * 0.8);
   // ⚠ Phân trang ở `renderLibrary` KHÔNG kéo dữ liệu: nó cắt trên `state.videos`
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
-  // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
+  // `LIBRARY_MAX` video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
   // Badge worker (CHỈ quản trị): worker chết / lỗi lặp / chờ đĩa thì job pending không
   // chạy mà trang vẫn trông bình thường — nói ra. Hàm thuần theo `tt` (null ⇒ ẩn).

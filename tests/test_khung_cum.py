@@ -26,6 +26,8 @@ STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 HARNESS = Path(__file__).parent / "js" / "khung-cum.js"
 LIBRARY_MAX = int(re.search(r"const LIBRARY_MAX = (\d+);",
                             (STATIC / "app.js").read_text(encoding="utf-8")).group(1))
+LIBRARY_PAGE = int(re.search(r"const LIBRARY_PAGE = (\d+);",
+                             (STATIC / "app.js").read_text(encoding="utf-8")).group(1))
 
 
 def _luc(i: int) -> str:
@@ -100,7 +102,7 @@ def _videos_trang(app_mod, nguoi):
     """Như `app.js::loadVideos`: nạp theo trang tới `LIBRARY_MAX` video mới nhất."""
     ra, offset = [], 0
     while len(ra) < LIBRARY_MAX:
-        trang = app_mod.list_videos(limit=min(1000, LIBRARY_MAX - len(ra)), offset=offset,
+        trang = app_mod.list_videos(limit=min(LIBRARY_PAGE, LIBRARY_MAX - len(ra)), offset=offset,
                                     nguoi_tao=nguoi)
         ra += trang["videos"]
         offset += len(trang["videos"])
