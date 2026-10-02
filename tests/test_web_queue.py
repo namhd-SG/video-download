@@ -515,6 +515,82 @@ def test_process_job_with_zero_refs_keeps_the_number_the_user_asked_for(tmp_path
     assert job["tim_thay"] == 0
 
 
+def _chay_luot_rong(monkeypatch, tmp_path, url, tra_ve, da_co=()):
+    """Chạy `process_job` THẬT qua `_fetch_refs` + `scrape_music_page_multi` thật
+    (chỉ vá lớp trong `scrape_music_page`), để lý do dừng do chính tầng sinh ra
+    nó tạo — không phải một fixture tự khai lý do."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    for vid in da_co:
+        models.record_video(db, 999, vid, f"https://x/{vid}")
+    job_id = models.create_job(db, url, 20, "a")
+    gia_lap_scraper(monkeypatch, tra_ve)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    return models.get_job(db, job_id)
+
+
+def test_luot_rong_vi_nguon_khong_dua_gi_la_loi_khong_phai_xong(tmp_path, monkeypatch):
+    """Nguồn trả 0 video ngay lượt đầu (`source_empty`) ⇒ "Lỗi", không phải
+    "Xong". ĐỘT BIẾN: cho lượt rỗng luôn ghi `done` (hành vi cũ) ⇒ ĐỎ."""
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1", [])
+    assert job["ly_do_dung"] == "source_empty"
+    assert job["trang_thai"] == "failed"
+    assert job["tim_thay"] == 0
+
+
+def test_luot_rong_vi_feed_tiktok_rong_la_loi(tmp_path, monkeypatch):
+    """Feed trả 0 byte, video lẻ duy nhất đã có ⇒ `feed_rong` ⇒ "Lỗi" (trước đây
+    thẻ này ghi "Xong · 0/20" — nợ nhãn "Thiếu" cho thẻ `feed_rong`)."""
+    def gia(url, thong_ke_feed=None, **kw):
+        if thong_ke_feed is not None:
+            thong_ke_feed["rong"] = thong_ke_feed.get("rong", 0) + 1
+        return [_fake_ref("v1")]
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/search?q=x", gia,
+                          da_co=["v1"])
+    assert job["ly_do_dung"] == "feed_rong"
+    assert job["trang_thai"] == "failed"
+
+
+def test_luot_rong_vi_thu_vien_da_co_het_van_la_xong(tmp_path, monkeypatch):
+    """Đối chứng: nguồn còn đưa video nhưng thư viện đã có hết (`already_owned`)
+    là xong THẬT. ĐỘT BIẾN: thêm `already_owned` vào tập lý do "Lỗi" ⇒ ĐỎ."""
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1",
+                          [_fake_ref("v1")], da_co=["v1"])
+    assert job["ly_do_dung"] == "already_owned"
+    assert job["trang_thai"] == "done"
+
+
+def test_luot_rong_van_la_loi_khi_ghi_ly_do_vao_db_truot(tmp_path, monkeypatch):
+    """`_note_stop` nuốt lỗi ghi DB để một lần ghi trượt không giết lượt tải. Quyết
+    "Lỗi"/"Xong" vì vậy phải đọc lý do TRONG BỘ NHỚ, không đọc lại từ DB.
+    ĐỘT BIẾN: quyết theo `ly_do_dung` đọc lại từ DB ⇒ ĐỎ (DB không có lý do)."""
+    def truot(*a, **kw):
+        raise sqlite3.OperationalError("database is locked")
+    monkeypatch.setattr(models, "set_job_stop_reason", truot)
+    job = _chay_luot_rong(monkeypatch, tmp_path, "https://www.tiktok.com/music/x-1", [])
+    assert job["ly_do_dung"] in (None, "")
+    assert job["trang_thai"] == "failed"
+
+
+@pytest.mark.parametrize("ly_do, mong", [
+    ("feed_rong", "failed"), ("source_empty", "failed"), ("nghi_bi_chan", "failed"),
+    ("already_owned", "done"), ("het_thoi_gian", "done"), (None, "done"),
+])
+def test_luot_rong_chon_trang_thai_theo_ly_do_dung(tmp_path, monkeypatch, ly_do, mong):
+    """Bảng đủ các mã: chỉ ba mã "không lấy được gì" mới thành "Lỗi"."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    job_id = models.create_job(db, "https://www.tiktok.com/music/x-1", 20, "a")
+
+    def gia_fetch(*a, ly_do_ra=None, **kw):
+        if ly_do is not None and ly_do_ra is not None:
+            ly_do_ra["ly_do"] = ly_do
+        return []
+    monkeypatch.setattr(queue_mod, "_fetch_refs", gia_fetch)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, job_id))
+    assert models.get_job(db, job_id)["trang_thai"] == mong
+
+
 def test_process_job_marks_failed_when_every_ref_errors_without_raising(tmp_path, monkeypatch):
     """tong > 0 mà xong == 0 (mọi ref lỗi hoặc chưa lên được Drive) không
     phải là "done" dù download_all không raise gì."""

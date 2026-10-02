@@ -63,7 +63,12 @@
     // thêm lượt gọi TikTok.
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
                    "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
-    source_empty: "Xong: nguồn này hiện không có video nào.",
+    // Lượt rỗng với mã này giờ ghi "Lỗi" (không còn "Xong"), nên câu không được
+    // mở bằng "Xong:". Nhánh hashtag cũng phát mã này khi nguồn hết trang mà
+    // chưa đủ số xin (`hashtag_enumerator.py`), nên câu phải đúng cả hai ca.
+    source_empty: "Nguồn không đưa thêm video nào cho link này. Nếu chưa tải " +
+                  "được video nào: link có thể sai hoặc đã hết hạn, hoặc nguồn " +
+                  "chưa có video — kiểm lại link.",
     // KHÔNG phải "đã tải rồi": feed TikTok trả RỖNG (0 byte) ở mọi lần hỏi,
     // nên việc thư viện có hay không chưa từng được hỏi tới. Đo 01–02/10: trang
     // hiện captcha với trình duyệt tự động; không cookie / cookie khác rỗng y

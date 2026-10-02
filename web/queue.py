@@ -22,7 +22,9 @@ from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO, phan
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
-from tiktok_music_downloader.utils import VideoRef, parse_tag_slug
+from tiktok_music_downloader.utils import (
+    STOP_FEED_RONG, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, parse_tag_slug,
+)
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
 # Re-exported: `cookies_path_for_user` moved to `web/cookies.py` so
@@ -35,6 +37,11 @@ from web.lifecycle import check_disk_guard, on_video_verified
 log = logging.getLogger("videodl.web")
 
 POLL_INTERVAL_SECONDS = 1.0
+
+# Lý do dừng mà một lượt RỖNG (0 video) phải ghi "Lỗi", không phải "Xong": cả ba
+# đều là "không lấy được gì" chứ không phải "đã làm xong". `already_owned` không
+# nằm đây — thư viện đã có hết những gì nguồn đưa ra là xong thật.
+_LY_DO_RONG_LA_LOI = frozenset({STOP_FEED_RONG, STOP_SOURCE_EMPTY, STOP_NGHI_BI_CHAN})
 # Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
 # Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
 # trong vòng một phút sau khi hết lỗi.
@@ -158,7 +165,8 @@ def source_label(url: str) -> str:
 
 def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                  proxy: str | None = None, db_path: Path | None = None,
-                 job_id: int | None = None) -> list[VideoRef]:
+                 job_id: int | None = None,
+                 ly_do_ra: dict | None = None) -> list[VideoRef]:
     """Enumerate (hashtag) or scrape (music/search/profile) refs for one job.
 
     Videos the library already owns are dropped here, before anything is
@@ -177,6 +185,12 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     service that would leak one user's TikTok session into the next user's
     job. See phase-02 constraint 6, and
     `test_web_queue.py::test_scraper_call_always_passes_profile_dir_none`.
+
+    `ly_do_ra`, khi được truyền, nhận lý do dừng (`ly_do_ra["ly_do"]`) NGAY trong
+    bộ nhớ. `process_job` quyết "Xong" hay "Lỗi" cho lượt rỗng từ chính giá trị
+    này chứ không đọc lại `ly_do_dung` trong DB: `_note_stop` nuốt lỗi ghi DB
+    (một lần ghi trượt không được giết lượt tải), nên đọc lại từ DB thì một lần
+    trượt sẽ âm thầm đưa lượt rỗng về lại nhãn "Xong" giả.
     """
     nguon = source_label(url)
 
@@ -249,6 +263,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         _note_pages(_da_doc["trang"])
 
     def _note_stop(ly_do: str) -> None:
+        if ly_do_ra is not None:
+            ly_do_ra["ly_do"] = ly_do
         if db_path is None or job_id is None:
             return
         try:
@@ -532,11 +548,18 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 models.set_job_stop_reason(db_path, job_id, ly_do)
                 models.finish_job(db_path, job_id, "failed")
                 return
+        dung = {}
         refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
-                            db_path=db_path, job_id=job_id)
+                            db_path=db_path, job_id=job_id, ly_do_ra=dung)
         models.set_job_found(db_path, job_id, len(refs))
         if not refs:
-            models.finish_job(db_path, job_id, "done")
+            # Lượt rỗng KHÔNG mặc nhiên là "Xong": nguồn trả 0 video, feed TikTok
+            # rỗng, hay nghi bị chặn đều là "không lấy được gì" — ghi "Xong" cho
+            # chúng là bảo user việc đã hoàn thành trong khi chưa tải được gì.
+            # Chỉ `already_owned` (thư viện đã có hết những gì nguồn đưa ra) và
+            # lượt không báo lý do mới là xong thật.
+            ket_qua = "failed" if dung.get("ly_do") in _LY_DO_RONG_LA_LOI else "done"
+            models.finish_job(db_path, job_id, ket_qua)
             return
         output_dir = downloads_dir / str(job_id)
         progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
