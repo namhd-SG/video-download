@@ -2082,17 +2082,19 @@
     const el = document.getElementById("canh-bao-gioi-han");
     if (!el) return;
     const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo, LIBRARY_CANH_BAO_SOM);
+    // Hai mức phải NHÌN khác nhau: vàng = "sắp chạm trần", đỏ = "đã cắt, lưới đang
+    // thiếu video". Và NGHE khác nhau: chỉ "đã cắt" mới ngắt ngang (`alert`); "sắp"
+    // không gấp nên lịch sự (`status`). `role` đặt TRƯỚC khi ghi chữ, để thông báo
+    // mang đúng mức; chỉ đặt khi đổi.
+    const muc = mucGioiHan(tong, LIBRARY_MAX, LIBRARY_CANH_BAO_SOM);
+    const role = muc === "cat" ? "alert" : "status";
+    if (el.getAttribute("role") !== role) el.setAttribute("role", role);
+    el.dataset.muc = muc;
+    el.classList.toggle("som", muc === "som");
     // Băng được vẽ lại MỖI lượt nạp (Làm mới, job xong, đổi chip…). Ghi lại cùng chữ
     // thay nút chữ ⇒ trình đọc màn hình đọc lại ⇒ chỉ ghi khi chữ đổi.
     if (el.textContent !== chu) el.textContent = chu;
     el.hidden = chu === "";
-    // Hai mức phải NHÌN khác nhau: vàng = "sắp chạm trần", đỏ = "đã cắt, lưới đang
-    // thiếu video". Và NGHE khác nhau: chỉ "đã cắt" mới ngắt ngang (`alert`); "sắp"
-    // không gấp nên lịch sự (`status`).
-    const muc = mucGioiHan(tong, LIBRARY_MAX, LIBRARY_CANH_BAO_SOM);
-    el.dataset.muc = muc;
-    el.classList.toggle("som", muc === "som");
-    el.setAttribute("role", muc === "cat" ? "alert" : "status");
   }
 
   // `lyDoRoi`: vì sao lựa chọn có thể rơi lượt này (đổi phía chip ⇒ nói đúng thế).

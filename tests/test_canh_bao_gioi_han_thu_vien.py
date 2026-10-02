@@ -526,3 +526,26 @@ def test_server_that_nhan_trang_co_limit_bang_LIBRARY_PAGE(tmp_path, monkeypatch
                             tao_luc=f"2026-09-01T00:{i // 60 % 60:02d}:{i % 60:02d}+00:00")
     r = app_mod.list_videos(limit=TRANG, offset=0, vao_bo=0, nguoi_tao=toi)
     assert len(r["videos"]) == TRANG and r["tong"] == TRANG + 1
+
+
+def test_lam_moi_cung_so_khong_ghi_lai_bang_canh_bao(base_url):
+    """Băng vẽ lại mỗi lượt nạp. Ghi lại CÙNG chữ thay nút chữ ⇒ trình đọc màn hình đọc lại
+    câu cảnh báo mỗi lần Làm mới / job xong ⇒ cùng `tong` thì KHÔNG được có đột biến DOM nào
+    trong băng (MutationObserver đếm)."""
+    p, br, pw, goi = _mo_trang(base_url, SOM)
+    try:
+        p.wait_for_selector("#canh-bao-gioi-han:not([hidden])")
+        p.evaluate("""() => { window.__dotBienBang = 0;
+            new MutationObserver((ds) => { window.__dotBienBang += ds.length; })
+              .observe(document.getElementById('canh-bao-gioi-han'),
+                       { childList: true, characterData: true, subtree: true }); }""")
+        n = len(goi)
+        p.click("#library-refresh")
+        _cho_dieu_kien(p, lambda: len(goi) >= n + len([o for o in OFFSETS if o < SOM]))
+        p.wait_for_selector("#card-grid[aria-busy='false']", state="attached")
+        _cho_vong_su_kien(p)
+        assert p.evaluate("window.__dotBienBang") == 0
+        assert p.get_attribute("#canh-bao-gioi-han", "role") == "status"
+    finally:
+        br.close()
+        pw.stop()
