@@ -20,7 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from web.vi_tu_con_song import CON_SONG_CHUNG
+from web.vi_tu_con_song import CHUA_AN, CON_SONG_CHUNG
 
 VALID_END_STATES = ("done", "failed")
 
@@ -1096,8 +1096,17 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     return {r["video_id"] for r in rows}
 
 
+def _loc_vao_bo(vao_bo: bool | None) -> str:
+    """Mảnh SQL cho chip "Đã vào bộ": None = cả hai phía, True = chỉ video đã vào
+    bộ (đang ẩn), False = chỉ video chưa. `list_videos` và `count_videos` PHẢI
+    dùng cùng mảnh này — lệch một bên thì `tong` không khớp số hàng các trang."""
+    if vao_bo is None:
+        return ""
+    return f"AND {CHUA_AN} " if not vao_bo else f"AND NOT {CHUA_AN} "
+
+
 def list_videos(db_path: Path, chi_cua: str | None,
-                limit: int = 500, offset: int = 0) -> list[dict]:
+                limit: int = 500, offset: int = 0, vao_bo: bool | None = None) -> list[dict]:
     """Newest first, showing only what `chi_cua` downloaded. `None` = all,
     which is for admins.
 
@@ -1121,6 +1130,7 @@ def list_videos(db_path: Path, chi_cua: str | None,
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
             f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
+            + _loc_vao_bo(vao_bo) +
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
             (chi_cua, chi_cua, limit, offset),
@@ -1128,7 +1138,7 @@ def list_videos(db_path: Path, chi_cua: str | None,
     return [dict(r) for r in rows]
 
 
-def count_videos(db_path: Path, chi_cua: str | None) -> int:
+def count_videos(db_path: Path, chi_cua: str | None, vao_bo: bool | None = None) -> int:
     """Must filter exactly like `list_videos`: the UI uses this number to
     decide whether to ask for another page, and prints it as "N video". A
     total taken over the whole warehouse would both over-page and tell each
@@ -1138,7 +1148,7 @@ def count_videos(db_path: Path, chi_cua: str | None) -> int:
         return int(conn.execute(
             "SELECT COUNT(*) FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?)",
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) " + _loc_vao_bo(vao_bo),
             (chi_cua, chi_cua),
         ).fetchone()[0])
 

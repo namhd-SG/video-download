@@ -129,6 +129,9 @@
     khungCum: undefined,      // GET /cum → khung_cum: tập cắt lô của mọi cụm (undefined = server cũ)
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
     chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
+    tongVaoBo: undefined,     // GET /videos → tong_vao_bo: số trên chip (undefined = server cũ, tự đếm)
+    luotNapVideo: 0,          // lượt `loadVideos` mới nhất — lượt cũ về trễ thì bỏ
+    phiaDaVe: undefined,      // phía chip mà lưới ĐANG thật sự vẽ (0/1; undefined = chưa vẽ lần nào)
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
@@ -244,8 +247,9 @@
   }
 
   // Video đã vào bộ tự tìm (server gắn `vao_bo`): ẨN khỏi lưới mặc định, chỉ hiện
-  // khi bật chip "Đã vào bộ". Lọc ở CLIENT như mọi bộ lọc khác — trang đã nạp trọn
-  // thư viện. ⚠ CHỈ lưới/đếm/hộp lọc đi qua đây; cắt lô của cụm (`videoCuaCum`) KHÔNG,
+  // khi bật chip "Đã vào bộ". Server lọc theo phía chip (`/videos?vao_bo=0|1`, xem
+  // `loadVideos`); lọc lại ở client vẫn giữ — thừa với server mới, cần với server cũ
+  // (trả cả hai phía). ⚠ CHỈ lưới/đếm/hộp lọc đi qua đây; cắt lô của cụm (`videoCuaCum`) KHÔNG,
   // vì video đã vào bộ vẫn nằm trong lô của cụm.
   function videoDaVaoBo(video) { return Boolean(video.vao_bo); }
 
@@ -258,7 +262,10 @@
   function veChipVaoBo() {
     const chip = document.getElementById("chip-vao-bo");
     if (!chip) return;
-    const n = state.videos.filter(videoDaVaoBo).length;
+    // Lưới chỉ nạp MỘT phía chip ⇒ số phải lấy từ server; server cũ (trả cả hai
+    // phía) thì tự đếm như trước.
+    const n = typeof state.tongVaoBo === "number" ? state.tongVaoBo
+      : state.videos.filter(videoDaVaoBo).length;
     chip.textContent = `Đã vào bộ (${n})`;
     chip.classList.toggle("on", state.chiVaoBo);
     chip.setAttribute("aria-pressed", String(state.chiVaoBo));
@@ -643,7 +650,10 @@
     const noMatch = document.getElementById("no-match-state");
 
     veChipVaoBo();
-    if (state.videos.length === 0) {
+    // "Thư viện chưa có video nào" chỉ khi CẢ HAI phía chip đều rỗng. Lưới chỉ nạp
+    // một phía: phía này rỗng mà phía kia có (chip bật mà chưa video nào vào bộ,
+    // hoặc mọi video đều đã vào bộ) là "không khớp bộ lọc", như trước.
+    if (state.videos.length === 0 && !state.chiVaoBo && !(state.tongVaoBo > 0)) {
       emptyState.hidden = false;
       noMatch.hidden = true;
       grid.hidden = true;
@@ -890,9 +900,30 @@
     sauKhiDoiBoLoc(); // cập nhật badge số lượng trên nút + về trang 1
   });
 
+  // Đổi phía chip = nạp lại thư viện phía đó (server lọc). Lựa chọn ở phía kia
+  // rơi và được nói ra (`loadVideos`) — giữ id ngoài tập đã nạp là mở đường Xoá mù.
+  //
+  // Chip đổi trạng thái NGAY; lưới giữ nội dung cũ, đánh dấu đang nạp
+  // (`aria-busy`, `data-nap-phia` rỗng) và chỉ vẽ lại khi phía mới về — vẽ ngay
+  // thì lưới nháy "không khớp bộ lọc" trên tập của phía kia.
+  function doiPhiaVaoBo(chiVaoBo) {
+    if (state.chiVaoBo === chiVaoBo) return Promise.resolve();
+    state.chiVaoBo = chiVaoBo;
+    state.trang = 1;
+    veChipVaoBo();
+    const grid = document.getElementById("card-grid");
+    grid.setAttribute("aria-busy", "true");
+    grid.dataset.napPhia = "";
+    // Nạp hỏng thì `loadVideos` tự đưa chip/lưới về phía đã vẽ; ở đây chỉ báo.
+    return loadVideos({ lyDoRoi: "vì đang xem phía khác của chip “Đã vào bộ”" })
+      .catch((err) => {
+        if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }
+        showToast("Không tải lại được thư viện: " + err.message);
+      });
+  }
+
   document.getElementById("chip-vao-bo").addEventListener("click", () => {
-    state.chiVaoBo = !state.chiVaoBo;
-    sauKhiDoiBoLoc();
+    doiPhiaVaoBo(!state.chiVaoBo);
   });
 
   document.getElementById("active-filters").addEventListener("click", (ev) => {
@@ -911,8 +942,10 @@
   document.getElementById("clear-filters-btn").addEventListener("click", () => {
     for (const g of FILTER_GROUPS) state.filters[g.id].clear();
     state.cumLoc = "tat_ca";
-    state.chiVaoBo = false;
-    sauKhiDoiBoLoc();
+    if (state.chiVaoBo) {
+      renderFilterBar();   // huy hiệu số trên nút nhóm — lưới vẽ lại khi phía 0 về
+      doiPhiaVaoBo(false);
+    } else sauKhiDoiBoLoc();
   });
 
   function dongPopoverCum() {
@@ -1938,7 +1971,12 @@
         state.openStreams.delete(jobId);
         // Job vừa xong (hoặc lỗi/bị ngắt) — nạp lại thư viện để creative mới
         // (nếu có) xuất hiện mà không cần user tự bấm "Làm mới".
-        loadVideos().catch((e) => { if (e instanceof PhienHetHan) baoPhienHetHan(); });
+        // Lỗi thường cũng phải NÓI: nạp hỏng có thể vừa đưa chip về phía đang vẽ
+        // (xem `loadVideos`) — chip tự lật mà im lặng thì người dùng không biết vì sao.
+        loadVideos().catch((e) => {
+          if (e instanceof PhienHetHan) { baoPhienHetHan(); return; }
+          showToast("Không tải lại được thư viện: " + e.message);
+        });
       }
     });
     es.onerror = () => {
@@ -2011,35 +2049,92 @@
 
   // Thư viện của người xem lớn hơn trần nạp ⇒ lưới CHỈ có `LIBRARY_MAX` video mới nhất. Hàm
   // thuần: trả câu cảnh báo, hoặc "" khi chưa vượt (đúng bằng trần chưa bị cắt: `>` không phải `>=`).
-  function canhBaoGioiHan(tong, tran) {
-    return tong > tran ? `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất` : "";
+  // `chiVaoBo`: `tong` là số của phía "Đã vào bộ" (trần nạp tính riêng mỗi phía).
+  function canhBaoGioiHan(tong, tran, chiVaoBo) {
+    if (!(tong > tran)) return "";
+    return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
+      : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
   }
 
   function veCanhBaoGioiHan(tong) {
     const el = document.getElementById("canh-bao-gioi-han");
     if (!el) return;
-    const chu = canhBaoGioiHan(tong, LIBRARY_MAX);
+    const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo);
     el.textContent = chu;
     el.hidden = chu === "";
   }
 
-  async function loadVideos() {
+  // `lyDoRoi`: vì sao lựa chọn có thể rơi lượt này (đổi phía chip ⇒ nói đúng thế).
+  async function loadVideos({ lyDoRoi } = {}) {
     // Bản đầu gọi `/videos` không tham số, tức nhận đúng 200 video mặc định
     // của server, KHÔNG đọc `tong`, và in nhãn theo số đã nạp. Hậu quả: video
     // thứ 201 trở đi không tồn tại với người dùng, mọi bộ lọc chạy trên tập
     // con, và nhãn "200 video" trông y hệt một con số đúng. Thư viện dùng
     // chung cả team mà cắt im lặng như vậy là hỏng đúng thứ nó sinh ra để làm.
-    const first = await apiGet(`/videos?limit=${LIBRARY_PAGE}&offset=0`);
-    const videos = first.videos.slice();
-    const tong = first.tong;
-
-    while (videos.length < tong && videos.length < LIBRARY_MAX) {
-      const next = await apiGet(`/videos?limit=${LIBRARY_PAGE}&offset=${videos.length}`);
-      if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
-      videos.push(...next.videos);
+    //
+    // Chỉ nạp phía chip đang xem (`vao_bo=0|1`): video đã vào bộ không chiếm suất
+    // `LIBRARY_MAX` của lưới mặc định, và phía "Đã vào bộ" có trần riêng. Bấm chip
+    // liên tiếp ⇒ nhiều lượt chồng nhau: chỉ lượt MỚI NHẤT được đụng `state`/DOM.
+    // Mọi thứ nạp về giữ ở biến cục bộ tới SAU lần chờ cuối (`/cum`), rồi mới
+    // kiểm lượt và ghi — ghi sớm thì lượt cũ để lại `state` lệch DOM khi lượt
+    // mới hỏng.
+    const luot = ++state.luotNapVideo;
+    const phia = state.chiVaoBo ? 1 : 0;
+    const url = (offset) => `/videos?limit=${LIBRARY_PAGE}&offset=${offset}&vao_bo=${phia}`;
+    let first, videos, tong;
+    try {
+      first = await apiGet(url(0));
+      videos = first.videos.slice();
+      tong = first.tong;
+      while (luot === state.luotNapVideo && videos.length < tong && videos.length < LIBRARY_MAX) {
+        const next = await apiGet(url(videos.length));
+        if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
+        videos.push(...next.videos);
+      }
+      if (luot !== state.luotNapVideo) return;
+      // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
+      // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
+      try {
+        await loadCums();
+      } catch (err) {
+        if (err instanceof PhienHetHan) throw err;
+        showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
+      }
+    } catch (err) {
+      // Lượt mới nhất hỏng ⇒ `state.videos`, lưới và lựa chọn vẫn là phía ĐÃ VẼ.
+      // Đưa chip về đúng phía đó (không phải "phía trước lần bấm này" — bấm hai
+      // lần nhanh thì hai thứ đó khác nhau) và vẽ lại cho chip, bộ lọc, trang
+      // khớp nhau. Để chip phía mới trên lưới phía cũ thì "Bỏ" thao tác trên
+      // video người dùng không tưởng là mình đang xem.
+      // Chưa vẽ lần nào (lần nạp đầu hỏng) ⇒ không có gì để quay về; vẽ lúc này
+      // sẽ hiện "Thư viện chưa có video nào" — nói sai, thư viện chưa NẠP được.
+      if (luot === state.luotNapVideo) {
+        const g = document.getElementById("card-grid");
+        g.setAttribute("aria-busy", "false");
+        if (state.phiaDaVe !== undefined) {
+          state.chiVaoBo = state.phiaDaVe === 1;
+          renderLibrary();
+          g.dataset.napPhia = String(state.phiaDaVe);
+        } else {
+          // Chưa vẽ lần nào: không vẽ, nhưng chip vẫn về mặc định (tắt) cho khớp
+          // lưới rỗng, và hết "đang nạp".
+          state.chiVaoBo = false;
+          veChipVaoBo();
+        }
+      }
+      // Lượt đã bị thay chỗ: lỗi của nó không còn là sự thật về thư viện (lượt
+      // mới hơn có thể đã nạp xong) ⇒ đừng ném cho bên gọi toast "không tải lại
+      // được", đè mất câu báo của lượt mới (vd "Đã bỏ N video…"). Hết phiên thì
+      // vẫn ném — đó là sự thật về phiên, không về lượt.
+      if (luot !== state.luotNapVideo && !(err instanceof PhienHetHan)) return;
+      throw err;
     }
+    // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó ghi và vẽ.
+    if (luot !== state.luotNapVideo) return;
 
     state.videos = videos;
+    state.phiaDaVe = phia;   // cùng lúc với `state.videos`: phục hồi vẽ lại từ đúng tập này
+    state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
     state.videosTotal = tong;
     veCanhBaoGioiHan(tong);
     state.videosDaDon = first.da_don_trong_cum || [];
@@ -2053,17 +2148,13 @@
     const roi = [...state.selected].filter((id) => !conLai.has(id));
     roi.forEach((id) => state.selected.delete(id));
     if (roi.length) {
-      showToast(`Đã bỏ ${roi.length} video khỏi lựa chọn vì không còn trong thư viện đang hiện.`);
-    }
-    // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Cụm lỗi thì
-    // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
-    try {
-      await loadCums();
-    } catch (err) {
-      if (err instanceof PhienHetHan) throw err;
-      showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
+      showToast(`Đã bỏ ${roi.length} video khỏi lựa chọn ${lyDoRoi || "vì không còn trong thư viện đang hiện"}.`);
     }
     renderLibrary();
+    // Tín hiệu "lưới đã vẽ xong phía này" — cho người đọc màn hình và cho test.
+    const grid = document.getElementById("card-grid");
+    grid.setAttribute("aria-busy", "false");
+    grid.dataset.napPhia = String(phia);
     loadBadgeDonLoi().catch(() => { /* phiên hết hạn đã được các lời gọi khác báo */ });
   }
 

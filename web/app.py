@@ -636,7 +636,7 @@ def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
 
 
 @app.get("/videos")
-def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
+def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | None = None,
                 nguoi_tao: str = Depends(require_user)) -> dict:
     """The library grid's rows — only what this person downloaded.
 
@@ -656,8 +656,14 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
             detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
     if offset < 0:
         raise HTTPException(status_code=400, detail="offset không được âm")
+    # Chip "Đã vào bộ" lọc Ở SERVER: `vao_bo=0` chỉ video chưa vào bộ (lưới mặc
+    # định), `=1` chỉ video đã vào bộ, không truyền ⇒ cả hai (JS cũ còn cache).
+    # Lọc ở client thì video ẩn vẫn chiếm suất `LIBRARY_MAX` của lưới mặc định.
+    if vao_bo not in (None, 0, 1):
+        raise HTTPException(status_code=400, detail="vao_bo phải là 0 hoặc 1")
+    phia = None if vao_bo is None else bool(vao_bo)
     chi_cua = None if _la_admin(nguoi_tao) else nguoi_tao
-    videos = models.list_videos(DB_PATH, chi_cua, limit=limit, offset=offset)
+    videos = models.list_videos(DB_PATH, chi_cua, limit=limit, offset=offset, vao_bo=phia)
     # Một truy vấn `sources_for_videos` cho CẢ TRANG, không phải một truy vấn
     # mỗi video: bộ lọc "Nguồn" của UI cần biết mọi hashtag/music/profile mà
     # mỗi video từng xuất hiện, và trang có tới `limit` video thì N+1 ở đây
@@ -668,16 +674,19 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0,
     # bàn làm việc riêng, nên `cum_id` luôn là cụm của chính người đang xem.
     cums = models_cum.cum_cho_videos(DB_PATH, [v["video_id"] for v in videos],
                                      nguoi_tao)
-    # Video đã vào bộ tự tìm (đang ẩn 7 ngày): `{an_luc, se_don_luc, ma_bo}`. Trả CẢ
-    # chúng — trang ẩn khỏi lưới mặc định và hiện ở chip "Đã vào bộ" — nhưng
-    # `count_videos` cũng đếm chúng, nên `tong` khớp số hàng trả về.
-    vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
+    # Video đã vào bộ tự tìm (đang ẩn 7 ngày): `{an_luc, se_don_luc, ma_bo}`. Có
+    # trong trang khi phía được hỏi gồm chúng; `count_videos` lọc cùng phía, nên
+    # `tong` khớp số hàng mọi trang.
+    da_vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, [v["video_id"] for v in videos])
     for video in videos:
         video["nguon"] = sources.get(video["video_id"], [])
         video["cum_id"] = cums.get(video["video_id"])
-        video["vao_bo"] = vao_bo.get(video["video_id"])
+        video["vao_bo"] = da_vao_bo.get(video["video_id"])
     return {
-        "tong": models.count_videos(DB_PATH, chi_cua),
+        "tong": models.count_videos(DB_PATH, chi_cua, vao_bo=phia),
+        # Số trên chip "Đã vào bộ (N)" — lưới mặc định không còn chứa video ẩn
+        # để trang tự đếm.
+        "tong_vao_bo": models.count_videos(DB_PATH, chi_cua, vao_bo=True),
         "videos": videos,
         # Video của cụm mình đã được dọn khỏi Drive: không hiện ở đâu, nhưng
         # vẫn giữ chỗ trong lô — trang cắt lô trên cùng tập với server

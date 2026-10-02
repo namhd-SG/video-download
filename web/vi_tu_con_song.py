@@ -14,9 +14,11 @@ Ba khái niệm khác nhau, cố ý KHÔNG gộp:
   * `CON_SONG_CHUNG`   — chưa loại VÀ chưa dọn khỏi Drive (`video_vao_bo.
                          drive_don_luc`). Là "video còn ở thư viện" cho lưới,
                          đếm, gán cụm, gửi Creative Desk.
-  * `CHUA_AN`          — chưa bị ẩn vì đã vào bộ (`video_vao_bo.an_luc`). CHỈ
-                         lượt CHIA mới dùng: video đã vào bộ tự tìm không vào một
-                         lượt chia mới, nhưng vẫn hiện ở bộ lọc "Đã vào bộ".
+  * `CHUA_AN`          — chưa bị ẩn vì đã vào bộ (`video_vao_bo.an_luc`). Hai
+                         nơi dùng: lượt CHIA (video đã vào bộ tự tìm không vào
+                         một lượt chia mới) và chip "Đã vào bộ" của lưới
+                         (`models.list_videos`/`count_videos`, `vao_bo=0|1`) —
+                         lọc ở server để video ẩn không chiếm suất nạp của lưới.
 """
 from __future__ import annotations
 
