@@ -517,7 +517,7 @@
   // ========================================================================
   // ---- Phân trang thư viện (user 23/09: "phân ra theo trang 10/20/40/100";
   // 26/09 thêm 30: "thêm phần 30 video/page").
-  // `loadVideos` đã nạp TRỌN thư viện (lô 500, trần 2000), bộ lọc chạy ở đây ⇒
+  // `loadVideos` đã nạp TRỌN thư viện (lô `LIBRARY_PAGE`, trần `LIBRARY_MAX` mỗi phía chip), bộ lọc chạy ở đây ⇒
   // phân trang cắt trên danh sách ĐÃ LỌC, không cần tham số trang ở API.
   const SO_MOI_TRANG = Object.freeze([10, 20, 30, 40, 100]);
   const SO_MOI_TRANG_MAC_DINH = 40;
@@ -540,8 +540,8 @@
     } catch (e) { return SO_MOI_TRANG_MAC_DINH; }  // private mode
   }
 
-  // Dải nút trang THU GỌN: 1 … t-2..t+2 … cuối. Trần nạp 2000 ở 10/trang là
-  // 200 trang — in đủ 200 nút là thanh điều hướng dài hơn cả lưới.
+  // Dải nút trang THU GỌN: 1 … t-2..t+2 … cuối. Trần nạp 5000 ở 10/trang là
+  // 500 trang — in đủ 500 nút là thanh điều hướng dài hơn cả lưới.
   function dayTrang(t, soTrang) {
     const giu = new Set([1, soTrang]);
     for (let i = t - 2; i <= t + 2; i++) if (i >= 1 && i <= soTrang) giu.add(i);
@@ -1987,14 +1987,20 @@
     };
   }
 
-  // Trần cứng cho số video giữ trong trình duyệt. Có trần là vì lưới dựng DOM
-  // cho từng thẻ; không có trần thì thư viện lớn dần sẽ làm treo tab của người
-  // dùng, và đó là kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện 2000/5000".
-  const LIBRARY_PAGE = 500;
-  const LIBRARY_MAX = 2000;
+  // Trần cứng cho số video giữ trong trình duyệt MỖI phía chip. Lưới đã phân trang
+  // nên DOM không còn là chi phí; chi phí thật là JSON tải về (~1,2–1,7 KB/video,
+  // đo 02/10) cộng các vòng lọc/đếm chạy trên cả tập. Không có trần thì thư viện
+  // lớn dần sẽ làm treo tab, kiểu hỏng khó truy hơn hẳn một dòng chữ "đang hiện
+  // 5000/6000". 5000 là phanh tạm cho tới khi lưới phân trang ở server.
+  // `LIBRARY_PAGE` = `MAX_VIDEOS_PAGE_SIZE` của server (web/app.py) — ít lượt hơn.
+  const LIBRARY_PAGE = 1000;
+  const LIBRARY_MAX = 5000;
+  // Từ mức này (80 % trần) băng cảnh báo hiện SỚM — để người dùng và người vận hành
+  // thấy trước khi lưới bắt đầu cắt, không cần ai đi đo tay.
+  const LIBRARY_CANH_BAO_SOM = Math.ceil(LIBRARY_MAX * 0.8);
   // ⚠ Phân trang ở `renderLibrary` KHÔNG kéo dữ liệu: nó cắt trên `state.videos`
   // đã nạp trọn ở đây. Thư viện vượt `LIBRARY_MAX` thì phân trang cũng chỉ thấy
-  // 2000 video đầu — muốn hơn phải chuyển sang phân trang phía server.
+  // `LIBRARY_MAX` video đầu — muốn hơn phải chuyển sang phân trang phía server.
 
   // Badge worker (CHỈ quản trị): worker chết / lỗi lặp / chờ đĩa thì job pending không
   // chạy mà trang vẫn trông bình thường — nói ra. Hàm thuần theo `tt` (null ⇒ ẩn).
@@ -2050,17 +2056,44 @@
   // Thư viện của người xem lớn hơn trần nạp ⇒ lưới CHỈ có `LIBRARY_MAX` video mới nhất. Hàm
   // thuần: trả câu cảnh báo, hoặc "" khi chưa vượt (đúng bằng trần chưa bị cắt: `>` không phải `>=`).
   // `chiVaoBo`: `tong` là số của phía "Đã vào bộ" (trần nạp tính riêng mỗi phía).
-  function canhBaoGioiHan(tong, tran, chiVaoBo) {
-    if (!(tong > tran)) return "";
-    return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
-      : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
+  // Mức cảnh báo: "cat" (vượt trần, lưới đang thiếu video) | "som" (từ `som` trở lên mà
+  // CHƯA vượt) | "". MỘT chỗ quyết mức — chữ (`canhBaoGioiHan`) và màu/`role`
+  // (`veCanhBaoGioiHan`) cùng đọc nó, để không thể lệch nhau ở ca biên.
+  function mucGioiHan(tong, tran, som) {
+    if (tong > tran) return "cat";
+    return typeof som === "number" && tong >= som ? "som" : "";
+  }
+
+  // `som` (tuỳ chọn): từ mức này trở lên mà CHƯA vượt trần ⇒ cảnh báo sớm.
+  function canhBaoGioiHan(tong, tran, chiVaoBo, som) {
+    const muc = mucGioiHan(tong, tran, som);
+    if (muc === "cat") {
+      return chiVaoBo ? `Có ${tong} video đã vào bộ, chỉ nạp ${tran} video mới nhất`
+        : `Thư viện có ${tong} video, lưới chỉ nạp ${tran} video mới nhất`;
+    }
+    if (muc === "som") {
+      return chiVaoBo ? `Có ${tong} video đã vào bộ — sắp chạm trần nạp ${tran}`
+        : `Thư viện có ${tong} video — sắp chạm trần nạp ${tran}`;
+    }
+    return "";
   }
 
   function veCanhBaoGioiHan(tong) {
     const el = document.getElementById("canh-bao-gioi-han");
     if (!el) return;
-    const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo);
-    el.textContent = chu;
+    const chu = canhBaoGioiHan(tong, LIBRARY_MAX, state.chiVaoBo, LIBRARY_CANH_BAO_SOM);
+    // Hai mức phải NHÌN khác nhau: vàng = "sắp chạm trần", đỏ = "đã cắt, lưới đang
+    // thiếu video". Và NGHE khác nhau: chỉ "đã cắt" mới ngắt ngang (`alert`); "sắp"
+    // không gấp nên lịch sự (`status`). `role` đặt TRƯỚC khi ghi chữ, để thông báo
+    // mang đúng mức; chỉ đặt khi đổi.
+    const muc = mucGioiHan(tong, LIBRARY_MAX, LIBRARY_CANH_BAO_SOM);
+    const role = muc === "cat" ? "alert" : "status";
+    if (el.getAttribute("role") !== role) el.setAttribute("role", role);
+    el.dataset.muc = muc;
+    el.classList.toggle("som", muc === "som");
+    // Băng được vẽ lại MỖI lượt nạp (Làm mới, job xong, đổi chip…). Ghi lại cùng chữ
+    // thay nút chữ ⇒ trình đọc màn hình đọc lại ⇒ chỉ ghi khi chữ đổi.
+    if (el.textContent !== chu) el.textContent = chu;
     el.hidden = chu === "";
   }
 

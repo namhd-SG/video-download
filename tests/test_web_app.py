@@ -2078,7 +2078,7 @@ def test_cat_trang_va_day_nut_trang():
 
     86 video / 40 ⇒ 40/40/6 (đề bài 23/09) · trang vượt/âm bị KẸP, không ra lưới
     rỗng · 100/trang ⇒ 1 trang · danh sách rỗng không nổ · dải nút THU GỌN: trần
-    nạp 2000 ở 10/trang = 200 trang, in đủ 200 nút là dài hơn cả lưới.
+    nạp 5000 ở 10/trang = 500 trang, in đủ 500 nút là dài hơn cả lưới.
     """
     import json
     import shutil
