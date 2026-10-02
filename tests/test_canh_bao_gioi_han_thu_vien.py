@@ -468,6 +468,14 @@ def test_lan_nap_dau_loi_khong_noi_thu_vien_trong(base_url):
         assert not p.locator("#empty-state").is_visible()
         # Lần đầu hỏng: toast 2,6 s rồi trang trống là im lặng ⇒ ô lỗi thường trực.
         assert p.inner_text("#error").startswith("Không tải được thư viện")
+        # Làm mới nạp được ⇒ câu lỗi cũ thành SAI ⇒ phải gỡ.
+        p.unroute("**/videos?*")
+        p.route("**/videos?*", lambda route: route.fulfill(json={
+            "tong": 3, "tong_vao_bo": 0, "videos": _videos(3), "da_don_trong_cum": []}))
+        truoc = p.get_attribute("#card-grid", "data-luot-xong")
+        p.click("#library-refresh")
+        p.wait_for_function(f"document.getElementById('card-grid').dataset.luotXong !== '{truoc}'")
+        assert p.inner_text("#error") == ""
     finally:
         br.close()
         pw.stop()
@@ -607,6 +615,47 @@ def test_bo_video_roi_nap_lai_hong_van_bao_so_da_bo(base_url):
         p.wait_for_function("document.getElementById('toast').textContent.includes('đã bỏ 2')")
         chu = p.inner_text("#toast")
         assert "không tải lại được thư viện" in chu, chu
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_bo_video_roi_het_phien_van_bao_so_da_bo(base_url):
+    """Bỏ 2 video xong (tệp đã vào Thùng rác) mà lúc nạp lại thì phiên hết ⇒ màn hết phiên
+    VÀ toast tóm tắt vẫn ra số đã bỏ — không mất câu xác nhận việc đã làm."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 6, 1: 0})
+    try:
+        p.route("**/videos/loai", lambda r: r.fulfill(json={
+            "da_loai": json.loads(r.request.post_data)["video_ids"], "khong_phai_cua_ban": [], "drive_truot": []}))
+        p.on("dialog", lambda d: d.accept())
+        the = p.locator("#card-grid .card")
+        the.nth(0).click()
+        the.nth(1).click()
+        p.unroute("**/videos?*")
+        p.route("**/videos?*", lambda r: r.fulfill(status=302, headers={"location": "/cdn-cgi/access/login"}))
+        p.click('[data-action="loai"]')
+        p.wait_for_selector("#session-expired:not([hidden])")
+        p.wait_for_function("document.getElementById('toast').textContent.includes('đã bỏ 2')")
+        assert "phiên đã hết hạn" in p.inner_text("#toast")
+    finally:
+        br.close()
+        pw.stop()
+
+
+def test_cum_di_dang_chi_bao_loi_cum_thu_vien_van_ve(base_url):
+    """`/cum` trả JSON không có mảng `cum` ⇒ lưới vẫn vẽ (chỉ là lỗi cụm), không kẹt
+    `aria-busy`, không "Không tải lại được thư viện"."""
+    p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 5, 1: 0})
+    try:
+        p.unroute("**/cum")
+        p.route("**/cum", lambda r: r.fulfill(json={"loi": "dị dạng"}))
+        truoc = p.get_attribute("#card-grid", "data-luot-xong")
+        p.click("#library-refresh")
+        p.wait_for_function(f"document.getElementById('card-grid').dataset.luotXong !== '{truoc}'")
+        assert "danh sách cụm" in p.inner_text("#toast")
+        assert "Không tải lại được thư viện" not in p.inner_text("#toast")
+        assert p.get_attribute("#card-grid", "aria-busy") == "false"
+        assert p.locator("#card-grid .card").count() == 5
     finally:
         br.close()
         pw.stop()

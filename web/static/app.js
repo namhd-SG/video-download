@@ -1892,7 +1892,6 @@
     // Nạp lại hỏng KHÔNG được nuốt câu tóm tắt: tệp đã vào Thùng rác, người dùng phải
     // biết số đã bỏ — câu "không tải lại được" gộp vào cùng toast (không đè nó).
     const nap = loDaGui > 0 ? await napLaiThuVien({ imLoi: true }) : "ok";
-    if (nap === "het_phien") return;
     renderSelectionBar();
     // Báo đủ ba con số, không gộp thành một chữ "xong": Drive trượt mà im
     // lặng thì người dùng tưởng đã dọn trong khi tệp còn nguyên.
@@ -1904,6 +1903,7 @@
                 `còn ${state.selected.size} video đang chọn — bấm lại để tiếp`);
     }
     if (nap === "loi") phan.push("không tải lại được thư viện — bấm Làm mới");
+    if (nap === "het_phien") phan.push("phiên đã hết hạn — tải lại trang để thấy thư viện mới");
     showToast(phan.join(" · "));
   }
 
@@ -2175,7 +2175,14 @@
     // Lượt mới hơn bắt đầu trong lúc chờ `/cum` ⇒ để lượt đó ghi và vẽ.
     if (luot !== state.luotNapVideo) return false;
 
+    // `/cum` dị dạng (không có mảng `cum`) ⇒ chỉ là lỗi CỤM: thư viện vẫn vẽ, như khi
+    // `/cum` trả lỗi — không để `apDungCum` ném giữa bước ghi và bỏ dở `state`.
+    if (resCum && !Array.isArray(resCum.cum)) {
+      showToast("Không tải được danh sách cụm — thư viện vẫn dùng được, bấm Làm mới để thử lại.");
+      resCum = null;
+    }
     if (resCum) apDungCum(resCum);
+    ghiOLoi(LOI_THU_VIEN, "");   // đã nạp được ⇒ câu "không tải được thư viện" cũ thành sai
     state.videos = videos;
     state.phiaDaVe = phia;   // cùng lúc với `state.videos`: phục hồi vẽ lại từ đúng tập này
     state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
@@ -2205,6 +2212,18 @@
     return true;
   }
 
+  // Ô `#error` dùng chung (form job, dữ liệu ban đầu, thư viện). Mỗi nguồn giữ MỘT câu
+  // mở đầu bằng `dau`: ghi câu mới thay câu cũ của CÙNG nguồn, không đè câu nguồn khác;
+  // `cau` rỗng ⇒ gỡ câu của nguồn đó (vd thư viện đã nạp lại được thì câu lỗi cũ thành sai).
+  function ghiOLoi(dau, cau) {
+    const el = document.getElementById("error");
+    if (!el) return;
+    const con = el.textContent.split(" · ").filter((x) => x && !x.startsWith(dau));
+    if (cau) con.push(dau + cau);
+    el.textContent = con.join(" · ");
+  }
+  const LOI_THU_VIEN = "Không tải được thư viện: ";
+
   // Bắt đầu một lượt nạp thư viện. ĐỒNG BỘ, không `await` nào xen giữa: tăng số lượt,
   // huỷ request của lượt cũ, tạo bộ huỷ mới. `abort()` chỉ xếp hàng lỗi cho lượt cũ
   // — `catch` của nó chạy SAU khối này, lúc số lượt đã tăng ⇒ nó thấy mình đã bị thay
@@ -2227,7 +2246,7 @@
       // Chưa vẽ lần nào (lần nạp đầu hỏng): toast 2,6 s rồi trang trống là im lặng
       // ⇒ ghi vào ô lỗi thường trực.
       if (state.phiaDaVe === undefined) {
-        document.getElementById("error").textContent = "Không tải được thư viện: " + err.message;
+        ghiOLoi(LOI_THU_VIEN, err.message);
       } else if (!imLoi) {
         showToast("Không tải lại được thư viện: " + err.message);
       }
@@ -2354,7 +2373,7 @@
   renderFilterBar();
   // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
   Promise.all([loadJobs(), napLaiThuVien(), loadBannerCookie()]).catch((err) => {
-    document.getElementById("error").textContent = "Không tải được dữ liệu ban đầu: " + err.message;
+    ghiOLoi("Không tải được dữ liệu ban đầu: ", err.message);
   });
   // Polling dự phòng (giữ nguyên lý do từ bản cũ: SSE có thể rớt khi tunnel
   // rớt) — chạy lại dù không còn EventSource nào mở.
