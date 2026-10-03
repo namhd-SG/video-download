@@ -431,6 +431,12 @@ def _giu_profile_dir(profile_dir: Path) -> str:
     return khoa
 
 
+def profile_dir_dang_mo(profile_dir: Path) -> bool:
+    """Tiến trình NÀY có đang giữ một context trên `profile_dir` không (registry)."""
+    with _PROFILE_KHOA:
+        return _khoa_profile_dir(profile_dir) in _PROFILE_DANG_MO
+
+
 def _nha_profile_dir(profile_dir: Path | None) -> None:
     """Nhả khoá của `profile_dir` (idempotent; None = context tạm, không có gì để nhả)."""
     if profile_dir is None:
@@ -871,8 +877,10 @@ def scrape_music_page_multi(
             len(moi), bo_qua, len(moi), max_videos,
         )
 
-        if (dung_som_khi_feed_rong and thong_ke_feed["rong"] > 0
-                and thong_ke_feed["co_du_lieu"] == 0):
+        # `len(moi) < max_videos`: lượt đã lấy ĐỦ thì xong thật, không gắn `feed_rong`
+        # cho một job đã đủ (feed đếm rỗng mà link vẫn đủ ⇒ không phải bị chặn).
+        if (dung_som_khi_feed_rong and len(moi) < max_videos
+                and thong_ke_feed["rong"] > 0 and thong_ke_feed["co_du_lieu"] == 0):
             log.warning("feed trả rỗng sau lượt %d (%d phản hồi 0 byte, 0 có dữ liệu) — "
                         "dừng ngay, không chạm lại trang", i + 1, thong_ke_feed["rong"])
             ly_do = STOP_FEED_RONG

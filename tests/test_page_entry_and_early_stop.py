@@ -566,3 +566,79 @@ def test_giu_dang_mo_log_dem_duoc_o_worker(monkeypatch, db, tmp_path, caplog):
         dem = _worker(db, tmp_path)._quet_profile_dinh_ky(buoc_ep=True)
     assert dem["giu_dang_mo"] == 1
     assert any("Chromium đang mở 1" in r.getMessage() for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# Khoá riêng của worker — Chromium HEADLESS không tạo `SingletonLock` (đo 02/10)
+# ---------------------------------------------------------------------------
+
+def test_chuan_bi_ghi_khoa_worker_host_va_pid_tien_trinh_nay(db):
+    """ĐỘT BIẾN: bỏ `ghi_khoa_worker` trong `chuan_bi_profile_job` ⇒ ĐỎ."""
+    d = profile_theo_job.chuan_bi_profile_job(db, 77)
+    assert (d / ".videodl-worker").read_text() == f"{socket.gethostname()}-{os.getpid()}"
+    assert not (d / ".videodl-worker.tam").exists()
+
+
+def test_headless_khong_singletonlock_khoa_worker_song_thi_giu(db):
+    """Thư mục mồ côi (job không có trong DB) KHÔNG có `SingletonLock` — đúng như
+    Chromium headless — nhưng khoá worker trỏ tiến trình còn sống ⇒ GIỮ.
+    ĐỘT BIẾN: bộ quét chỉ đọc `SingletonLock` (bỏ khoá worker) ⇒ ĐỎ."""
+    cu = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    try:
+        d = _dung_mo_coi(db, None)
+        (d / ".videodl-worker").write_text(f"{socket.gethostname()}-{cu.pid}")
+        dem = profile_theo_job.quet_profile_mo_coi(db)
+        assert dem.get("giu_dang_mo") == 1 and dem["da_xoa"] == 0
+        assert (d / "Cookies").exists()
+    finally:
+        cu.kill()
+        cu.wait()
+
+
+def test_khoa_worker_cua_chinh_tien_trinh_hoi_registry(db):
+    """Khoá do CHÍNH tiến trình này ghi: pid sống là đương nhiên ⇒ hỏi registry.
+    Không giữ context ⇒ xoá (job đã kết thúc); đang giữ ⇒ giữ.
+    ĐỘT BIẾN: bỏ nhánh pid-của-mình (để `os.kill` phân định) ⇒ ĐỎ (thư mục xoá trượt
+    của job đã xong không bao giờ được dọn tới lần khởi động sau)."""
+    d = _dung_mo_coi(db, None, ten="44")
+    (d / ".videodl-worker").write_text(f"{socket.gethostname()}-{os.getpid()}")
+    khoa = scraper_mod._giu_profile_dir(d)
+    try:
+        assert profile_theo_job.quet_profile_mo_coi(db).get("giu_dang_mo") == 1
+        assert d.exists()
+    finally:
+        scraper_mod._nha_profile_dir(d)
+    assert profile_theo_job.quet_profile_mo_coi(db)["da_xoa"] == 1
+    assert not d.exists()
+
+
+def test_khoa_worker_pid_chet_thi_xoa(db):
+    d = _dung_mo_coi(db, None)
+    (d / ".videodl-worker").write_text(f"{socket.gethostname()}-{_pid_da_chet()}")
+    assert profile_theo_job.quet_profile_mo_coi(db)["da_xoa"] == 1
+    assert not d.exists()
+
+
+def test_khoa_worker_la_symlink_hoac_sai_dinh_dang_thi_giu(db, tmp_path):
+    d = _dung_mo_coi(db, None, ten="42")
+    (d / ".videodl-worker").write_text("rac-khong-co-so")
+    ngoai = tmp_path / "ngoai.txt"
+    ngoai.write_text(f"{socket.gethostname()}-{_pid_da_chet()}")
+    d2 = _dung_mo_coi(db, None, ten="43")
+    os.symlink(ngoai, d2 / ".videodl-worker")
+    dem = profile_theo_job.quet_profile_mo_coi(db)
+    assert dem["bo_qua"] == 2 and dem["da_xoa"] == 0
+    assert d.exists() and d2.exists() and ngoai.exists()
+
+
+def test_dung_som_khong_gan_feed_rong_khi_luot_da_du_video(monkeypatch):
+    """Lượt 1 lấy ĐỦ `max_videos` mà feed đếm rỗng ⇒ xong thật (STOP_COMPLETE),
+    không gắn `feed_rong` cho job đã đủ.
+    ĐỘT BIẾN: bỏ `len(moi) < max_videos` khỏi cổng dừng sớm ⇒ ĐỎ."""
+    _dung_multi(monkeypatch, [(1, 0, ["1", "2", "3", "4", "5"])])
+    ly_do: list[str] = []
+    out = scraper_mod.scrape_music_page_multi(
+        URL_PROFILE, passes=3, max_videos=5, dung_som_khi_feed_rong=True,
+        on_stop=ly_do.append)
+    assert len(out) == 5
+    assert STOP_FEED_RONG not in ly_do
