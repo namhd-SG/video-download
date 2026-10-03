@@ -425,9 +425,17 @@ def test_finally_co_tat_khong_xoa_thu_muc_profile_job(monkeypatch, db, tmp_path)
 def test_finally_co_bat_xoa_thu_muc_profile_job(monkeypatch, db, tmp_path):
     _bat_co(monkeypatch)
     monkeypatch.setattr(queue_mod, "SO_VONG_DAO_SAU", 1)
-    monkeypatch.setattr(scraper_mod, "scrape_music_page", lambda url, **kw: [])
+
+    def quet_co_feed_nhung_khong_ra_video(url, **kw):
+        # Feed CÓ dữ liệu (không phải 0/0 hay rỗng ⇒ không đòi xác minh) nhưng không ra link nào
+        # ⇒ job kết thúc (`failed` source_empty) ⇒ thư mục profile phải bị xoá.
+        kw["thong_ke_feed"]["co_du_lieu"] = kw["thong_ke_feed"].get("co_du_lieu", 0) + 1
+        return []
+
+    monkeypatch.setattr(scraper_mod, "scrape_music_page", quet_co_feed_nhung_khong_ra_video)
     jid = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
     process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, jid))
+    assert models.get_job(db, jid)["trang_thai"] == "failed"
     assert not (db.parent / "profiles" / str(jid)).exists()
 
 

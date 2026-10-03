@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from web import giai_captcha as gc
 from web.vi_tu_con_song import CHUA_AN, CON_SONG_CHUNG
 
 VALID_END_STATES = ("done", "failed")
@@ -492,6 +493,13 @@ def init_db(db_path: Path) -> None:
         # trình có thể restart, mà profile persist + UA đổi mỗi lượt là tín hiệu bất
         # thường. NULL = chưa ghim (mọi job cũ, mọi job không phải profile).
         _add_column_if_missing(conn, "jobs", "ua_job", "TEXT")
+        # Trạng thái người-giải-captcha (`cho_xac_minh`/`cho_giai`/`dang_mo`/`dang_giai`, chỉ có khi
+        # bật `VIDEODL_PROFILE_CAPTCHA`): `vao_trang_thai_luc` = mốc VÀO trạng thái hiện tại (đếm
+        # 5 phút của `dang_giai` và 24 giờ của `cho_xac_minh` theo cột này, không theo RAM);
+        # `so_lan_giai_ngay` = số lần bấm "Tôi giải ngay" của job (trần ở `web/giai_captcha.py`).
+        # NULL / 0 cho mọi job cũ. Cả hai là cột NỘI BỘ — không ra API (`web/app.py::_job_ra_api`).
+        _add_column_if_missing(conn, "jobs", "vao_trang_thai_luc", "TEXT")
+        _add_column_if_missing(conn, "jobs", "so_lan_giai_ngay", "INTEGER NOT NULL DEFAULT 0")
         # Số item THẬT đã gửi sang Creative Desk cho lô này — `payload.items`
         # loại video chưa lên Drive/thiếu link gốc hợp lệ, nên nó có thể nhỏ
         # hơn số video của lô (`cum_lo_mo` chỉ đếm SỐ VIDEO, không đếm số item
@@ -780,16 +788,35 @@ def list_jobs(db_path: Path, chi_cua: str | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def claim_next_pending_job(db_path: Path) -> dict | None:
+def claim_next_pending_job(db_path: Path, uu_tien_cho_giai: bool = False) -> dict | None:
     """Atomically take the oldest pending job and flip it to 'running'.
 
     `BEGIN IMMEDIATE` takes the write lock before the SELECT, so a second
     caller (there is only ever one worker thread today, but this stays
     correct if that ever changes) cannot read the same pending row and claim
     it twice.
+
+    `uu_tien_cho_giai=True` (chỉ khi bật `VIDEODL_PROFILE_CAPTCHA`): job `cho_giai` (người
+    đã bấm "Tôi giải ngay") được nhặt TRƯỚC mọi `pending` và lật sang `dang_mo`, KHÔNG qua
+    `running`. Cờ TẮT ⇒ đúng một câu SELECT `pending` như trước, không đụng `cho_giai`.
     """
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
+        if uu_tien_cho_giai:
+            cho = conn.execute(
+                "SELECT * FROM jobs WHERE trang_thai = 'cho_giai' "
+                "ORDER BY vao_trang_thai_luc ASC, id ASC LIMIT 1"
+            ).fetchone()
+            if cho is not None:
+                job = dict(cho)
+                luc = _now()
+                conn.execute(
+                    "UPDATE jobs SET trang_thai = 'dang_mo', vao_trang_thai_luc = ? WHERE id = ?",
+                    (luc, job["id"]),
+                )
+                job["trang_thai"] = "dang_mo"
+                job["vao_trang_thai_luc"] = luc
+                return job
         row = conn.execute(
             "SELECT * FROM jobs WHERE trang_thai = 'pending' "
             "ORDER BY tao_luc ASC, id ASC LIMIT 1"
@@ -827,12 +854,16 @@ def vi_tri_hang_doi(db_path: Path, job_ids: list[int]) -> dict[int, int]:
     if not job_ids:
         return {}
     with _connect(db_path) as conn:
+        # `dang_mo`/`dang_giai` cũng là worker đang bận (một luồng, tới 5 phút/lần giải);
+        # `cho_giai` xếp ĐẦU hàng chờ vì `claim_next_pending_job` nhặt nó trước `pending`.
+        # Cờ giải captcha TẮT ⇒ các trạng thái đó không bao giờ có ⇒ kết quả như cũ.
         dang_chay = conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE trang_thai = 'running'"
+            "SELECT COUNT(*) FROM jobs WHERE trang_thai IN ('running', 'dang_mo', 'dang_giai')"
         ).fetchone()[0]
         cho = conn.execute(
-            "SELECT id, tao_luc FROM jobs WHERE trang_thai = 'pending' "
-            "ORDER BY tao_luc ASC, id ASC"
+            "SELECT id, tao_luc FROM jobs WHERE trang_thai IN ('pending', 'cho_giai') "
+            "ORDER BY CASE trang_thai WHEN 'cho_giai' THEN 0 ELSE 1 END, "
+            "CASE trang_thai WHEN 'cho_giai' THEN vao_trang_thai_luc ELSE tao_luc END ASC, id ASC"
         ).fetchall()
     thu_tu = {int(r["id"]): i for i, r in enumerate(cho)}
     return {jid: dang_chay + thu_tu[jid] + 1
@@ -857,8 +888,12 @@ def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:
     """
     with _connect(db_path) as conn:
         cur = conn.execute(
+            # `cho_xac_minh`/`cho_giai` không có Chromium nào đang mở ⇒ rút được như `pending`
+            # (người gọi xoá thư mục profile sau khi `da_huy`). `dang_mo`/`dang_giai` thì
+            # worker đang giữ trình duyệt ⇒ "dang_chay".
             "UPDATE jobs SET trang_thai = 'cancelled', xong_luc = ? "
-            "WHERE id = ? AND nguoi_tao = ? AND trang_thai = 'pending'",
+            "WHERE id = ? AND nguoi_tao = ? "
+            "AND trang_thai IN ('pending', 'cho_xac_minh', 'cho_giai')",
             (_now(), job_id, nguoi_tao),
         )
         if cur.rowcount == 1:
@@ -1189,7 +1224,7 @@ def set_job_stop_reason(db_path: Path, job_id: int, ly_do: str) -> None:
         conn.execute("UPDATE jobs SET ly_do_dung = ? WHERE id = ?", (ly_do, job_id))
 
 
-def mark_running_as_interrupted(db_path: Path) -> int:
+def mark_running_as_interrupted(db_path: Path, co_giai: bool = False) -> int:
     """Boot-time sweep — call once, before the worker starts pulling jobs.
 
     `KeepAlive` restarts this process with SIGKILL, so any row still
@@ -1198,7 +1233,9 @@ def mark_running_as_interrupted(db_path: Path) -> int:
     would lie about a job that never finished. 'interrupted' says exactly
     what happened and nothing more.
 
-    Returns the number of rows changed (0 on a clean boot is normal).
+    `co_giai` = cờ `VIDEODL_PROFILE_CAPTCHA` lúc boot (người gọi đọc, module này không đọc env).
+
+    Returns the number of 'running' rows changed (0 on a clean boot is normal).
     """
     with _connect(db_path) as conn:
         cur = conn.execute(
@@ -1206,6 +1243,29 @@ def mark_running_as_interrupted(db_path: Path) -> int:
             "WHERE trang_thai = 'running'",
             (_now(),),
         )
+        # Câu thứ hai chạy CẢ khi cờ TẮT — ngoại lệ có chủ đích của chuẩn "cờ TẮT ⇒ 0 truy vấn
+        # mới" (ĐP-705): DB chưa từng bật cờ thì khớp 0 hàng; đã từng bật thì đây là lối dọn
+        # duy nhất cho job còn kẹt ở trạng thái giải.
+        if co_giai:
+            # Người-giải-captcha dở dang lúc chết: Chromium và hàng đợi lệnh trong RAM đã mất, nên
+            # `cho_giai` (thiếu câu này thì sau crash worker mở Chromium chờ 5 phút không ai xem),
+            # `dang_mo`, `dang_giai` đều về `cho_xac_minh` — người bấm "Tôi giải ngay" lại được.
+            # Mốc 24 giờ tính lại từ đây.
+            conn.execute(
+                "UPDATE jobs SET trang_thai = 'cho_xac_minh', vao_trang_thai_luc = ?, "
+                "ly_do_dung = ? "
+                "WHERE trang_thai IN ('cho_giai', 'dang_mo', 'dang_giai')",
+                (_now(), gc.LD_KHOI_DONG_LAI),
+            )
+        else:
+            # Cờ TẮT (ĐP-706): không còn lối ra tự động nào cho cả 4 trạng thái giải (worker không
+            # nhặt `cho_giai`, bộ quét quá hạn 24 giờ không chạy, "Tôi giải ngay" trả 409) ⇒ để
+            # nguyên là treo vô hạn. Kết thúc chúng là `interrupted`, lý do nói rõ vì tính năng tắt.
+            conn.execute(
+                "UPDATE jobs SET trang_thai = 'interrupted', xong_luc = ?, ly_do_dung = ? "
+                "WHERE trang_thai IN ('cho_xac_minh', 'cho_giai', 'dang_mo', 'dang_giai')",
+                (_now(), gc.LD_TINH_NANG_GIAI_TAT),
+            )
         return cur.rowcount
 
 
@@ -1218,5 +1278,15 @@ def mark_job_interrupted(db_path: Path, job_id: int) -> bool:
             "UPDATE jobs SET trang_thai = 'interrupted', xong_luc = ? "
             "WHERE id = ? AND trang_thai = 'running'",
             (_now(), job_id),
+        )
+        if cur.rowcount == 1:
+            return True
+        # Lỗi rơi ra vòng worker khi job đang ở bước giải captcha: không phải "bị bỏ dở" mà
+        # là "chưa giải được" ⇒ về `cho_xac_minh` để người thử lại, không kết thúc job.
+        cur = conn.execute(
+            "UPDATE jobs SET trang_thai = 'cho_xac_minh', vao_trang_thai_luc = ?, "
+            "ly_do_dung = ? "
+            "WHERE id = ? AND trang_thai IN ('cho_giai', 'dang_mo', 'dang_giai')",
+            (_now(), gc.LD_LOI_HE_THONG, job_id),
         )
         return cur.rowcount == 1

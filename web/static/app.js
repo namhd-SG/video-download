@@ -28,7 +28,15 @@
   const STATUS_LABEL = {
     pending: "Đang chờ", running: "Đang chạy", done: "Xong",
     failed: "Lỗi", interrupted: "Bị ngắt", cancelled: "Đã rút",
+    // Bốn bước giải xác minh trong popup (`giai-captcha-the-job.js::NHAN`; chỉ xuất hiện khi
+    // máy chủ bật `VIDEODL_PROFILE_CAPTCHA`).
+    cho_xac_minh: "Cần xác minh", cho_giai: "Chờ mở trang giải",
+    dang_mo: "Đang mở trang giải", dang_giai: "Đang giải",
   };
+
+  // Job còn SỐNG ở máy chủ ⇒ giữ luồng tiến độ SSE. Bốn bước giải không phải trạng thái kết
+  // thúc: job ở đó vẫn có thể quay về `running`, và `cho_xac_minh` ⇄ `cho_giai` đổi liên tục.
+  const TRANG_THAI_SONG = new Set(["pending", "running", "cho_xac_minh", "cho_giai", "dang_mo", "dang_giai"]);
 
   // Ba lý do dừng sớm KHÁC NHAU (hashtag_enumerator.py) trông giống hệt nhau
   // từ ngoài nhìn vào nếu không dịch riêng — xem `guard-marker` và spec: đừng
@@ -101,6 +109,52 @@
                            "nhập tiktok.com rồi xuất lại cookie.",
     cookie_het_han: "Dừng: cookie đăng nhập của bạn đã hết hạn. Vào lại " +
                     "tiktok.com, xuất cookie mới rồi dán lại.",
+    // Mã của luồng giải xác minh trong popup (`LD_*` ở web/giai_captcha.py; test
+    // `test_moi_ma_dung_deu_co_cau_tren_giao_dien` gom cả chúng). Mỗi câu nói đúng NGUYÊN
+    // NHÂN và việc người dùng làm được. Không câu nào được nói "đã bắt đầu tải": ở mọi
+    // mã dưới đây job CHƯA tải video nào. Thẻ job ở `cho_xac_minh` với `feed_rong` /
+    // `khong_do_duoc_feed` dùng câu riêng trỏ tới nút "Tôi giải ngay" (`giai-captcha-the-job.js`).
+    khong_do_duoc_feed: "Dừng quét: không đo được danh sách video của trang này — " +
+                        "nhiều khả năng TikTok đang đòi xác minh (captcha). Chưa tải " +
+                        "video nào. Bấm “Tôi giải ngay” để giải trong cửa sổ Video " +
+                        "Desk (tool không tự giải).",
+    xac_minh_qua_han: "Đã kết thúc: lượt này chờ người giải xác minh quá 24 giờ mà " +
+                      "chưa ai giải nên tool dừng. Chưa tải video nào. Tạo lượt tải " +
+                      "mới nếu vẫn cần trang này.",
+    feed_rong_khong_captcha: "Đã dừng theo yêu cầu: người giải bấm “Dừng job” vì không " +
+                             "thấy xác minh nào để giải. Chưa tải video nào — TikTok " +
+                             "vẫn trả kết quả rỗng cho trang này. Đợi một lúc rồi tạo " +
+                             "lượt mới, hoặc lấy video qua link hashtag.",
+    captcha_chua_xong: "Đã bấm “Đã giải xong” nhưng TikTok vẫn đòi xác minh nên tool " +
+                       "dừng quét. Chưa tải video nào. Bấm “Tôi giải ngay” để thử lại " +
+                       "nếu còn lượt.",
+    khong_ai_xem: "Máy chủ đã mở lượt giải nhưng không có cửa sổ nào nhận quyền điều " +
+                  "khiển kịp nên đã đóng trang. Chưa tải video nào. Bấm “Tôi giải " +
+                  "ngay” rồi giữ cửa sổ giải mở.",
+    het_gio_giai: "Hết 5 phút giải xác minh mà chưa bấm “Đã giải xong”; trang trên " +
+                  "máy chủ đã đóng. Chưa tải video nào. Bấm “Tôi giải ngay” để thử " +
+                  "lại nếu còn lượt.",
+    loi_trinh_duyet: "Trình duyệt trên máy chủ gặp lỗi khi giải xác minh nên lượt giải " +
+                     "đã đóng. Chưa tải video nào. Thử “Tôi giải ngay” lại; lặp lại " +
+                     "nhiều lần thì báo người phát triển.",
+    mo_trang_truot: "Máy chủ không mở được trang này kịp (mạng hoặc TikTok phản hồi " +
+                    "chậm). Chưa tải video nào. Đợi một lúc rồi bấm “Tôi giải ngay” lại.",
+    roi_mien: "Trang trên máy chủ bị chuyển sang một địa chỉ khác trang ban đầu nên " +
+              "tool đóng lượt giải để an toàn. Chưa tải video nào. Thử “Tôi giải " +
+              "ngay” lại.",
+    khong_co_khung: "Máy chủ mở được trang nhưng không lấy được ảnh để bạn xem (quá " +
+                    "20 giây). Chưa tải video nào. Thử “Tôi giải ngay” lại.",
+    gesture_bo_do_qua_nhieu: "Thao tác kéo bị ngắt quá 2 lần trong một lượt giải nên " +
+                             "lượt giải đã đóng. Chưa tải video nào. Bấm “Tôi giải ngay” " +
+                             "và kéo một lần liền mạch, giữ chuột trong khung ảnh.",
+    khoi_dong_lai: "Máy chủ khởi động lại giữa lượt giải xác minh nên lượt giải đã " +
+                   "đóng. Chưa tải video nào. Bấm “Tôi giải ngay” để giải lại.",
+    loi_he_thong: "Máy chủ gặp lỗi bất ngờ giữa lượt giải xác minh nên lượt giải đã " +
+                  "đóng. Chưa tải video nào. Thử “Tôi giải ngay” lại; lặp lại thì báo " +
+                  "người phát triển.",
+    tinh_nang_giai_tat: "Job đã dừng vì tính năng giải xác minh đang tắt (máy chủ khởi " +
+                        "động lại khi tính năng bị tắt). Chưa tải video nào. Tạo lượt " +
+                        "tải mới khi tính năng được bật lại.",
   };
 
   // Các hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket
@@ -408,10 +462,14 @@
     const hasErrors = BT.coLoiHeThong(job);
     // Có cờ sự cố hàng loạt thì câu "chạy lại có thể ra thêm" (chỉ ba mã chạy lại
     // được) mâu thuẫn với khung đỏ nên bị ẩn; câu của mã khác giữ nguyên.
-    const stopText = job.ly_do_dung && !window.BaoThieu.anCauDung(job)
-      ? (STOP_REASON_TEXT[job.ly_do_dung] ||
-         `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
-      : "";
+    // Bốn bước giải xác minh: câu dừng riêng / ẩn câu cũ (`giai-captcha-the-job.js`).
+    const GT = window.GiaiCaptchaThe;
+    const buocGiai = GT.laBuocGiai(job.trang_thai);
+    const stopText = GT.anCauDungCu(job) ? ""
+      : GT.cauDung(job) || (job.ly_do_dung && !window.BaoThieu.anCauDung(job)
+        ? (STOP_REASON_TEXT[job.ly_do_dung] ||
+           `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
+        : "");
     // Vì sao con số này phải hiện: lọc trùng chạy trên TOÀN kho, nên người tìm
     // sau nhận ít video hơn người tìm trước — và những video bị bỏ KHÔNG hiện ở
     // đâu trong thư viện của họ. Không nói ra thì một lượt chạy đúng bị đọc
@@ -431,7 +489,7 @@
       ? `<a href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`
       : "";
     return `
-      <li class="queue-item" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
+      <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
           <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
@@ -444,9 +502,10 @@
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${BT.khungLoi(job)}
         ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
-        ${BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
-          state.dangGuiChayLai.has(job.id))}
-        ${queueLine(job)}
+        ${buocGiai ? GT.khungHanhDong(job)
+          : BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
+            state.dangGuiChayLai.has(job.id))}
+        ${buocGiai ? GT.dongCuoi(job, escapeHtml) : queueLine(job)}
         <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}
           · <button type="button" class="chia-link" data-chia="${job.id}">Chia cụm</button></div>
       </li>`;
@@ -792,7 +851,8 @@
     el.textContent = text;
     el.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 2600);
+    // Câu dài (vd. lý do 409 của máy chủ) cần thời gian đọc: 2,6 s chỉ đủ cho câu ngắn.
+    toastTimer = setTimeout(() => { el.hidden = true; }, Math.max(2600, text.length * 60));
   }
 
   // ========================================================================
@@ -822,9 +882,12 @@
       if (err instanceof PhienHetHan) throw err;
       // 409 là ca THẬT, không phải lỗi người dùng: worker vừa nhặt job
       // đúng lúc họ bấm. Nói đúng chuyện đó, đừng nói "không tìm thấy".
-      showToast(String(err.message).includes("409")
-        ? "Lượt này vừa bắt đầu tải nên không rút được nữa."
-        : "Không rút được lượt này.");
+      // Job đang giải xác minh (`dang_mo`/`dang_giai`): câu của máy chủ nói đúng chuyện đó —
+      // đừng bảo "đã bắt đầu tải" khi chưa tải gì.
+      showToast(!String(err.message).includes("409") ? "Không rút được lượt này."
+        : (typeof err.ma === "string" && err.ma.includes("giải xác minh"))
+          ? err.ma
+          : "Lượt này vừa bắt đầu tải nên không rút được nữa.");
     } finally {
       // Vẽ lại từ máy chủ trong MỌI ca, kể cả ca trượt: trạng thái thật
       // nằm ở DB, và sau một lần 409 thì hàng này đã sang "Đang chạy".
@@ -834,6 +897,17 @@
 
   // Chạy lại để kiếm thêm + chép link. Cùng lý do uỷ quyền như "Rút lượt".
   const queueList = document.getElementById("queue-list");
+  // "Tôi giải ngay" / "Mở cửa sổ giải" (giải xác minh trong popup — `giai-captcha-popup.js`).
+  // Uỷ quyền như "Rút lượt": thẻ job vẽ lại mỗi nhịp poll/SSE.
+  queueList.addEventListener("click", (ev) => {
+    const nut = ev.target.closest("[data-giai-ngay],[data-mo-giai]");
+    if (!nut) return;
+    const id = Number(nut.dataset.giaiNgay ?? nut.dataset.moGiai);
+    const job = state.jobs.find((j) => j.id === id);
+    if (!job) return;
+    if (nut.dataset.giaiNgay !== undefined) window.GiaiCaptcha.giaiNgay(job, nut);
+    else window.GiaiCaptcha.mo(job);
+  });
   queueList.addEventListener("input", (ev) => {
     const o = ev.target.closest("[data-chay-lai-n]");
     if (o) state.chayLai.set(Number(o.dataset.chayLaiN), o.value);
@@ -1961,7 +2035,7 @@
     state.jobs = await apiGet("/jobs");
     renderQueue();
     state.jobs.forEach((job) => {
-      if ((job.trang_thai === "pending" || job.trang_thai === "running") && !state.openStreams.has(job.id)) {
+      if (TRANG_THAI_SONG.has(job.trang_thai) && !state.openStreams.has(job.id)) {
         followJob(job.id);
       }
     });
@@ -1989,7 +2063,7 @@
         state.jobs.unshift(job);
       }
       renderQueue();
-      if (job.trang_thai !== "pending" && job.trang_thai !== "running") {
+      if (!TRANG_THAI_SONG.has(job.trang_thai)) {
         es.close();
         state.openStreams.delete(jobId);
         // Job vừa xong (hoặc lỗi/bị ngắt) — nạp lại thư viện để creative mới
@@ -2388,6 +2462,13 @@
   // INIT
   // ========================================================================
   renderFilterBar();
+  window.GiaiCaptcha.noiVao({
+    toast: showToast,
+    lamMoiJob: loadJobs,
+    layJob: (id) => state.jobs.find((j) => j.id === id) || null,
+    baoPhienHetHan,
+    cauLyDo: (ma) => STOP_REASON_TEXT[ma] || "",
+  });
   // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
   Promise.all([loadJobs(), napLaiThuVien(), loadBannerCookie()]).catch((err) => {
     ghiOLoi("Không tải được dữ liệu ban đầu: ", err.message);

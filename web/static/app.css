@@ -896,3 +896,99 @@ body.cc-lock-scroll .session-expired {
 .cc-t-loai.sel::after { content: ""; position: absolute; inset: 0;
   background: color-mix(in srgb, var(--danger) 28%, transparent); }
 .cc-t-loai.sel .cc-chk { background: var(--danger); border-color: var(--danger); }
+
+/* ===== Giải xác minh TikTok trong popup (giai-captcha-the-job.js, giai-captcha-popup.js) =====
+   Token màu / bo góc: của :root phía trên (đúng mock đã duyệt). Lớp mới mang tiền tố `gc-`. */
+/* Bước giải trên thẻ job. "Cần xác minh" dùng cặp --warn: cùng họ "cần người để mắt", không phải lỗi;
+   ba bước còn lại là trạng thái đang chạy của máy chủ nên dùng tông accent. */
+.status-cho_xac_minh { background: var(--warn-bg); color: var(--warn); border: 1px solid currentColor; }
+.status-cho_giai, .status-dang_mo, .status-dang_giai { background: var(--accent-soft); color: var(--accent); }
+.queue-item.can-xn { border-color: var(--warn); }
+.xn-note { margin-top: 6px; font-size: .74rem; color: var(--text-muted); line-height: 1.4; }
+.giai-luot { font-size: .72rem; }
+
+/* Nền mờ: cùng giá trị .cc-modal-bg. */
+.gc-bg { position: fixed; inset: 0; background: rgba(10, 20, 18, .45); display: flex; align-items: flex-start;
+  justify-content: center; padding: 16px 8px; z-index: 60; overflow-y: auto; }
+.gc-modal { width: min(848px, 100%); margin: auto; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 2px 4px rgba(20, 32, 29, .1), 0 24px 60px rgba(10, 20, 18, .28);
+  display: flex; flex-direction: column; overflow: hidden; outline: none; }
+.gc-head { display: flex; align-items: center; gap: 12px; padding: 14px 24px 10px; }
+.gc-head h3 { margin: 0; font-size: 1.05rem; }
+.gc-sub { font-family: var(--mono); font-size: .74rem; color: var(--text-muted); margin-top: 2px; }
+.gc-grow { flex: 1; }
+.gc-role { font-size: .72rem; font-weight: 700; padding: .2rem .6rem; border-radius: 999px; white-space: nowrap; }
+.gc-role.ban { background: var(--accent-soft); color: var(--accent); }
+.gc-role.xem { background: var(--pending-bg); color: var(--pending-text); border: 1px dashed var(--border-strong); }
+.gc-timer { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: .9rem; font-weight: 500;
+  padding: .25rem .6rem; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-alt); white-space: nowrap; }
+.gc-timer small { font-family: var(--body); font-size: .68rem; color: var(--text-muted); margin-right: 4px; }
+.gc-timer.cho { color: var(--text-faint); }
+.gc-timer.het { color: var(--danger); border-color: var(--danger); background: var(--danger-bg); }
+/* Thanh thời gian còn lại — đọc bằng mắt nhanh hơn con số. */
+.gc-time-track { height: 3px; background: var(--surface-alt); margin: 0 24px; border-radius: 999px; overflow: hidden; }
+.gc-time-track i { display: block; height: 100%; background: var(--accent); }
+.gc-time-track.het i { background: var(--danger); }
+/* Đồng hồ chưa chạy ⇒ thanh xám, không giả vờ đang đếm. */
+.gc-time-track.cho i { background: var(--border-strong); }
+
+/* Ô thông báo — luôn NẰM NGOÀI khung ảnh, để không ai lẫn chữ của Video Desk với chữ của trang TikTok. */
+.gc-note { margin: 10px 24px 0; padding: 8px 12px; border-radius: 6px; font-size: .82rem; line-height: 1.4;
+  display: flex; gap: 8px; align-items: flex-start; min-height: 36px; }
+.gc-note svg { flex: none; margin-top: 1px; }
+.gc-note b { font-weight: 600; }
+.gc-note.goi-y { background: var(--accent-soft); color: var(--text); }
+.gc-note.goi-y svg { color: var(--accent); }
+.gc-note.canh { background: var(--warn-bg); color: var(--warn); border-left: 3px solid var(--warn); }
+.gc-note.trung { background: var(--surface-alt); color: var(--text-muted); }
+
+/* Khung ảnh: 800 px, tỉ lệ viewport máy chủ 1280×900. Ảnh phủ kín khung nên một hệ số duy nhất
+   (naturalWidth / chiều rộng hiển thị) đổi được cả x lẫn y. */
+.gc-frame-wrap { padding: 10px 24px 0; }
+.gc-frame { position: relative; width: 800px; max-width: 100%; aspect-ratio: 1280 / 900; border-radius: 6px;
+  overflow: hidden; background: #d9dcdb; box-shadow: 0 0 0 1px var(--border-strong);
+  user-select: none; -webkit-user-select: none; touch-action: none; }
+.gc-frame.dieu-khien { cursor: crosshair; box-shadow: 0 0 0 2px var(--accent); }
+.gc-anh { position: absolute; inset: 0; width: 100%; height: 100%; display: block; object-fit: fill;
+  -webkit-user-drag: none; user-select: none; }
+.gc-tag { position: absolute; left: 8px; bottom: 8px; z-index: 5; font-family: var(--mono); font-size: .68rem;
+  background: rgba(20, 32, 29, .78); color: #fff; padding: 2px 8px; border-radius: 4px; pointer-events: none; }
+
+/* --- lớp phủ trạng thái trên khung --- */
+.gc-over { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 10px; text-align: center; padding: 24px; }
+.gc-over h4 { margin: 0; font-family: var(--display); font-size: 1.05rem; letter-spacing: -.01em; }
+.gc-over p { margin: 0; font-size: .84rem; max-width: 440px; line-height: 1.45; }
+.gc-over.cho { background: #d9dcdb; color: #3d4744; }
+.gc-over.xem { background: rgba(236, 240, 238, .62); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); color: #14201d; }
+.gc-over.xem .hop { background: rgba(255, 255, 255, .94); border: 1px solid #d5ded9; border-radius: 10px; padding: 18px 22px;
+  box-shadow: 0 8px 24px rgba(20, 32, 29, .15); display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.gc-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(13, 92, 85, .2); border-top-color: #0d5c55;
+  animation: gcxoay .9s linear infinite; }
+@keyframes gcxoay { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .gc-spin { animation: none; border-top-color: #0d5c55; border-right-color: #0d5c55; } }
+
+/* --- khung đã đóng (hết giờ / đăng nhập lại): vùng trống thay chỗ ảnh --- */
+.gc-closed { width: 800px; max-width: 100%; aspect-ratio: 1280 / 900; border-radius: 6px; border: 1px dashed var(--border-strong);
+  background: var(--surface-alt); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; text-align: center; padding: 32px; }
+.gc-closed .ic { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; }
+.gc-closed h4 { margin: 0; font-family: var(--display); font-size: 1.15rem; letter-spacing: -.01em; max-width: 560px; }
+.gc-closed p { margin: 0; font-size: .86rem; color: var(--text-muted); max-width: 520px; line-height: 1.5; }
+.gc-closed .ic.het { background: var(--danger-bg); color: var(--danger); }
+.gc-closed .ic.dn { background: var(--warn-bg); color: var(--warn); }
+.gc-closed .row { display: flex; gap: 8px; margin-top: 6px; }
+
+.gc-actions { display: flex; align-items: center; gap: 10px; padding: 12px 24px; }
+.gc-actions .gc-why { font-size: .76rem; color: var(--text-muted); line-height: 1.4; flex: 1; }
+.gc-actions .btn { padding: .55rem 1rem; font-weight: 600; white-space: nowrap; }
+.btn.danger-line { background: transparent; color: var(--danger); border-color: var(--danger); }
+.gc-bg .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Dòng khai cố định — mọi trạng thái. */
+.gc-foot { display: flex; gap: 8px; align-items: center; padding: 9px 24px 11px; border-top: 1px solid var(--border);
+  background: var(--surface-alt); font-size: .76rem; color: var(--text-muted); }
+.gc-foot svg { flex: none; color: var(--text-muted); }
+.gc-foot b { font-family: var(--mono); font-weight: 500; color: var(--text); }
+/* Popup mở ⇒ khoá cuộn thân trang (cùng mẫu body.cc-lock-scroll). */
+body.gc-lock-scroll { overflow: hidden; }

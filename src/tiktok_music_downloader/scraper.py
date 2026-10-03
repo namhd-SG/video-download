@@ -565,6 +565,7 @@ def quet_tren_trang(
     dem_trang: Callable[[], None] | None = None,
     thong_ke_feed: dict[str, int] | None = None,
     tai_lai_truoc_khi_cuon: bool = False,
+    kiem_truoc_khi_cuon: Callable[[dict[str, int]], bool] | None = None,
 ) -> list[VideoRef]:
     """Lõi quét của `scrape_music_page`, chạy trên một `Page` ĐÃ MỞ sẵn.
 
@@ -578,6 +579,11 @@ def quet_tren_trang(
     lượt tải (goto hay reload), nếu gắn sau thì phản hồi feed của chính lượt tải đó
     lọt khỏi bộ đếm và dòng thống kê ra 0/0 giả. Lượt reload quá giờ ném
     `PWTimeout` cho người gọi quyết (page của họ, trạng thái của họ).
+
+    `kiem_truoc_khi_cuon` (tuỳ chọn): gọi với bộ đếm feed CỦA LƯỢT NÀY ngay sau khi trang đã
+    mở/tải lại và TRƯỚC `_auto_scroll`; trả False ⇒ KHÔNG cuộn (không sinh sự kiện chuột/wheel
+    nào), hàm trả danh sách rỗng. Dùng cho ranh giới "sau khi người giải captcha xong, nếu trang
+    vẫn bị chặn thì tool không chạm thêm". Không truyền ⇒ y hệt trước.
 
     Mỗi page chỉ gọi MỘT lần: mỗi lần gọi gắn thêm một bộ nghe `response`, gọi hai lần
     trên cùng page thì đếm đôi.
@@ -594,7 +600,10 @@ def quet_tren_trang(
             _cho_link(page)
         else:
             _mo_trang_co_ham_phien(page, url, feed_luot)
-        refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+        if kiem_truoc_khi_cuon is not None and not kiem_truoc_khi_cuon(feed_luot):
+            refs = set()
+        else:
+            refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
     finally:
         if thong_ke_feed is not None:
             for o in ("rong", "co_du_lieu"):

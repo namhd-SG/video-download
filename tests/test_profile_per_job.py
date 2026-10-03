@@ -214,6 +214,7 @@ def test_dir_bi_xoa_sau_khi_job_xong(monkeypatch, db, tmp_path):
 
     def fake(url, **kw):
         ton_tai.append(os.path.isdir(kw["profile_dir"]))
+        kw["thong_ke_feed"]["co_du_lieu"] = 1  # feed CÓ dữ liệu (0/0 hay rỗng sẽ đòi xác minh, không kết thúc)
         return []
 
     gia_lap_scraper(monkeypatch, fake)
@@ -240,7 +241,11 @@ def test_dir_bi_xoa_khi_job_nem_ngoai_le(monkeypatch, db, tmp_path):
 
 def test_xoa_trat_khong_lam_hong_trang_thai_job_va_bo_quet_don_sau(monkeypatch, db, tmp_path):
     _bat_co(monkeypatch)
-    gia_lap_scraper(monkeypatch, lambda url, **kw: [])
+    def quet_co_feed(url, **kw):
+        kw["thong_ke_feed"]["co_du_lieu"] = 1  # feed CÓ dữ liệu ⇒ job kết thúc (không đòi xác minh)
+        return []
+
+    gia_lap_scraper(monkeypatch, quet_co_feed)
     that = profile_theo_job.shutil.rmtree
 
     def hong(*a, **k):

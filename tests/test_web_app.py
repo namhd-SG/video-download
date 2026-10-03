@@ -590,6 +590,14 @@ KHONG_CAN_KIEM_CHU = {
     "DELETE /jobs/{job_id}": "`models.huy_job_dang_cho` ràng `nguoi_tao` NGAY "
                              "trong câu UPDATE, nên không cần cổng ngoài; "
                              "404 cho job người khác, giống GET",
+    "POST /jobs/{job_id}/giai": "`_job_cua_nguoi_goi` (web/giai_captcha_api.py): chủ job TRƯỚC "
+                                "admin, 403 cho người khác (tests/test_giai_captcha_api.py)",
+    "GET /jobs/{job_id}/giai/khung": "`_job_cua_nguoi_goi`: chủ job trước admin, 403; kiểm lại "
+                                     "mỗi giây trong luồng SSE (tests/test_giai_captcha_api.py)",
+    "POST /jobs/{job_id}/giai/chuot": "`_job_cua_nguoi_goi`: 403 cho người khác, VÀ chỉ người giữ "
+                                      "khoá token (cùng email) được gửi (tests/test_giai_captcha_api.py)",
+    "POST /jobs/{job_id}/giai/lenh": "`_job_cua_nguoi_goi`: 403 cho người khác, VÀ chỉ người giữ "
+                                     "khoá token được ra lệnh (tests/test_giai_captcha_api.py)",
     "GET /cum/{cum_id}/lo/{thu}/payload": "`_cum_hoac_404` + `models_chia.xay_payload_lo` "
                                           "ràng `chu` trong SELECT; 404 (tests/test_web_chia.py)",
     "GET /chia/{job_id}": "`models_chia.lay_chia_theo_job` ràng `chu` NGAY trong SELECT; "

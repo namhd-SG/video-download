@@ -23,11 +23,12 @@ from tiktok_music_downloader.scraper import scrape_music_page_multi
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
-    STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN,
-    STOP_SOURCE_EMPTY, VideoRef, is_profile_page, parse_tag_slug, random_user_agent,
+    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_VONG,
+    STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
+    parse_tag_slug, random_user_agent,
 )
 from tiktok_music_downloader.watermark import find_ffmpeg
-from web import models, profile_theo_job
+from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, profile_theo_job
 # Re-exported: `cookies_path_for_user` moved to `web/cookies.py` so
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
@@ -175,7 +176,8 @@ def source_label(url: str) -> str:
 def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                  proxy: str | None = None, db_path: Path | None = None,
                  job_id: int | None = None,
-                 ly_do_ra: dict | None = None) -> list[VideoRef]:
+                 ly_do_ra: dict | None = None,
+                 xac_minh_ra: dict | None = None) -> list[VideoRef]:
     """Enumerate (hashtag) or scrape (music/search/profile) refs for one job.
 
     Videos the library already owns are dropped here, before anything is
@@ -202,8 +204,14 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     này chứ không đọc lại `ly_do_dung` trong DB: `_note_stop` nuốt lỗi ghi DB
     (một lần ghi trượt không được giết lượt tải), nên đọc lại từ DB thì một lần
     trượt sẽ âm thầm đưa lượt rỗng về lại nhãn "Xong" giả.
+
+    `xac_minh_ra`, khi được truyền VÀ job là trang profile khi bật cờ, nhận
+    `xac_minh_ra["ly_do"]` = `feed_rong` | `khong_do_duoc_feed` nếu TikTok đang đòi xác minh
+    (`giai_captcha.ly_do_can_xac_minh`): khi đó `process_job` đưa job sang `cho_xac_minh` và
+    KHÔNG tải link lạc nào mà trang bị chặn còn lộ ra. Không truyền ⇒ y hệt trước.
     """
     nguon = source_label(url)
+    _ly_do_cuoi = {"v": None}
 
     def _already_have(ids: list[str]) -> set[str]:
         if db_path is None:
@@ -274,6 +282,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         _note_pages(_da_doc["trang"])
 
     def _note_stop(ly_do: str) -> None:
+        _ly_do_cuoi["v"] = ly_do
         if ly_do_ra is not None:
             ly_do_ra["ly_do"] = ly_do
         if db_path is None or job_id is None:
@@ -304,8 +313,10 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # Cờ TẮT (mặc định) ⇒ đúng bộ kwargs của bản trước: chỉ `profile_dir=None`,
     # KHÔNG thêm `headless`/`user_agent`.
     kw_profile: dict = {"profile_dir": None}
-    if (profile_theo_job.profile_captcha_dang_bat() and is_profile_page(url)
-            and db_path is not None and job_id is not None):
+    la_profile_giai = (profile_theo_job.profile_captcha_dang_bat() and is_profile_page(url)
+                       and db_path is not None and job_id is not None)
+    tk_feed: dict[str, int] = {}
+    if la_profile_giai:
         kw_profile = {
             "profile_dir": str(profile_theo_job.chuan_bi_profile_job(db_path, job_id)),
             "headless": not profile_theo_job.profile_headful_dang_bat(),
@@ -314,6 +325,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             # Trang profile bị chặn vẫn lộ một link lạc ⇒ kiểm feed rỗng ở cuối vòng
             # không bắt được; dừng ngay sau lượt đầu, đừng chạm lại trang bị chặn.
             "dung_som_khi_feed_rong": True,
+            # Bộ đếm feed cộng dồn mọi lượt: 0/0 (không đo được feed nào) khác "feed rỗng".
+            "thong_ke_feed_ra": tk_feed,
         }
     refs = scrape_music_page_multi(
         url,
@@ -342,6 +355,10 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # Ba nhóm đó bảo người dùng ba việc khác nhau; gộp lại là quay về "một dòng
     # chữ lặng lẽ" — thứ đã khiến người dùng hỏi "có lỗi không, sao hai link
     # khác nhau lại ra giống nhau".
+    if la_profile_giai and xac_minh_ra is not None:
+        ly_do_xm = giai_captcha.ly_do_can_xac_minh(tk_feed, _ly_do_cuoi["v"], len(refs), max_videos)
+        if ly_do_xm is not None:
+            xac_minh_ra["ly_do"] = ly_do_xm
     return refs
 
 
@@ -554,12 +571,90 @@ class _JobProgress:
         pass
 
 
+def _loc_trung_mot_lan(db_path: Path, job: dict, refs: list[VideoRef],
+                       ly_do_ra: dict) -> list[VideoRef]:
+    """Sau khi người giải captcha và tool quét MỘT lượt (không đào sâu nhiều lượt): áp lọc trùng
+    với thư viện ĐÚNG MỘT lần ở cuối, như `scrape_music_page_multi` làm sau mỗi lượt — cùng dấu
+    nguồn (`video_sightings`), cùng bộ đếm `bo_qua`, cùng lý do dừng (`already_owned` /
+    `source_empty` / `het_vong`) để giao diện nói đúng như mọi job khác. Đã khai: lượt giải không
+    có đào sâu / `already_have` giữa các lượt (plan: MỘT lượt `_auto_scroll`)."""
+    job_id, max_videos = job["id"], int(job["tong"])
+    nguon = source_label(job["url"])
+    owned = models.known_video_ids(db_path, [r.video_id for r in refs]) if refs else set()
+    moi: list[VideoRef] = []
+    bo_qua = 0
+    for ref in refs:
+        if ref.video_id in owned:
+            bo_qua += 1
+            try:
+                models.record_sighting(db_path, video_id=ref.video_id, job_id=job_id,
+                                       nguon=nguon, da_tai=False)
+            except Exception as exc:  # noqa: BLE001 — a bookkeeping row must never kill a job
+                log.warning("job %s: không ghi được sighting cho %s (%s)",
+                            job_id, ref.video_id, type(exc).__name__)
+        else:
+            moi.append(ref)
+    try:
+        models.set_job_skipped(db_path, job_id, bo_qua)
+    except Exception:  # noqa: BLE001
+        log.warning("job %s: không ghi được số video bỏ qua", job_id)
+    moi = sorted(moi, key=lambda r: r.video_id, reverse=True)[:max_videos]
+    if not moi:
+        ly_do = STOP_ALREADY_OWNED if bo_qua else STOP_SOURCE_EMPTY
+    elif len(moi) < max_videos:
+        ly_do = STOP_HET_VONG
+    else:
+        ly_do = ""
+    if ly_do:
+        ly_do_ra["ly_do"] = ly_do
+        try:
+            models.set_job_stop_reason(db_path, job_id, ly_do)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("job %s: không ghi được lý do dừng (%s)", job_id, type(exc).__name__)
+    return moi
+
+
+def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[VideoRef],
+                      dung: dict, cookies_path: str | None,
+                      lifecycle_hook: LifecycleHook) -> None:
+    """Từ danh sách ref đã có tới lúc job kết thúc: tải, kiểm, đẩy Drive, ghi done/failed."""
+    job_id = job["id"]
+    models.set_job_found(db_path, job_id, len(refs))
+    if not refs:
+        # Lượt rỗng KHÔNG mặc nhiên là "Xong": nguồn trả 0 video, feed TikTok
+        # rỗng, nghi bị chặn, nguồn liệt kê hashtag lỗi hay không tra được
+        # hashtag đều là "không lấy được gì" (`_LY_DO_RONG_LA_LOI`) — ghi
+        # "Xong" cho chúng là bảo user việc đã hoàn thành khi chưa tải gì.
+        # Chỉ `already_owned` (thư viện đã có hết những gì nguồn đưa ra) và
+        # lượt không báo lý do mới là xong thật.
+        ket_qua = "failed" if dung.get("ly_do") in _LY_DO_RONG_LA_LOI else "done"
+        models.finish_job(db_path, job_id, ket_qua)
+        return
+    output_dir = downloads_dir / str(job_id)
+    progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
+                             nguon=source_label(job["url"]))
+    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress)
+    # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
+    # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
+    # phải là "done" dù download_all không raise.
+    final = models.get_job(db_path, job_id)
+    if final is not None and final["tong"] > 0 and final["xong"] == 0:
+        models.finish_job(db_path, job_id, "failed")
+    else:
+        models.finish_job(db_path, job_id, "done")
+
+
 def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict,
                  lifecycle_hook: LifecycleHook | None = None) -> None:
     """Run exactly one job to completion. Never raises: one job's crash must
-    not kill the worker loop, or every job behind it in the queue starves."""
+    not kill the worker loop, or every job behind it in the queue starves.
+
+    Hai lối vào: job `running` (lượt thường) và — chỉ khi bật `VIDEODL_PROFILE_CAPTCHA` — job
+    `dang_mo` (người vừa bấm "Tôi giải ngay", xem `web/giai_captcha_worker.py`). Job profile bị
+    TikTok đòi xác minh thì rời hàm ở `cho_xac_minh`, không phải `done`/`failed`."""
     lifecycle_hook = lifecycle_hook or on_video_verified
     job_id = job["id"]
+    la_luot_giai = job.get("trang_thai") == "dang_mo" and profile_theo_job.profile_captcha_dang_bat()
     try:
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"])
         # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
@@ -574,34 +669,33 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 models.finish_job(db_path, job_id, "failed")
                 return
         dung = {}
-        refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
-                            db_path=db_path, job_id=job_id, ly_do_ra=dung)
-        models.set_job_found(db_path, job_id, len(refs))
-        if not refs:
-            # Lượt rỗng KHÔNG mặc nhiên là "Xong": nguồn trả 0 video, feed TikTok
-            # rỗng, nghi bị chặn, nguồn liệt kê hashtag lỗi hay không tra được
-            # hashtag đều là "không lấy được gì" (`_LY_DO_RONG_LA_LOI`) — ghi
-            # "Xong" cho chúng là bảo user việc đã hoàn thành khi chưa tải gì.
-            # Chỉ `already_owned` (thư viện đã có hết những gì nguồn đưa ra) và
-            # lượt không báo lý do mới là xong thật.
-            ket_qua = "failed" if dung.get("ly_do") in _LY_DO_RONG_LA_LOI else "done"
-            models.finish_job(db_path, job_id, ket_qua)
-            return
-        output_dir = downloads_dir / str(job_id)
-        progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
-                                 nguon=source_label(job["url"]))
-        download_all(refs, output_dir, cookies_path=cookies_path, progress=progress)
-        # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
-        # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
-        # phải là "done" dù download_all không raise.
-        final = models.get_job(db_path, job_id)
-        if final is not None and final["tong"] > 0 and final["xong"] == 0:
-            models.finish_job(db_path, job_id, "failed")
+        if la_luot_giai:
+            kq = giai_captcha_worker.chay_luot_giai(
+                db_path, job, cookies_path,
+                headless=not profile_theo_job.profile_headful_dang_bat())
+            if kq.loai != giai_captcha_worker.LOAI_REFS:
+                return  # job đã về `cho_xac_minh` (hoặc `failed` do người bấm "Dừng job")
+            refs = _loc_trung_mot_lan(db_path, job, kq.refs or [], dung)
         else:
-            models.finish_job(db_path, job_id, "done")
+            xac_minh: dict = {}
+            refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
+                                db_path=db_path, job_id=job_id, ly_do_ra=dung,
+                                xac_minh_ra=xac_minh)
+            if xac_minh.get("ly_do"):
+                # TikTok đòi xác minh trên trang profile: dừng, chờ NGƯỜI giải — không tải link lạc,
+                # không "Xong" giả, không tự retry. Lúc này scraper đã đóng context ⇒ worker rảnh.
+                models_giai_captcha.chuyen_trang_thai(
+                    db_path, job_id, "running", "cho_xac_minh", ly_do=xac_minh["ly_do"])
+                return
+        _hoan_tat_tu_refs(db_path, downloads_dir, job, refs, dung, cookies_path, lifecycle_hook)
     except Exception:  # noqa: BLE001 — isolate one job's failure from the loop
         log.exception("job %s crashed", job_id)
-        models.finish_job(db_path, job_id, "failed")
+        # Lỗi lúc đang giải/mở trình duyệt: không phải job hỏng mà là "chưa giải được" ⇒ về
+        # `cho_xac_minh` để người thử lại. Nếu job đã sang `running` (đang tải) thì như mọi job.
+        if not (la_luot_giai and models_giai_captcha.chuyen_trang_thai(
+                db_path, job_id, ("dang_mo", "dang_giai"), "cho_xac_minh",
+                ly_do=giai_captcha.LD_LOI_TRINH_DUYET)):
+            models.finish_job(db_path, job_id, "failed")
     finally:
         # Xoá profile_dir CHỈ khi job đã thật sự ở trạng thái kết thúc — đọc lại từ DB,
         # không suy từ lối ra. Hôm nay mọi lối ra đều kết thúc, nhưng một trạng thái
@@ -665,7 +759,8 @@ class JobWorker:
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
         models.init_db(self._db_path)
-        interrupted = models.mark_running_as_interrupted(self._db_path)
+        interrupted = models.mark_running_as_interrupted(
+            self._db_path, co_giai=profile_theo_job.profile_captcha_dang_bat())
         if interrupted:
             log.warning(
                 "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
@@ -728,7 +823,12 @@ class JobWorker:
                 if self._cho_dia is not None:
                     log.info("worker hết chờ đĩa, nhận job lại")
                 self._cho_dia = None
-                job = models.claim_next_pending_job(self._db_path)
+                # Cờ BẬT: job `cho_giai` (người đã bấm "Tôi giải ngay") được nhặt TRƯỚC `pending`.
+                # Cờ TẮT: lời gọi y hệt trước (một tham số, không SELECT thêm).
+                if profile_theo_job.profile_captcha_dang_bat():
+                    job = models.claim_next_pending_job(self._db_path, uu_tien_cho_giai=True)
+                else:
+                    job = models.claim_next_pending_job(self._db_path)
                 self._loi_lien_tiep = 0  # nhận được (hoặc hàng rỗng): DB đang đọc/ghi được
                 if job is not None:
                     self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)
@@ -786,18 +886,29 @@ class JobWorker:
                 and bay_gio - self._quet_profile_luc < NHIP_QUET_PROFILE_GIAY):
             return None
         self._quet_profile_luc = bay_gio
+        # Quá hạn 24 giờ TRƯỚC quét mồ côi: job vừa `failed` thì thư mục profile của nó được dọn
+        # ngay lượt này. Nhịp riêng ≥60 s, trước cổng đĩa, chạy cả khi hàng có `pending`.
+        try:
+            het_han = models_giai_captcha.quet_qua_han(self._db_path)
+        except Exception:  # noqa: BLE001 — trượt thì lượt sau thử lại (mốc nằm trong DB, không có mép rơi)
+            log.warning("bộ quét quá hạn xác minh hỏng", exc_info=True)
+            het_han = 0
+        if het_han:
+            log.warning("bộ quét: %d job cho_xac_minh quá %d giờ ⇒ failed", het_han,
+                        giai_captcha.CHO_XAC_MINH_QUA_HAN_GIO)
         try:
             dem = profile_theo_job.quet_profile_mo_coi(self._db_path)
         except Exception:  # noqa: BLE001 — bộ quét không được giết vòng worker
             log.warning("bộ quét profile hỏng", exc_info=True)
             return None
+        dem["het_han"] = het_han
         # Chỉ lên mức INFO khi có gì xảy ra — trên prod cờ TẮT, mỗi phút một dòng toàn 0
         # là rác. Số đếm vẫn nằm trong giá trị trả về và ở mức DEBUG.
         log.log(logging.INFO if any(dem.values()) else logging.DEBUG,
                 "bộ quét profile: đã xoá %d, giữ %d, giữ vì Chromium đang mở %d, "
-                "xoá trượt %d, bỏ qua %d",
+                "xoá trượt %d, bỏ qua %d, quá hạn xác minh %d",
                 dem["da_xoa"], dem["giu"], dem.get("giu_dang_mo", 0),
-                dem["xoa_truot"], dem["bo_qua"])
+                dem["xoa_truot"], dem["bo_qua"], dem["het_han"])
         return dem
 
     def _thu_lai_danh_dau(self) -> None:

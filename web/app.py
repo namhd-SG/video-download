@@ -26,10 +26,14 @@ from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.utils import is_tiktok_collection
+from web import giai_captcha
+from web import giai_captcha_api
 from web import models
 from web import models_chia
 from web import models_cum
+from web import models_giai_captcha
 from web import models_vao_bo
+from web import profile_theo_job
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
@@ -347,12 +351,20 @@ def admin_worker(nguoi_tao: str = Depends(require_admin)) -> dict:
 # `ua_job` là UA ghim cho scraper (profile persist) — lộ ra chỉ thêm một khoá `null`
 # vào mọi phản hồi và khoá giao diện vào thứ có thể đổi. Bỏ ở tầng trả về, KHÔNG xoá
 # cột DB (worker vẫn đọc nó qua `models.chon_ua_job`).
-_COT_JOB_NOI_BO = ("ua_job",)
+#
+# `vao_trang_thai_luc` / `so_lan_giai_ngay`: mốc và bộ đếm của luồng giải captcha — chỉ để máy chủ
+# đếm 5 phút / 24 giờ / trần "Tôi giải ngay"; giao diện cần "còn mấy lần" thì dùng `giai_con_luot`.
+_COT_JOB_NOI_BO = ("ua_job", "vao_trang_thai_luc", "so_lan_giai_ngay")
 
 
 def _job_ra_api(job: dict) -> dict:
-    """Bản sao của hàng job không còn các cột nội bộ (`_COT_JOB_NOI_BO`)."""
-    return {k: v for k, v in job.items() if k not in _COT_JOB_NOI_BO}
+    """Bản sao của hàng job không còn các cột nội bộ (`_COT_JOB_NOI_BO`). Job đang ở bước người
+    giải captcha mang thêm `giai_con_luot` (số lần "Tôi giải ngay" còn lại) — không bao giờ có ở
+    job thường, nên cờ TẮT ⇒ phản hồi y hệt trước."""
+    ra = {k: v for k, v in job.items() if k not in _COT_JOB_NOI_BO}
+    if job.get("trang_thai") in giai_captcha.TRANG_THAI_GIAI:
+        ra["giai_con_luot"] = models_giai_captcha.giai_con_luot(job)
+    return ra
 
 
 @app.post("/jobs")
@@ -1136,12 +1148,25 @@ def huy_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
     """
     ket_qua = models.huy_job_dang_cho(DB_PATH, job_id, nguoi_tao)
     if ket_qua == "dang_chay":
+        # Câu riêng cho "đang giải xác minh" — chỉ tồn tại khi bật cờ; cờ TẮT thì không thêm SELECT nào.
+        job = models.get_job(DB_PATH, job_id) if profile_theo_job.profile_captcha_dang_bat() else None
+        if job is not None and job["trang_thai"] in ("dang_mo", "dang_giai"):
+            raise HTTPException(
+                status_code=409,
+                detail="Lượt này đang giải xác minh nên chưa rút được — bấm \"Dừng job\" "
+                       "trong cửa sổ giải, hoặc chờ hết thời gian giải.",
+            )
         raise HTTPException(
             status_code=409,
             detail="Lượt này đã bắt đầu tải nên không rút được nữa.",
         )
     if ket_qua == "khong_phai_cua_toi":
         raise HTTPException(status_code=404, detail="job không tồn tại")
+    # Job `cho_xac_minh`/`cho_giai` giữ một thư mục profile (cookie phiên): rút xong là xoá ngay,
+    # không chờ bộ quét. Không có Chromium nào đang mở trên nó ở các trạng thái này. Chỉ khi cờ
+    # BẬT — cờ TẮT thì không đụng `profiles/` (không stat, không xoá).
+    if profile_theo_job.profile_captcha_dang_bat():
+        profile_theo_job.xoa_profile_job(DB_PATH, job_id)
     return {"trang_thai": "cancelled"}
 
 
@@ -1188,6 +1213,11 @@ async def job_events(job_id: int,
             await asyncio.sleep(SSE_POLL_SECONDS)
 
     return EventSourceResponse(_generator())
+
+
+# Giải captcha ngay trong popup (4 route, sau cờ `VIDEODL_PROFILE_CAPTCHA`; cờ TẮT ⇒ 409).
+giai_captcha_api.dang_ky_route(app, lay_db=lambda: DB_PATH, la_admin=_la_admin,
+                               require_user=require_user)
 
 
 # Mounted last so it only catches paths none of the routes above matched —
