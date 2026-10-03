@@ -102,6 +102,7 @@ CUA_SO_GIAI_GIAY = 300             # cửa sổ giải 5 phút (USER chốt)
 CHO_XAC_MINH_QUA_HAN_GIO = 24      # `cho_xac_minh` quá hạn này ⇒ failed `xac_minh_qua_han` (CHƯA CÓ NỀN)
 TRAN_GIAI_NGAY = 3                 # trần "Tôi giải ngay" mỗi job (CHƯA CÓ NỀN)
 TRAN_TAI_LAI_MOI_LUOT = 2          # reload do gesture dở, mỗi lượt `dang_giai`
+TRE_PHAT_NGUONG_GIAY = 0.05        # phát muộn hơn lịch chừng này ⇒ đếm `tre_phat_worker` (CHƯA ĐO ngưỡng)
 LY_DO_HUY_POPUP = "popup_huy"      # lý do huỷ gesture khi popup gửi lệnh `huy_gesture` (đi kèm SSE `bi_ngat`)
 THIEU_LO_TOI_DA_GIAY = 2.0         # lô thiếu quá lâu ⇒ huỷ gesture
 KHUNG_MAX_WIDTH = 800              # `maxWidth` screencast
@@ -334,6 +335,10 @@ class BoPhatLai:
         self.nut_giu_nguon = False       # luồng của NGƯỜI đang giữ nút (theo thứ tự đã nhận)
         self._cho_down_moi = False       # sau huỷ gesture: bỏ tàn dư của gesture cũ tới khi có `down` mới
         self.tre_qua_D = 0
+        # Sự kiện PHÁT muộn hơn lịch > `TRE_PHAT_NGUONG_GIAY` vì chính worker trễ (renderer bận, reload
+        # chặn): bị phát dồn, nhịp bị nén — dời pha chỉ phủ lô tới trễ do MẠNG. Chỉ đếm để đo ở job
+        # thật đầu tiên (review F2), chưa đổi cách phát.
+        self.tre_phat_worker = 0
         self.so_bo = 0                   # sự kiện bị bỏ (tàn dư gesture đã huỷ / `up` mồ côi)
 
     def nhan_lo(self, events: list[SuKien], t_toi: float) -> None:
@@ -372,7 +377,10 @@ class BoPhatLai:
         """Các sự kiện tới hạn tại `bay_gio`, ĐÚNG thứ tự đã nhận."""
         ra: list[SuKien] = []
         while self._hang and self._hang[0][0] <= bay_gio:
-            ra.append(self._hang.popleft()[1])
+            lich, ev = self._hang.popleft()
+            if bay_gio - lich > TRE_PHAT_NGUONG_GIAY:
+                self.tre_phat_worker += 1
+            ra.append(ev)
         return ra
 
     def diem_ke_tiep(self) -> float | None:
@@ -426,10 +434,13 @@ class PhienGiai:
         self.so_sse = 0
         # --- lô chuột
         self.expected_seq = 0
-        self._cho_lo: dict[int, list[SuKien]] = {}
+        # `None` = MỐC HUỶ: lô `seq` đó bị từ chối (400) ⇒ huỷ gesture ĐÚNG lúc xả tới `seq` này, không
+        # sớm hơn — lô trước nó (vd chứa `down`) có thể còn đang bay vì popup POST song song.
+        self._cho_lo: dict[int, list[SuKien] | None] = {}
         self._cho_lo_tu: float | None = None
         self.bo_phat = BoPhatLai(self.d_ms)
         self._tre_cu = 0                      # `tre_qua_D` của các token đã qua (bộ lịch bị thay khi đổi token)
+        self._tre_phat_cu = 0                 # `tre_phat_worker` của các token đã qua
         self._co_huy: str | None = None
         self._lan_post: deque[float] = deque()
         # --- khung (chỉ giữ khung mới nhất)
@@ -453,6 +464,7 @@ class PhienGiai:
                     if self._token_cuoi is not None:
                         self._huy_gesture_unlocked("doi_token")
                     self._tre_cu += self.bo_phat.tre_qua_D
+                    self._tre_phat_cu += self.bo_phat.tre_phat_worker
                     self.bo_phat = BoPhatLai(self.d_ms)
                 self.token, self.email, self._token_cuoi = token, email, token
                 self._so_ket_noi_token = 1
@@ -514,15 +526,17 @@ class PhienGiai:
             return "ok"
 
     def bo_lo(self, token: str, email: str, seq: int, bay_gio: float | None = None) -> None:
-        """Lô `seq` bị từ chối (400) nhưng số thứ tự của nó coi như ĐÃ DÙNG — nếu không, mọi lô
-        sau nó kẹt chờ tới khi quá 2 giây."""
+        """Lô `seq` bị từ chối (400): số thứ tự của nó coi như ĐÃ DÙNG (nếu không, mọi lô sau nó kẹt
+        chờ tới khi quá 2 giây) VÀ gesture dở bị huỷ — đặt thành mốc huỷ trong dãy `seq`, áp khi xả
+        tới đúng chỗ (review F1: huỷ ngay khi lô `down` trước nó chưa tới thì huỷ không trúng gì, rồi
+        `down`… `up` tới sau vẫn được phát — trang nhận một lần kéo thiếu đoạn giữa rồi NỘP)."""
         t_toi = dong_ho() if bay_gio is None else bay_gio
         with self.khoa:
             if not self.la_giu(token, email) or seq < self.expected_seq or seq in self._cho_lo:
                 return
             if seq > self.expected_seq + SEQ_NHAY_TOI_DA:
                 return
-            self._cho_lo[seq] = []
+            self._cho_lo[seq] = None
             if self._cho_lo_tu is None and seq != self.expected_seq:
                 self._cho_lo_tu = t_toi
             self._xa_cho_lo(t_toi)
@@ -531,7 +545,9 @@ class PhienGiai:
         while self.expected_seq in self._cho_lo:
             lo = self._cho_lo.pop(self.expected_seq)
             self.expected_seq += 1
-            if lo:
+            if lo is None:
+                self._huy_gesture_unlocked("lo_bi_tu_choi")
+            elif lo:
                 try:
                     self.bo_phat.nhan_lo(lo, t_toi)
                 except LoiGiai:
@@ -577,6 +593,11 @@ class PhienGiai:
         """Số lần sự kiện tới trễ hơn lịch D trong cả lượt giải (để log, hiệu chỉnh D về sau)."""
         with self.khoa:
             return self._tre_cu + self.bo_phat.tre_qua_D
+
+    def tre_phat_worker_tong(self) -> int:
+        """Số sự kiện phát muộn > `TRE_PHAT_NGUONG_GIAY` so với lịch vì worker trễ, cả lượt giải."""
+        with self.khoa:
+            return self._tre_phat_cu + self.bo_phat.tre_phat_worker
 
     # ----- khung ----------------------------------------------------------
     def dat_khung(self, jpeg_b64: str, meta: dict) -> None:

@@ -332,6 +332,10 @@
     e.preventDefault();
     // Chỉ NÚT TRÁI. Nút phải/giữa: không gửi gì, không mở gesture.
     if (e.button !== 0 || (e.buttons & ~1)) { if (P.cuChi) boCuChi("cuc_bo"); return; }
+    // Lệnh `huy_gesture` chưa được trả lời: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI, nên `down`
+    // mới gửi lúc này có thể bị chính lệnh đó xoá (review F3). Không mở gesture — các move đang giữ
+    // nút và `up` của lần nhấn này cũng không gửi (nhánh "không có gesture của popup").
+    if (P.dangHuy) return;
     const h = hinhHoc();
     if (!h) return;
     P.cuChi = { id: e.pointerId };
@@ -398,6 +402,15 @@
   // (kể cả thử lại), rồi mới gửi.
   async function baoHuyGesture() {
     const p = P;
+    p.dangHuy = true;
+    try {
+      await guiHuyGesture(p);
+    } finally {
+      p.dangHuy = false;
+    }
+  }
+
+  async function guiHuyGesture(p) {
     xaLo();
     await Promise.allSettled([...p.loDangBay]);
     for (let lan = 0; lan <= THU_LAI_TOI_DA; lan++) {
@@ -620,6 +633,7 @@
     document.body.classList.add("gc-lock-scroll");
     P = {
       job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false, loDangBay: new Set(),
+      dangHuy: false,
       ttGiai: ["cho_giai", "dang_mo", "dang_giai"].includes(job.trang_thai) ? job.trang_thai : "cho_giai",
       vai: null, viTri: null, soTaiLai: 0, conLai: null, coKhung: false,
       panel: null, biNgat: null, khongThay: false, matKetNoi: false, matKetNoiHan: false,
@@ -677,9 +691,12 @@
     const p = P;
     if (!dieuKhienDuoc() || p.dangGuiLenh) return;
     // Phát nốt những gì người đã nhấn trước khi ra lệnh (máy chủ cũng phát nốt hàng đợi trước lệnh).
+    // Chờ mọi lô đang bay được trả lời: lô chứa `up` cuối tới SAU lệnh thì máy chủ đã thôi phát (review F4).
     xaLo();
     p.dangGuiLenh = true;
     ve();
+    await Promise.allSettled([...p.loDangBay]);
+    if (P !== p) return;
     try {
       const r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`, { token: p.token, lenh });
       if (P !== p) return;

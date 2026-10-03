@@ -202,9 +202,9 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
             ket_qua = phien.nhan_lo(body.token, nguoi_tao, body.seq, events)
         except gc.LoiGiai as loi:
             if loi.huy_gesture:
-                # Lô bị từ chối nhưng `seq` của nó coi như đã dùng, và gesture đang dở bị huỷ.
+                # Lô bị từ chối: `seq` của nó coi như đã dùng và thành MỐC HUỶ gesture dở — áp khi các
+                # lô trước nó đã tới (không huỷ ngay: lô `down` trước nó có thể còn đang bay).
                 phien.bo_lo(body.token, nguoi_tao, body.seq)
-                phien.huy_gesture("lo_bi_tu_choi")
             raise HTTPException(status_code=loi.ma, detail=loi.thong_diep) from loi
         return {"ok": True, "trung": ket_qua == "trung"}
 

@@ -343,9 +343,10 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
     phien.dat_trang_thai("dang_giai", con_lai)
 
     ket, ly_do = _vong_giai(page, cdp, phien, guard, profile_url, gc.dong_ho() + con_lai)
-    log.info("[giai] job %s: vòng giải kết thúc (%s) — tre_qua_D=%d D=%d ms gesture_bo_do=%d "
-             "tai_lai=%d trang_moi_dong=%d chan_dieu_huong=%d", job_id, ly_do or ket,
-             phien.tre_qua_d_tong(), phien.d_ms, phien.so_gesture_bo_do, phien.so_lan_tai_lai,
+    log.info("[giai] job %s: vòng giải kết thúc (%s) — tre_qua_D=%d tre_phat_worker=%d D=%d ms "
+             "gesture_bo_do=%d tai_lai=%d trang_moi_dong=%d chan_dieu_huong=%d", job_id, ly_do or ket,
+             phien.tre_qua_d_tong(), phien.tre_phat_worker_tong(), phien.d_ms,
+             phien.so_gesture_bo_do, phien.so_lan_tai_lai,
              trang_moi.so_dong, guard.so_chan)
     if ket == "dung":
         return KetQuaGiai(LOAI_FAILED, gc.LD_DUNG_KHONG_CAPTCHA)

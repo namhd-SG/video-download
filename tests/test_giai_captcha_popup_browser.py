@@ -435,6 +435,60 @@ def test_huy_gesture_ngay_khi_lo_con_trong_bo_dem_van_toi_sau_moi_lo(mo_trang, d
     assert [l["lenh"] for l in ghi.lenh] == ["huy_gesture"]
 
 
+def tre_truoc_khi_gui(page, duong: str, ms: int) -> None:
+    """Hoãn mọi `fetch` tới URL chứa `duong` thêm `ms` TRƯỚC khi gửi — mở cửa sổ đua một cách xác định
+    (request ra mạng muộn, nên bộ ghi `Ghi` thấy đúng thứ tự gửi thật)."""
+    page.evaluate("""([duong, ms]) => { const f = window.fetch;
+        window.fetch = async (u, o) => { if (String(u).includes(duong)) await new Promise(r => setTimeout(r, ms));
+                                         return f(u, o); }; }""", [duong, ms])
+
+
+def test_khong_mo_gesture_moi_khi_lenh_huy_chua_tra_loi(mo_trang, db):
+    """Review F3: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI ⇒ `down` mới gửi khi lệnh còn bay có thể bị
+    chính lệnh đó xoá. Popup không mở gesture mới cho tới khi lệnh được trả lời.
+    ĐỘT BIẾN: bỏ chặn `P.dangHuy` ở `khiNhan` ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 600)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 130, r["y"] + 110)
+    doi_gui(page)
+    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+    page.mouse.up()
+    page.mouse.move(r["x"] + 200, r["y"] + 200)        # lần nhấn mới TRONG lúc lệnh huỷ còn treo
+    page.mouse.down()
+    page.mouse.move(r["x"] + 220, r["y"] + 200)
+    page.mouse.up()
+    doi_gui(page)
+    assert [e["k"] for e in ghi.su_kien()].count("down") == 1, "không được mở gesture mới khi lệnh huỷ chưa trả lời"
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture"], 5)
+    page.wait_for_timeout(700)
+    page.mouse.move(r["x"] + 300, r["y"] + 300)        # lệnh đã trả lời ⇒ nhấn lại được
+    page.mouse.down()
+    page.mouse.up()
+    doi_gui(page)
+    assert [e["k"] for e in ghi.su_kien()].count("down") == 2
+
+
+def test_lenh_da_giai_gui_sau_moi_lo_dang_bay(mo_trang, db):
+    """Review F4: lô chứa `up` cuối còn đang bay khi bấm "Đã giải xong" ⇒ lệnh phải gửi SAU khi lô đó
+    được trả lời (máy chủ thôi phát sau lệnh). ĐỘT BIẾN: bỏ `await Promise.allSettled` ở `guiLenh` ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/chuot", 400)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 130, r["y"] + 110)
+    page.mouse.up()
+    page.click("#gc-actions button:has-text('Đã giải xong')")
+    assert cho_trang(page, lambda: len(ghi.lenh) == 1, 5)
+    vi_tri = ghi.thu_tu.index(("lenh_gui", "da_giai"))
+    seq_up = [lo["seq"] for lo in ghi.chuot if any(e["k"] == "up" for e in lo["su_kien"])]
+    assert seq_up and all(("lo_ve", s) in ghi.thu_tu[:vi_tri] for s in seq_up), \
+        "da_giai gửi khi lô chứa `up` chưa được trả lời"
+
+
 def test_nut_phai_khong_gui_gi(mo_trang, db):
     page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)

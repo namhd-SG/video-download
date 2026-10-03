@@ -271,6 +271,44 @@ def test_lo_toi_lech_thu_tu_duoc_phat_dung_thu_tu_seq(dh):
     assert thu_tu == [1.0, 2.0, 3.0]
 
 
+def test_lo_bi_tu_choi_toi_truoc_lo_down_van_huy_dung_gesture(dh):
+    """Review F1: POST song song ⇒ lô 1 (điểm ngoài khung, 400) tới TRƯỚC lô 0 (`down`). Huỷ phải áp
+    ĐÚNG chỗ lô 1 trong dãy `seq`: `down` của lô 0 bị bỏ khỏi hàng đợi, tàn dư (move có nút, `up`) của
+    lô 2 bị bỏ — trang không nhận lần kéo thiếu đoạn giữa rồi NỘP.
+    ĐỘT BIẾN: `bo_lo` huỷ NGAY thay vì đặt mốc ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    p.bo_lo(tk, chu, 1)                                                        # lô 400 tới đầu tiên
+    p.nhan_lo(tk, chu, 2, [_ev("move", 50, 1, 48.0, 1), _ev("up", 50, 1, 64.0, 0)])
+    p.nhan_lo(tk, chu, 0, [_ev("down", 20, 1, 0.0, 1), _ev("move", 30, 1, 16.0, 1)])
+    assert p.expected_seq == 3
+    assert p.den_han(dh.t + 5) == [], "gesture có lô bị từ chối không được phát điểm nào"
+    assert p.lay_huy() == "lo_bi_tu_choi"
+    # Gesture MỚI sau đó vẫn chạy bình thường.
+    p.nhan_lo(tk, chu, 3, [_ev("down", 5, 5, 200.0, 1), _ev("up", 5, 5, 216.0, 0)])
+    assert [e.k for e in p.den_han(dh.t + 5)] == ["down", "up"]
+
+
+def test_lo_bi_tu_choi_dung_thu_tu_huy_ngay(dh):
+    """Lô 400 tới ĐÚNG thứ tự (sau `down`) ⇒ huỷ ngay khi nó tới, như trước."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    p.nhan_lo(tk, chu, 0, [_ev("down", 20, 1, 0.0, 1)])
+    p.bo_lo(tk, chu, 1)
+    assert p.lay_huy() == "lo_bi_tu_choi" and p.den_han(dh.t + 5) == []
+
+
+def test_dem_su_kien_phat_muon_vi_worker_tre(dh):
+    """Review F2: worker gọi `den_han` muộn hơn lịch > ngưỡng ⇒ đếm `tre_phat_worker` (chỉ đo, chưa
+    đổi cách phát). ĐỘT BIẾN: bỏ phép đếm ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    p.nhan_lo(tk, chu, 0, [_ev("move", 1, 1, 0.0), _ev("move", 2, 2, 16.0)])
+    lich_dau = p.diem_ke_tiep()
+    assert len(p.den_han(lich_dau)) == 1 and p.tre_phat_worker_tong() == 0     # đúng lịch
+    assert len(p.den_han(lich_dau + 0.5)) == 1 and p.tre_phat_worker_tong() == 1  # muộn 0,5 s
+
+
 def test_seq_cu_bi_bo_la_trung_va_nhay_xa_bi_tu_choi(dh):
     p = _phien()
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)])
