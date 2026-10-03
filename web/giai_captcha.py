@@ -60,8 +60,12 @@ HỢP ĐỒNG API (UI gọi; mọi route cần đăng nhập — `require_user`;
       409: token không giữ khoá (hoặc email khác) / job không ở `dang_giai` / chưa có khung.
       429: quá 50 lô/giây.   Sự kiện `buttons & ~1` (nút phải/giữa) bị bỏ, không phát.
 
-  POST /jobs/{id}/giai/lenh                 — body {"token": str, "lenh": "da_giai"|"dung"}
+  POST /jobs/{id}/giai/lenh                 — body {"token": str, "lenh": "da_giai"|"dung"|"huy_gesture"}
       Chỉ người đang giữ khoá, chỉ khi job ở `dang_giai`. 200: {"ok": true}; kết quả theo SSE `ket_thuc`.
+      `huy_gesture`: popup đã tự bỏ gesture đang dở (không gửi `up`). Máy chủ không phát sự kiện nào;
+                 nút đang nhấn ⇒ tải lại trang (SSE `bi_ngat`, tính vào trần tải lại); không ⇒ chỉ bỏ
+                 hàng đợi. Popup gửi SAU khi mọi lô của gesture đã được trả lời, để lô `down` không tới
+                 sau lệnh huỷ.
       `da_giai`: máy chủ phát nốt các sự kiện đã nhận, tắt screencast, nhả khoá, đóng SSE, RỒI mới tải
                  lại trang MỘT lần và quét tiếp (vẫn bị chặn ⇒ `cho_xac_minh` "captcha_chua_xong").
       `dung`   : job `failed` ("feed_rong_khong_captcha"), không tải video nào.
@@ -98,6 +102,7 @@ CUA_SO_GIAI_GIAY = 300             # cửa sổ giải 5 phút (USER chốt)
 CHO_XAC_MINH_QUA_HAN_GIO = 24      # `cho_xac_minh` quá hạn này ⇒ failed `xac_minh_qua_han` (CHƯA CÓ NỀN)
 TRAN_GIAI_NGAY = 3                 # trần "Tôi giải ngay" mỗi job (CHƯA CÓ NỀN)
 TRAN_TAI_LAI_MOI_LUOT = 2          # reload do gesture dở, mỗi lượt `dang_giai`
+LY_DO_HUY_POPUP = "popup_huy"      # lý do huỷ gesture khi popup gửi lệnh `huy_gesture` (đi kèm SSE `bi_ngat`)
 THIEU_LO_TOI_DA_GIAY = 2.0         # lô thiếu quá lâu ⇒ huỷ gesture
 KHUNG_MAX_WIDTH = 800              # `maxWidth` screencast
 KHUNG_JPEG_QUALITY = 60
@@ -610,6 +615,19 @@ class PhienGiai:
             if self.trang_thai != "dang_giai" or self.da_dong:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
             self._lenh.append(lenh)
+
+    def huy_gesture_cua_nguoi_giu(self, token: str, email: str) -> None:
+        """Lệnh `huy_gesture` (R15b KHÉP): popup tự bỏ gesture (`pointercancel`/`lostpointercapture`/
+        `blur`) và KHÔNG gửi `up` — nhả chuột là bước nộp lần thử (ĐP-529/602). Không có lệnh này thì
+        máy chủ không biết: chỉ HỤT `seq` mới huỷ (`kiem_thieu_lo`), còn popup im lặng thì nút kẹt nhấn.
+        Đi đúng đường huỷ có sẵn (ĐP-606 (a)): worker không phát sự kiện nào; nút đang nhấn ⇒ tải lại
+        trang, tính vào trần `TRAN_TAI_LAI_MOI_LUOT`; nút không nhấn ⇒ chỉ bỏ hàng đợi."""
+        with self.khoa:
+            if not self.la_giu(token, email):
+                raise LoiGiai(409, "Bạn không giữ quyền điều khiển (người/tab khác đang giải).")
+            if self.trang_thai != "dang_giai" or self.da_dong:
+                raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
+            self._huy_gesture_unlocked(LY_DO_HUY_POPUP)
 
     def xem_lenh(self) -> str | None:
         with self.khoa:

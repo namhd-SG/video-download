@@ -133,6 +133,8 @@ class Ghi:
         self.lenh: list[dict] = []
         self.mat_chuot: list[int] = []
         self.token_sse: list[str] = []
+        # Thứ tự lô gửi/trả và lệnh gửi, để kiểm `huy_gesture` tới SAU mọi lô của gesture.
+        self.thu_tu: list[tuple[str, object]] = []
         page.on("request", self._khi_gui)
         page.on("response", self._khi_ve)
 
@@ -143,12 +145,15 @@ class Ghi:
             return
         if r.url.endswith("/giai/chuot"):
             self.chuot.append(r.post_data_json)
+            self.thu_tu.append(("lo_gui", r.post_data_json["seq"]))
         elif r.url.endswith("/giai/lenh"):
             self.lenh.append(r.post_data_json)
+            self.thu_tu.append(("lenh_gui", r.post_data_json["lenh"]))
 
     def _khi_ve(self, r):
         if r.request.method == "POST" and r.url.endswith("/giai/chuot"):
             self.mat_chuot.append(r.status)
+            self.thu_tu.append(("lo_ve", r.request.post_data_json["seq"]))
 
     def su_kien(self) -> list[dict]:
         """Mọi sự kiện đã gửi, xếp theo `seq` của lô rồi theo thứ tự trong lô."""
@@ -397,6 +402,37 @@ def test_bo_gesture_khong_gui_up(mo_trang, db, cach):
     doi_gui(page)
     assert [e["k"] for e in ghi.su_kien()].count("down") == 2
     assert [e["k"] for e in ghi.su_kien()].count("up") == 1
+    # Máy chủ chỉ tự huỷ khi HỤT seq; popup im lặng ⇒ nút kẹt nhấn. Popup phải báo `huy_gesture` ĐÚNG
+    # một lần (gesture thứ hai kết thúc bằng `up` thật ⇒ không báo) và SAU khi mọi lô của gesture bị
+    # bỏ đã được trả lời — lô `down` tới sau lệnh huỷ thì nút lại kẹt (R15b).
+    # ĐỘT BIẾN: bỏ lời gọi `baoHuyGesture` ⇒ ĐỎ; gửi lệnh trước khi chờ lô đang bay ⇒ ĐỎ.
+    huy = [l for l in ghi.lenh if l["lenh"] == "huy_gesture"]
+    assert len(huy) == 1 and huy[0]["token"] == ghi.token_sse[-1]
+    vi_tri = ghi.thu_tu.index(("lenh_gui", "huy_gesture"))
+    gui_truoc = [s for k, s in ghi.thu_tu[:vi_tri] if k == "lo_gui"]
+    assert gui_truoc, "phải có lô chứa `down` gửi trước lệnh huỷ"
+    assert all(("lo_ve", s) in ghi.thu_tu[:vi_tri] for s in gui_truoc), \
+        "huy_gesture gửi khi còn lô chưa được trả lời"
+
+
+def test_huy_gesture_ngay_khi_lo_con_trong_bo_dem_van_toi_sau_moi_lo(mo_trang, db):
+    """Huỷ NGAY sau khi kéo (lô còn trong bộ đệm 40 ms / đang bay): popup phải xả bộ đệm, chờ mọi lô
+    được trả lời rồi mới gửi `huy_gesture`. ĐỘT BIẾN: bỏ `await Promise.allSettled(...)` ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 130, r["y"] + 110)
+    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+    assert cho_trang(page, lambda: any(l["lenh"] == "huy_gesture" for l in ghi.lenh), 5)
+    doi_gui(page)
+    vi_tri = ghi.thu_tu.index(("lenh_gui", "huy_gesture"))
+    gui_truoc = [s for k, s in ghi.thu_tu[:vi_tri] if k == "lo_gui"]
+    assert any(e["k"] == "down" for lo in ghi.chuot if lo["seq"] in gui_truoc for e in lo["su_kien"]), \
+        "lô chứa `down` phải được gửi TRƯỚC lệnh huỷ"
+    assert all(("lo_ve", s) in ghi.thu_tu[:vi_tri] for s in gui_truoc), \
+        "huy_gesture gửi khi còn lô chưa được trả lời"
+    assert [l["lenh"] for l in ghi.lenh] == ["huy_gesture"]
 
 
 def test_nut_phai_khong_gui_gi(mo_trang, db):
@@ -412,6 +448,7 @@ def test_nut_phai_khong_gui_gi(mo_trang, db):
     ev = ghi.su_kien()
     assert [e["k"] for e in ev] == ["move"] and ev[0]["buttons"] == 0
     assert "Thao tác bị ngắt" not in page.locator("#gc-note").inner_text()
+    assert ghi.lenh == [], "chưa từng có gesture nút trái ⇒ không báo huy_gesture" 
 
 
 def test_chi_xem_khong_gui_chuot_va_khoa_nut(mo_trang, db, may_chu):

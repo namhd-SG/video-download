@@ -210,10 +210,11 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
 
     @app.post("/jobs/{job_id}/giai/lenh")
     def giai_lenh(job_id: int, body: LenhBody, nguoi_tao: str = Depends(require_user)) -> dict:
-        """`da_giai` | `dung` — chỉ người đang giữ khoá, chỉ khi `dang_giai`."""
+        """`da_giai` | `dung` | `huy_gesture` — chỉ người đang giữ khoá, chỉ khi `dang_giai`."""
         job = _job_cua_nguoi_goi(job_id, nguoi_tao)
-        if body.lenh not in ("da_giai", "dung"):
-            raise HTTPException(status_code=400, detail="`lenh` phải là da_giai hoặc dung.")
+        if body.lenh not in ("da_giai", "dung", "huy_gesture"):
+            raise HTTPException(status_code=400,
+                                detail="`lenh` phải là da_giai, dung hoặc huy_gesture.")
         if job["trang_thai"] != "dang_giai":
             raise HTTPException(status_code=409, detail=_thong_diep_trang_thai(
                 job["trang_thai"], "chỉ ra lệnh khi đang giải"))
@@ -223,7 +224,11 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
         if not gc.token_hop_le(body.token):
             raise HTTPException(status_code=400, detail="`token` không hợp lệ.")
         try:
-            phien.dat_lenh(body.token, nguoi_tao, body.lenh)
+            if body.lenh == "huy_gesture":
+                # Không vào hàng `_lenh` (worker tiêu hàng đó như lệnh kết thúc lượt): huỷ ngay.
+                phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao)
+            else:
+                phien.dat_lenh(body.token, nguoi_tao, body.lenh)
         except gc.LoiGiai as loi:
             raise HTTPException(status_code=loi.ma, detail=loi.thong_diep) from loi
         return {"ok": True}

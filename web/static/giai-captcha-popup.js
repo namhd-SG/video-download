@@ -388,6 +388,32 @@
     if (!P || !P.cuChi) return;
     P.cuChi = null;
     if (!imLang) { P.biNgat = { loai }; ve(); }
+    // Popup tự bỏ ⇒ máy chủ chưa biết (nó chỉ tự huỷ khi HỤT `seq`): báo bằng lệnh `huy_gesture`, nếu
+    // không nút trên trang máy chủ kẹt ở trạng thái nhấn. Máy chủ bỏ thì đã tự huỷ rồi.
+    if (loai === "cuc_bo" && dieuKhienDuoc()) baoHuyGesture();
+  }
+
+  // Lệnh `huy_gesture` phải tới SAU mọi lô của gesture: lô và lệnh là hai endpoint, lô `down` tới sau
+  // lệnh huỷ thì nút lại bị nhấn mà không còn ai huỷ. Nên xả bộ đệm, chờ mọi lô đang bay được trả lời
+  // (kể cả thử lại), rồi mới gửi.
+  async function baoHuyGesture() {
+    const p = P;
+    xaLo();
+    await Promise.allSettled([...p.loDangBay]);
+    for (let lan = 0; lan <= THU_LAI_TOI_DA; lan++) {
+      if (P !== p || !dieuKhienDuoc()) return;
+      let r;
+      try {
+        r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`, { token: p.token, lenh: "huy_gesture" });
+      } catch (e) {
+        await ngu(THU_LAI_CHO_MS * (lan + 1));
+        continue;
+      }
+      if (P !== p) return;
+      if (r.matPhien) { matPhien(); return; }
+      if (r.ok || r.status === 409) return; // 409: lượt đã đổi / không còn giữ quyền — SSE sẽ báo
+      await ngu(THU_LAI_CHO_MS * (lan + 1));
+    }
   }
 
   function xaLo() {
@@ -396,11 +422,15 @@
     P.hen = null;
     while (P.buf.length) {
       const su_kien = P.buf.splice(0, LO_TOI_DA);
-      guiLo({
+      const bay = guiLo({
         token: P.token, seq: P.seqLo++, khung_w: P.bufKhungW,
         khung_seq: P.bufKhungSeq === null || P.bufKhungSeq === undefined ? null : P.bufKhungSeq,
         su_kien,
       });
+      // Theo dõi lô đang bay để `baoHuyGesture` chờ chúng (guiLo không bao giờ ném).
+      const dangBay = P.loDangBay;
+      dangBay.add(bay);
+      bay.finally(() => dangBay.delete(bay));
     }
   }
 
@@ -589,7 +619,7 @@
     document.body.appendChild(goc);
     document.body.classList.add("gc-lock-scroll");
     P = {
-      job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false,
+      job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false, loDangBay: new Set(),
       ttGiai: ["cho_giai", "dang_mo", "dang_giai"].includes(job.trang_thai) ? job.trang_thai : "cho_giai",
       vai: null, viTri: null, soTaiLai: 0, conLai: null, coKhung: false,
       panel: null, biNgat: null, khongThay: false, matKetNoi: false, matKetNoiHan: false,

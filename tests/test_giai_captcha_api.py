@@ -447,6 +447,23 @@ def test_lenh_nguoi_giu_khoa_vao_hang_doi_nguoi_khac_409(api):
     s.dong_ket_noi()
 
 
+def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
+    """R15b: `huy_gesture` huỷ gesture dở NGAY (không xếp hàng `_lenh` — worker tiêu hàng đó như lệnh
+    kết thúc lượt). Người không giữ khoá ⇒ 409 và KHÔNG huỷ được gesture của người đang giải.
+    ĐỘT BIẾN: bỏ kiểm `la_giu` trong `huy_gesture_cua_nguoi_giu` ⇒ ĐỎ; xếp vào hàng `_lenh` ⇒ ĐỎ."""
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    p = f"/jobs/{jid}/giai/lenh"
+    assert goi(port, "POST", p, body={"token": TB, "lenh": "huy_gesture"})[0] == 409
+    assert phien.lay_huy() is None
+    assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture"})[0] == 403
+    assert phien.lay_huy() is None
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture"}) == (200, {"ok": True})
+    assert phien.lay_huy() == gc.LY_DO_HUY_POPUP
+    assert phien.xem_lenh() is None
+    s.dong_ket_noi()
+
+
 def test_lenh_ngoai_dang_giai_409(api):
     port, db = api
     jid = tao_job(db, "cho_giai")

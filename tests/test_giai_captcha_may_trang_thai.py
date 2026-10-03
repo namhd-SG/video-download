@@ -503,6 +503,45 @@ def test_huy_khi_nut_chua_nhan_khong_reload(monkeypatch, db):
     assert h.trang.so_reload == 0 and h.phien.so_gesture_bo_do == 0
 
 
+def test_lenh_huy_gesture_khi_nut_dang_nhan_reload_khong_phat_mouseup(monkeypatch, db):
+    """R15b: popup tự bỏ gesture (pointercancel/blur) và báo `huy_gesture` ⇒ đúng đường ĐP-606 (a):
+    0 `mouseReleased`, tải lại trang 1 lần, tính vào trần tải lại. Thiếu lệnh này nút kẹt nhấn vì máy
+    chủ chỉ tự huỷ khi HỤT `seq`. ĐỘT BIẾN: phát `mouseReleased` ở nhánh huỷ ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db)
+    h.trang.kich_ban = [
+        (0.10, lambda: _keo(h, h.nguoi)),
+        (0.50, lambda: h.phien.huy_gesture_cua_nguoi_giu(TOKEN, CHU)),
+        (0.90, h.lenh("dung")),
+    ]
+    h.chay()
+    phat = h.input_da_phat()
+    assert "mouseReleased" not in [p["type"] for p in phat]
+    assert h.trang.so_reload == 1 and h.phien.so_gesture_bo_do == 1 and h.phien.so_lan_tai_lai == 1
+    bi_ngat = [n for n in h.phien.thong_bao_moi(0) if n[1]["loai"] == "bi_ngat"]
+    assert bi_ngat and bi_ngat[0][1]["ly_do"] == gc.LY_DO_HUY_POPUP
+
+
+def test_lenh_huy_gesture_nguoi_khong_giu_khoa_bi_409_khong_huy(monkeypatch, db):
+    h = Hien(monkeypatch, db)
+    ma = []
+
+    def nguoi_khac_huy():
+        try:
+            h.phien.huy_gesture_cua_nguoi_giu("token-khac-xxxx", CHU)
+            ma.append(200)
+        except gc.LoiGiai as loi:
+            ma.append(loi.ma)
+
+    h.trang.kich_ban = [
+        (0.10, lambda: _keo(h, h.nguoi)),
+        (0.50, nguoi_khac_huy),
+        (0.90, h.lenh("dung")),
+    ]
+    h.chay()
+    assert ma == [409]
+    assert h.trang.so_reload == 0 and h.phien.so_gesture_bo_do == 0
+
+
 def test_phat_lai_dung_toa_do_va_buttons_cua_nguoi_khong_them_khong_bot(monkeypatch, db):
     h = Hien(monkeypatch, db)
     tg = h.trang.kich_ban
