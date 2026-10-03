@@ -343,6 +343,18 @@ def admin_worker(nguoi_tao: str = Depends(require_admin)) -> dict:
     return worker.trang_thai()
 
 
+# Cột nội bộ của hàng job: không phải dữ liệu cho người dùng nên không ra API/SSE.
+# `ua_job` là UA ghim cho scraper (profile persist) — lộ ra chỉ thêm một khoá `null`
+# vào mọi phản hồi và khoá giao diện vào thứ có thể đổi. Bỏ ở tầng trả về, KHÔNG xoá
+# cột DB (worker vẫn đọc nó qua `models.chon_ua_job`).
+_COT_JOB_NOI_BO = ("ua_job",)
+
+
+def _job_ra_api(job: dict) -> dict:
+    """Bản sao của hàng job không còn các cột nội bộ (`_COT_JOB_NOI_BO`)."""
+    return {k: v for k, v in job.items() if k not in _COT_JOB_NOI_BO}
+
+
 @app.post("/jobs")
 def create_job(payload: CreateJobRequest,
                nguoi_tao: str = Depends(require_user)) -> dict:
@@ -380,7 +392,7 @@ def create_job(payload: CreateJobRequest,
                                usecase=usecase, insight_goc=insight_goc)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng
-    return job
+    return _job_ra_api(job)
 
 
 @app.get("/jobs")
@@ -392,7 +404,8 @@ def list_jobs(nguoi_tao: str = Depends(require_user)) -> list[dict]:
     cá nhân (hết hạn / chưa đăng nhập). Lọc ở ĐÂY chứ không ở giao diện: ẩn
     trên màn hình mà API vẫn trả thì chưa sửa gì cả.
     """
-    jobs = models.list_jobs(DB_PATH, None if _la_admin(nguoi_tao) else nguoi_tao)
+    jobs = [_job_ra_api(j) for j in
+            models.list_jobs(DB_PATH, None if _la_admin(nguoi_tao) else nguoi_tao)]
     # `vi_tri` chỉ có nghĩa với job đang chờ, nên chỉ job đang chờ mang nó.
     # Gắn ở đây thay vì để giao diện tự đếm: trang chỉ thấy job CỦA MÌNH,
     # nên nếu nó tự đếm thì nó đếm thiếu đúng phần hàng đợi của người khác —
@@ -1100,7 +1113,7 @@ def _job_cua_toi_hoac_404(job_id: int, nguoi_tao: str) -> dict:
 
 @app.get("/jobs/{job_id}")
 def get_job(job_id: int, nguoi_tao: str = Depends(require_user)) -> dict:
-    return _job_cua_toi_hoac_404(job_id, nguoi_tao)
+    return _job_ra_api(_job_cua_toi_hoac_404(job_id, nguoi_tao))
 
 
 @app.delete("/jobs/{job_id}")
@@ -1166,7 +1179,7 @@ async def job_events(job_id: int,
                 break
             if job["nguoi_tao"] != nguoi_tao and not _la_admin(nguoi_tao):
                 break
-            payload = json.dumps(job)
+            payload = json.dumps(_job_ra_api(job))
             if payload != last_payload:
                 yield {"event": "progress", "data": payload}
                 last_payload = payload

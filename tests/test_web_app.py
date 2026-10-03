@@ -1272,6 +1272,41 @@ def test_an_admin_can_read_any_job(tmp_path, monkeypatch):
     assert app_mod.get_job(job_id=job_b, nguoi_tao="sep@astronex.ai")["id"] == job_b
 
 
+def _moi_job_co_ua(tmp_path, monkeypatch):
+    """Job của A đã ghim UA (cột nội bộ có GIÁ TRỊ, không chỉ null) và đã kết thúc để SSE tự đóng."""
+    monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)
+    db_path, job_a, _ = _hai_nguoi(tmp_path, monkeypatch)
+    models.chon_ua_job(db_path, job_a, lambda: "UA-GHIM-NOI-BO")
+    models.finish_job(db_path, job_a, "done")
+    return db_path, job_a
+
+
+def test_job_api_khong_lo_cot_noi_bo_ua_job(tmp_path, monkeypatch):
+    """`ua_job` là UA ghim cho scraper, không phải dữ liệu cho người dùng: không được ra
+    ở `POST /jobs`, `GET /jobs`, `GET /jobs/{id}` lẫn SSE `/jobs/{id}/events`. Cột DB vẫn còn."""
+    db_path, job_a = _moi_job_co_ua(tmp_path, monkeypatch)
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+    monkeypatch.setattr(app_mod, "daily_cap_rejection", lambda **kw: None)
+
+    tao = app_mod.create_job(_payload(), nguoi_tao="a@astronex.ai")
+    ds = app_mod.list_jobs(nguoi_tao="a@astronex.ai")
+    mot = app_mod.get_job(job_id=job_a, nguoi_tao="a@astronex.ai")
+
+    async def _doc_sse():
+        resp = await app_mod.job_events(job_id=job_a, nguoi_tao="a@astronex.ai")
+        return [json.loads(ev["data"]) async for ev in resp.body_iterator]
+
+    sse = asyncio.run(_doc_sse())
+
+    assert "ua_job" not in tao
+    assert ds and all("ua_job" not in j for j in ds)
+    assert "ua_job" not in mot and mot["id"] == job_a
+    assert sse and all("ua_job" not in ev for ev in sse), "SSE vẫn lộ ua_job"
+    assert "UA-GHIM-NOI-BO" not in json.dumps([tao, ds, mot, sse])
+    # Chỉ bỏ ở tầng trả về: cột DB còn nguyên để scraper dùng.
+    assert models.get_job(db_path, job_a)["ua_job"] == "UA-GHIM-NOI-BO"
+
+
 def test_the_progress_stream_checks_the_owner_before_it_streams(tmp_path, monkeypatch):
     """Cửa phải đóng TRƯỚC khi mở luồng. Đóng sau thì byte đầu đã ra rồi."""
     monkeypatch.delenv("VIDEODL_ADMIN_EMAILS", raising=False)

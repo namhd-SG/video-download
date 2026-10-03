@@ -185,10 +185,10 @@ def _doc_khoa(thu_muc: Path) -> str:
 
 
 def _doc_singleton_lock(thu_muc: Path) -> str:
-    """Chromium HEADFUL giữ thư mục profile bằng symlink `SingletonLock` trỏ tới chuỗi (HEADLESS
-    thì KHÔNG tạo khoá này — đo 02/10; nên bộ quét còn đọc khoá riêng `.videodl-worker`) trỏ tới chuỗi
+    """Chromium HEADFUL giữ thư mục profile bằng symlink `SingletonLock` trỏ tới chuỗi
     `"<hostname>-<pid>"` (đích không phải file thật nên symlink luôn "treo" — đọc bằng
-    `os.readlink`, KHÔNG đi theo). Trả một trong bốn hằng `_LOCK_*`.
+    `os.readlink`, KHÔNG đi theo). HEADLESS không tạo khoá này (đo 02/10), nên bộ quét còn
+    đọc khoá riêng `.videodl-worker`. Trả một trong bốn hằng `_LOCK_*`.
 
     Tách ở dấu `-` CUỐI CÙNG vì hostname có thể chứa `-`. Phải khớp CẢ host lẫn pid:
     pid chỉ có nghĩa trên máy sinh ra nó, nên host khác ⇒ không xác định được ⇒
@@ -223,15 +223,16 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
       · `giu`       job còn sống (running/pending/trạng thái khác) ⇒ không đụng
       · `xoa_truot` mồ côi nhưng xoá trượt (quét lượt sau thử lại)
       · `bo_qua`    tên không phải số nguyên, hoặc không đọc được DB để biết job,
-                    hoặc `SingletonLock` không xác định được (host khác máy này, sai
-                    định dạng, pid không phải số) ⇒ không xoá (không biết là của ai
+                    hoặc khoá không xác định được — `SingletonLock` của Chromium hoặc khoá
+                    riêng `.videodl-worker` (host khác máy này, sai định dạng, pid không
+                    phải số) ⇒ không xoá (không biết là của ai
                     thì không phải của mình). Chọn `bo_qua` chứ không `giu_dang_mo`
                     cho host khác: ta KHÔNG biết có Chromium đang sống, nói "đang mở"
                     là khai điều chưa đo.
       · `giu_dang_mo` chỉ XUẤT HIỆN khi > 0: job đã kết thúc/không còn nhưng
-                    `SingletonLock` trỏ `<host máy này>-<pid>` còn sống (launchd dựng
-                    tiến trình mới khi tiến trình cũ chưa chết hẳn ⇒ Chromium của
-                    tiến trình cũ vẫn đang giữ thư mục) ⇒ GIỮ, lượt sau thử lại.
+                    khoá (`SingletonLock` hoặc `.videodl-worker`) trỏ `<host máy này>-<pid>`
+                    còn sống (launchd dựng tiến trình mới khi tiến trình cũ chưa chết hẳn
+                    ⇒ Chromium/worker cũ vẫn đang giữ thư mục) ⇒ GIỮ, lượt sau thử lại.
     """
     dem = {"da_xoa": 0, "giu": 0, "xoa_truot": 0, "bo_qua": 0}
     goc = thu_muc_profiles(db_path)
@@ -271,7 +272,7 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
         if trang_lock == _LOCK_SONG:
             dem["giu_dang_mo"] = dem.get("giu_dang_mo", 0) + 1
         elif trang_lock == _LOCK_KHONG_RO:
-            log.info("bộ quét profile: %s có SingletonLock không xác định được — giữ", m.name)
+            log.info("bộ quét profile: %s có khoá (SingletonLock hoặc .videodl-worker) không xác định được — giữ", m.name)
             dem["bo_qua"] += 1
         elif _xoa_cay(m):
             dem["da_xoa"] += 1
