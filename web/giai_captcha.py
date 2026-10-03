@@ -662,6 +662,11 @@ class PhienGiai:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
             if den_seq is not None and (den_seq < 0 or den_seq > self.expected_seq + SEQ_NHAY_TOI_DA):
                 raise LoiGiai(400, "`den_seq` ngoài khoảng hợp lệ.")
+            if den_seq is not None and den_seq < self.expected_seq:
+                # Bản sao MUỘN của một lệnh đã xử lý (lần thử trước hết giờ ở popup nhưng vẫn tới): lệnh
+                # hợp lệ luôn có `den_seq >= expected_seq` (máy chủ không nhận được `seq` popup chưa cấp).
+                # Lô của gesture SAU đã đẩy `expected_seq` qua mốc ⇒ huỷ lúc này là huỷ nhầm gesture đó.
+                return
             # Huỷ TRƯỚC, xả SAU: lô `seq >= den_seq` là của cú nhấn sau lệnh — không được bị huỷ này xoá.
             self._huy_gesture_unlocked(LY_DO_HUY_POPUP)
             if den_seq is not None:

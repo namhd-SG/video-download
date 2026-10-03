@@ -515,19 +515,44 @@ def test_giu_nut_xuyen_qua_luc_huy_truot_roi_tha_khong_gui_gi(mo_trang, db):
 
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
     """`fetch` treo ⇒ timeout 8 s ⇒ lệnh thử lại được nhận ⇒ mở chặn; cú nhấn sau đó tới máy chủ.
-    ĐỘT BIẾN: bỏ `signal` ⇒ ĐỎ (kẹt chặn tới hết lượt)."""
+    Lệnh huỷ có timeout RIÊNG 3 s (ĐP-729) ⇒ mở chặn trong vài giây, không phải 8 s.
+    ĐỘT BIẾN: bỏ `signal` ⇒ ĐỎ (kẹt chặn tới hết lượt); lệnh huỷ dùng timeout 8 s chung ⇒ ĐỎ."""
     page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)
     giu = chan_lenh_huy(page, 1, treo=True)
     _keo_roi_blur(page, r)
     page.mouse.up()
-    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 14)
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 6)
     page.mouse.move(r["x"] + 300, r["y"] + 300)
     page.mouse.down()
     page.mouse.up()
     doi_gui(page)
     assert len(giu) == 1 and [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 2
     assert _so(ghi, "down") == 2
+
+
+def test_mo_chan_bo_ca_su_kien_bo_gom_vua_nhat_luc_dang_chan(mo_trang, db):
+    """ĐP-729 NIT-3: sự kiện bộ gom nhặt trong lúc chặn mà chưa tới lượt `xaLo` xoá thì cũng phải bỏ khi
+    mở chặn. Bắn một hover NGAY trước khi popup nhận phản hồi 200 của `huy_gesture`. ĐỘT BIẾN: không
+    xoá `buf` lúc mở chặn ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.evaluate("""() => { const f = window.fetch;
+        window.fetch = async (u, o) => {
+            const res = await f(u, o);
+            if (String((o && o.body) || "").includes("huy_gesture")) {
+                const a = document.querySelector('#gc-anh').getBoundingClientRect();
+                document.querySelector('#gc-khung').dispatchEvent(new PointerEvent('pointermove', {
+                    pointerId: 1, pointerType: 'mouse', bubbles: true, buttons: 0,
+                    clientX: a.x + a.width / 2, clientY: a.y + a.height / 2 }));
+            }
+            return res; }; }""")
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    truoc = len(ghi.su_kien())
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
+    doi_gui(page)
+    assert len(ghi.su_kien()) == truoc, "hover nhặt trong lúc chặn không được gửi sau khi mở chặn"
 
 
 def test_da_giai_khi_dang_huy_di_sau_lenh_huy(mo_trang, db):

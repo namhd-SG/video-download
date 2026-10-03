@@ -365,6 +365,22 @@ def test_huy_den_seq_khong_xoa_lo_sau_moc_da_toi_som(dh):
     assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("up", 7.0)]
 
 
+def test_ban_sao_lenh_huy_toi_muon_khong_huy_gesture_sau(dh):
+    """ĐP-729 SHOULD-1: lần thử 1 của `huy_gesture` hết giờ ở popup nhưng vẫn tới máy chủ SAU khi lần thử 2
+    đã xử lý và người đã bắt đầu gesture MỚI ⇒ `den_seq < expected_seq` ⇒ bản sao muộn, KHÔNG huỷ.
+    ĐỘT BIẾN: bỏ nhánh bỏ-qua bản sao muộn ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("down", 1, 1, 0.0, 1)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=1)                             # lần thử 2 — được xử lý
+    assert p.lay_huy() == gc.LY_DO_HUY_POPUP
+    assert p.den_han(dh.t + 5) == []
+    assert p.nhan_lo(tk, chu, 1, [_ev("down", 7, 7, 300.0, 1), _ev("move", 8, 7, 316.0, 1)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=1)                             # bản sao MUỘN của lần thử 1
+    assert p.lay_huy() is None
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("move", 8.0)]
+
+
 def test_huy_den_seq_ngoai_khoang_400_khong_huy(dh):
     p = _phien()
     tk, chu = "token-aaaaaaaa", "chu@x.vn"

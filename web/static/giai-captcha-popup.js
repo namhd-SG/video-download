@@ -23,6 +23,9 @@
   // Request treo (không lỗi, không trả lời — vd TCP đứng qua tunnel) phải thành LỖI để đường thử lại
   // chạy; không thì lệnh huỷ / lô chuột chờ mãi và cả chuỗi kẹt tới hết 5 phút. 8 s CHƯA ĐO.
   const GOI_HET_GIO_MS = 8000;
+  // Lệnh huỷ ngắn hơn: suốt lúc chờ nó, popup CHẶN mọi thao tác chuột; 4 lần thử × 8 s ≈ 33 s chặn là quá
+  // dài (ĐP-729). 3 s ⇒ ≈ 13 s tối đa. CHƯA ĐO.
+  const HUY_HET_GIO_MS = 3000;
   const THU_LAI_CHO_MS = 150;
   // Sau chừng này không bấm/lăn chuột thì nhắc "Không thấy captcha?" (popup không đọc được DOM
   // trang TikTok nên không tự biết có captcha hay không — chỉ gợi ý theo thời gian).
@@ -66,9 +69,9 @@
 
   // Gọi API. Trả {matPhien} khi phiên đăng nhập hết (302 → opaqueredirect, 401, hoặc 200 trả
   // trang HTML đăng nhập thay vì JSON); ngoài ra {ok, status, data}. Mạng đứt thì ném lỗi.
-  async function goi(method, path, body) {
+  async function goi(method, path, body, hetGioMs = GOI_HET_GIO_MS) {
     const ctl = new AbortController();
-    const hen = setTimeout(() => ctl.abort(), GOI_HET_GIO_MS);
+    const hen = setTimeout(() => ctl.abort(), hetGioMs);
     let res;
     try {
       res = await fetch(path, {
@@ -429,7 +432,8 @@
     const xong = guiHuyGesture(p).catch(() => false).then((daHuy) => {
       p.dangHuy = false;
       if (P !== p) return daHuy;
-      if (daHuy) p.chanChuot = false;
+      // Mở chặn: bỏ cả những gì bộ gom vừa nhặt trong lúc chặn (chưa tới lượt `xaLo` xoá) — "bỏ MỌI sự kiện".
+      if (daHuy) { p.buf.length = 0; p.chanChuot = false; }
       else p.huyTruot = true;  // vẫn chặn; cú nhấn kế tiếp thử huỷ lại (`khiNhan`)
       ve();
       return daHuy;
@@ -446,7 +450,7 @@
       let r;
       try {
         r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`,
-                      { token: p.token, lenh: "huy_gesture", den_seq: p.seqLo });
+                      { token: p.token, lenh: "huy_gesture", den_seq: p.seqLo }, HUY_HET_GIO_MS);
       } catch (e) {
         if (lan < THU_LAI_TOI_DA) await ngu(THU_LAI_CHO_MS * (lan + 1));
         continue;
