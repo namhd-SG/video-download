@@ -338,6 +338,43 @@ def test_lo_trung_seq_phat_dung_mot_lan_ca_khi_da_xa_va_dang_cho(dh):
     assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 1.0), ("move", 2.0), ("move", 3.0), ("up", 4.0)]
 
 
+def test_huy_co_den_seq_bo_lo_toi_muon_va_lo_dang_cho_truoc_moc(dh):
+    """ĐP-727 luật B: lô `seq < den_seq` tới SAU lệnh huỷ (vd bị abort vì timeout nhưng thật ra vẫn bay
+    tới) ⇒ "trung", KHÔNG phát — `down` trong đó không còn ai huỷ. Lô tới sớm trong vùng đó cũng bỏ;
+    lô sau mốc vẫn chạy bình thường. ĐỘT BIẾN: bỏ xử lý `den_seq` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("move", 1, 1, 0.0, 0)]) == "ok"
+    assert p.nhan_lo(tk, chu, 2, [_ev("move", 9, 9, 40.0, 1)]) == "ok"       # tới sớm, chờ lô 1
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=3)                             # lô 1, 2 thuộc gesture bỏ
+    assert p.nhan_lo(tk, chu, 1, [_ev("down", 5, 5, 20.0, 1)]) == "trung"     # lô 1 tới MUỘN
+    assert p.nhan_lo(tk, chu, 3, [_ev("move", 6, 6, 300.0, 0), _ev("down", 7, 7, 316.0, 1),
+                                  _ev("up", 7, 7, 332.0, 0)]) == "ok"
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("move", 6.0), ("down", 7.0), ("up", 7.0)]
+
+
+def test_huy_den_seq_khong_xoa_lo_sau_moc_da_toi_som(dh):
+    """Lô `seq >= den_seq` (cú nhấn MỚI) tới sớm, đang chờ, lúc lệnh huỷ tới: huỷ phải áp TRƯỚC khi xả
+    lô đó — xả trước rồi huỷ thì huỷ xoá luôn cú nhấn mới. ĐỘT BIẾN: huỷ SAU khi xả ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("down", 1, 1, 0.0, 1)]) == "ok"
+    assert p.nhan_lo(tk, chu, 2, [_ev("down", 7, 7, 300.0, 1), _ev("up", 7, 7, 316.0, 0)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=2)                             # lô 1 (gesture bỏ) chưa tới
+    assert p.expected_seq == 3
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("up", 7.0)]
+
+
+def test_huy_den_seq_ngoai_khoang_400_khong_huy(dh):
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    for xau in (-1, gc.SEQ_NHAY_TOI_DA + 1):
+        with pytest.raises(LoiGiai) as e:
+            p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=xau)
+        assert e.value.ma == 400
+    assert p.lay_huy() is None and p.expected_seq == 0
+
+
 def test_seq_cu_bi_bo_la_trung_va_nhay_xa_bi_tu_choi(dh):
     p = _phien()
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)])

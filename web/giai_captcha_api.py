@@ -51,6 +51,7 @@ class ChuotBody(BaseModel):
 class LenhBody(BaseModel):
     token: str
     lenh: str
+    den_seq: int | None = None   # bắt buộc với `huy_gesture`: `seq` kế tiếp popup sẽ cấp
 
 
 def _thong_diep_trang_thai(trang_thai: str, can: str) -> str:
@@ -226,7 +227,9 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
         try:
             if body.lenh == "huy_gesture":
                 # Không vào hàng `_lenh` (worker tiêu hàng đó như lệnh kết thúc lượt): huỷ ngay.
-                phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao)
+                if body.den_seq is None:
+                    raise HTTPException(status_code=400, detail="`huy_gesture` cần `den_seq`.")
+                phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao, body.den_seq)
             else:
                 phien.dat_lenh(body.token, nguoi_tao, body.lenh)
         except gc.LoiGiai as loi:

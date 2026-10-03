@@ -454,11 +454,14 @@ def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
     port, db = api
     jid, s, phien = job_dang_giai_co_khung(api)
     p = f"/jobs/{jid}/giai/lenh"
-    assert goi(port, "POST", p, body={"token": TB, "lenh": "huy_gesture"})[0] == 409
+    assert goi(port, "POST", p, body={"token": TB, "lenh": "huy_gesture", "den_seq": 0})[0] == 409
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture"})[0] == 403
+    assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 403
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture"}) == (200, {"ok": True})
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture"})[0] == 400       # thiếu den_seq
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 10_000})[0] == 400
+    assert phien.lay_huy() is None
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0}) == (200, {"ok": True})
     assert phien.lay_huy() == gc.LY_DO_HUY_POPUP
     assert phien.xem_lenh() is None
     s.dong_ket_noi()

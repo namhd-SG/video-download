@@ -143,6 +143,12 @@
         return ["trung", IC.info, "Mỗi lúc chỉ một người điều khiển được. Bạn vẫn thấy ảnh trang để theo dõi."];
       case "bi-ngat": {
         if (P.biNgat.loai === "cuc_bo") {
+          if (P.huyTruot) {
+            return ["canh", IC.canh, "<b>Thao tác bị ngắt — chưa báo được máy chủ.</b> Mạng đang chậm; thao tác của bạn tạm chưa được gửi. Nhấn vào ảnh để thử lại."];
+          }
+          if (P.chanChuot) {
+            return ["canh", IC.canh, "<b>Thao tác bị ngắt — đang huỷ thao tác cũ, chờ một chút</b> rồi kéo lại từ đầu. Không có thao tác nhả nào được gửi đi."];
+          }
           return ["canh", IC.canh, "<b>Thao tác bị ngắt, kéo lại từ đầu.</b> Cửa sổ vừa mất con trỏ giữa lúc bạn đang nhấn chuột; không có thao tác nhả nào được gửi đi."];
         }
         const con = Math.max(0, TRAN_TAI_LAI - (P.soTaiLai || 0));
@@ -343,9 +349,9 @@
     e.preventDefault();
     // Chỉ NÚT TRÁI. Nút phải/giữa: không gửi gì, không mở gesture.
     if (e.button !== 0 || (e.buttons & ~1)) { if (P.cuChi) boCuChi("cuc_bo"); return; }
-    // Lệnh huỷ trước đó KHÔNG tới được máy chủ ⇒ nút trên trang máy chủ có thể còn nhấn: huỷ lại TRƯỚC,
-    // lô của cú nhấn này xếp sau lệnh đó trong chuỗi (chỉ gửi nếu lần này huỷ được).
-    if (P.huyTruot && P.huyCho === 0) baoHuyGesture();
+    // Đang chặn chuột (lệnh huỷ chưa được máy chủ nhận): KHÔNG mở gesture — nửa gesture mở giữa chừng
+    // sẽ thành move/`up` không có `down`. Huỷ đã trượt hẳn ⇒ cú nhấn này chỉ để thử huỷ lại.
+    if (P.chanChuot) { if (!P.dangHuy) baoHuyGesture(); return; }
     const h = hinhHoc();
     if (!h) return;
     P.cuChi = { id: e.pointerId };
@@ -407,41 +413,42 @@
     if (loai === "cuc_bo" && dieuKhienDuoc()) baoHuyGesture();
   }
 
-  // Lệnh `huy_gesture` phải tới SAU mọi lô của gesture: lô và lệnh là hai endpoint, lô `down` tới sau
-  // lệnh huỷ thì nút lại bị nhấn mà không còn ai huỷ. Nên xả bộ đệm, chờ mọi lô đang bay được trả lời
-  // (kể cả thử lại), rồi mới gửi.
-  // Lô và lệnh huỷ đi theo MỘT chuỗi tuần tự: lệnh chạy khi mọi lô xếp trước nó đã gửi (rồi chờ chúng
-  // được trả lời), lô tạo trong lúc còn lệnh chờ thì xếp sau lệnh. Hai lần huỷ liên tiếp vẫn đúng thứ tự.
+  // Popup tự bỏ gesture ⇒ CHẶN mọi sự kiện chuột/wheel (ĐP-728, luật A1) cho tới khi máy chủ trả 200
+  // cho `huy_gesture`. Lệnh mang `den_seq` = `seq` kế tiếp: lô đang bay / bị abort vì timeout mà tới
+  // máy chủ SAU lệnh thì bị bỏ ở đó (luật B) — không cần chờ lô, không cần giữ lô. Đánh đổi đã chốt:
+  // thao tác trong ~1 RTT lúc đang huỷ bị bỏ, có báo bằng chữ.
   function baoHuyGesture() {
     const p = P;
-    xaLo();                 // lô của gesture bị bỏ: gửi (hoặc xếp) TRƯỚC lệnh huỷ
-    p.huyCho += 1;
-    const xong = p.chuoi
-      .then(() => guiHuyGesture(p))
-      .catch(() => false)
-      .then((daHuy) => {
-        p.huyCho -= 1;
-        // Lô xếp sau lệnh này chỉ được gửi khi máy chủ ĐÃ huỷ: không thì nút cũ còn nhấn và cú nhấn mới
-        // chồng lên nó (trang nhận nhấn lần hai rồi `up` hoàn tất cú kéo cũ). Trượt ⇒ các lô đó bị BỎ,
-        // và cú nhấn kế tiếp phải huỷ lại trước (`khiNhan`).
-        p.huyTruot = !daHuy;
-        return daHuy;
-      });
-    p.chuoi = xong;
+    clearTimeout(p.hen);
+    p.hen = null;
+    p.buf.length = 0;          // phần chưa gửi của gesture bị bỏ: không gửi nữa
+    p.chanChuot = true;
+    p.dangHuy = true;
+    p.huyTruot = false;
+    ve();
+    const xong = guiHuyGesture(p).catch(() => false).then((daHuy) => {
+      p.dangHuy = false;
+      if (P !== p) return daHuy;
+      if (daHuy) p.chanChuot = false;
+      else p.huyTruot = true;  // vẫn chặn; cú nhấn kế tiếp thử huỷ lại (`khiNhan`)
+      ve();
+      return daHuy;
+    });
+    p.huyDangBay = xong;
     return xong;
   }
 
   // Trả true CHỈ khi máy chủ nhận lệnh (200). Hết lượt thử, mất quyền điều khiển, mất phiên, 409, popup
   // đã đổi ⇒ false — người gọi coi như CHƯA huỷ.
   async function guiHuyGesture(p) {
-    await Promise.allSettled([...p.loDangBay]);
     for (let lan = 0; lan <= THU_LAI_TOI_DA; lan++) {
       if (P !== p || !dieuKhienDuoc()) return false;
       let r;
       try {
-        r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`, { token: p.token, lenh: "huy_gesture" });
+        r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`,
+                      { token: p.token, lenh: "huy_gesture", den_seq: p.seqLo });
       } catch (e) {
-        await ngu(THU_LAI_CHO_MS * (lan + 1));
+        if (lan < THU_LAI_TOI_DA) await ngu(THU_LAI_CHO_MS * (lan + 1));
         continue;
       }
       if (P !== p) return false;
@@ -457,34 +464,19 @@
     if (!P) return;
     clearTimeout(P.hen);
     P.hen = null;
+    // ĐIỂM CHẶN DUY NHẤT (ĐP-728 A1): còn chặn chuột ⇒ bỏ mọi sự kiện đã gom (down/move/up/hover/wheel).
+    if (P.chanChuot) { P.buf.length = 0; return; }
     while (P.buf.length) {
       const lo = {
         token: P.token, khung_w: P.bufKhungW,
         khung_seq: P.bufKhungSeq === null || P.bufKhungSeq === undefined ? null : P.bufKhungSeq,
         su_kien: P.buf.splice(0, LO_TOI_DA),
       };
-      // Còn lệnh `huy_gesture` chưa xong: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI, nên lô của cú
-      // nhấn MỚI gửi lúc này có thể bị chính lệnh đó xoá. Đóng lô (giữ khung của nó) và xếp SAU lệnh
-      // trong chuỗi — gửi ngay khi lệnh được trả lời; sự kiện giữ `t` gốc nên máy chủ phát đúng nhịp.
-      if (P.huyCho > 0) {
-        const p = P;
-        P.chuoi = P.chuoi
-          .then(() => {
-            if (P !== p) return;
-            if (p.huyTruot) {           // lệnh huỷ đứng trước KHÔNG tới máy chủ ⇒ bỏ lô, báo người
-              if (!p.biNgat) { p.biNgat = { loai: "cuc_bo" }; ve(); }
-              return;
-            }
-            guiLoTheoDoi(lo);
-          })
-          .catch(() => {});             // một bước ném không được làm kẹt cả chuỗi
-      } else {
-        guiLoTheoDoi(lo);
-      }
+      guiLoTheoDoi(lo);
     }
   }
 
-  // Gán `seq` lúc GỬI (không lúc đóng lô) để lô bị giữ không để hở `seq` cho máy chủ chờ.
+  // `seq` gán lúc GỬI; lệnh huỷ dùng `seqLo` hiện tại làm `den_seq`.
   function guiLoTheoDoi(lo) {
     const bay = guiLo({ ...lo, seq: P.seqLo++ });
     // Theo dõi lô đang bay để lệnh (`huy_gesture`, `da_giai`, `dung`) chờ chúng (guiLo không bao giờ ném).
@@ -679,7 +671,7 @@
     document.body.classList.add("gc-lock-scroll");
     P = {
       job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false, loDangBay: new Set(),
-      huyCho: 0, chuoi: Promise.resolve(), huyTruot: false,
+      chanChuot: false, dangHuy: false, huyTruot: false, huyDangBay: null,
       ttGiai: ["cho_giai", "dang_mo", "dang_giai"].includes(job.trang_thai) ? job.trang_thai : "cho_giai",
       vai: null, viTri: null, soTaiLai: 0, conLai: null, coKhung: false,
       panel: null, biNgat: null, khongThay: false, matKetNoi: false, matKetNoiHan: false,
@@ -740,9 +732,9 @@
     // Chờ mọi lô đang bay được trả lời: lô chứa `up` cuối tới SAU lệnh thì máy chủ đã thôi phát (review F4).
     p.dangGuiLenh = true;
     ve();
-    // Lệnh huỷ + lô xếp sau nó phải đi TRƯỚC lệnh này. Chờ tới khi chuỗi THÔI ĐỔI: lô có thể được
-    // xếp thêm vào chuỗi trong lúc đang chờ (bộ gom 40 ms bắn giữa chừng).
-    for (let c = p.chuoi; ; c = p.chuoi) { await c; if (P !== p || c === p.chuoi) break; }
+    // Lệnh huỷ đang bay phải tới TRƯỚC lệnh này (lệnh kết thúc lượt mà nút còn nhấn thì `da_giai` phát
+    // nốt trên trạng thái kẹt).
+    if (p.dangHuy && p.huyDangBay) await p.huyDangBay;
     if (P !== p) return;
     xaLo();
     await Promise.allSettled([...p.loDangBay]);
