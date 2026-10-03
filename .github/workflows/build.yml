@@ -60,7 +60,10 @@ jobs:
         shell: pwsh
         # Reuse the same launcher-agnostic build script (it Push-Locations into
         # build-scripts/ so the spec's relative paths resolve correctly).
-        run: powershell -ExecutionPolicy Bypass -File build-scripts\build-app.ps1
+        # pwsh (PowerShell 7) reads a BOM-less .ps1 as UTF-8. Windows PowerShell 5.1
+        # read it as cp1252, where the 0x94 byte of an em dash became a curly
+        # closing quote and broke parsing on every Windows build since July.
+        run: pwsh -ExecutionPolicy Bypass -File build-scripts\build-app.ps1
 
       - name: Zip Windows build
         shell: pwsh
