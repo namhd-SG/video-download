@@ -529,6 +529,82 @@ def test_hai_lan_huy_lien_tiep_moi_lenh_di_sau_lo_cua_gesture_no_huy(mo_trang, d
     assert ("lo_ve", lo_down[1]) in ghi.thu_tu[:gui[1]] and ("lo_gui", lo_down[1]) not in ghi.thu_tu[:gui[0]]
 
 
+def chan_lenh_huy(page, so_lan: int, *, treo: bool = False) -> list:
+    """`so_lan` lệnh `huy_gesture` đầu tiên: trả 500 (hoặc TREO — không bao giờ trả lời, `treo=True`).
+    Đi qua `page.route` nên request vẫn hiện trong `Ghi`. Trả list các route đang treo (giữ tham chiếu)."""
+    dem, treo_ds = {"n": 0}, []
+
+    def xu_ly(route):
+        if "huy_gesture" in (route.request.post_data or "") and dem["n"] < so_lan:
+            dem["n"] += 1
+            if treo:
+                treo_ds.append(route)      # không fulfill/continue ⇒ request đứng tới khi popup tự huỷ
+                return
+            route.fulfill(status=500, content_type="application/json", body='{"detail": "giả lập lỗi"}')
+            return
+        route.continue_()
+
+    page.route("**/giai/lenh", xu_ly)
+    return treo_ds
+
+
+def test_lenh_huy_truot_het_luot_bo_lo_dang_giu_va_huy_lai_truoc_cu_nhan_sau(mo_trang, db):
+    """Review #49 MUST-FIX: lệnh huỷ hỏng cả 4 lần thử ⇒ máy chủ còn nút cũ nhấn. Lô cú nhấn mới đang giữ
+    phải BỊ BỎ (gửi đi thì trang nhận nhấn lần hai rồi `up` hoàn tất cú kéo cũ), và cú nhấn kế tiếp phải
+    HUỶ LẠI trước. ĐỘT BIẾN: gửi lô đang giữ dù huỷ trượt ⇒ ĐỎ; bỏ huỷ-lại ở `khiNhan` ⇒ ĐỎ; coi hết lượt
+    thử là đã huỷ ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    chan_lenh_huy(page, 4)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 130, r["y"] + 110)
+    doi_gui(page)
+    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+    page.mouse.up()
+    page.mouse.move(r["x"] + 200, r["y"] + 200)        # cú nhấn mới trong lúc lệnh huỷ còn thử lại
+    page.mouse.down()
+    page.mouse.move(r["x"] + 220, r["y"] + 200)
+    page.mouse.up()
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 4, 6)
+    # Chờ chuỗi xử lý xong lô đang giữ: hoặc ghi chú hiện (bỏ lô), hoặc lô tới máy chủ (đột biến).
+    assert cho_trang(page, lambda: "Thao tác bị ngắt" in page.locator("#gc-note").inner_text()
+                     or [e["k"] for e in ghi.su_kien()].count("down") > 1, 5)
+    doi_gui(page)
+    assert [e["k"] for e in ghi.su_kien()].count("down") == 1, "lô cú nhấn mới phải bị bỏ khi huỷ trượt"
+    assert "Thao tác bị ngắt" in page.locator("#gc-note").inner_text()
+    # Cú nhấn kế tiếp: huỷ lại (lần 5 — máy chủ nhận) RỒI mới gửi cú nhấn.
+    page.mouse.move(r["x"] + 300, r["y"] + 300)
+    page.mouse.down()
+    page.mouse.up()
+    assert cho_trang(page, lambda: [e["k"] for e in ghi.su_kien()].count("down") == 2, 5)
+    doi_gui(page)
+    assert [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 5
+    huy_ok = ghi.thu_tu.index(("lenh_ve", "huy_gesture"), max(i for i, x in enumerate(ghi.thu_tu)
+                                                               if x == ("lenh_gui", "huy_gesture")))
+    lo_down_moi = [lo["seq"] for lo in ghi.chuot if any(e["k"] == "down" for e in lo["su_kien"])][-1]
+    assert ghi.thu_tu.index(("lo_gui", lo_down_moi)) > huy_ok
+
+
+def test_lenh_huy_treo_het_gio_thi_thu_lai_chuoi_khong_ket(mo_trang, db):
+    """Review #49 SHOULD: `fetch` không timeout ⇒ một lệnh huỷ treo làm kẹt cả chuỗi (cú nhấn mới không bao
+    giờ tới, nút lệnh khoá). Có timeout 8 s ⇒ lần thử sau đi tiếp. ĐỘT BIẾN: bỏ `signal` ⇒ ĐỎ (treo)."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = chan_lenh_huy(page, 1, treo=True)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    doi_gui(page)
+    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+    page.mouse.up()
+    page.mouse.move(r["x"] + 200, r["y"] + 200)
+    page.mouse.down()
+    page.mouse.up()
+    assert cho_trang(page, lambda: [e["k"] for e in ghi.su_kien()].count("down") == 2, 14), \
+        "lệnh huỷ treo phải hết giờ, thử lại, rồi cú nhấn mới mới đi"
+    assert len(giu) == 1 and [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 2
+
+
 def test_lenh_da_giai_gui_sau_moi_lo_dang_bay(mo_trang, db):
     """Review F4: lô chứa `up` cuối còn đang bay khi bấm "Đã giải xong" ⇒ lệnh phải gửi SAU khi lô đó
     được trả lời (máy chủ thôi phát sau lệnh). ĐỘT BIẾN: bỏ `await Promise.allSettled` ở `guiLenh` ⇒ ĐỎ."""

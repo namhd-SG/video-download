@@ -323,6 +323,21 @@ def test_dem_su_kien_phat_muon_vi_worker_tre(dh):
     assert len(p.den_han(lich_dau + 0.5)) == 1 and p.tre_phat_worker_tong() == 1  # muộn 0,5 s
 
 
+def test_lo_trung_seq_phat_dung_mot_lan_ca_khi_da_xa_va_dang_cho(dh):
+    """Popup thử lại lô sau timeout ⇒ máy chủ có thể nhận TRÙNG lô (request cũ thật ra đã tới). Mỗi sự
+    kiện phải phát đúng MỘT lần. ĐỘT BIẾN: bỏ kiểm `seq < expected_seq` ⇒ ĐỎ; bỏ kiểm `seq in _cho_lo` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    lo0 = [_ev("down", 1, 1, 0.0, 1), _ev("move", 2, 2, 16.0, 1)]
+    assert p.nhan_lo(tk, chu, 0, lo0) == "ok"
+    assert p.nhan_lo(tk, chu, 0, lo0) == "trung"                               # trùng lô ĐÃ xả
+    lo2 = [_ev("up", 4, 4, 48.0, 0)]
+    assert p.nhan_lo(tk, chu, 2, lo2) == "ok"                                  # tới sớm, đang chờ lô 1
+    assert p.nhan_lo(tk, chu, 2, lo2) == "trung"                               # trùng lô ĐANG chờ
+    assert p.nhan_lo(tk, chu, 1, [_ev("move", 3, 3, 32.0, 1)]) == "ok"
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 1.0), ("move", 2.0), ("move", 3.0), ("up", 4.0)]
+
+
 def test_seq_cu_bi_bo_la_trung_va_nhay_xa_bi_tu_choi(dh):
     p = _phien()
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)])
