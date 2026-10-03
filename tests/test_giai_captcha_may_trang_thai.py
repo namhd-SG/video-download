@@ -521,6 +521,22 @@ def test_lenh_huy_gesture_khi_nut_dang_nhan_reload_khong_phat_mouseup(monkeypatc
     assert bi_ngat and bi_ngat[0][1]["ly_do"] == gc.LY_DO_HUY_POPUP
 
 
+def test_lenh_huy_gesture_gui_lap_chi_reload_mot_lan(monkeypatch, db):
+    """Popup thử lại `huy_gesture` sau timeout ⇒ máy chủ có thể nhận lệnh 2 lần cho CÙNG một gesture:
+    idempotent — một lần tải lại, không phát sự kiện nào."""
+    h = Hien(monkeypatch, db)
+    h.trang.kich_ban = [
+        (0.10, lambda: _keo(h, h.nguoi)),
+        (0.50, lambda: h.phien.huy_gesture_cua_nguoi_giu(TOKEN, CHU)),
+        (0.52, lambda: h.phien.huy_gesture_cua_nguoi_giu(TOKEN, CHU)),
+        (0.90, lambda: h.phien.huy_gesture_cua_nguoi_giu(TOKEN, CHU)),   # tới SAU khi worker đã xử lý lần đầu
+        (1.30, h.lenh("dung")),
+    ]
+    h.chay()
+    assert "mouseReleased" not in [p["type"] for p in h.input_da_phat()]
+    assert h.trang.so_reload == 1 and h.phien.so_gesture_bo_do == 1
+
+
 def test_lenh_huy_gesture_nguoi_khong_giu_khoa_bi_409_khong_huy(monkeypatch, db):
     h = Hien(monkeypatch, db)
     ma = []

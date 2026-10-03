@@ -60,12 +60,14 @@ HỢP ĐỒNG API (UI gọi; mọi route cần đăng nhập — `require_user`;
       409: token không giữ khoá (hoặc email khác) / job không ở `dang_giai` / chưa có khung.
       429: quá 50 lô/giây.   Sự kiện `buttons & ~1` (nút phải/giữa) bị bỏ, không phát.
 
-  POST /jobs/{id}/giai/lenh                 — body {"token": str, "lenh": "da_giai"|"dung"|"huy_gesture"}
+  POST /jobs/{id}/giai/lenh                 — body {"token": str, "lenh": "da_giai"|"dung"|"huy_gesture",
+                                                    "den_seq": int (bắt buộc với huy_gesture)}
       Chỉ người đang giữ khoá, chỉ khi job ở `dang_giai`. 200: {"ok": true}; kết quả theo SSE `ket_thuc`.
       `huy_gesture`: popup đã tự bỏ gesture đang dở (không gửi `up`). Máy chủ không phát sự kiện nào;
                  nút đang nhấn ⇒ tải lại trang (SSE `bi_ngat`, tính vào trần tải lại); không ⇒ chỉ bỏ
-                 hàng đợi. Popup gửi SAU khi mọi lô của gesture đã được trả lời, để lô `down` không tới
-                 sau lệnh huỷ.
+                 hàng đợi. `den_seq` = `seq` kế tiếp popup sẽ cấp: mọi lô `seq < den_seq` chưa nhận bị
+                 BỎ (tới muộn ⇒ "trung", không phát). Thiếu / ngoài [0, expected + nhảy tối đa] ⇒ 400.
+                 Popup không gửi sự kiện chuột nào từ lúc bỏ gesture tới khi lệnh này trả 200.
       `da_giai`: máy chủ phát nốt các sự kiện đã nhận, tắt screencast, nhả khoá, đóng SSE, RỒI mới tải
                  lại trang MỘT lần và quét tiếp (vẫn bị chặn ⇒ `cho_xac_minh` "captcha_chua_xong").
       `dung`   : job `failed` ("feed_rong_khong_captcha"), không tải video nào.
@@ -356,6 +358,12 @@ class BoPhatLai:
             if ev.k == "up" and not self.nut_giu_nguon:
                 self.so_bo += 1  # `up` không có `down` đi trước (tàn dư nút phải đã bỏ…)
                 continue
+            if ev.k == "move" and (ev.buttons & 1) and not self.nut_giu_nguon:
+                # Kéo (nút trái đang nhấn) mà không có `down` đi trước: tàn dư của gesture đã huỷ khi
+                # chính lô chứa `down` bị từ chối — lúc huỷ chưa có `down` nên `_cho_down_moi` không bật
+                # (captchahf R16b). Popup không bao giờ gửi move có nút khi chưa mở gesture.
+                self.so_bo += 1
+                continue
             if self._anh_xa is None or (not self._hang and not self.nut_giu_nguon):
                 self._anh_xa = t_toi - ev.t / 1000.0
                 self._d_hieu_luc = self.d
@@ -637,18 +645,39 @@ class PhienGiai:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
             self._lenh.append(lenh)
 
-    def huy_gesture_cua_nguoi_giu(self, token: str, email: str) -> None:
+    def huy_gesture_cua_nguoi_giu(self, token: str, email: str, den_seq: int | None = None) -> None:
         """Lệnh `huy_gesture` (R15b KHÉP): popup tự bỏ gesture (`pointercancel`/`lostpointercapture`/
         `blur`) và KHÔNG gửi `up` — nhả chuột là bước nộp lần thử (ĐP-529/602). Không có lệnh này thì
         máy chủ không biết: chỉ HỤT `seq` mới huỷ (`kiem_thieu_lo`), còn popup im lặng thì nút kẹt nhấn.
         Đi đúng đường huỷ có sẵn (ĐP-606 (a)): worker không phát sự kiện nào; nút đang nhấn ⇒ tải lại
-        trang, tính vào trần `TRAN_TAI_LAI_MOI_LUOT`; nút không nhấn ⇒ chỉ bỏ hàng đợi."""
+        trang, tính vào trần `TRAN_TAI_LAI_MOI_LUOT`; nút không nhấn ⇒ chỉ bỏ hàng đợi.
+
+        `den_seq` = `seq` KẾ TIẾP popup sẽ cấp lúc gửi lệnh (ĐP-727 luật B): mọi lô `seq < den_seq` chưa
+        nhận coi như BỎ — lô bị abort vì timeout có thể tới máy chủ MUỘN, sau khi huỷ đã xong, và `down`
+        trong đó sẽ không còn ai huỷ. Lô tới sớm đang chờ trong vùng đó cũng bỏ. Lô muộn ⇒ "trung"."""
         with self.khoa:
             if not self.la_giu(token, email):
                 raise LoiGiai(409, "Bạn không giữ quyền điều khiển (người/tab khác đang giải).")
             if self.trang_thai != "dang_giai" or self.da_dong:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
+            if den_seq is not None and (den_seq < 0 or den_seq > self.expected_seq + SEQ_NHAY_TOI_DA):
+                raise LoiGiai(400, "`den_seq` ngoài khoảng hợp lệ.")
+            if den_seq is not None and den_seq < self.expected_seq:
+                # Bản sao MUỘN của một lệnh đã xử lý (lần thử trước hết giờ ở popup nhưng vẫn tới): lệnh
+                # hợp lệ luôn có `den_seq >= expected_seq` (máy chủ không nhận được `seq` popup chưa cấp).
+                # Lô của gesture SAU đã đẩy `expected_seq` qua mốc ⇒ huỷ lúc này là huỷ nhầm gesture đó.
+                return
+            # Huỷ TRƯỚC, xả SAU: lô `seq >= den_seq` là của cú nhấn sau lệnh — không được bị huỷ này xoá.
             self._huy_gesture_unlocked(LY_DO_HUY_POPUP)
+            if den_seq is not None:
+                for s in [s for s in self._cho_lo if s < den_seq]:
+                    del self._cho_lo[s]
+                self.expected_seq = max(self.expected_seq, den_seq)
+                self._cho_lo_tu = None
+                if self._cho_lo:
+                    self._xa_cho_lo(dong_ho())      # lô tới sớm ngay sau mốc đã đủ thứ tự thì xả
+                    if self._cho_lo:                # còn hụt ⇒ đếm hụt lại từ lúc này
+                        self._cho_lo_tu = dong_ho()
 
     def xem_lenh(self) -> str | None:
         with self.khoa:

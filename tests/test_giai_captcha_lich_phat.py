@@ -289,6 +289,20 @@ def test_lo_bi_tu_choi_toi_truoc_lo_down_van_huy_dung_gesture(dh):
     assert [e.k for e in p.den_han(dh.t + 5)] == ["down", "up"]
 
 
+def test_lo_bi_tu_choi_chinh_la_lo_down_khong_lot_tan_du_keo(dh):
+    """captchahf R16b: lô 0 (chứa `down`) bị từ chối ⇒ move có nút + `up` của lô 1 là tàn dư, không phát.
+    Đối chứng: gesture hợp lệ sau đó vẫn phát đủ. ĐỘT BIẾN: bỏ luật chặn move có nút khi chưa có
+    `down` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    p.bo_lo(tk, chu, 0)
+    p.nhan_lo(tk, chu, 1, [_ev("move", 30, 1, 16.0, 1), _ev("up", 30, 1, 32.0, 0)])
+    assert p.den_han(dh.t + 5) == []
+    p.nhan_lo(tk, chu, 2, [_ev("move", 1, 1, 100.0, 0), _ev("down", 2, 2, 116.0, 1),
+                           _ev("move", 3, 3, 132.0, 1), _ev("up", 3, 3, 148.0, 0)])
+    assert [(e.k, e.buttons) for e in p.den_han(dh.t + 5)] == [("move", 0), ("down", 1), ("move", 1), ("up", 0)]
+
+
 def test_lo_bi_tu_choi_dung_thu_tu_huy_ngay(dh):
     """Lô 400 tới ĐÚNG thứ tự (sau `down`) ⇒ huỷ ngay khi nó tới, như trước."""
     p = _phien()
@@ -307,6 +321,74 @@ def test_dem_su_kien_phat_muon_vi_worker_tre(dh):
     lich_dau = p.diem_ke_tiep()
     assert len(p.den_han(lich_dau)) == 1 and p.tre_phat_worker_tong() == 0     # đúng lịch
     assert len(p.den_han(lich_dau + 0.5)) == 1 and p.tre_phat_worker_tong() == 1  # muộn 0,5 s
+
+
+def test_lo_trung_seq_phat_dung_mot_lan_ca_khi_da_xa_va_dang_cho(dh):
+    """Popup thử lại lô sau timeout ⇒ máy chủ có thể nhận TRÙNG lô (request cũ thật ra đã tới). Mỗi sự
+    kiện phải phát đúng MỘT lần. ĐỘT BIẾN: bỏ kiểm `seq < expected_seq` ⇒ ĐỎ; bỏ kiểm `seq in _cho_lo` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    lo0 = [_ev("down", 1, 1, 0.0, 1), _ev("move", 2, 2, 16.0, 1)]
+    assert p.nhan_lo(tk, chu, 0, lo0) == "ok"
+    assert p.nhan_lo(tk, chu, 0, lo0) == "trung"                               # trùng lô ĐÃ xả
+    lo2 = [_ev("up", 4, 4, 48.0, 0)]
+    assert p.nhan_lo(tk, chu, 2, lo2) == "ok"                                  # tới sớm, đang chờ lô 1
+    assert p.nhan_lo(tk, chu, 2, lo2) == "trung"                               # trùng lô ĐANG chờ
+    assert p.nhan_lo(tk, chu, 1, [_ev("move", 3, 3, 32.0, 1)]) == "ok"
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 1.0), ("move", 2.0), ("move", 3.0), ("up", 4.0)]
+
+
+def test_huy_co_den_seq_bo_lo_toi_muon_va_lo_dang_cho_truoc_moc(dh):
+    """ĐP-727 luật B: lô `seq < den_seq` tới SAU lệnh huỷ (vd bị abort vì timeout nhưng thật ra vẫn bay
+    tới) ⇒ "trung", KHÔNG phát — `down` trong đó không còn ai huỷ. Lô tới sớm trong vùng đó cũng bỏ;
+    lô sau mốc vẫn chạy bình thường. ĐỘT BIẾN: bỏ xử lý `den_seq` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("move", 1, 1, 0.0, 0)]) == "ok"
+    assert p.nhan_lo(tk, chu, 2, [_ev("move", 9, 9, 40.0, 1)]) == "ok"       # tới sớm, chờ lô 1
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=3)                             # lô 1, 2 thuộc gesture bỏ
+    assert p.nhan_lo(tk, chu, 1, [_ev("down", 5, 5, 20.0, 1)]) == "trung"     # lô 1 tới MUỘN
+    assert p.nhan_lo(tk, chu, 3, [_ev("move", 6, 6, 300.0, 0), _ev("down", 7, 7, 316.0, 1),
+                                  _ev("up", 7, 7, 332.0, 0)]) == "ok"
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("move", 6.0), ("down", 7.0), ("up", 7.0)]
+
+
+def test_huy_den_seq_khong_xoa_lo_sau_moc_da_toi_som(dh):
+    """Lô `seq >= den_seq` (cú nhấn MỚI) tới sớm, đang chờ, lúc lệnh huỷ tới: huỷ phải áp TRƯỚC khi xả
+    lô đó — xả trước rồi huỷ thì huỷ xoá luôn cú nhấn mới. ĐỘT BIẾN: huỷ SAU khi xả ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("down", 1, 1, 0.0, 1)]) == "ok"
+    assert p.nhan_lo(tk, chu, 2, [_ev("down", 7, 7, 300.0, 1), _ev("up", 7, 7, 316.0, 0)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=2)                             # lô 1 (gesture bỏ) chưa tới
+    assert p.expected_seq == 3
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("up", 7.0)]
+
+
+def test_ban_sao_lenh_huy_toi_muon_khong_huy_gesture_sau(dh):
+    """ĐP-729 SHOULD-1: lần thử 1 của `huy_gesture` hết giờ ở popup nhưng vẫn tới máy chủ SAU khi lần thử 2
+    đã xử lý và người đã bắt đầu gesture MỚI ⇒ `den_seq < expected_seq` ⇒ bản sao muộn, KHÔNG huỷ.
+    ĐỘT BIẾN: bỏ nhánh bỏ-qua bản sao muộn ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    assert p.nhan_lo(tk, chu, 0, [_ev("down", 1, 1, 0.0, 1)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=1)                             # lần thử 2 — được xử lý
+    assert p.lay_huy() == gc.LY_DO_HUY_POPUP
+    assert p.den_han(dh.t + 5) == []
+    assert p.nhan_lo(tk, chu, 1, [_ev("down", 7, 7, 300.0, 1), _ev("move", 8, 7, 316.0, 1)]) == "ok"
+    p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=1)                             # bản sao MUỘN của lần thử 1
+    assert p.lay_huy() is None
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("move", 8.0)]
+
+
+def test_huy_den_seq_ngoai_khoang_400_khong_huy(dh):
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    for xau in (-1, gc.SEQ_NHAY_TOI_DA + 1):
+        with pytest.raises(LoiGiai) as e:
+            p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=xau)
+        assert e.value.ma == 400
+    assert p.lay_huy() is None and p.expected_seq == 0
 
 
 def test_seq_cu_bi_bo_la_trung_va_nhay_xa_bi_tu_choi(dh):

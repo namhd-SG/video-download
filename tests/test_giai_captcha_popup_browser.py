@@ -154,6 +154,8 @@ class Ghi:
         if r.request.method == "POST" and r.url.endswith("/giai/chuot"):
             self.mat_chuot.append(r.status)
             self.thu_tu.append(("lo_ve", r.request.post_data_json["seq"]))
+        elif r.request.method == "POST" and r.url.endswith("/giai/lenh"):
+            self.thu_tu.append(("lenh_ve", r.request.post_data_json["lenh"]))
 
     def su_kien(self) -> list[dict]:
         """Mọi sự kiện đã gửi, xếp theo `seq` của lô rồi theo thứ tự trong lô."""
@@ -403,72 +405,167 @@ def test_bo_gesture_khong_gui_up(mo_trang, db, cach):
     assert [e["k"] for e in ghi.su_kien()].count("down") == 2
     assert [e["k"] for e in ghi.su_kien()].count("up") == 1
     # Máy chủ chỉ tự huỷ khi HỤT seq; popup im lặng ⇒ nút kẹt nhấn. Popup phải báo `huy_gesture` ĐÚNG
-    # một lần (gesture thứ hai kết thúc bằng `up` thật ⇒ không báo) và SAU khi mọi lô của gesture bị
-    # bỏ đã được trả lời — lô `down` tới sau lệnh huỷ thì nút lại kẹt (R15b).
-    # ĐỘT BIẾN: bỏ lời gọi `baoHuyGesture` ⇒ ĐỎ; gửi lệnh trước khi chờ lô đang bay ⇒ ĐỎ.
+    # một lần (gesture thứ hai kết thúc bằng `up` thật ⇒ không báo), mang `den_seq` = số lô đã cấp lúc đó
+    # (lô tới muộn hơn lệnh bị máy chủ bỏ — luật B). ĐỘT BIẾN: bỏ lời gọi `baoHuyGesture` ⇒ ĐỎ.
     huy = [l for l in ghi.lenh if l["lenh"] == "huy_gesture"]
     assert len(huy) == 1 and huy[0]["token"] == ghi.token_sse[-1]
     vi_tri = ghi.thu_tu.index(("lenh_gui", "huy_gesture"))
     gui_truoc = [s for k, s in ghi.thu_tu[:vi_tri] if k == "lo_gui"]
-    assert gui_truoc, "phải có lô chứa `down` gửi trước lệnh huỷ"
-    assert all(("lo_ve", s) in ghi.thu_tu[:vi_tri] for s in gui_truoc), \
-        "huy_gesture gửi khi còn lô chưa được trả lời"
+    assert gui_truoc and huy[0]["den_seq"] == max(gui_truoc) + 1
+
+def tre_truoc_khi_gui(page, duong: str, ms: int, chua: str = "", so_lan: int = 10**6) -> None:
+    """Hoãn `fetch` tới URL chứa `duong` (và body chứa `chua`, tối đa `so_lan` lần đầu) thêm `ms` TRƯỚC
+    khi gửi — mở cửa sổ đua một cách xác định (request ra mạng muộn, nên `Ghi` thấy đúng thứ tự gửi
+    thật). Chỉ nhắm đúng request cần hoãn: hoãn cả request đối chứng thì chính bộ hoãn che thứ tự."""
+    page.evaluate("""([duong, ms, chua, soLan]) => { const f = window.fetch; let n = 0;
+        window.fetch = async (u, o) => {
+            if (String(u).includes(duong) && String((o && o.body) || "").includes(chua) && n < soLan) {
+                n += 1; await new Promise(r => setTimeout(r, ms));
+            }
+            return f(u, o); }; }""", [duong, ms, chua, so_lan])
 
 
-def test_huy_gesture_ngay_khi_lo_con_trong_bo_dem_van_toi_sau_moi_lo(mo_trang, db):
-    """Huỷ NGAY sau khi kéo (lô còn trong bộ đệm 40 ms / đang bay): popup phải xả bộ đệm, chờ mọi lô
-    được trả lời rồi mới gửi `huy_gesture`. ĐỘT BIẾN: bỏ `await Promise.allSettled(...)` ⇒ ĐỎ."""
-    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
-    r = khung_rect(page)
-    page.mouse.move(r["x"] + 100, r["y"] + 100)
+def chan_lenh_huy(page, so_lan: int, *, treo: bool = False) -> list:
+    """`so_lan` lệnh `huy_gesture` đầu tiên: trả 500 (hoặc TREO — không bao giờ trả lời, `treo=True`).
+    Đi qua `page.route` nên request vẫn hiện trong `Ghi`. Trả list các route đang treo (giữ tham chiếu)."""
+    dem, treo_ds = {"n": 0}, []
+
+    def xu_ly(route):
+        if "huy_gesture" in (route.request.post_data or "") and dem["n"] < so_lan:
+            dem["n"] += 1
+            if treo:
+                treo_ds.append(route)      # không fulfill/continue ⇒ request đứng tới khi popup tự huỷ
+                return
+            route.fulfill(status=500, content_type="application/json", body='{"detail": "giả lập lỗi"}')
+            return
+        route.continue_()
+
+    page.route("**/giai/lenh", xu_ly)
+    return treo_ds
+
+
+def _keo_roi_blur(page, r, x=100):
+    page.mouse.move(r["x"] + x, r["y"] + 100)
     page.mouse.down()
-    page.mouse.move(r["x"] + 130, r["y"] + 110)
-    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
-    assert cho_trang(page, lambda: any(l["lenh"] == "huy_gesture" for l in ghi.lenh), 5)
-    doi_gui(page)
-    vi_tri = ghi.thu_tu.index(("lenh_gui", "huy_gesture"))
-    gui_truoc = [s for k, s in ghi.thu_tu[:vi_tri] if k == "lo_gui"]
-    assert any(e["k"] == "down" for lo in ghi.chuot if lo["seq"] in gui_truoc for e in lo["su_kien"]), \
-        "lô chứa `down` phải được gửi TRƯỚC lệnh huỷ"
-    assert all(("lo_ve", s) in ghi.thu_tu[:vi_tri] for s in gui_truoc), \
-        "huy_gesture gửi khi còn lô chưa được trả lời"
-    assert [l["lenh"] for l in ghi.lenh] == ["huy_gesture"]
-
-
-def tre_truoc_khi_gui(page, duong: str, ms: int) -> None:
-    """Hoãn mọi `fetch` tới URL chứa `duong` thêm `ms` TRƯỚC khi gửi — mở cửa sổ đua một cách xác định
-    (request ra mạng muộn, nên bộ ghi `Ghi` thấy đúng thứ tự gửi thật)."""
-    page.evaluate("""([duong, ms]) => { const f = window.fetch;
-        window.fetch = async (u, o) => { if (String(u).includes(duong)) await new Promise(r => setTimeout(r, ms));
-                                         return f(u, o); }; }""", [duong, ms])
-
-
-def test_khong_mo_gesture_moi_khi_lenh_huy_chua_tra_loi(mo_trang, db):
-    """Review F3: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI ⇒ `down` mới gửi khi lệnh còn bay có thể bị
-    chính lệnh đó xoá. Popup không mở gesture mới cho tới khi lệnh được trả lời.
-    ĐỘT BIẾN: bỏ chặn `P.dangHuy` ở `khiNhan` ⇒ ĐỎ."""
-    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
-    r = khung_rect(page)
-    tre_truoc_khi_gui(page, "/giai/lenh", 600)
-    page.mouse.move(r["x"] + 100, r["y"] + 100)
-    page.mouse.down()
-    page.mouse.move(r["x"] + 130, r["y"] + 110)
+    page.mouse.move(r["x"] + x + 30, r["y"] + 110)
     doi_gui(page)
     page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+
+
+def _so(ghi, k):
+    return [e["k"] for e in ghi.su_kien()].count(k)
+
+
+def test_dang_huy_chan_moi_su_kien_cu_nhan_trong_luc_do_bi_bo_va_bao(mo_trang, db):
+    """ĐP-728 A1: từ lúc bỏ gesture tới khi `huy_gesture` trả 200, popup BỎ MỌI sự kiện chuột/wheel
+    (cả hover). Cú nhấn trong lúc đó bị bỏ (đánh đổi đã chốt) và có chữ báo. Huỷ xong ⇒ nhấn lại chạy
+    bình thường. ĐỘT BIẾN: bỏ chặn ở `xaLo` ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 600, chua="huy_gesture")
+    _keo_roi_blur(page, r)
+    truoc = len(ghi.su_kien())
     page.mouse.up()
-    page.mouse.move(r["x"] + 200, r["y"] + 200)        # lần nhấn mới TRONG lúc lệnh huỷ còn treo
+    page.mouse.move(r["x"] + 200, r["y"] + 200)          # hover + cú nhấn mới khi lệnh huỷ còn treo
     page.mouse.down()
     page.mouse.move(r["x"] + 220, r["y"] + 200)
     page.mouse.up()
+    page.mouse.wheel(0, 120)
     doi_gui(page)
-    assert [e["k"] for e in ghi.su_kien()].count("down") == 1, "không được mở gesture mới khi lệnh huỷ chưa trả lời"
-    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture"], 5)
-    page.wait_for_timeout(700)
-    page.mouse.move(r["x"] + 300, r["y"] + 300)        # lệnh đã trả lời ⇒ nhấn lại được
+    assert "đang huỷ thao tác cũ" in page.locator("#gc-note").inner_text()
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
+    doi_gui(page)
+    assert len(ghi.su_kien()) == truoc, "không sự kiện nào được gửi khi còn đang huỷ"
+    page.mouse.move(r["x"] + 300, r["y"] + 300)
     page.mouse.down()
     page.mouse.up()
     doi_gui(page)
-    assert [e["k"] for e in ghi.su_kien()].count("down") == 2
+    assert _so(ghi, "down") == 2 and _so(ghi, "up") == 1
+
+
+def test_giu_nut_xuyen_qua_luc_huy_truot_roi_tha_khong_gui_gi(mo_trang, db):
+    """Review #49 vòng 2 MUST-FIX: huỷ trượt hẳn (500 × 4) trong lúc người VẪN GIỮ nút, rồi thả ⇒ 0 sự
+    kiện tới máy chủ (không `up` nào hoàn tất cú kéo cũ). Cú nhấn kế tiếp chỉ để thử huỷ lại (bị bỏ);
+    huỷ được rồi thì nhấn lại chạy bình thường. ĐỘT BIẾN: bỏ chặn ở `xaLo` ⇒ ĐỎ; huỷ trượt mà mở chặn
+    ⇒ ĐỎ; bỏ thử-huỷ-lại ở `khiNhan` ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    chan_lenh_huy(page, 4)
+    _keo_roi_blur(page, r)
+    truoc = len(ghi.su_kien())
+    page.mouse.move(r["x"] + 160, r["y"] + 120)          # vẫn giữ nút
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 4, 6)
+    assert cho_trang(page, lambda: "chưa báo được máy chủ" in page.locator("#gc-note").inner_text(), 3)
+    page.mouse.move(r["x"] + 180, r["y"] + 120)
+    page.mouse.up()                                      # thả SAU khi huỷ trượt
+    page.mouse.move(r["x"] + 190, r["y"] + 140)          # hover
+    doi_gui(page)
+    assert len(ghi.su_kien()) == truoc, "huỷ trượt: không sự kiện nào được tới máy chủ"
+    page.mouse.down()                                    # chỉ để thử huỷ lại — bị bỏ
+    page.mouse.up()
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu[-1:], 5)
+    doi_gui(page)
+    assert [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 5 and len(ghi.su_kien()) == truoc
+    page.mouse.move(r["x"] + 300, r["y"] + 300)
+    page.mouse.down()
+    page.mouse.up()
+    doi_gui(page)
+    assert _so(ghi, "down") == 2 and _so(ghi, "up") == 1
+
+
+def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
+    """`fetch` treo ⇒ timeout 8 s ⇒ lệnh thử lại được nhận ⇒ mở chặn; cú nhấn sau đó tới máy chủ.
+    Lệnh huỷ có timeout RIÊNG 3 s (ĐP-729) ⇒ mở chặn trong vài giây, không phải 8 s.
+    ĐỘT BIẾN: bỏ `signal` ⇒ ĐỎ (kẹt chặn tới hết lượt); lệnh huỷ dùng timeout 8 s chung ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = chan_lenh_huy(page, 1, treo=True)
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 6)
+    page.mouse.move(r["x"] + 300, r["y"] + 300)
+    page.mouse.down()
+    page.mouse.up()
+    doi_gui(page)
+    assert len(giu) == 1 and [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 2
+    assert _so(ghi, "down") == 2
+
+
+def test_mo_chan_bo_ca_su_kien_bo_gom_vua_nhat_luc_dang_chan(mo_trang, db):
+    """ĐP-729 NIT-3: sự kiện bộ gom nhặt trong lúc chặn mà chưa tới lượt `xaLo` xoá thì cũng phải bỏ khi
+    mở chặn. Bắn một hover NGAY trước khi popup nhận phản hồi 200 của `huy_gesture`. ĐỘT BIẾN: không
+    xoá `buf` lúc mở chặn ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.evaluate("""() => { const f = window.fetch;
+        window.fetch = async (u, o) => {
+            const res = await f(u, o);
+            if (String((o && o.body) || "").includes("huy_gesture")) {
+                const a = document.querySelector('#gc-anh').getBoundingClientRect();
+                document.querySelector('#gc-khung').dispatchEvent(new PointerEvent('pointermove', {
+                    pointerId: 1, pointerType: 'mouse', bubbles: true, buttons: 0,
+                    clientX: a.x + a.width / 2, clientY: a.y + a.height / 2 }));
+            }
+            return res; }; }""")
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    truoc = len(ghi.su_kien())
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
+    doi_gui(page)
+    assert len(ghi.su_kien()) == truoc, "hover nhặt trong lúc chặn không được gửi sau khi mở chặn"
+
+
+def test_da_giai_khi_dang_huy_di_sau_lenh_huy(mo_trang, db):
+    """Bấm "Đã giải xong" khi lệnh huỷ còn treo ⇒ `da_giai` gửi SAU khi `huy_gesture` được trả lời.
+    ĐỘT BIẾN: `guiLenh` không chờ lệnh huỷ ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 600, chua="huy_gesture")
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    page.click("#gc-actions button:has-text('Đã giải xong')")
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture", "da_giai"], 5)
+    assert ghi.thu_tu.index(("lenh_ve", "huy_gesture")) < ghi.thu_tu.index(("lenh_gui", "da_giai"))
 
 
 def test_lenh_da_giai_gui_sau_moi_lo_dang_bay(mo_trang, db):

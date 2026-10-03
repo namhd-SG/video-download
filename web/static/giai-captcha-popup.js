@@ -20,6 +20,12 @@
   const LO_TOI_DA = 64;
   // POST lô trượt do mạng/429/5xx: thử lại CÙNG `seq` (máy chủ loại trùng theo `seq`).
   const THU_LAI_TOI_DA = 3;
+  // Request treo (không lỗi, không trả lời — vd TCP đứng qua tunnel) phải thành LỖI để đường thử lại
+  // chạy; không thì lệnh huỷ / lô chuột chờ mãi và cả chuỗi kẹt tới hết 5 phút. 8 s CHƯA ĐO.
+  const GOI_HET_GIO_MS = 8000;
+  // Lệnh huỷ ngắn hơn: suốt lúc chờ nó, popup CHẶN mọi thao tác chuột; 4 lần thử × 8 s ≈ 33 s chặn là quá
+  // dài (ĐP-729). 3 s ⇒ ≈ 13 s tối đa. CHƯA ĐO.
+  const HUY_HET_GIO_MS = 3000;
   const THU_LAI_CHO_MS = 150;
   // Sau chừng này không bấm/lăn chuột thì nhắc "Không thấy captcha?" (popup không đọc được DOM
   // trang TikTok nên không tự biết có captcha hay không — chỉ gợi ý theo thời gian).
@@ -63,13 +69,21 @@
 
   // Gọi API. Trả {matPhien} khi phiên đăng nhập hết (302 → opaqueredirect, 401, hoặc 200 trả
   // trang HTML đăng nhập thay vì JSON); ngoài ra {ok, status, data}. Mạng đứt thì ném lỗi.
-  async function goi(method, path, body) {
-    const res = await fetch(path, {
-      method,
-      redirect: "manual",
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+  async function goi(method, path, body, hetGioMs = GOI_HET_GIO_MS) {
+    const ctl = new AbortController();
+    const hen = setTimeout(() => ctl.abort(), hetGioMs);
+    let res;
+    try {
+      res = await fetch(path, {
+        method,
+        redirect: "manual",
+        headers: body === undefined ? {} : { "Content-Type": "application/json" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+        signal: ctl.signal,
+      });
+    } finally {
+      clearTimeout(hen);
+    }
     if (res.type === "opaqueredirect" || res.status === 0 || res.status === 401) return { matPhien: true };
     const laJson = (res.headers.get("content-type") || "").includes("json");
     if (res.ok && !laJson) return { matPhien: true };
@@ -132,6 +146,12 @@
         return ["trung", IC.info, "Mỗi lúc chỉ một người điều khiển được. Bạn vẫn thấy ảnh trang để theo dõi."];
       case "bi-ngat": {
         if (P.biNgat.loai === "cuc_bo") {
+          if (P.huyTruot) {
+            return ["canh", IC.canh, "<b>Thao tác bị ngắt — chưa báo được máy chủ.</b> Mạng đang chậm; thao tác của bạn tạm chưa được gửi. Nhấn vào ảnh để thử lại."];
+          }
+          if (P.chanChuot) {
+            return ["canh", IC.canh, "<b>Thao tác bị ngắt — đang huỷ thao tác cũ, chờ một chút</b> rồi kéo lại từ đầu. Không có thao tác nhả nào được gửi đi."];
+          }
           return ["canh", IC.canh, "<b>Thao tác bị ngắt, kéo lại từ đầu.</b> Cửa sổ vừa mất con trỏ giữa lúc bạn đang nhấn chuột; không có thao tác nhả nào được gửi đi."];
         }
         const con = Math.max(0, TRAN_TAI_LAI - (P.soTaiLai || 0));
@@ -332,10 +352,9 @@
     e.preventDefault();
     // Chỉ NÚT TRÁI. Nút phải/giữa: không gửi gì, không mở gesture.
     if (e.button !== 0 || (e.buttons & ~1)) { if (P.cuChi) boCuChi("cuc_bo"); return; }
-    // Lệnh `huy_gesture` chưa được trả lời: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI, nên `down`
-    // mới gửi lúc này có thể bị chính lệnh đó xoá (review F3). Không mở gesture — các move đang giữ
-    // nút và `up` của lần nhấn này cũng không gửi (nhánh "không có gesture của popup").
-    if (P.dangHuy) return;
+    // Đang chặn chuột (lệnh huỷ chưa được máy chủ nhận): KHÔNG mở gesture — nửa gesture mở giữa chừng
+    // sẽ thành move/`up` không có `down`. Huỷ đã trượt hẳn ⇒ cú nhấn này chỉ để thử huỷ lại.
+    if (P.chanChuot) { if (!P.dangHuy) baoHuyGesture(); return; }
     const h = hinhHoc();
     if (!h) return;
     P.cuChi = { id: e.pointerId };
@@ -397,54 +416,77 @@
     if (loai === "cuc_bo" && dieuKhienDuoc()) baoHuyGesture();
   }
 
-  // Lệnh `huy_gesture` phải tới SAU mọi lô của gesture: lô và lệnh là hai endpoint, lô `down` tới sau
-  // lệnh huỷ thì nút lại bị nhấn mà không còn ai huỷ. Nên xả bộ đệm, chờ mọi lô đang bay được trả lời
-  // (kể cả thử lại), rồi mới gửi.
-  async function baoHuyGesture() {
+  // Popup tự bỏ gesture ⇒ CHẶN mọi sự kiện chuột/wheel (ĐP-728, luật A1) cho tới khi máy chủ trả 200
+  // cho `huy_gesture`. Lệnh mang `den_seq` = `seq` kế tiếp: lô đang bay / bị abort vì timeout mà tới
+  // máy chủ SAU lệnh thì bị bỏ ở đó (luật B) — không cần chờ lô, không cần giữ lô. Đánh đổi đã chốt:
+  // thao tác trong ~1 RTT lúc đang huỷ bị bỏ, có báo bằng chữ.
+  function baoHuyGesture() {
     const p = P;
+    clearTimeout(p.hen);
+    p.hen = null;
+    p.buf.length = 0;          // phần chưa gửi của gesture bị bỏ: không gửi nữa
+    p.chanChuot = true;
     p.dangHuy = true;
-    try {
-      await guiHuyGesture(p);
-    } finally {
+    p.huyTruot = false;
+    ve();
+    const xong = guiHuyGesture(p).catch(() => false).then((daHuy) => {
       p.dangHuy = false;
-    }
+      if (P !== p) return daHuy;
+      // Mở chặn: bỏ cả những gì bộ gom vừa nhặt trong lúc chặn (chưa tới lượt `xaLo` xoá) — "bỏ MỌI sự kiện".
+      if (daHuy) { p.buf.length = 0; p.chanChuot = false; }
+      else p.huyTruot = true;  // vẫn chặn; cú nhấn kế tiếp thử huỷ lại (`khiNhan`)
+      ve();
+      return daHuy;
+    });
+    p.huyDangBay = xong;
+    return xong;
   }
 
+  // Trả true CHỈ khi máy chủ nhận lệnh (200). Hết lượt thử, mất quyền điều khiển, mất phiên, 409, popup
+  // đã đổi ⇒ false — người gọi coi như CHƯA huỷ.
   async function guiHuyGesture(p) {
-    xaLo();
-    await Promise.allSettled([...p.loDangBay]);
     for (let lan = 0; lan <= THU_LAI_TOI_DA; lan++) {
-      if (P !== p || !dieuKhienDuoc()) return;
+      if (P !== p || !dieuKhienDuoc()) return false;
       let r;
       try {
-        r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`, { token: p.token, lenh: "huy_gesture" });
+        r = await goi("POST", `/jobs/${p.job.id}/giai/lenh`,
+                      { token: p.token, lenh: "huy_gesture", den_seq: p.seqLo }, HUY_HET_GIO_MS);
       } catch (e) {
-        await ngu(THU_LAI_CHO_MS * (lan + 1));
+        if (lan < THU_LAI_TOI_DA) await ngu(THU_LAI_CHO_MS * (lan + 1));
         continue;
       }
-      if (P !== p) return;
-      if (r.matPhien) { matPhien(); return; }
-      if (r.ok || r.status === 409) return; // 409: lượt đã đổi / không còn giữ quyền — SSE sẽ báo
-      await ngu(THU_LAI_CHO_MS * (lan + 1));
+      if (P !== p) return false;
+      if (r.matPhien) { matPhien(); return false; }
+      if (r.ok) return true;
+      if (r.status === 409) return false; // lượt đã đổi / không còn giữ quyền — SSE sẽ báo
+      if (lan < THU_LAI_TOI_DA) await ngu(THU_LAI_CHO_MS * (lan + 1));   // sau lần cuối: không chờ suông
     }
+    return false;
   }
 
   function xaLo() {
     if (!P) return;
     clearTimeout(P.hen);
     P.hen = null;
+    // ĐIỂM CHẶN DUY NHẤT (ĐP-728 A1): còn chặn chuột ⇒ bỏ mọi sự kiện đã gom (down/move/up/hover/wheel).
+    if (P.chanChuot) { P.buf.length = 0; return; }
     while (P.buf.length) {
-      const su_kien = P.buf.splice(0, LO_TOI_DA);
-      const bay = guiLo({
-        token: P.token, seq: P.seqLo++, khung_w: P.bufKhungW,
+      const lo = {
+        token: P.token, khung_w: P.bufKhungW,
         khung_seq: P.bufKhungSeq === null || P.bufKhungSeq === undefined ? null : P.bufKhungSeq,
-        su_kien,
-      });
-      // Theo dõi lô đang bay để `baoHuyGesture` chờ chúng (guiLo không bao giờ ném).
-      const dangBay = P.loDangBay;
-      dangBay.add(bay);
-      bay.finally(() => dangBay.delete(bay));
+        su_kien: P.buf.splice(0, LO_TOI_DA),
+      };
+      guiLoTheoDoi(lo);
     }
+  }
+
+  // `seq` gán lúc GỬI; lệnh huỷ dùng `seqLo` hiện tại làm `den_seq`.
+  function guiLoTheoDoi(lo) {
+    const bay = guiLo({ ...lo, seq: P.seqLo++ });
+    // Theo dõi lô đang bay để lệnh (`huy_gesture`, `da_giai`, `dung`) chờ chúng (guiLo không bao giờ ném).
+    const dangBay = P.loDangBay;
+    dangBay.add(bay);
+    bay.finally(() => dangBay.delete(bay));
   }
 
   async function guiLo(lo) {
@@ -633,7 +675,7 @@
     document.body.classList.add("gc-lock-scroll");
     P = {
       job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false, loDangBay: new Set(),
-      dangHuy: false,
+      chanChuot: false, dangHuy: false, huyTruot: false, huyDangBay: null,
       ttGiai: ["cho_giai", "dang_mo", "dang_giai"].includes(job.trang_thai) ? job.trang_thai : "cho_giai",
       vai: null, viTri: null, soTaiLai: 0, conLai: null, coKhung: false,
       panel: null, biNgat: null, khongThay: false, matKetNoi: false, matKetNoiHan: false,
@@ -692,9 +734,13 @@
     if (!dieuKhienDuoc() || p.dangGuiLenh) return;
     // Phát nốt những gì người đã nhấn trước khi ra lệnh (máy chủ cũng phát nốt hàng đợi trước lệnh).
     // Chờ mọi lô đang bay được trả lời: lô chứa `up` cuối tới SAU lệnh thì máy chủ đã thôi phát (review F4).
-    xaLo();
     p.dangGuiLenh = true;
     ve();
+    // Lệnh huỷ đang bay phải tới TRƯỚC lệnh này (lệnh kết thúc lượt mà nút còn nhấn thì `da_giai` phát
+    // nốt trên trạng thái kẹt).
+    if (p.dangHuy && p.huyDangBay) await p.huyDangBay;
+    if (P !== p) return;
+    xaLo();
     await Promise.allSettled([...p.loDangBay]);
     if (P !== p) return;
     try {
