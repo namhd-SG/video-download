@@ -1,13 +1,13 @@
 # Build "Video Download" for Windows (PowerShell).
-# (macOS build lives in build-scripts/build-app.sh — run that on a Mac.)
+# (macOS build lives in build-scripts/build-app.sh - run that on a Mac.)
 #
 # Prereqs:
-#   - Python 3.10+ (python.org installer — ships Tk)
+#   - Python 3.10+ (python.org installer - ships Tk)
 #   - A venv with deps:  py -m venv .venv ; .\.venv\Scripts\Activate.ps1
 #                        pip install -e . pyinstaller
 #   - (Optional) ffmpeg.exe for the watermark feature. Either put a static
 #     build at assets\ffmpeg-static\ffmpeg.exe (it gets bundled), or have
-#     ffmpeg on PATH at runtime. Without it, downloads still work — only the
+#     ffmpeg on PATH at runtime. Without it, downloads still work - only the
 #     watermark step is skipped.
 #
 # Usage (from the project root):
@@ -25,7 +25,7 @@ if (-not (Get-Command pyinstaller -ErrorAction SilentlyContinue)) {
 
 $FfmpegBin = Join-Path $ProjectRoot "assets\ffmpeg-static\ffmpeg.exe"
 if (-not (Test-Path $FfmpegBin)) {
-  Write-Host "[!] assets\ffmpeg-static\ffmpeg.exe not found — building WITHOUT a bundled ffmpeg."
+  Write-Host "[!] assets\ffmpeg-static\ffmpeg.exe not found - building WITHOUT a bundled ffmpeg."
   Write-Host "    Watermarking will need ffmpeg on PATH at runtime. Downloads work regardless."
   Write-Host "    To bundle it: download a static ffmpeg.exe (gyan.dev or BtbN) into that folder."
 }
