@@ -224,6 +224,22 @@ def test_close_loi_khong_de_loi_goc(monkeypatch, tmp_path, caplog):
     assert not scraper_mod._PROFILE_DANG_MO, "khoá profile vẫn phải nhả"
 
 
+@pytest.mark.parametrize("loi_goc", [KeyboardInterrupt, SystemExit])
+def test_close_loi_khong_de_loi_goc_baseexception(monkeypatch, tmp_path, caplog, loi_goc):
+    """Lỗi gốc là BaseException (không phải Exception) mà `close` cũng nổ ⇒ ra ngoài vẫn
+    là ĐÚNG loại lỗi gốc, lỗi đóng chỉ vào log, và khoá profile vẫn được nhả."""
+    ctx = _CtxGia(loi_cookies=loi_goc("A-goc"), loi_dong=OSError("B-dong"))
+    _dung_pw(monkeypatch, ctx)
+    with caplog.at_level(logging.WARNING, logger="ttmd"):
+        with pytest.raises(loi_goc) as bat:
+            scraper_mod.scrape_music_page(URL_MUSIC, profile_dir=str(tmp_path / "p"),
+                                          cookies_path="/x")
+    assert type(bat.value) is loi_goc and not isinstance(bat.value, OSError)
+    assert ctx.da_dong
+    assert any("B-dong" in r.getMessage() for r in caplog.records)
+    assert not scraper_mod._PROFILE_DANG_MO, "khoá profile vẫn phải nhả"
+
+
 def test_close_loi_khi_khong_co_loi_goc_van_ne_ra(monkeypatch, tmp_path):
     """Không có lỗi gốc thì lỗi đóng KHÔNG bị nuốt (hành vi cũ)."""
     ctx = _CtxGia(loi_dong=OSError("B-dong"))
