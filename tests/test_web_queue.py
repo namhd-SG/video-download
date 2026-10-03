@@ -655,16 +655,20 @@ def test_hashtag_trang_dau_toan_video_da_co_roi_nguon_loi_la_loi(tmp_path, monke
 
 
 def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
-    """Mỗi `STOP_*` (trừ `STOP_COMPLETE`) phải có câu trong `STOP_REASON_TEXT` —
-    thiếu thì thẻ hiện "mã chưa dịch — báo cho người phát triển". Thêm mã mới
+    """Mỗi `STOP_*` (trừ `STOP_COMPLETE`) và mỗi `LD_*` của luồng giải xác minh phải có câu trong
+    `STOP_REASON_TEXT` — thiếu thì thẻ hiện "mã chưa dịch — báo cho người phát triển". Thêm mã mới
     (như `hashtag_khong_tra_duoc`) mà quên câu ⇒ test này ĐỎ."""
     import re
     from tiktok_music_downloader import utils as utils_mod
+    from web import giai_captcha as gc_mod
     js = Path("web/static/app.js").read_text(encoding="utf-8")
     dau = js.index("const STOP_REASON_TEXT")
     khoa = set(re.findall(r"^\s{4}(\w+):", js[dau:js.index("};", dau)], re.M))
     ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
     ma |= set(cookies_mod.MA_LOI_COOKIE)   # mã cookie cũng vào cột `ly_do_dung`
+    ma_giai = {v for k, v in vars(gc_mod).items() if k.startswith("LD_") and isinstance(v, str) and v}
+    assert len(ma_giai) >= 15, f"gom được {len(ma_giai)} mã LD_* — tên hằng đổi? {sorted(ma_giai)}"
+    ma |= ma_giai   # mã giải xác minh cũng vào cột `ly_do_dung`
     assert ma - khoa == set()
 
 
