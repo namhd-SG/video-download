@@ -289,6 +289,20 @@ def test_lo_bi_tu_choi_toi_truoc_lo_down_van_huy_dung_gesture(dh):
     assert [e.k for e in p.den_han(dh.t + 5)] == ["down", "up"]
 
 
+def test_lo_bi_tu_choi_chinh_la_lo_down_khong_lot_tan_du_keo(dh):
+    """captchahf R16b: lô 0 (chứa `down`) bị từ chối ⇒ move có nút + `up` của lô 1 là tàn dư, không phát.
+    Đối chứng: gesture hợp lệ sau đó vẫn phát đủ. ĐỘT BIẾN: bỏ luật chặn move có nút khi chưa có
+    `down` ⇒ ĐỎ."""
+    p = _phien()
+    tk, chu = "token-aaaaaaaa", "chu@x.vn"
+    p.bo_lo(tk, chu, 0)
+    p.nhan_lo(tk, chu, 1, [_ev("move", 30, 1, 16.0, 1), _ev("up", 30, 1, 32.0, 0)])
+    assert p.den_han(dh.t + 5) == []
+    p.nhan_lo(tk, chu, 2, [_ev("move", 1, 1, 100.0, 0), _ev("down", 2, 2, 116.0, 1),
+                           _ev("move", 3, 3, 132.0, 1), _ev("up", 3, 3, 148.0, 0)])
+    assert [(e.k, e.buttons) for e in p.den_han(dh.t + 5)] == [("move", 0), ("down", 1), ("move", 1), ("up", 0)]
+
+
 def test_lo_bi_tu_choi_dung_thu_tu_huy_ngay(dh):
     """Lô 400 tới ĐÚNG thứ tự (sau `down`) ⇒ huỷ ngay khi nó tới, như trước."""
     p = _phien()

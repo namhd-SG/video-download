@@ -154,6 +154,8 @@ class Ghi:
         if r.request.method == "POST" and r.url.endswith("/giai/chuot"):
             self.mat_chuot.append(r.status)
             self.thu_tu.append(("lo_ve", r.request.post_data_json["seq"]))
+        elif r.request.method == "POST" and r.url.endswith("/giai/lenh"):
+            self.thu_tu.append(("lenh_ve", r.request.post_data_json["lenh"]))
 
     def su_kien(self) -> list[dict]:
         """Mọi sự kiện đã gửi, xếp theo `seq` của lô rồi theo thứ tự trong lô."""
@@ -435,21 +437,25 @@ def test_huy_gesture_ngay_khi_lo_con_trong_bo_dem_van_toi_sau_moi_lo(mo_trang, d
     assert [l["lenh"] for l in ghi.lenh] == ["huy_gesture"]
 
 
-def tre_truoc_khi_gui(page, duong: str, ms: int) -> None:
-    """Hoãn mọi `fetch` tới URL chứa `duong` thêm `ms` TRƯỚC khi gửi — mở cửa sổ đua một cách xác định
-    (request ra mạng muộn, nên bộ ghi `Ghi` thấy đúng thứ tự gửi thật)."""
-    page.evaluate("""([duong, ms]) => { const f = window.fetch;
-        window.fetch = async (u, o) => { if (String(u).includes(duong)) await new Promise(r => setTimeout(r, ms));
-                                         return f(u, o); }; }""", [duong, ms])
+def tre_truoc_khi_gui(page, duong: str, ms: int, chua: str = "", so_lan: int = 10**6) -> None:
+    """Hoãn `fetch` tới URL chứa `duong` (và body chứa `chua`, tối đa `so_lan` lần đầu) thêm `ms` TRƯỚC
+    khi gửi — mở cửa sổ đua một cách xác định (request ra mạng muộn, nên `Ghi` thấy đúng thứ tự gửi
+    thật). Chỉ nhắm đúng request cần hoãn: hoãn cả request đối chứng thì chính bộ hoãn che thứ tự."""
+    page.evaluate("""([duong, ms, chua, soLan]) => { const f = window.fetch; let n = 0;
+        window.fetch = async (u, o) => {
+            if (String(u).includes(duong) && String((o && o.body) || "").includes(chua) && n < soLan) {
+                n += 1; await new Promise(r => setTimeout(r, ms));
+            }
+            return f(u, o); }; }""", [duong, ms, chua, so_lan])
 
 
-def test_khong_mo_gesture_moi_khi_lenh_huy_chua_tra_loi(mo_trang, db):
-    """Review F3: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI ⇒ `down` mới gửi khi lệnh còn bay có thể bị
-    chính lệnh đó xoá. Popup không mở gesture mới cho tới khi lệnh được trả lời.
-    ĐỘT BIẾN: bỏ chặn `P.dangHuy` ở `khiNhan` ⇒ ĐỎ."""
+def test_cu_nhan_moi_khi_lenh_huy_con_bay_duoc_giu_va_gui_sau(mo_trang, db):
+    """captchahf R16b/F3: máy chủ huỷ "gesture đang dở" lúc lệnh TỚI ⇒ lô của cú nhấn MỚI không được
+    gửi trước khi lệnh huỷ được trả lời — nhưng cũng KHÔNG được mất: giữ đệm rồi gửi sau, `t` gốc.
+    ĐỘT BIẾN: gửi lô ngay khi còn lệnh huỷ chờ ⇒ ĐỎ (thứ tự); bỏ lô bị giữ ⇒ ĐỎ (mất cú nhấn)."""
     page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)
-    tre_truoc_khi_gui(page, "/giai/lenh", 600)
+    tre_truoc_khi_gui(page, "/giai/lenh", 600, chua="huy_gesture")
     page.mouse.move(r["x"] + 100, r["y"] + 100)
     page.mouse.down()
     page.mouse.move(r["x"] + 130, r["y"] + 110)
@@ -461,14 +467,66 @@ def test_khong_mo_gesture_moi_khi_lenh_huy_chua_tra_loi(mo_trang, db):
     page.mouse.move(r["x"] + 220, r["y"] + 200)
     page.mouse.up()
     doi_gui(page)
-    assert [e["k"] for e in ghi.su_kien()].count("down") == 1, "không được mở gesture mới khi lệnh huỷ chưa trả lời"
-    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture"], 5)
-    page.wait_for_timeout(700)
-    page.mouse.move(r["x"] + 300, r["y"] + 300)        # lệnh đã trả lời ⇒ nhấn lại được
+    assert [e["k"] for e in ghi.su_kien()].count("down") == 1, "lô cú nhấn mới phải chờ lệnh huỷ"
+    assert cho_trang(page, lambda: [e["k"] for e in ghi.su_kien()].count("down") == 2, 5), \
+        "cú nhấn mới không được mất"
+    doi_gui(page)
+    assert [l["lenh"] for l in ghi.lenh] == ["huy_gesture"]
+    vi_tri_ve = ghi.thu_tu.index(("lenh_ve", "huy_gesture"))
+    lo_down_moi = [lo["seq"] for lo in ghi.chuot
+                   if any(e["k"] == "down" for e in lo["su_kien"])][-1]
+    assert ghi.thu_tu.index(("lo_gui", lo_down_moi)) > vi_tri_ve, "lô cú nhấn mới gửi trước khi lệnh huỷ trả lời"
+    ev = ghi.su_kien()
+    moi = ev[[i for i, e in enumerate(ev) if e["k"] == "down"][1]:]
+    assert moi[0]["k"] == "down" and moi[-1]["k"] == "up" and "move" in [e["k"] for e in moi]
+    assert all(moi[i]["t"] <= moi[i + 1]["t"] for i in range(len(moi) - 1)), "giữ `t` gốc, đúng thứ tự"
+    seqs = sorted(lo["seq"] for lo in ghi.chuot)
+    assert seqs == list(range(seqs[0], seqs[0] + len(seqs))), "seq liên tiếp, không hở"
+
+
+def test_da_giai_khi_lenh_huy_con_bay_di_sau_huy_va_lo_dang_giu(mo_trang, db):
+    """Bấm "Đã giải xong" khi lệnh huỷ còn treo ⇒ `da_giai` gửi SAU khi `huy_gesture` được trả lời VÀ sau
+    lô đang giữ (cú nhấn mới). ĐỘT BIẾN: `guiLenh` không chờ chuỗi ⇒ ĐỎ."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 600, chua="huy_gesture")
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    doi_gui(page)
+    page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+    page.mouse.up()
+    page.mouse.move(r["x"] + 200, r["y"] + 200)
     page.mouse.down()
     page.mouse.up()
+    page.click("#gc-actions button:has-text('Đã giải xong')")
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture", "da_giai"], 5)
     doi_gui(page)
-    assert [e["k"] for e in ghi.su_kien()].count("down") == 2
+    gui_da_giai = ghi.thu_tu.index(("lenh_gui", "da_giai"))
+    assert ghi.thu_tu.index(("lenh_ve", "huy_gesture")) < gui_da_giai
+    lo_down = [lo["seq"] for lo in ghi.chuot if any(e["k"] == "down" for e in lo["su_kien"])]
+    assert len(lo_down) == 2 and all(("lo_ve", s) in ghi.thu_tu[:gui_da_giai] for s in lo_down)
+
+
+def test_hai_lan_huy_lien_tiep_moi_lenh_di_sau_lo_cua_gesture_no_huy(mo_trang, db):
+    """Lần huỷ thứ hai xảy ra khi lệnh thứ nhất còn treo: lô của gesture thứ hai (đang giữ) phải được
+    gửi VÀ trả lời trước lệnh huỷ thứ hai — nếu không, `down` của nó tới sau lệnh huỷ và nút lại kẹt."""
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 500, chua="huy_gesture", so_lan=1)
+    for x in (100, 200):
+        page.mouse.move(r["x"] + x, r["y"] + 100)
+        page.mouse.down()
+        page.mouse.move(r["x"] + x + 20, r["y"] + 110)
+        page.wait_for_timeout(80)
+        page.evaluate("() => window.dispatchEvent(new Event('blur'))")
+        page.mouse.up()
+    assert cho_trang(page, lambda: [l["lenh"] for l in ghi.lenh] == ["huy_gesture", "huy_gesture"], 5)
+    doi_gui(page)
+    gui = [i for i, (k, v) in enumerate(ghi.thu_tu) if k == "lenh_gui"]
+    lo_down = [lo["seq"] for lo in ghi.chuot if any(e["k"] == "down" for e in lo["su_kien"])]
+    assert len(lo_down) == 2
+    assert ("lo_ve", lo_down[0]) in ghi.thu_tu[:gui[0]]
+    assert ("lo_ve", lo_down[1]) in ghi.thu_tu[:gui[1]] and ("lo_gui", lo_down[1]) not in ghi.thu_tu[:gui[0]]
 
 
 def test_lenh_da_giai_gui_sau_moi_lo_dang_bay(mo_trang, db):

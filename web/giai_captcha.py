@@ -356,6 +356,12 @@ class BoPhatLai:
             if ev.k == "up" and not self.nut_giu_nguon:
                 self.so_bo += 1  # `up` không có `down` đi trước (tàn dư nút phải đã bỏ…)
                 continue
+            if ev.k == "move" and (ev.buttons & 1) and not self.nut_giu_nguon:
+                # Kéo (nút trái đang nhấn) mà không có `down` đi trước: tàn dư của gesture đã huỷ khi
+                # chính lô chứa `down` bị từ chối — lúc huỷ chưa có `down` nên `_cho_down_moi` không bật
+                # (captchahf R16b). Popup không bao giờ gửi move có nút khi chưa mở gesture.
+                self.so_bo += 1
+                continue
             if self._anh_xa is None or (not self._hang and not self.nut_giu_nguon):
                 self._anh_xa = t_toi - ev.t / 1000.0
                 self._d_hieu_luc = self.d
