@@ -431,6 +431,12 @@ def _giu_profile_dir(profile_dir: Path) -> str:
     return khoa
 
 
+def profile_dir_dang_mo(profile_dir: Path) -> bool:
+    """Tiến trình NÀY có đang giữ một context trên `profile_dir` không (registry)."""
+    with _PROFILE_KHOA:
+        return _khoa_profile_dir(profile_dir) in _PROFILE_DANG_MO
+
+
 def _nha_profile_dir(profile_dir: Path | None) -> None:
     """Nhả khoá của `profile_dir` (idempotent; None = context tạm, không có gì để nhả)."""
     if profile_dir is None:
@@ -550,6 +556,52 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
     )
 
 
+def quet_tren_trang(
+    page: Page,
+    url: str,
+    max_videos: int = 200,
+    scroll_pause: float = 1.5,
+    idle_rounds: int = 12,
+    dem_trang: Callable[[], None] | None = None,
+    thong_ke_feed: dict[str, int] | None = None,
+    tai_lai_truoc_khi_cuon: bool = False,
+) -> list[VideoRef]:
+    """Lõi quét của `scrape_music_page`, chạy trên một `Page` ĐÃ MỞ sẵn.
+
+    Thứ tự cố định: gắn `_watch_feed_api` → mở trang → `_auto_scroll` → gom refs →
+    cộng thống kê feed của lượt này vào `thong_ke_feed` (kể cả khi lỗi giữa chừng).
+
+    `tai_lai_truoc_khi_cuon=False` mở bằng `_mo_trang_co_ham_phien` (goto + hâm phiên
+    một lần), y hệt `scrape_music_page`. `True` dành cho page ĐÃ ở đúng trang (vd người
+    vừa giải xong captcha trong chính context này): `page.reload` ĐÚNG MỘT lần rồi
+    cuộn — không hâm phiên, không mở lại lần hai. `_watch_feed_api` luôn gắn TRƯỚC
+    lượt tải (goto hay reload), nếu gắn sau thì phản hồi feed của chính lượt tải đó
+    lọt khỏi bộ đếm và dòng thống kê ra 0/0 giả. Lượt reload quá giờ ném
+    `PWTimeout` cho người gọi quyết (page của họ, trạng thái của họ).
+
+    Mỗi page chỉ gọi MỘT lần: mỗi lần gọi gắn thêm một bộ nghe `response`, gọi hai lần
+    trên cùng page thì đếm đôi.
+
+    Hàm không mở/đóng context và không tự dọn gì — việc đó thuộc người gọi.
+    """
+    # Bộ đếm RIÊNG của lượt này: lượt hâm cần biết lượt NÀY đã rỗng chưa, không phải
+    # cộng dồn của người gọi. Cộng vào `thong_ke_feed` ở finally.
+    feed_luot: dict[str, int] = {}
+    try:
+        _watch_feed_api(page, dem_trang, feed_luot)
+        if tai_lai_truoc_khi_cuon:
+            page.reload(wait_until="domcontentloaded", timeout=30_000)
+            _cho_link(page)
+        else:
+            _mo_trang_co_ham_phien(page, url, feed_luot)
+        refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+    finally:
+        if thong_ke_feed is not None:
+            for o in ("rong", "co_du_lieu"):
+                thong_ke_feed[o] = thong_ke_feed.get(o, 0) + feed_luot.get(o, 0)
+    return sorted(refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
+
+
 def scrape_music_page(
     music_url: str,
     max_videos: int = 200,
@@ -572,6 +624,9 @@ def scrape_music_page(
     `user_agent=None` giữ hành vi cũ (bốc ngẫu nhiên mỗi lần gọi). Lớp web truyền UA
     đã ghim theo job khi dùng profile persist — profile giữ nguyên mà UA đổi mỗi
     lượt là tín hiệu bất thường.
+
+    Phần quét nằm ở `quet_tren_trang` (dùng được với page có sẵn); hàm này chỉ lo
+    mở/đóng context quanh nó.
     """
     ua = user_agent or random_user_agent()
     log.info(
@@ -592,31 +647,38 @@ def scrape_music_page(
             profile_dir=profile_path,
             user_agent=ua,
         )
-        # Bộ đếm RIÊNG của lượt này: lượt hâm cần biết lượt NÀY đã rỗng chưa,
-        # không phải cộng dồn của người gọi. Cộng vào `thong_ke_feed` ở finally.
-        feed_luot: dict[str, int] = {}
         # Mọi thứ sau khi context đã mở nằm TRONG try: `add_cookies`/`new_page` trượt
         # mà đứng ngoài thì context không bao giờ đóng và khoá profile_dir không bao
         # giờ nhả (job sau cùng dir bị chặn mãi).
+        dang_loi = False
         try:
             if cookies_path:
                 ctx.add_cookies(_load_cookies(Path(cookies_path)))
             page = ctx.new_page()
-            _watch_feed_api(page, dem_trang, feed_luot)
-            _mo_trang_co_ham_phien(page, music_url, feed_luot)
-            refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+            ordered = quet_tren_trang(
+                page, music_url, max_videos, scroll_pause, idle_rounds,
+                dem_trang=dem_trang, thong_ke_feed=thong_ke_feed,
+            )
+        except BaseException:
+            dang_loi = True
+            raise
         finally:
             try:
-                ctx.close()
-                if browser is not None:
-                    browser.close()
+                try:
+                    ctx.close()
+                    if browser is not None:
+                        browser.close()
+                except Exception as loi_dong:  # noqa: BLE001
+                    if not dang_loi:
+                        raise
+                    # Browser chết giữa chừng thì `close` cũng nổ theo: lỗi đóng
+                    # chỉ là hệ quả, không được đè lỗi gốc đang bay (log + ném lại
+                    # lỗi gốc ở cuối khối).
+                    log.warning("đóng context lỗi sau lỗi gốc (%s: %s) — giữ lỗi gốc",
+                                type(loi_dong).__name__, loi_dong)
             finally:
                 _nha_profile_dir(profile_path)
-            if thong_ke_feed is not None:
-                for o in ("rong", "co_du_lieu"):
-                    thong_ke_feed[o] = thong_ke_feed.get(o, 0) + feed_luot.get(o, 0)
 
-    ordered = sorted(refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
     log.info("collected %d unique video URLs", len(ordered))
     return ordered
 
@@ -632,6 +694,8 @@ def scrape_music_page_multi(
     on_skip: Callable[[VideoRef], None] | None = None,
     on_stop: Callable[[str], None] | None = None,
     max_seconds: float | None = None,
+    dung_som_khi_feed_rong: bool = False,
+    thong_ke_feed_ra: dict[str, int] | None = None,
     **kwargs,
 ) -> list[VideoRef]:
     """Run scrape_music_page N times, dedupe, with anti-block safeguards.
@@ -676,6 +740,19 @@ def scrape_music_page_multi(
     `max_seconds` là trần thời gian cả lượt (user chốt 10 phút). Kiểm TRƯỚC khi
     ngủ giữa hai lượt: ngủ 60-180s rồi mới phát hiện hết giờ là vứt đi đúng
     khoảng thời gian vừa chờ.
+
+    ---- Dừng sớm khi feed rỗng + lộ thống kê (chỉ khi được yêu cầu) ----
+
+    `dung_som_khi_feed_rong=True`: kiểm SAU MỖI lượt, nếu feed đo được là rỗng
+    (`rong>0`, `co_du_lieu==0`) thì dừng NGAY với `STOP_FEED_RONG`, BẤT KỂ có video
+    mới hay không và không ngủ chờ lượt sau. Trang bị chặn vẫn lộ một link `/video/`
+    lạc nên `moi≠∅`; kẹp thêm "không có video mới" là để lọt đúng ca cần bắt, và
+    kiểm ở CUỐI vòng thì lượt 2 chạm lại trang bị chặn trước khi tới cổng. Mặc định
+    False: đường music/search/CLI/GUI chạy y hệt trước đây (kiểm chỉ ở cuối, và chỉ
+    khi `not moi`).
+
+    `thong_ke_feed_ra`, nếu truyền, nhận tổng `rong`/`co_du_lieu` cộng dồn mọi lượt
+    đã chạy — để người gọi biết "không đo được feed nào" (0/0) khác "feed rỗng".
     """
     if passes < 1:
         passes = 1
@@ -694,6 +771,8 @@ def scrape_music_page_multi(
     # Cộng dồn MỌI lượt: câu hỏi là "TikTok có từng trả feed có dữ liệu trong
     # lượt tải này không", không phải "lượt cuối ra sao".
     thong_ke_feed: dict[str, int] = {"rong": 0, "co_du_lieu": 0}
+    if thong_ke_feed_ra is not None:
+        thong_ke_feed_ra.update(thong_ke_feed)
 
     def _con_lai() -> float | None:
         if max_seconds is None:
@@ -745,6 +824,10 @@ def scrape_music_page_multi(
         muc_tieu_tho = max(max_videos, (len(da_thay) + con_thieu) * 2)
         batch = scrape_music_page(music_url, max_videos=muc_tieu_tho,
                                   thong_ke_feed=thong_ke_feed, **kwargs)
+        if thong_ke_feed_ra is not None:
+            # Ngay sau mỗi lượt (không chờ cuối hàm): lượt sau ném thì tổng của các
+            # lượt đã chạy vẫn nằm ở người gọi.
+            thong_ke_feed_ra.update(thong_ke_feed)
         if not batch:
             # Lượt ĐẦU ra 0 = nguồn chưa bao giờ đưa gì (link sai/hết hạn).
             # Lượt SAU ra 0 = nó đang đưa rồi ngừng ⇒ nghi bị chặn mềm. Hai ca
@@ -794,6 +877,14 @@ def scrape_music_page_multi(
             len(moi), bo_qua, len(moi), max_videos,
         )
 
+        # `len(moi) < max_videos`: lượt đã lấy ĐỦ thì xong thật, không gắn `feed_rong`
+        # cho một job đã đủ (feed đếm rỗng mà link vẫn đủ ⇒ không phải bị chặn).
+        if (dung_som_khi_feed_rong and len(moi) < max_videos
+                and thong_ke_feed["rong"] > 0 and thong_ke_feed["co_du_lieu"] == 0):
+            log.warning("feed trả rỗng sau lượt %d (%d phản hồi 0 byte, 0 có dữ liệu) — "
+                        "dừng ngay, không chạm lại trang", i + 1, thong_ke_feed["rong"])
+            ly_do = STOP_FEED_RONG
+            break
         if len(moi) >= max_videos:
             log.info("đủ %d video mới, dừng", max_videos)
             ly_do = STOP_COMPLETE
