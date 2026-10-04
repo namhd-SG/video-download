@@ -519,16 +519,7 @@ def test_huy_truot_roi_may_chu_bao_bi_ngat_van_hien_goi_y_nhan_de_thu_lai(mo_tra
     tới (đổi `loai` thành "may_chu") ⇒ chuột VẪN bị chặn nên chữ đó phải còn, không bị thay bằng chữ
     "trang đã tải lại". Chờ ĐIỀU KIỆN (bộ đếm `bi_ngat` gắn vào EventSource trước popup), không chờ N ms.
     ĐỘT BIẾN: kiểm `huyTruot` chỉ khi loai === "cuc_bo" (như trước) ⇒ ĐỎ."""
-    jid = tao_job(db)
-    page, ghi = mo_trang()
-    page.evaluate("""() => { const ES = window.EventSource; window.__biNgat = 0;
-        window.EventSource = function (u, o) { const es = new ES(u, o);
-            es.addEventListener('bi_ngat', () => { window.__biNgat += 1; }); return es; };
-        window.EventSource.prototype = ES.prototype; }""")
-    page.click(".nut-giai-ngay")
-    page.wait_for_selector("#gc-bg")
-    phien = den_dang_giai(page, db, jid)
-    page.wait_for_selector(".gc-frame.dieu-khien")
+    page, ghi, phien = _mo_popup_dem_bi_ngat(mo_trang, db)
     r = khung_rect(page)
     chan_lenh_huy(page, 4)
     _keo_roi_blur(page, r)
@@ -539,6 +530,39 @@ def test_huy_truot_roi_may_chu_bao_bi_ngat_van_hien_goi_y_nhan_de_thu_lai(mo_tra
     assert cho_trang(page, lambda: page.evaluate("() => window.__biNgat") == 1, 3)
     note = page.locator("#gc-note").inner_text()
     assert "chưa báo được máy chủ" in note and "Nhấn vào ảnh để thử lại" in note, note
+
+
+def _mo_popup_dem_bi_ngat(mo_trang, db):
+    """Như `mo_popup_dang_giai` nhưng gắn bộ đếm `bi_ngat` vào EventSource TRƯỚC khi popup nối SSE,
+    để test chờ ĐIỀU KIỆN "popup đã xử lý `bi_ngat`" thay vì chờ N ms."""
+    jid = tao_job(db)
+    page, ghi = mo_trang()
+    page.evaluate("""() => { const ES = window.EventSource; window.__biNgat = 0;
+        window.EventSource = function (u, o) { const es = new ES(u, o);
+            es.addEventListener('bi_ngat', () => { window.__biNgat += 1; }); return es; };
+        window.EventSource.prototype = ES.prototype; }""")
+    page.click(".nut-giai-ngay")
+    page.wait_for_selector("#gc-bg")
+    phien = den_dang_giai(page, db, jid)
+    page.wait_for_selector(".gc-frame.dieu-khien")
+    return page, ghi, phien
+
+
+def test_dang_huy_roi_may_chu_bao_bi_ngat_van_hien_chu_dang_huy(mo_trang, db):
+    """Cùng gốc với NIT-4, nhánh còn lại: lệnh huỷ còn TREO (chuột đang bị chặn) mà SSE `bi_ngat` của
+    máy chủ tới ⇒ chữ "đang huỷ thao tác cũ" phải còn, không bị thay bằng "trang đã tải lại".
+    ĐỘT BIẾN: kiểm `chanChuot` chỉ khi loai === "cuc_bo" ⇒ ĐỎ."""
+    page, ghi, phien = _mo_popup_dem_bi_ngat(mo_trang, db)
+    r = khung_rect(page)
+    tre_truoc_khi_gui(page, "/giai/lenh", 3000, chua="huy_gesture")
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: "đang huỷ thao tác cũ" in page.locator("#gc-note").inner_text(), 3)
+    phien.thong_bao("bi_ngat", ly_do="thieu_lo", so_lan_tai_lai=1)
+    assert cho_trang(page, lambda: page.evaluate("() => window.__biNgat") == 1, 3)
+    assert not any(l["lenh"] == "huy_gesture" for l in ghi.lenh), "lệnh huỷ phải còn đang treo lúc kiểm"
+    note = page.locator("#gc-note").inner_text()
+    assert "đang huỷ thao tác cũ" in note, note
 
 
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
