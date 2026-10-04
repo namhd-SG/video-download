@@ -1104,9 +1104,12 @@ def test_boot_sweep_log_so_job_giai_bi_doi(monkeypatch, db, tmp_path, caplog, ba
     with caplog.at_level(logging.WARNING, logger="videodl.web"):
         w.start()
         w.stop()
-    dong = [r.getMessage() for r in caplog.records if "bước giải captcha" in r.getMessage()]
-    assert len(dong) == 1 and dong[0].startswith("boot sweep: 2 job"), dong
-    assert ("BẬT" if bat else "TẮT") in dong[0]
+    dong = [r.getMessage() for r in caplog.records if r.getMessage().startswith("boot sweep: 2 job")]
+    assert len(dong) == 1, dong
+    # Câu log phải nêu ĐÚNG tập trạng thái mà câu UPDATE tương ứng đếm.
+    tap = "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if bat else \
+        "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted"
+    assert tap in dong[0] and ("BẬT" if bat else "TẮT") in dong[0], dong[0]
 
 
 def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
@@ -1115,7 +1118,8 @@ def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="videodl.web"):
         w.start()
         w.stop()
-    assert not [r for r in caplog.records if "bước giải captcha" in r.getMessage()]
+    assert not [r for r in caplog.records if "tinh_nang_giai_tat" in r.getMessage()
+                or "-> cho_xac_minh" in r.getMessage()]
 
 
 def test_ti_le_khung_popup_trong_css_khop_viewport_cua_context_may_chu(tmp_path):

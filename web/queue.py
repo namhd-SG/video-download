@@ -787,8 +787,9 @@ class JobWorker:
             )
         # Số job ở trạng thái giải vừa bị đổi — trước đây câu này chạy mà không ai thấy số.
         if dem.get("giai"):
-            log.warning("boot sweep: %d job đang ở bước giải captcha -> %s (cờ %s %s)",
-                        dem["giai"], "cho_xac_minh" if co_giai else "interrupted/tinh_nang_giai_tat",
+            log.warning("boot sweep: %d job %s (cờ %s %s)", dem["giai"],
+                        "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if co_giai
+                        else "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted (tinh_nang_giai_tat)",
                         profile_theo_job.ENV_PROFILE_CAPTCHA, "BẬT" if co_giai else "TẮT")
         # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
         # chạy `finally`) phải dọn trước khi nhận job.
