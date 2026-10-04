@@ -1116,3 +1116,36 @@ def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
         w.start()
         w.stop()
     assert not [r for r in caplog.records if "bước giải captcha" in r.getMessage()]
+
+
+def test_ti_le_khung_popup_trong_css_khop_viewport_cua_context_may_chu(tmp_path):
+    """Popup quy toạ độ chuột theo tỉ lệ khung CSS (`aspect-ratio`), máy chủ phát theo viewport
+    của context. Lệch nhau ⇒ toạ độ y lệch ÂM THẦM (người kéo một đằng, Chromium nhận một nẻo).
+    Viewport đọc từ lời gọi THẬT của `_open_context` (Playwright giả ghi lại tham số), không chép số.
+    Đổi một bên mà quên bên kia ⇒ ĐỎ."""
+    import re
+    from pathlib import Path as _P
+
+    nhan = {}
+
+    class _Ctx:
+        def add_init_script(self, *_a):
+            pass
+
+    class _Chromium:
+        def launch_persistent_context(self, **kw):
+            nhan.update(kw)
+            return _Ctx()
+
+    pw = SimpleNamespace(chromium=_Chromium())
+    profile = tmp_path / "p"
+    scraper_mod._open_context(pw, headless=True, proxy=None, profile_dir=profile, user_agent="UA")
+    scraper_mod._nha_profile_dir(profile)
+    vp = nhan["viewport"]
+    css = (_P(__file__).resolve().parent.parent / "web" / "static" / "app.css").read_text(encoding="utf-8")
+    for lop in (".gc-frame", ".gc-closed"):
+        khoi = re.search(re.escape(lop) + r"\s*\{([^}]*)\}", css)
+        assert khoi, lop
+        ti_le = re.search(r"aspect-ratio:\s*(\d+)\s*/\s*(\d+)", khoi.group(1))
+        assert ti_le, f"{lop} không còn aspect-ratio dạng W / H"
+        assert (int(ti_le.group(1)), int(ti_le.group(2))) == (vp["width"], vp["height"]), lop
