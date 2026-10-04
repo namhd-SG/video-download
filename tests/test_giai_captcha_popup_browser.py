@@ -565,6 +565,109 @@ def test_dang_huy_roi_may_chu_bao_bi_ngat_van_hien_chu_dang_huy(mo_trang, db):
     assert "đang huỷ thao tác cũ" in note, note
 
 
+
+def test_lo_can_luot_thu_thi_chan_keo_va_trang_thai_go_chan(mo_trang, db):
+    """Mạng hỏng thật (mọi POST `/chuot` thất bại) ⇒ lô cạn lượt thử ⇒ popup CHẶN kéo, thôi tiêu `seq` vào
+    POST không tới được máy chủ. `trang_thai` về (máy chủ nhắc lại mỗi 5 s) ⇒ gỡ chặn, kéo lại tới máy chủ.
+    Không chặn chỉ vì SSE nối lại chớp nhoáng (onerror CONNECTING) — chỉ khi POST cạn lượt thử.
+    ĐỘT BIẾN: không gán `matKetNoiHan` khi cạn lượt ⇒ rê chuột vẫn bắn request ⇒ ĐỎ; không gỡ khi
+    `trang_thai` về ⇒ kéo không bao giờ tới máy chủ ⇒ ĐỎ."""
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    dem = {"n": 0}
+
+    def chan(route):
+        dem["n"] += 1
+        route.abort()
+
+    page.route("**/giai/chuot", chan)
+    page.mouse.move(r["x"] + 50, r["y"] + 50)              # hover ⇒ một lô ⇒ 1 lần gửi + 3 lần thử lại
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 6)
+    da_chan = dem["n"]
+    assert da_chan >= 4, da_chan
+    for i in range(5):                                      # rê tiếp trong lúc chặn
+        page.mouse.move(r["x"] + 60 + 10 * i, r["y"] + 60)
+    doi_gui(page, 500)
+    assert dem["n"] == da_chan, "đang chặn kéo: không được bắn thêm POST `/chuot` nào"
+    page.unroute("**/giai/chuot")
+    truoc = len(ghi.su_kien())
+    phien.dat_trang_thai("dang_giai", 200)                  # đổi phiên bản ⇒ SSE gửi `trang_thai` ngay
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" not in page.locator("#gc-note").inner_text(), 6)
+    page.mouse.move(r["x"] + 200, r["y"] + 120)
+    assert cho_trang(page, lambda: len(ghi.su_kien()) > truoc, 5), "gỡ chặn xong thì rê chuột phải tới máy chủ"
+
+
+
+def test_sse_loi_connecting_khong_chan_keo(mo_trang, db):
+    """SSE đứt (luồng máy chủ kết thúc không có `ket_thuc` ⇒ EventSource `onerror` khi CONNECTING) KHÔNG được
+    chặn kéo: chỉ lô CẠN lượt thử mới bật `matKetNoiHan`. Gây đứt bằng cách đổi chủ job tạm thời (luồng SSE
+    kiểm quyền mỗi giây rồi tự dừng), trả lại chủ ngay để EventSource nối lại được. Quan sát qua lớp
+    `dieu-khien` của khung (bật/tắt đúng theo `dieuKhienDuoc()`).
+    ĐỘT BIẾN: bật `matKetNoiHan` ngay ở `onerror` ⇒ khung mất `dieu-khien` ⇒ ĐỎ."""
+    page, ghi, jid, _ = mo_popup_dang_giai(mo_trang, db)
+    with models._connect(db) as conn:
+        conn.execute("UPDATE jobs SET nguoi_tao = ? WHERE id = ?", ("khac@x.vn", jid))
+    try:
+        assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 8)
+    finally:
+        with models._connect(db) as conn:
+            conn.execute("UPDATE jobs SET nguoi_tao = ? WHERE id = ?", (NGUOI, jid))
+    assert page.locator(".gc-frame.dieu-khien").count() == 1, "SSE lỗi (CONNECTING) không được chặn kéo"
+
+
+def test_bi_chan_vi_can_luot_thi_lo_200_go_chan_khong_cho_trang_thai(mo_trang, db, monkeypatch):
+    """Một lô cạn lượt thử ⇒ chặn; một lô KHÁC còn đang bay rồi được 200 ⇒ gỡ chặn ngay (mạng đã thông),
+    không phải chờ `trang_thai` nhắc lại. Tắt nhịp nhắc lại để không lẫn đường gỡ.
+    ĐỘT BIẾN: không gỡ `matKetNoiHan` khi lô 200 ⇒ còn chặn ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu, pha = [], {"n": 0}
+
+    def chan(route):
+        pha["n"] += 1
+        if pha["n"] == 1:
+            giu.append(route)                      # lô đầu treo, chưa trả lời
+        else:
+            route.abort()                          # mọi lần sau trượt ⇒ lô sau cạn lượt thử
+
+    page.route("**/giai/chuot", chan)
+    page.mouse.move(r["x"] + 50, r["y"] + 50)
+    assert cho_trang(page, lambda: len(giu) == 1, 3)
+    page.wait_for_timeout(60)
+    page.mouse.move(r["x"] + 90, r["y"] + 60)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 6), "phải bị chặn"
+    giu[0].continue_()                             # lô treo tới máy chủ ⇒ 200
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 3), "lô 200 phải gỡ chặn"
+    page.unroute("**/giai/chuot")
+
+
+def test_can_luot_giua_cu_keo_thi_bo_cu_keo_khong_gui_up_sau_khi_go_chan(mo_trang, db):
+    """Đang giữ chuột kéo thì lô cạn lượt thử ⇒ cú kéo bị BỎ im lặng; gỡ chặn rồi người nhả chuột ⇒ KHÔNG gửi
+    `up` (một `up` muộn sẽ hoàn tất cú kéo cũ trên trang). Cú kéo mới sau đó chạy bình thường.
+    ĐỘT BIẾN: bỏ `boCuChi` khi cạn lượt ⇒ `up` của cú kéo cũ được gửi ⇒ ĐỎ."""
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.route("**/giai/chuot", lambda route: route.abort())
+    page.mouse.move(r["x"] + 60, r["y"] + 60)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 80, r["y"] + 62)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 6), "phải bị chặn"
+    page.unroute("**/giai/chuot")
+    phien.dat_trang_thai("dang_giai", 200)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 6)
+    page.mouse.up()                                # nhả nút của cú kéo đã bị bỏ
+    page.mouse.move(r["x"] + 200, r["y"] + 200)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 220, r["y"] + 205)
+    page.mouse.up()                                # cú kéo mới, trọn vẹn
+    so_up = lambda: sum(1 for lo in ghi.chuot for e in lo["su_kien"] if e["k"] == "up")
+    assert cho_trang(page, lambda: so_up() >= 1, 5)
+    doi_gui(page)
+    assert so_up() == 1, "chỉ cú kéo mới được có `up`"
+
+
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
     """`fetch` treo ⇒ timeout 8 s ⇒ lệnh thử lại được nhận ⇒ mở chặn; cú nhấn sau đó tới máy chủ.
     Lệnh huỷ có timeout RIÊNG 3 s (ĐP-729) ⇒ mở chặn trong vài giây, không phải 8 s.

@@ -505,7 +505,7 @@
       }
       if (P !== p) return;
       if (r.matPhien) { matPhien(); return; }
-      if (r.ok) { if (p.matKetNoi) { p.matKetNoi = false; ve(); } return; }
+      if (r.ok) { if (p.matKetNoi || p.matKetNoiHan) { p.matKetNoi = p.matKetNoiHan = false; ve(); } return; }
       if (r.status === 429 || r.status >= 500) { await ngu(THU_LAI_CHO_MS * (lan + 1)); if (P !== p) return; continue; }
       // 400: lô bị bỏ và máy chủ HUỶ gesture dở ⇒ dừng gửi phần còn lại của gesture này (không có
       // `up` mồ côi). 409: không còn giữ quyền / sai trạng thái — luồng SSE sẽ báo ngay.
@@ -513,7 +513,14 @@
       if (r.status === 400) boCuChi("may_chu", true);
       return;
     }
-    if (P === p && !p.matKetNoi) { p.matKetNoi = true; ve(); }
+    // Cạn lượt thử ⇒ mạng hỏng THẬT (không phải SSE nối lại chớp nhoáng): chặn kéo để popup thôi tiêu
+    // `seq` vào các POST không tới được máy chủ. Gesture dở bỏ im lặng (không gửi `up`). Gỡ chặn khi
+    // `trang_thai` về (máy chủ nhắc lại mỗi `SSE_NHAC_LAI_GIAY` = 5 s) hoặc khi một lô khác được 200.
+    if (P === p && !p.matKetNoiHan) {
+      if (p.cuChi) boCuChi("cuc_bo", true);
+      p.matKetNoi = p.matKetNoiHan = true;
+      ve();
+    }
   }
 
   // ------------------------------------------------------------------------
@@ -543,7 +550,7 @@
       p.soTaiLai = d.so_lan_tai_lai || 0;
       if (typeof d.con_lai_giay === "number") p.conLai = { giay: d.con_lai_giay, luc: performance.now() };
       if (d.vai !== "dieu_khien") boCuChi("cuc_bo", true);
-      p.matKetNoi = false;
+      p.matKetNoi = p.matKetNoiHan = false;
       if (d.trang_thai === "dang_giai" && !p.moc) p.moc = performance.now();
       ve();
     });
