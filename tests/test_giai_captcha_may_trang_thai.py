@@ -996,3 +996,38 @@ def test_api_job_khong_lo_cot_noi_bo_va_chi_job_giai_co_giai_con_luot(monkeypatc
     thuong = models.create_job(db, URL_MUSIC, 1, CHU)
     ra2 = app_mod._job_ra_api(models.get_job(db, thuong))
     assert "giai_con_luot" not in ra2 and "vao_trang_thai_luc" not in ra2
+
+
+@pytest.mark.parametrize("loi", [KeyboardInterrupt, SystemExit])
+def test_base_exception_trong_luot_giai_job_ve_cho_xac_minh_roi_nem_lai(monkeypatch, db, tmp_path, loi):
+    """Cờ BẬT, job `dang_mo`: BaseException trong lượt giải ⇒ ném ra NHƯNG job đã về
+    `cho_xac_minh` (người bấm "Tôi giải ngay" lại được). Đột biến bỏ `except BaseException` của
+    `process_job` ⇒ kẹt `dang_mo` ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db)
+
+    def thoat(*a, **k):
+        raise loi("mô phỏng")
+
+    monkeypatch.setattr(worker, "chay_luot_giai", thoat)
+    with pytest.raises(loi):
+        process_job(db, tmp_path / "dl", tmp_path / "ck", h.job)
+    assert h.tt() == "cho_xac_minh"
+
+
+@pytest.mark.parametrize("loi", [KeyboardInterrupt, SystemExit])
+def test_base_exception_xuyen_chay_van_dong_phien_va_bo_khoi_so(monkeypatch, db, loi):
+    """BaseException đi xuyên `_chay` (đã đóng ctx + nhả khoá profile ở đó) ⇒ `chay_luot_giai` ném
+    lại NHƯNG phiên đã đóng (popup nhận `ket_thuc`) và đã rời sổ. Trạng thái DB KHÔNG do hàm này
+    ghi (`process_job` ghi). Đột biến bỏ nhánh `kq is None` ⇒ phiên còn mở, còn trong sổ ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db)
+    phien = gc.lay_phien(h.jid)
+
+    def thoat(*a, **k):
+        raise loi("mô phỏng")
+
+    monkeypatch.setattr(worker, "_chay", thoat)
+    with pytest.raises(loi):
+        h.chay()
+    assert gc.lay_phien(h.jid) is None
+    assert phien.da_dong and phien.trang_thai_cuoi == worker.LOAI_CHO_XAC_MINH
+    assert h.tt() == "dang_mo"

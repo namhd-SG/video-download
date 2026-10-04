@@ -404,14 +404,19 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
     phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo")
     phien.worker_giu = True
     phien.dat_trang_thai("dang_mo")
-    ua = user_agent or models.chon_ua_job(db_path, job_id, scraper.random_user_agent)
+    # `kq is None` trong `finally` ⇔ có lỗi chưa được quy về kết quả đang bay ra — thực tế là
+    # `BaseException` (SystemExit/KeyboardInterrupt) đi xuyên `_chay`: `_chay` đã đặt `dang_loi`,
+    # đóng ctx (lỗi đóng chỉ log) và nhả khoá profile rồi ném lại. Ở đây chỉ dọn RAM (đóng phiên ⇒
+    # popup nhận `ket_thuc`, bỏ khỏi sổ); trạng thái DB do `queue.process_job` ghi trước khi ném lại.
+    kq: KetQuaGiai | None = None
     try:
-        kq = _chay(db_path, job, phien, cookies_path, headless, ua, gc.che_do_dieu_huong())
-    except Exception as exc:  # noqa: BLE001 — L13: lỗi trong `dang_*` ⇒ cho_xac_minh, luồng worker sống
-        log.warning("[giai] job %s: lỗi trong lượt giải (%s) — về cho_xac_minh", job_id,
-                    type(exc).__name__, exc_info=True)
-        kq = _cho_xac_minh(gc.LD_LOI_TRINH_DUYET)
-    try:
+        ua = user_agent or models.chon_ua_job(db_path, job_id, scraper.random_user_agent)
+        try:
+            kq = _chay(db_path, job, phien, cookies_path, headless, ua, gc.che_do_dieu_huong())
+        except Exception as exc:  # noqa: BLE001 — L13: lỗi trong `dang_*` ⇒ cho_xac_minh, luồng worker sống
+            log.warning("[giai] job %s: lỗi trong lượt giải (%s) — về cho_xac_minh", job_id,
+                        type(exc).__name__, exc_info=True)
+            kq = _cho_xac_minh(gc.LD_LOI_TRINH_DUYET)
         if kq.loai == LOAI_CHO_XAC_MINH:
             if not mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai", "running"),
                                          "cho_xac_minh", ly_do=kq.ly_do):
@@ -419,7 +424,9 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
         elif kq.loai == LOAI_FAILED:
             mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai"), "failed", ly_do=kq.ly_do)
     finally:
-        if kq.loai != LOAI_REFS:
+        if kq is None:
+            phien.dong(LOAI_CHO_XAC_MINH, gc.LD_LOI_TRINH_DUYET)
+        elif kq.loai != LOAI_REFS:
             phien.dong(kq.loai, kq.ly_do)
         gc.bo_phien(job_id, phien)
     return kq
