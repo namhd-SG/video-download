@@ -1049,3 +1049,40 @@ def test_dong_ctx_loi_sau_khi_da_quet_ra_link_giu_ket_qua_va_running(monkeypatch
     assert h.tt() == "running"
     assert not scraper_mod._PROFILE_DANG_MO, "khoá profile vẫn phải nhả"
     assert any("sau khi đã có kết quả" in r.getMessage() for r in caplog.records)
+
+
+class _KhoaChen:
+    """Thay `_KHOA_PHIEN`: lần NHẢ khoá đầu tiên sau khi gài thì gọi `don_phien_roi` — mô phỏng
+    luồng SSE (SSE cuối vừa ngắt) chen vào đúng khe giữa "worker lấy phiên" và việc sau đó."""
+
+    def __init__(self, jid):
+        self._that = threading.Lock()
+        self.jid, self.gai, self.con_trong_so = jid, False, None
+
+    def __enter__(self):
+        self._that.acquire()
+        return self
+
+    def __exit__(self, *_exc):
+        self._that.release()
+        if self.gai:
+            self.gai = False
+            p = gc._PHIEN.get(self.jid)
+            if p is not None:
+                gc.don_phien_roi(self.jid, p)
+            self.con_trong_so = self.jid in gc._PHIEN
+        return False
+
+
+def test_worker_nhan_phien_khong_bi_don_phien_roi_chen_vao_bo_khoi_so(monkeypatch, db):
+    """Đua F5: SSE cuối ngắt NGAY sau khi worker lấy phiên. Cờ `worker_giu` phải được đặt TRONG
+    khoá sổ phiên ⇒ `don_phien_roi` thấy worker đang giữ ⇒ không bỏ. Đột biến gán `worker_giu`
+    sau `lay_hoac_tao_phien` (như trước) ⇒ phiên bị bỏ khỏi sổ ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db, giu_khoa=False)
+    assert h.phien.so_sse <= 0 and not h.phien.worker_giu
+    khoa = _KhoaChen(h.jid)
+    monkeypatch.setattr(gc, "_KHOA_PHIEN", khoa)
+    monkeypatch.setattr(worker, "_chay", lambda *a, **k: worker._cho_xac_minh(gc.LD_KHONG_AI_XEM))
+    khoa.gai = True
+    h.chay()
+    assert khoa.con_trong_so is True, "phiên worker vừa nhận đã bị don_phien_roi bỏ khỏi sổ"

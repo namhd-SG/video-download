@@ -404,8 +404,7 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
     Trả `KetQuaGiai`: `refs` (đã sang `running`, người gọi tải tiếp) hoặc job đã được đưa về
     `cho_xac_minh` / `failed` (người gọi dừng)."""
     job_id = job["id"]
-    phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo")
-    phien.worker_giu = True
+    phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo", worker_giu=True)
     phien.dat_trang_thai("dang_mo")
     # `kq is None` trong `finally` ⇔ có lỗi chưa được quy về kết quả đang bay ra — thực tế là
     # `BaseException` (SystemExit/KeyboardInterrupt) đi xuyên `_chay`: `_chay` đã đặt `dang_loi`,
