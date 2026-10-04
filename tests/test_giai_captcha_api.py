@@ -459,12 +459,30 @@ def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
     assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 403
     assert phien.lay_huy() is None
     assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture"})[0] == 400       # thiếu den_seq
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 10_000})[0] == 400
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": -1})[0] == 400
     assert phien.lay_huy() is None
     assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0}) == (200, {"ok": True})
     assert phien.lay_huy() == gc.LY_DO_HUY_POPUP
     assert phien.xem_lenh() is None
     s.dong_ket_noi()
+
+
+def test_noi_lai_cung_token_popup_chay_xa_lo_va_huy_van_200(api):
+    """Qua HTTP thật: SSE đứt rồi nối lại cùng token khi popup đã tiêu seq tới 80 (POST trượt mạng).
+    Lô 80 và lệnh huỷ `den_seq=90` ⇒ 200, không 400. ĐỘT BIẾN: bỏ đồng bộ tiến ⇒ ĐỎ."""
+    port, db = api
+    jid, a, phien = job_dang_giai_co_khung(api)
+    assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(0, [move()]))[0] == 200
+    a.dong_ket_noi()
+    assert _cho(lambda: not phien.co_nguoi_giu())
+    a2 = Sse(port, jid, TA)
+    assert a2.doc("trang_thai")[1]["vai"] == "dieu_khien"
+    assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(80, [move()]))[0] == 200
+    assert phien.expected_seq == 81
+    assert goi(port, "POST", f"/jobs/{jid}/giai/lenh",
+               body={"token": TA, "lenh": "huy_gesture", "den_seq": 90}) == (200, {"ok": True})
+    assert phien.expected_seq == 90
+    a2.dong_ket_noi()
 
 
 def test_lenh_ngoai_dang_giai_409(api):

@@ -53,7 +53,9 @@ HỢP ĐỒNG API (UI gọi; mọi route cần đăng nhập — `require_user`;
       `x`,`y` theo pixel của ảnh khung đang hiển thị (`khung_w` = naturalWidth, KHÔNG làm tròn);
       `khung_seq` (tuỳ chọn) = `seq` của khung đang hiển thị, thiếu ⇒ dùng khung mới nhất.
       `seq` là số thứ tự LÔ theo token, bắt đầu từ 0, liên tiếp; nhiều lô bay song song được, máy chủ
-      sắp lại theo `seq` (lô tới sớm được giữ tới khi đủ; thiếu lô > 2 giây ⇒ huỷ gesture).
+      sắp lại theo `seq` (lô tới sớm được giữ tới khi đủ; thiếu lô > 2 giây ⇒ huỷ gesture). `seq` vượt
+      `expected + SEQ_NHAY_TOI_DA` ⇒ mọi lô trước coi như THIẾU: máy chủ đồng bộ tiến tới `seq` đó, huỷ
+      gesture dở, rồi nhận lô (popup chạy xa máy chủ sau một lần đứt mạng / mất khoá — không 400 vĩnh viễn).
       200: {"ok": true, "trung": bool} (trung=true: `seq` đã nhận rồi, bỏ qua — an toàn để thử lại).
       400: số không hữu hạn / ngoài khung / `delta_mode`≠0 / thiếu hoặc quá 64 sự kiện — lô bị bỏ (số `seq`
            của nó coi như đã dùng), gesture đang dở bị HUỶ.   422: body sai dạng (FastAPI).
@@ -66,7 +68,8 @@ HỢP ĐỒNG API (UI gọi; mọi route cần đăng nhập — `require_user`;
       `huy_gesture`: popup đã tự bỏ gesture đang dở (không gửi `up`). Máy chủ không phát sự kiện nào;
                  nút đang nhấn ⇒ tải lại trang (SSE `bi_ngat`, tính vào trần tải lại); không ⇒ chỉ bỏ
                  hàng đợi. `den_seq` = `seq` kế tiếp popup sẽ cấp: mọi lô `seq < den_seq` chưa nhận bị
-                 BỎ (tới muộn ⇒ "trung", không phát). Thiếu / ngoài [0, expected + nhảy tối đa] ⇒ 400.
+                 BỎ (tới muộn ⇒ "trung", không phát). Thiếu / âm ⇒ 400; vượt `expected + SEQ_NHAY_TOI_DA`
+                 ⇒ đồng bộ tiến như lô chuột (xem trên).
                  Popup không gửi sự kiện chuột nào từ lúc bỏ gesture tới khi lệnh này trả 200.
       `da_giai`: máy chủ phát nốt các sự kiện đã nhận, tắt screencast, nhả khoá, đóng SSE, RỒI mới tải
                  lại trang MỘT lần và quét tiếp (vẫn bị chặn ⇒ `cho_xac_minh` "captcha_chua_xong").
@@ -106,6 +109,7 @@ TRAN_GIAI_NGAY = 3                 # trần "Tôi giải ngay" mỗi job (CHƯA 
 TRAN_TAI_LAI_MOI_LUOT = 2          # reload do gesture dở, mỗi lượt `dang_giai`
 TRE_PHAT_NGUONG_GIAY = 0.05        # phát muộn hơn lịch chừng này ⇒ đếm `tre_phat_worker` (CHƯA ĐO ngưỡng)
 LY_DO_HUY_POPUP = "popup_huy"      # lý do huỷ gesture khi popup gửi lệnh `huy_gesture` (đi kèm SSE `bi_ngat`)
+LY_DO_HUY_NHAY_SEQ = "nhay_seq"   # `seq`/`den_seq` nhảy quá `SEQ_NHAY_TOI_DA` ⇒ đồng bộ tiến + huỷ gesture dở
 THIEU_LO_TOI_DA_GIAY = 2.0         # lô thiếu quá lâu ⇒ huỷ gesture
 KHUNG_MAX_WIDTH = 800              # `maxWidth` screencast
 KHUNG_JPEG_QUALITY = 60
@@ -117,7 +121,7 @@ XA_LENH_TOI_DA_GIAY = 2.0          # trước lệnh: phát nốt hàng đợi t
 TICK_VONG_GIAY = 0.010             # nhịp tối đa của vòng worker (chỉ ngủ bằng page.wait_for_timeout)
 LO_TOI_DA_SU_KIEN = 64
 LO_TOI_DA_MOI_GIAY = 50
-SEQ_NHAY_TOI_DA = 64               # `seq` vượt `expected` quá xa ⇒ 400
+SEQ_NHAY_TOI_DA = 64               # `seq` vượt `expected` quá mức này ⇒ coi lô trước là THIẾU, đồng bộ tiến
 LECH_LICH_TOI_DA_GIAY = 10.0       # sự kiện hẹn phát xa hơn thế ⇒ đồng hồ popup lệch, bỏ lô
 MAC_DINH_GOM_LO_POPUP_MS = 40      # phía popup (để UI dùng; máy chủ không phụ thuộc)
 
@@ -523,8 +527,7 @@ class PhienGiai:
                 raise LoiGiai(409, "Bạn không giữ quyền điều khiển (người/tab khác đang giải).")
             if seq < self.expected_seq:
                 return "trung"
-            if seq > self.expected_seq + SEQ_NHAY_TOI_DA:
-                raise LoiGiai(400, "`seq` nhảy quá xa — gửi lại từ lô chưa nhận.")
+            self._dong_bo_tien_unlocked(seq)
             if seq in self._cho_lo:
                 return "trung"
             self._cho_lo[seq] = list(events)
@@ -542,8 +545,7 @@ class PhienGiai:
         with self.khoa:
             if not self.la_giu(token, email) or seq < self.expected_seq or seq in self._cho_lo:
                 return
-            if seq > self.expected_seq + SEQ_NHAY_TOI_DA:
-                return
+            self._dong_bo_tien_unlocked(seq)
             self._cho_lo[seq] = None
             if self._cho_lo_tu is None and seq != self.expected_seq:
                 self._cho_lo_tu = t_toi
@@ -579,6 +581,18 @@ class PhienGiai:
     def _huy_gesture_unlocked(self, ly_do: str) -> None:
         self.bo_phat.huy()
         self._co_huy = ly_do
+
+    def _dong_bo_tien_unlocked(self, seq: int) -> None:
+        """`seq` của người giữ khoá vượt `expected + SEQ_NHAY_TOI_DA` ⇒ coi mọi lô trước nó là THIẾU (cùng
+        cơ chế `kiem_thieu_lo`, xét theo SỐ thay vì theo giờ): mốc nhảy tới `seq`, bỏ lô đang chờ, huỷ
+        gesture dở. Popup không bao giờ đặt lại `seqLo` trong một token ⇒ mọi lô cũ còn đang thử lại có
+        `seq` nhỏ hơn ⇒ tới sau thành "trung", không bị phát. Trước đây chỗ này trả 400 cho MỌI lô sau
+        đó (popup chạy xa máy chủ sau một lần đứt mạng / mất khoá) ⇒ popup hỏng tới khi đóng."""
+        if seq > self.expected_seq + SEQ_NHAY_TOI_DA:
+            self.expected_seq = seq
+            self._cho_lo.clear()
+            self._cho_lo_tu = None
+            self._huy_gesture_unlocked(LY_DO_HUY_NHAY_SEQ)
 
     def lay_huy(self) -> str | None:
         with self.khoa:
@@ -660,7 +674,7 @@ class PhienGiai:
                 raise LoiGiai(409, "Bạn không giữ quyền điều khiển (người/tab khác đang giải).")
             if self.trang_thai != "dang_giai" or self.da_dong:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
-            if den_seq is not None and (den_seq < 0 or den_seq > self.expected_seq + SEQ_NHAY_TOI_DA):
+            if den_seq is not None and den_seq < 0:
                 raise LoiGiai(400, "`den_seq` ngoài khoảng hợp lệ.")
             if den_seq is not None and den_seq < self.expected_seq:
                 # Bản sao MUỘN của một lệnh đã xử lý (lần thử trước hết giờ ở popup nhưng vẫn tới): lệnh

@@ -381,23 +381,21 @@ def test_ban_sao_lenh_huy_toi_muon_khong_huy_gesture_sau(dh):
     assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 7.0), ("move", 8.0)]
 
 
-def test_huy_den_seq_ngoai_khoang_400_khong_huy(dh):
+def test_huy_den_seq_am_400_khong_huy(dh):
+    """`den_seq` âm ⇒ 400, không huỷ. (Vượt `SEQ_NHAY_TOI_DA` KHÔNG còn là 400 — đồng bộ tiến, xem dưới.)"""
     p = _phien()
-    tk, chu = "token-aaaaaaaa", "chu@x.vn"
-    for xau in (-1, gc.SEQ_NHAY_TOI_DA + 1):
-        with pytest.raises(LoiGiai) as e:
-            p.huy_gesture_cua_nguoi_giu(tk, chu, den_seq=xau)
-        assert e.value.ma == 400
+    with pytest.raises(LoiGiai) as e:
+        p.huy_gesture_cua_nguoi_giu("token-aaaaaaaa", "chu@x.vn", den_seq=-1)
+    assert e.value.ma == 400
     assert p.lay_huy() is None and p.expected_seq == 0
 
 
-def test_seq_cu_bi_bo_la_trung_va_nhay_xa_bi_tu_choi(dh):
+def test_seq_cu_bi_bo_la_trung_va_nhay_xa_dong_bo_tien(dh):
     p = _phien()
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)])
     assert p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)]) == "trung"
-    with pytest.raises(LoiGiai) as e:
-        p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 10_000, [_ev("move", 1, 1, 0.0)])
-    assert e.value.ma == 400
+    assert p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 10_000, [_ev("move", 1, 1, 0.0)]) == "ok"
+    assert p.expected_seq == 10_001 and p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
 
 
 def test_token_khong_giu_khoa_bi_409(dh):
@@ -531,3 +529,91 @@ def test_d_env_ngoai_khoang_bi_kep(monkeypatch, tho, ky_vong):
 def test_phien_moi_lay_d_tu_env(monkeypatch):
     monkeypatch.setenv(gc.ENV_D_MS, "250")
     assert PhienGiai(1, "a@x.vn").bo_phat.d == pytest.approx(0.250)
+
+
+
+# ---------------------------------------------------------------------------
+# Đồng bộ tiến: popup chạy xa máy chủ (đứt mạng / mất khoá) ⇒ không 400 vĩnh viễn
+# ---------------------------------------------------------------------------
+
+A_, B_, CHU_ = "token-aaaaaaaa", "token-bbbbbbbb", "chu@x.vn"
+
+
+def test_seq_nhay_xa_sau_khi_noi_lai_cung_token_dong_bo_tien_khong_400(dh):
+    """MỘT token: máy chủ nhận tới seq 4, SSE đứt rồi nối lại, popup đã tiêu seq tới 80 (POST trượt mạng).
+    Trước đây lô 80 và MỌI lô sau ⇒ 400 (popup hỏng tới khi đóng). ĐỘT BIẾN: bỏ đồng bộ tiến ⇒ ĐỎ."""
+    p = _phien()
+    for s in range(5):
+        p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
+    p.nha_khoa(A_, CHU_)
+    assert p.nhan_khoa(A_, CHU_) is True and p.expected_seq == 5        # hợp đồng cùng-token giữ nguyên
+    assert p.nhan_lo(A_, CHU_, 80, [_ev("move", 2, 2, 2000.0)]) == "ok"
+    assert p.expected_seq == 81 and p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
+    assert p.nhan_lo(A_, CHU_, 81, [_ev("move", 3, 3, 2016.0)]) == "ok"
+
+
+def test_doi_token_roi_lay_lai_cung_token_huy_den_seq_xa_duoc_nhan(dh):
+    """A(0..70) → B lấy khoá (seq về 0) → A lấy lại cùng token: lệnh huỷ `den_seq=71` của A được NHẬN và
+    đồng bộ mốc; lô 71 ok. ĐỘT BIẾN: giữ `den_seq > expected + SEQ_NHAY_TOI_DA ⇒ 400` ⇒ ĐỎ."""
+    p = _phien()
+    for s in range(71):
+        dh.t += 0.05
+        p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
+    p.nha_khoa(A_, CHU_)
+    assert p.nhan_khoa(B_, CHU_) is True
+    p.nha_khoa(B_, CHU_)
+    assert p.nhan_khoa(A_, CHU_) is True and p.expected_seq == 0
+    p.lay_huy()
+    p.huy_gesture_cua_nguoi_giu(A_, CHU_, den_seq=71)
+    assert p.expected_seq == 71 and p.lay_huy() == gc.LY_DO_HUY_POPUP
+    assert p.nhan_lo(A_, CHU_, 71, [_ev("move", 2, 2, 5000.0)]) == "ok"
+
+
+def test_noi_lai_chong_khoa_khong_ve_trong_van_dong_bo_duoc(dh):
+    """EventSource nối lại khi kết nối cũ CHƯA bị phát hiện ngắt: khoá không bao giờ về trống (đếm 2 kết
+    nối, nhả 1). Phương án "kỳ khoá" không chữa được ca này; đồng bộ tiến thì có. Giữ test để chặn ai
+    định đổi sang kỳ khoá. ĐỘT BIẾN: bỏ đồng bộ tiến ở `nhan_lo` ⇒ lô 90 400 ⇒ ĐỎ."""
+    p = _phien()
+    for s in range(5):
+        p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
+    assert p.nhan_khoa(A_, CHU_) is True
+    p.nha_khoa(A_, CHU_)
+    assert p.co_nguoi_giu() is True and p.expected_seq == 5
+    assert p.nhan_lo(A_, CHU_, 90, [_ev("move", 2, 2, 3000.0)]) == "ok"
+    assert p.expected_seq == 91
+
+
+def test_lo_cu_toi_sau_cu_nhay_la_trung_khong_phat_va_hang_cho_bi_xoa(dh):
+    """Lô 50 tới sớm (chờ khe), rồi lô nhảy 150 ⇒ hàng chờ bị xoá (lô 50 không bao giờ được phát); lô cũ
+    còn đang thử lại (10, 149) tới SAU ⇒ "trung", không vào hàng phát. ĐỘT BIẾN: đồng bộ mà không xoá
+    `_cho_lo` ⇒ ĐỎ."""
+    p = _phien()
+    assert p.nhan_lo(A_, CHU_, 50, [_ev("move", 9, 9, 800.0)]) == "ok"
+    assert 50 in p._cho_lo
+    assert p.nhan_lo(A_, CHU_, 150, [_ev("down", 3, 3, 6000.0, 1)]) == "ok"
+    assert p._cho_lo == {} and p.expected_seq == 151
+    assert p.nhan_lo(A_, CHU_, 10, [_ev("move", 7, 7, 160.0)]) == "trung"
+    assert p.nhan_lo(A_, CHU_, 149, [_ev("up", 7, 7, 5990.0)]) == "trung"
+    assert [(e.k, e.x) for e in p.den_han(dh.t + 30)] == [("down", 3.0)]
+
+
+def test_cu_nhay_huy_gesture_dang_nhan_nut(dh):
+    """`down` đã vào hàng (nút trên trang sắp/đang nhấn) rồi lô nhảy tới ⇒ gesture dở bị HUỶ (worker tải
+    lại nếu nút đang nhấn), `down` cũ không được phát. Hỏng âm thầm nếu thiếu (nút kẹt) ⇒ ĐỘT BIẾN: bỏ
+    `_huy_gesture_unlocked` trong đồng bộ tiến ⇒ ĐỎ."""
+    p = _phien()
+    assert p.nhan_lo(A_, CHU_, 0, [_ev("down", 4, 4, 0.0, 1)]) == "ok"
+    assert p.bo_phat.nut_giu_nguon is True
+    assert p.nhan_lo(A_, CHU_, 100, [_ev("wheel", 5, 5, 3000.0, dy=10.0)]) == "ok"
+    assert p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
+    assert p.bo_phat.nut_giu_nguon is False
+    assert "down" not in [e.k for e in p.den_han(dh.t + 30)]
+
+
+def test_bo_lo_seq_xa_cung_dong_bo_tien(dh):
+    """Lô bị từ chối (400 vì nội dung) mang `seq` xa ⇒ vẫn đồng bộ tiến rồi làm mốc huỷ; trước đây
+    `bo_lo` im lặng bỏ ⇒ mốc đứng yên. ĐỘT BIẾN: bỏ đồng bộ tiến ở `bo_lo` ⇒ ĐỎ."""
+    p = _phien()
+    p.bo_lo(A_, CHU_, 100)
+    assert p.expected_seq == 101 and p._cho_lo == {}
+    assert p.lay_huy() == "lo_bi_tu_choi"       # ô huỷ một chỗ: lý do sau (mốc huỷ của chính lô) thắng
