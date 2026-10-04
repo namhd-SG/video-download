@@ -896,7 +896,7 @@ def test_worker_start_truyen_co_cho_boot_sweep(monkeypatch, db, tmp_path, bat):
                   process_job_fn=lambda *a: None)
     w.start()
     w.stop()
-    assert nhan == [{"co_giai": bat}]
+    assert [kw["co_giai"] for kw in nhan] == [bat]   # `dem_ra` là đường ra số đếm, không phải cờ
 
 
 @pytest.mark.parametrize("trang_thai", ["cho_xac_minh", "cho_giai"])
@@ -996,3 +996,178 @@ def test_api_job_khong_lo_cot_noi_bo_va_chi_job_giai_co_giai_con_luot(monkeypatc
     thuong = models.create_job(db, URL_MUSIC, 1, CHU)
     ra2 = app_mod._job_ra_api(models.get_job(db, thuong))
     assert "giai_con_luot" not in ra2 and "vao_trang_thai_luc" not in ra2
+
+
+@pytest.mark.parametrize("loi", [KeyboardInterrupt, SystemExit])
+def test_base_exception_trong_luot_giai_job_ve_cho_xac_minh_roi_nem_lai(monkeypatch, db, tmp_path, loi):
+    """Cờ BẬT, job `dang_mo`: BaseException trong lượt giải ⇒ ném ra NHƯNG job đã về
+    `cho_xac_minh` (người bấm "Tôi giải ngay" lại được). Đột biến bỏ `except BaseException` của
+    `process_job` ⇒ kẹt `dang_mo` ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db)
+
+    def thoat(*a, **k):
+        raise loi("mô phỏng")
+
+    monkeypatch.setattr(worker, "chay_luot_giai", thoat)
+    with pytest.raises(loi):
+        process_job(db, tmp_path / "dl", tmp_path / "ck", h.job)
+    assert h.tt() == "cho_xac_minh"
+
+
+@pytest.mark.parametrize("loi", [KeyboardInterrupt, SystemExit])
+def test_base_exception_xuyen_chay_van_dong_phien_va_bo_khoi_so(monkeypatch, db, loi):
+    """BaseException đi xuyên `_chay` (đã đóng ctx + nhả khoá profile ở đó) ⇒ `chay_luot_giai` ném
+    lại NHƯNG phiên đã đóng (popup nhận `ket_thuc`) và đã rời sổ. Trạng thái DB KHÔNG do hàm này
+    ghi (`process_job` ghi). Đột biến bỏ nhánh `kq is None` ⇒ phiên còn mở, còn trong sổ ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db)
+    phien = gc.lay_phien(h.jid)
+
+    def thoat(*a, **k):
+        raise loi("mô phỏng")
+
+    monkeypatch.setattr(worker, "_chay", thoat)
+    with pytest.raises(loi):
+        h.chay()
+    assert gc.lay_phien(h.jid) is None
+    assert phien.da_dong and phien.trang_thai_cuoi == worker.LOAI_CHO_XAC_MINH
+    assert h.tt() == "dang_mo"
+
+
+def test_dong_ctx_loi_sau_khi_da_quet_ra_link_giu_ket_qua_va_running(monkeypatch, db, caplog):
+    """Đã giải, đã sang `running`, đã quét ra link — rồi `ctx.close()` nổ. Kết quả phải được GIỮ
+    (job tải tiếp), không bị kéo về `cho_xac_minh`; khoá profile vẫn nhả; lỗi đóng có một dòng
+    WARNING. Đột biến cho `_dong_ctx` ném lại khi không có lỗi gốc ⇒ `cho_xac_minh` ⇒ ĐỎ."""
+    h, _rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)], ra=[_ref("111"), _ref("112")])
+
+    def close_no():
+        raise OSError("Target closed")
+
+    h.ctx.close = close_no
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        kq = h.chay()
+    assert kq.loai == worker.LOAI_REFS and {r.video_id for r in kq.refs} == {"111", "112"}
+    assert h.tt() == "running"
+    assert not scraper_mod._PROFILE_DANG_MO, "khoá profile vẫn phải nhả"
+    assert any("sau khi đã có kết quả" in r.getMessage() for r in caplog.records)
+
+
+class _KhoaChen:
+    """Thay `_KHOA_PHIEN`: lần NHẢ khoá đầu tiên sau khi gài thì gọi `don_phien_roi` — mô phỏng
+    luồng SSE (SSE cuối vừa ngắt) chen vào đúng khe giữa "worker lấy phiên" và việc sau đó."""
+
+    def __init__(self, jid):
+        self._that = threading.Lock()
+        self.jid, self.gai, self.con_trong_so = jid, False, None
+
+    def __enter__(self):
+        self._that.acquire()
+        return self
+
+    def __exit__(self, *_exc):
+        self._that.release()
+        if self.gai:
+            self.gai = False
+            p = gc._PHIEN.get(self.jid)
+            if p is not None:
+                gc.don_phien_roi(self.jid, p)
+            self.con_trong_so = self.jid in gc._PHIEN
+        return False
+
+
+def test_worker_nhan_phien_khong_bi_don_phien_roi_chen_vao_bo_khoi_so(monkeypatch, db):
+    """Đua F5: SSE cuối ngắt NGAY sau khi worker lấy phiên. Cờ `worker_giu` phải được đặt TRONG
+    khoá sổ phiên ⇒ `don_phien_roi` thấy worker đang giữ ⇒ không bỏ. Đột biến gán `worker_giu`
+    sau `lay_hoac_tao_phien` (như trước) ⇒ phiên bị bỏ khỏi sổ ⇒ ĐỎ."""
+    h = Hien(monkeypatch, db, giu_khoa=False)
+    assert h.phien.so_sse <= 0 and not h.phien.worker_giu
+    khoa = _KhoaChen(h.jid)
+    monkeypatch.setattr(gc, "_KHOA_PHIEN", khoa)
+    monkeypatch.setattr(worker, "_chay", lambda *a, **k: worker._cho_xac_minh(gc.LD_KHONG_AI_XEM))
+    khoa.gai = True
+    h.chay()
+    assert khoa.con_trong_so is True, "phiên worker vừa nhận đã bị don_phien_roi bỏ khỏi sổ"
+
+
+@pytest.mark.parametrize("bat", [False, True], ids=["co_tat", "co_bat"])
+def test_boot_sweep_log_so_job_giai_bi_doi(monkeypatch, db, tmp_path, caplog, bat):
+    """Câu thứ hai của boot sweep (trạng thái giải) phải để lại MỘT dòng WARNING mang SỐ — trước đây
+    nó đổi hàng mà không ai thấy số. Cờ TẮT: đúng câu UPDATE cũ, chỉ thêm dòng log (không thêm truy
+    vấn). Đột biến bỏ dòng log ⇒ ĐỎ."""
+    if bat:
+        _bat_co(monkeypatch)
+    for _ in range(2):
+        jid = _job_cho_xac_minh(db)
+        if bat:   # cờ BẬT giữ nguyên `cho_xac_minh` ⇒ đưa sang `cho_giai` để câu thứ hai khớp
+            assert mgc.yeu_cau_giai_ngay(db, jid) == "ok"
+    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=lambda *a: None)
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        w.start()
+        w.stop()
+    dong = [r.getMessage() for r in caplog.records if r.getMessage().startswith("boot sweep: 2 job")]
+    assert len(dong) == 1, dong
+    # Câu log phải nêu ĐÚNG tập trạng thái mà câu UPDATE tương ứng đếm.
+    tap = "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if bat else \
+        "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted"
+    assert tap in dong[0] and ("BẬT" if bat else "TẮT") in dong[0], dong[0]
+
+
+def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
+    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=lambda *a: None)
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        w.start()
+        w.stop()
+    assert not [r for r in caplog.records if "tinh_nang_giai_tat" in r.getMessage()
+                or "-> cho_xac_minh" in r.getMessage()]
+
+
+def test_ti_le_khung_popup_trong_css_khop_viewport_cua_context_may_chu(tmp_path):
+    """Popup quy toạ độ chuột theo tỉ lệ khung CSS (`aspect-ratio`), máy chủ phát theo viewport
+    của context. Lệch nhau ⇒ toạ độ y lệch ÂM THẦM (người kéo một đằng, Chromium nhận một nẻo).
+    Viewport đọc từ lời gọi THẬT của `_open_context` (Playwright giả ghi lại tham số), không chép số.
+    Đổi một bên mà quên bên kia ⇒ ĐỎ."""
+    import re
+    from pathlib import Path as _P
+
+    nhan = {}
+
+    class _Ctx:
+        def add_init_script(self, *_a):
+            pass
+
+    class _Chromium:
+        def launch_persistent_context(self, **kw):
+            nhan.update(kw)
+            return _Ctx()
+
+    pw = SimpleNamespace(chromium=_Chromium())
+    profile = tmp_path / "p"
+    scraper_mod._open_context(pw, headless=True, proxy=None, profile_dir=profile, user_agent="UA")
+    scraper_mod._nha_profile_dir(profile)
+    vp = nhan["viewport"]
+    css = (_P(__file__).resolve().parent.parent / "web" / "static" / "app.css").read_text(encoding="utf-8")
+    for lop in (".gc-frame", ".gc-closed"):
+        khoi = re.search(re.escape(lop) + r"\s*\{([^}]*)\}", css)
+        assert khoi, lop
+        ti_le = re.search(r"aspect-ratio:\s*(\d+)\s*/\s*(\d+)", khoi.group(1))
+        assert ti_le, f"{lop} không còn aspect-ratio dạng W / H"
+        assert (int(ti_le.group(1)), int(ti_le.group(2))) == (vp["width"], vp["height"]), lop
+
+
+def test_chon_ua_job_hong_van_dong_phien_bo_khoi_so_va_job_ve_cho_xac_minh(monkeypatch, db, tmp_path):
+    """`chon_ua_job` (đọc/ghi DB) ném ngay đầu lượt giải ⇒ phiên vẫn đóng và rời sổ (trước đây nằm ngoài
+    try ⇒ phiên sót trong sổ với `worker_giu`), job về `cho_xac_minh` qua `process_job`. Trên main ⇒ ĐỎ
+    (phiên còn trong sổ)."""
+    import sqlite3
+    h = Hien(monkeypatch, db)
+    phien = gc.lay_phien(h.jid)
+
+    def ua_hong(*a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(models, "chon_ua_job", ua_hong)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", h.job)
+    assert gc.lay_phien(h.jid) is None, "phiên phải rời sổ"
+    assert phien.da_dong
+    assert h.tt() == "cho_xac_minh"

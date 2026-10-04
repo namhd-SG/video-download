@@ -357,17 +357,20 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
 
 
 def _dong_ctx(ctx, browser, profile_path: Path, dang_loi: bool) -> None:
-    """Đóng context/browser rồi nhả khoá profile; lỗi đóng không được đè lỗi gốc đang bay."""
+    """Đóng context/browser rồi nhả khoá profile. Lỗi đóng (`Exception`) chỉ LOG, không ném:
+    `_chay` gọi hàm này ở `finally`, nên lúc đó hoặc đã có lỗi gốc đang bay (`dang_loi` — lỗi
+    đóng không được đè nó), hoặc `_phien_tren_ctx` đã trả kết quả — ném ở đây là vứt kết quả
+    đó: job đã sang `running` với link trong tay bị `chay_luot_giai` kéo về `cho_xac_minh`."""
     try:
         try:
             ctx.close()
             if browser is not None:
                 browser.close()
         except Exception as loi_dong:  # noqa: BLE001
-            if not dang_loi:
-                raise
-            log.warning("[giai] đóng context lỗi sau lỗi gốc (%s: %s) — giữ lỗi gốc",
-                        type(loi_dong).__name__, loi_dong)
+            log.warning("[giai] đóng context lỗi %s (%s: %s) — %s",
+                        "sau lỗi gốc" if dang_loi else "sau khi đã có kết quả",
+                        type(loi_dong).__name__, loi_dong,
+                        "giữ lỗi gốc" if dang_loi else "giữ kết quả")
     finally:
         scraper._nha_profile_dir(profile_path)
 
@@ -395,23 +398,30 @@ def _chay(db_path: Path, job: dict, phien: gc.PhienGiai, cookies_path: str | Non
 
 def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
                    headless: bool = True, user_agent: str | None = None) -> KetQuaGiai:
-    """Chạy một lượt giải cho job vừa được nhặt ở `dang_mo`. KHÔNG ném (trừ DB hỏng khi ghi
-    trạng thái — người gọi/vòng worker đưa job về `cho_xac_minh`).
+    """Chạy một lượt giải cho job vừa được nhặt ở `dang_mo`. Lỗi trong lượt giải (`_chay`) được quy
+    về `cho_xac_minh`, không ném. CÓ ném: lỗi đọc/ghi DB (`chon_ua_job`, ghi trạng thái) và mọi
+    `BaseException` — người gọi (`process_job`) đưa job về `cho_xac_minh`/`interrupted`. Phiên RAM
+    luôn được đóng và bỏ khỏi sổ, kể cả khi ném.
 
     Trả `KetQuaGiai`: `refs` (đã sang `running`, người gọi tải tiếp) hoặc job đã được đưa về
     `cho_xac_minh` / `failed` (người gọi dừng)."""
     job_id = job["id"]
-    phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo")
-    phien.worker_giu = True
+    phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo", worker_giu=True)
     phien.dat_trang_thai("dang_mo")
-    ua = user_agent or models.chon_ua_job(db_path, job_id, scraper.random_user_agent)
+    # `kq is None` trong `finally` ⇔ một lỗi đang bay ra TRƯỚC khi có kết quả. Hai nguồn: `Exception`
+    # từ `chon_ua_job` (DB) — trước đây nằm ngoài try nên phiên sót trong sổ với `worker_giu` —, và
+    # `BaseException` đi xuyên `_chay` (`_chay` đã đặt `dang_loi`, đóng ctx — lỗi đóng chỉ log — và
+    # nhả khoá profile rồi ném lại). Ở đây chỉ dọn RAM (đóng phiên ⇒ popup nhận `ket_thuc`, bỏ khỏi
+    # sổ); trạng thái DB do `queue.process_job` ghi.
+    kq: KetQuaGiai | None = None
     try:
-        kq = _chay(db_path, job, phien, cookies_path, headless, ua, gc.che_do_dieu_huong())
-    except Exception as exc:  # noqa: BLE001 — L13: lỗi trong `dang_*` ⇒ cho_xac_minh, luồng worker sống
-        log.warning("[giai] job %s: lỗi trong lượt giải (%s) — về cho_xac_minh", job_id,
-                    type(exc).__name__, exc_info=True)
-        kq = _cho_xac_minh(gc.LD_LOI_TRINH_DUYET)
-    try:
+        ua = user_agent or models.chon_ua_job(db_path, job_id, scraper.random_user_agent)
+        try:
+            kq = _chay(db_path, job, phien, cookies_path, headless, ua, gc.che_do_dieu_huong())
+        except Exception as exc:  # noqa: BLE001 — L13: lỗi trong `dang_*` ⇒ cho_xac_minh, luồng worker sống
+            log.warning("[giai] job %s: lỗi trong lượt giải (%s) — về cho_xac_minh", job_id,
+                        type(exc).__name__, exc_info=True)
+            kq = _cho_xac_minh(gc.LD_LOI_TRINH_DUYET)
         if kq.loai == LOAI_CHO_XAC_MINH:
             if not mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai", "running"),
                                          "cho_xac_minh", ly_do=kq.ly_do):
@@ -419,7 +429,11 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
         elif kq.loai == LOAI_FAILED:
             mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai"), "failed", ly_do=kq.ly_do)
     finally:
-        if kq.loai != LOAI_REFS:
-            phien.dong(kq.loai, kq.ly_do)
-        gc.bo_phien(job_id, phien)
+        try:
+            if kq is None:
+                phien.dong(LOAI_CHO_XAC_MINH, gc.LD_LOI_TRINH_DUYET)
+            elif kq.loai != LOAI_REFS:
+                phien.dong(kq.loai, kq.ly_do)
+        finally:
+            gc.bo_phien(job_id, phien)
     return kq

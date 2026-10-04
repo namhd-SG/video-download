@@ -644,6 +644,16 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
         models.finish_job(db_path, job_id, "done")
 
 
+def _ghi_khi_base_exception(db_path: Path, job_id: int) -> None:
+    """Best-effort khi một `BaseException` đang bay qua job: `running` ⇒ `interrupted`; lượt giải
+    dở (`cho_giai`/`dang_*`) ⇒ `cho_xac_minh` (cả hai do `mark_job_interrupted`, như vòng worker
+    vẫn làm với `Exception`). Không bao giờ ném `Exception` — người gọi ném lại lỗi gốc."""
+    try:
+        models.mark_job_interrupted(db_path, job_id)
+    except Exception:  # noqa: BLE001 — DB hỏng không được đè lỗi gốc đang bay
+        log.error("job %s: chưa ghi được trạng thái khi BaseException", job_id, exc_info=True)
+
+
 def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict,
                  lifecycle_hook: LifecycleHook | None = None) -> None:
     """Run exactly one job to completion. Never raises: one job's crash must
@@ -696,6 +706,14 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 db_path, job_id, ("dang_mo", "dang_giai"), "cho_xac_minh",
                 ly_do=giai_captcha.LD_LOI_TRINH_DUYET)):
             models.finish_job(db_path, job_id, "failed")
+    except BaseException:
+        # SystemExit/KeyboardInterrupt/GeneratorExit: KHÔNG nuốt — luồng worker phải chết để
+        # `stop`/Ctrl-C dừng được và healthz báo "chet". Nhưng ghi trạng thái TRƯỚC khi ném lại,
+        # để job không kẹt `running`/`dang_*` tới lần khởi động sau. Trạng thái đích giống hệt
+        # cái boot sweep sẽ ghi (`interrupted`; lượt giải ⇒ `cho_xac_minh`), chỉ sớm hơn — nên
+        # chạy cả khi cờ TẮT: ngoại lệ có chủ đích của "cờ TẮT y như main", chỉ trên nhánh này.
+        _ghi_khi_base_exception(db_path, job_id)
+        raise
     finally:
         # Xoá profile_dir CHỈ khi job đã thật sự ở trạng thái kết thúc — đọc lại từ DB,
         # không suy từ lối ra. Hôm nay mọi lối ra đều kết thúc, nhưng một trạng thái
@@ -759,13 +777,20 @@ class JobWorker:
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
         models.init_db(self._db_path)
-        interrupted = models.mark_running_as_interrupted(
-            self._db_path, co_giai=profile_theo_job.profile_captcha_dang_bat())
+        co_giai = profile_theo_job.profile_captcha_dang_bat()
+        dem: dict = {}
+        interrupted = models.mark_running_as_interrupted(self._db_path, co_giai=co_giai, dem_ra=dem)
         if interrupted:
             log.warning(
                 "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
                 interrupted,
             )
+        # Số job ở trạng thái giải vừa bị đổi — trước đây câu này chạy mà không ai thấy số.
+        if dem.get("giai"):
+            log.warning("boot sweep: %d job %s (cờ %s %s)", dem["giai"],
+                        "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if co_giai
+                        else "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted (tinh_nang_giai_tat)",
+                        profile_theo_job.ENV_PROFILE_CAPTCHA, "BẬT" if co_giai else "TẮT")
         # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
         # chạy `finally`) phải dọn trước khi nhận job.
         self._quet_profile_dinh_ky(buoc_ep=True)
@@ -851,6 +876,13 @@ class JobWorker:
                         log.error("worker: chưa ghi được 'interrupted' cho job %s — thử lại "
                                   "mỗi vòng", job["id"], exc_info=True)
                 self._stop.wait(self.nghi_sau_loi(self._so_lan_nghi))
+            except BaseException:
+                # Cố ý KHÔNG nuốt (luồng chết ⇒ healthz "chet", `stop`/Ctrl-C dừng được). Phủ ca
+                # `process_job_fn` tiêm vào và ca BaseException nổ ngay trong `finally` của
+                # `process_job`: job đã nhận thì ghi trạng thái trước khi ném lại.
+                if job is not None:
+                    _ghi_khi_base_exception(self._db_path, job["id"])
+                raise
 
     def _canh_bao_profiles_khi_co_tat(self) -> None:
         """Cờ TẮT mà `profiles/` còn thư mục con ⇒ đúng MỘT dòng WARNING kèm SỐ đếm (lúc

@@ -771,12 +771,18 @@ def lay_phien(job_id: int) -> PhienGiai | None:
         return _PHIEN.get(job_id)
 
 
-def lay_hoac_tao_phien(job_id: int, chu: str, trang_thai: str = "cho_giai") -> PhienGiai:
+def lay_hoac_tao_phien(job_id: int, chu: str, trang_thai: str = "cho_giai", *,
+                       worker_giu: bool = False) -> PhienGiai:
+    """`worker_giu=True` (worker nhận phiên) đặt cờ TRONG `_KHOA_PHIEN`: gán sau khi nhả khoá thì
+    `don_phien_roi` (SSE cuối ngắt) chen vào giữa, thấy cờ còn False, bỏ phiên khỏi sổ ⇒ popup nối
+    lại tạo phiên MỚI, worker chờ người trên phiên cũ ⇒ `khong_ai_xem` oan, mất một lượt."""
     with _KHOA_PHIEN:
         p = _PHIEN.get(job_id)
         if p is None or p.da_dong:
             p = PhienGiai(job_id, chu, trang_thai)
             _PHIEN[job_id] = p
+        if worker_giu:
+            p.worker_giu = True
         return p
 
 

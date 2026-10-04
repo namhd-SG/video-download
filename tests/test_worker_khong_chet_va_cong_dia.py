@@ -457,3 +457,87 @@ def test_cho_dia_lau_thi_nhac_lai_theo_nhip_khong_moi_vong(db_path, tmp_path, ca
             w.stop()
     cho = [r for r in caplog.records if "CHỜ" in r.getMessage()]
     assert 2 <= len(cho) < dem["n"] / 5, (len(cho), dem["n"])
+
+
+@pytest.mark.parametrize("loi", [KeyboardInterrupt, SystemExit])
+def test_base_exception_trong_process_job_ghi_interrupted_roi_nem_lai(db_path, tmp_path, monkeypatch, loi):
+    """Cờ TẮT, job thường: BaseException giữa job ⇒ vẫn ném ra (không nuốt) NHƯNG job đã thành
+    'interrupted' — không kẹt 'running' tới lần khởi động sau. Ngoại lệ có chủ đích của "cờ TẮT y
+    như main": chỉ trên nhánh BaseException. Đột biến bỏ `except BaseException` ⇒ 'running' ⇒ ĐỎ."""
+    monkeypatch.delenv("VIDEODL_PROFILE_CAPTCHA", raising=False)
+    job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    job = models.claim_next_pending_job(db_path)
+
+    def fetch_thoat(*a, **k):
+        raise loi("mô phỏng")
+
+    monkeypatch.setattr(queue_mod, "_fetch_refs", fetch_thoat)
+    with pytest.raises(loi):
+        queue_mod.process_job(db_path, tmp_path / "dl", tmp_path / "ck", job)
+    assert models.get_job(db_path, job_id)["trang_thai"] == "interrupted"
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_base_exception_tu_process_job_fn_luong_chet_va_job_interrupted(db_path, tmp_path):
+    """`process_job_fn` tiêm vào ném SystemExit sau khi đã nhận job ⇒ luồng vẫn chết (`song`
+    False, như test ở trên chốt) VÀ job đã 'interrupted'. Đột biến bỏ `except BaseException` ở
+    `_loop` ⇒ job kẹt 'running' ⇒ ĐỎ."""
+    job_id = models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+
+    def thoat(_db, _dl, _ck, _job):
+        raise SystemExit("mô phỏng luồng bị giết giữa job")
+
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=thoat, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: w.trang_thai()["song"] is False)
+    finally:
+        w.stop()
+    assert models.get_job(db_path, job_id)["trang_thai"] == "interrupted"
+
+
+
+def test_base_exception_process_job_ghi_db_hong_van_nem_loi_goc(db_path, tmp_path, monkeypatch):
+    """Lỗi DB khi ghi trạng thái (nhánh BaseException) KHÔNG được đè lỗi gốc: ra ngoài vẫn là
+    KeyboardInterrupt. Đột biến bỏ try/except trong `_ghi_khi_base_exception` ⇒ OperationalError ⇒ ĐỎ."""
+    monkeypatch.delenv("VIDEODL_PROFILE_CAPTCHA", raising=False)
+    models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    job = models.claim_next_pending_job(db_path)
+
+    def fetch_thoat(*a, **k):
+        raise KeyboardInterrupt("mô phỏng")
+
+    def ghi_hong(*a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(queue_mod, "_fetch_refs", fetch_thoat)
+    monkeypatch.setattr(models, "mark_job_interrupted", ghi_hong)
+    with pytest.raises(KeyboardInterrupt):
+        queue_mod.process_job(db_path, tmp_path / "dl", tmp_path / "ck", job)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_base_exception_loop_ghi_db_hong_luong_chet_vi_loi_goc(db_path, tmp_path, monkeypatch):
+    """Như trên cho `_loop`: luồng phải chết vì ĐÚNG SystemExit gốc, không vì OperationalError của lần
+    ghi trạng thái. Đột biến bỏ try/except trong `_ghi_khi_base_exception` ⇒ ĐỎ."""
+    import threading
+    models.create_job(db_path, "https://www.tiktok.com/music/x-1", 1, "a")
+    loai = []
+    monkeypatch.setattr(threading, "excepthook", lambda a: loai.append(a.exc_type))
+
+    def thoat(_db, _dl, _ck, _job):
+        raise SystemExit("mô phỏng")
+
+    def ghi_hong(*a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(models, "mark_job_interrupted", ghi_hong)
+    w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=thoat, disk_guard_fn=lambda _p: _Dia(True))
+    w.start()
+    try:
+        assert _cho(lambda: w.trang_thai()["song"] is False)
+    finally:
+        w.stop()
+    assert loai == [SystemExit], loai
