@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+import sqlite3
 import subprocess
 import sys
 from contextlib import contextmanager
@@ -437,6 +438,43 @@ def test_finally_co_bat_xoa_thu_muc_profile_job(monkeypatch, db, tmp_path):
     process_job(db, tmp_path / "dl", tmp_path / "ck", models.get_job(db, jid))
     assert models.get_job(db, jid)["trang_thai"] == "failed"
     assert not (db.parent / "profiles" / str(jid)).exists()
+
+
+def test_finally_co_bat_doc_lai_trang_thai_hong_thi_giu_profile_va_khong_nem(monkeypatch, db, tmp_path, caplog):
+    """`get_job` trong `finally` ném (DB hỏng đúng lúc đọc lại) ⇒ `process_job` KHÔNG ném (giữ lời
+    hứa "never raises"), job vẫn mang trạng thái đã ghi, thư mục profile được GIỮ cho bộ quét (không
+    biết đã kết thúc chưa thì không xoá), và có một dòng WARNING. Đột biến bỏ `try` quanh `get_job`
+    ⇒ ném ra ⇒ ĐỎ; đột biến xoá khi đọc trượt ⇒ thư mục mất ⇒ ĐỎ."""
+    _bat_co(monkeypatch)
+    monkeypatch.setattr(queue_mod, "SO_VONG_DAO_SAU", 1)
+
+    def quet_co_feed_nhung_khong_ra_video(url, **kw):
+        kw["thong_ke_feed"]["co_du_lieu"] = kw["thong_ke_feed"].get("co_du_lieu", 0) + 1
+        return []
+
+    monkeypatch.setattr(scraper_mod, "scrape_music_page", quet_co_feed_nhung_khong_ra_video)
+    jid = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
+    job = models.get_job(db, jid)
+    da_ket = {"v": False}
+    finish_that, get_that = models.finish_job, models.get_job
+
+    def finish(*a, **k):
+        finish_that(*a, **k)
+        da_ket["v"] = True
+
+    def get_hong(*a, **k):
+        if da_ket["v"]:
+            raise sqlite3.OperationalError("disk I/O error")
+        return get_that(*a, **k)
+
+    monkeypatch.setattr(models, "finish_job", finish)
+    monkeypatch.setattr(models, "get_job", get_hong)
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        process_job(db, tmp_path / "dl", tmp_path / "ck", job)
+    assert da_ket["v"]
+    assert get_that(db, jid)["trang_thai"] == "failed"
+    assert (db.parent / "profiles" / str(jid)).is_dir(), "đọc trượt ⇒ giữ cho bộ quét"
+    assert any("giữ profile cho bộ quét" in r.getMessage() for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------
