@@ -597,6 +597,52 @@ def test_lo_can_luot_thu_thi_chan_keo_va_trang_thai_go_chan(mo_trang, db):
     assert cho_trang(page, lambda: len(ghi.su_kien()) > truoc, 5), "gỡ chặn xong thì rê chuột phải tới máy chủ"
 
 
+
+def test_popup_chay_xa_hon_64_seq_roi_mang_ve_thi_may_chu_dong_bo_tien_khong_400(mo_trang, db):
+    """Mạng chết CHẬM (POST treo): popup vẫn cấp `seq` cho từng lô ⇒ chạy xa máy chủ ≥ 66 lô. Rồi POST trượt
+    hẳn ⇒ cạn lượt thử ⇒ chặn; mạng về + `trang_thai` ⇒ gỡ chặn ⇒ lô kế mang `seq` ≥ 66 trong khi máy chủ
+    vẫn ở 0. Máy chủ phải ĐỒNG BỘ TIẾN (200), không 400 vĩnh viễn. Chờ theo ĐIỀU KIỆN (đếm `seq` khác nhau
+    bị giữ; response 200), không chờ N ms. Không lô cũ nào tới máy chủ trong test này (mọi lô giữ/huỷ đều bị
+    abort) ⇒ test KHÔNG đo ca "đuôi lô cũ tới sau khi đồng bộ".
+    ĐỘT BIẾN: bỏ đồng bộ tiến ở `nhan_lo` ⇒ response 400 ⇒ ĐỎ."""
+    import json as _json
+    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu, seq_giu, pha = [], set(), {"v": "giu"}
+
+    def chan(route):
+        if pha["v"] == "giu":
+            seq_giu.add(_json.loads(route.request.post_data)["seq"])
+            giu.append(route)                      # treo: không trả lời ⇒ popup chưa thử lại, vẫn cấp seq mới
+        else:
+            route.abort()
+
+    ket_qua = []
+    page.on("response", lambda res: ket_qua.append((res.status, _json.loads(res.request.post_data)["seq"]))
+            if res.url.endswith("/giai/chuot") else None)
+    page.route("**/giai/chuot", chan)
+    i = 0
+    while len(seq_giu) < 66 and i < 400:
+        page.mouse.move(r["x"] + 20 + (i % 300), r["y"] + 40 + (i % 7))
+        page.wait_for_timeout(45)                  # > GOM_LO_MS ⇒ mỗi lần rê là một lô riêng
+        i += 1
+    assert len(seq_giu) >= 66, len(seq_giu)
+    pha["v"] = "huy"
+    for rt in giu:
+        rt.abort()                                 # lô treo trượt ⇒ thử lại ⇒ bị abort ⇒ cạn lượt ⇒ chặn
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 10)
+    assert phien.expected_seq == 0, "không lô nào tới được máy chủ"
+    page.unroute("**/giai/chuot")
+    phien.dat_trang_thai("dang_giai", 200)
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" not in page.locator("#gc-note").inner_text(), 6)
+    page.mouse.move(r["x"] + 400, r["y"] + 200)
+    assert cho_trang(page, lambda: any(st == 200 for st, _s in ket_qua), 5), ket_qua[-5:]
+    seq_moi = [s for st, s in ket_qua if st == 200]
+    assert min(seq_moi) >= 66, seq_moi
+    assert not [k for k in ket_qua if k[0] == 400], [k for k in ket_qua if k[0] == 400][:5]
+    assert phien.expected_seq == max(seq_moi) + 1
+
+
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
     """`fetch` treo ⇒ timeout 8 s ⇒ lệnh thử lại được nhận ⇒ mở chặn; cú nhấn sau đó tới máy chủ.
     Lệnh huỷ có timeout RIÊNG 3 s (ĐP-729) ⇒ mở chặn trong vài giây, không phải 8 s.
