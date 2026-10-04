@@ -565,6 +565,38 @@ def test_dang_huy_roi_may_chu_bao_bi_ngat_van_hien_chu_dang_huy(mo_trang, db):
     assert "đang huỷ thao tác cũ" in note, note
 
 
+
+def test_lo_can_luot_thu_thi_chan_keo_va_trang_thai_go_chan(mo_trang, db):
+    """Mạng hỏng thật (mọi POST `/chuot` thất bại) ⇒ lô cạn lượt thử ⇒ popup CHẶN kéo, thôi tiêu `seq` vào
+    POST không tới được máy chủ. `trang_thai` về (máy chủ nhắc lại mỗi 5 s) ⇒ gỡ chặn, kéo lại tới máy chủ.
+    Không chặn chỉ vì SSE nối lại chớp nhoáng (onerror CONNECTING) — chỉ khi POST cạn lượt thử.
+    ĐỘT BIẾN: không gán `matKetNoiHan` khi cạn lượt ⇒ rê chuột vẫn bắn request ⇒ ĐỎ; không gỡ khi
+    `trang_thai` về ⇒ kéo không bao giờ tới máy chủ ⇒ ĐỎ."""
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    dem = {"n": 0}
+
+    def chan(route):
+        dem["n"] += 1
+        route.abort()
+
+    page.route("**/giai/chuot", chan)
+    page.mouse.move(r["x"] + 50, r["y"] + 50)              # hover ⇒ một lô ⇒ 1 lần gửi + 3 lần thử lại
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 6)
+    da_chan = dem["n"]
+    assert da_chan >= 4, da_chan
+    for i in range(5):                                      # rê tiếp trong lúc chặn
+        page.mouse.move(r["x"] + 60 + 10 * i, r["y"] + 60)
+    doi_gui(page, 500)
+    assert dem["n"] == da_chan, "đang chặn kéo: không được bắn thêm POST `/chuot` nào"
+    page.unroute("**/giai/chuot")
+    truoc = len(ghi.su_kien())
+    phien.dat_trang_thai("dang_giai", 200)                  # đổi phiên bản ⇒ SSE gửi `trang_thai` ngay
+    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" not in page.locator("#gc-note").inner_text(), 6)
+    page.mouse.move(r["x"] + 200, r["y"] + 120)
+    assert cho_trang(page, lambda: len(ghi.su_kien()) > truoc, 5), "gỡ chặn xong thì rê chuột phải tới máy chủ"
+
+
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
     """`fetch` treo ⇒ timeout 8 s ⇒ lệnh thử lại được nhận ⇒ mở chặn; cú nhấn sau đó tới máy chủ.
     Lệnh huỷ có timeout RIÊNG 3 s (ĐP-729) ⇒ mở chặn trong vài giây, không phải 8 s.
