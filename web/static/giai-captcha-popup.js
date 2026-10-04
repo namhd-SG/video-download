@@ -145,13 +145,16 @@
       case "chi-xem":
         return ["trung", IC.info, "Mỗi lúc chỉ một người điều khiển được. Bạn vẫn thấy ảnh trang để theo dõi."];
       case "bi-ngat": {
+        // Trạng thái lệnh huỷ quyết định chữ, KHÔNG phụ thuộc ai bỏ gesture: SSE `bi_ngat` của máy chủ
+        // tới đúng lúc huỷ đang treo/trượt đổi `loai` thành "may_chu", nhưng chuột vẫn bị chặn và cú
+        // nhấn kế tiếp vẫn chỉ để thử huỷ lại — người dùng phải được báo điều đó.
+        if (P.huyTruot) {
+          return ["canh", IC.canh, "<b>Thao tác bị ngắt — chưa báo được máy chủ.</b> Mạng đang chậm; thao tác của bạn tạm chưa được gửi. Nhấn vào ảnh để thử lại."];
+        }
+        if (P.chanChuot) {
+          return ["canh", IC.canh, "<b>Thao tác bị ngắt — đang huỷ thao tác cũ, chờ một chút</b> rồi kéo lại từ đầu. Không có thao tác nhả nào được gửi đi."];
+        }
         if (P.biNgat.loai === "cuc_bo") {
-          if (P.huyTruot) {
-            return ["canh", IC.canh, "<b>Thao tác bị ngắt — chưa báo được máy chủ.</b> Mạng đang chậm; thao tác của bạn tạm chưa được gửi. Nhấn vào ảnh để thử lại."];
-          }
-          if (P.chanChuot) {
-            return ["canh", IC.canh, "<b>Thao tác bị ngắt — đang huỷ thao tác cũ, chờ một chút</b> rồi kéo lại từ đầu. Không có thao tác nhả nào được gửi đi."];
-          }
           return ["canh", IC.canh, "<b>Thao tác bị ngắt, kéo lại từ đầu.</b> Cửa sổ vừa mất con trỏ giữa lúc bạn đang nhấn chuột; không có thao tác nhả nào được gửi đi."];
         }
         const con = Math.max(0, TRAN_TAI_LAI - (P.soTaiLai || 0));
