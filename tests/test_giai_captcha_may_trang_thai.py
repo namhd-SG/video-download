@@ -896,7 +896,7 @@ def test_worker_start_truyen_co_cho_boot_sweep(monkeypatch, db, tmp_path, bat):
                   process_job_fn=lambda *a: None)
     w.start()
     w.stop()
-    assert nhan == [{"co_giai": bat}]
+    assert [kw["co_giai"] for kw in nhan] == [bat]   # `dem_ra` là đường ra số đếm, không phải cờ
 
 
 @pytest.mark.parametrize("trang_thai", ["cho_xac_minh", "cho_giai"])
@@ -1086,3 +1086,33 @@ def test_worker_nhan_phien_khong_bi_don_phien_roi_chen_vao_bo_khoi_so(monkeypatc
     khoa.gai = True
     h.chay()
     assert khoa.con_trong_so is True, "phiên worker vừa nhận đã bị don_phien_roi bỏ khỏi sổ"
+
+
+@pytest.mark.parametrize("bat", [False, True], ids=["co_tat", "co_bat"])
+def test_boot_sweep_log_so_job_giai_bi_doi(monkeypatch, db, tmp_path, caplog, bat):
+    """Câu thứ hai của boot sweep (trạng thái giải) phải để lại MỘT dòng WARNING mang SỐ — trước đây
+    nó đổi hàng mà không ai thấy số. Cờ TẮT: đúng câu UPDATE cũ, chỉ thêm dòng log (không thêm truy
+    vấn). Đột biến bỏ dòng log ⇒ ĐỎ."""
+    if bat:
+        _bat_co(monkeypatch)
+    for _ in range(2):
+        jid = _job_cho_xac_minh(db)
+        if bat:   # cờ BẬT giữ nguyên `cho_xac_minh` ⇒ đưa sang `cho_giai` để câu thứ hai khớp
+            assert mgc.yeu_cau_giai_ngay(db, jid) == "ok"
+    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=lambda *a: None)
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        w.start()
+        w.stop()
+    dong = [r.getMessage() for r in caplog.records if "bước giải captcha" in r.getMessage()]
+    assert len(dong) == 1 and dong[0].startswith("boot sweep: 2 job"), dong
+    assert ("BẬT" if bat else "TẮT") in dong[0]
+
+
+def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
+    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
+                  process_job_fn=lambda *a: None)
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        w.start()
+        w.stop()
+    assert not [r for r in caplog.records if "bước giải captcha" in r.getMessage()]

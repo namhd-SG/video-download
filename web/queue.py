@@ -777,13 +777,19 @@ class JobWorker:
     def start(self) -> None:
         """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
         models.init_db(self._db_path)
-        interrupted = models.mark_running_as_interrupted(
-            self._db_path, co_giai=profile_theo_job.profile_captcha_dang_bat())
+        co_giai = profile_theo_job.profile_captcha_dang_bat()
+        dem: dict = {}
+        interrupted = models.mark_running_as_interrupted(self._db_path, co_giai=co_giai, dem_ra=dem)
         if interrupted:
             log.warning(
                 "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
                 interrupted,
             )
+        # Số job ở trạng thái giải vừa bị đổi — trước đây câu này chạy mà không ai thấy số.
+        if dem.get("giai"):
+            log.warning("boot sweep: %d job đang ở bước giải captcha -> %s (cờ %s %s)",
+                        dem["giai"], "cho_xac_minh" if co_giai else "interrupted/tinh_nang_giai_tat",
+                        profile_theo_job.ENV_PROFILE_CAPTCHA, "BẬT" if co_giai else "TẮT")
         # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
         # chạy `finally`) phải dọn trước khi nhận job.
         self._quet_profile_dinh_ky(buoc_ep=True)

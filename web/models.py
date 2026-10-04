@@ -1224,7 +1224,8 @@ def set_job_stop_reason(db_path: Path, job_id: int, ly_do: str) -> None:
         conn.execute("UPDATE jobs SET ly_do_dung = ? WHERE id = ?", (ly_do, job_id))
 
 
-def mark_running_as_interrupted(db_path: Path, co_giai: bool = False) -> int:
+def mark_running_as_interrupted(db_path: Path, co_giai: bool = False,
+                                dem_ra: dict | None = None) -> int:
     """Boot-time sweep — call once, before the worker starts pulling jobs.
 
     `KeepAlive` restarts this process with SIGKILL, so any row still
@@ -1234,6 +1235,8 @@ def mark_running_as_interrupted(db_path: Path, co_giai: bool = False) -> int:
     what happened and nothing more.
 
     `co_giai` = cờ `VIDEODL_PROFILE_CAPTCHA` lúc boot (người gọi đọc, module này không đọc env).
+    `dem_ra` (nếu truyền) nhận `{"giai": n}` — số job ở trạng thái giải vừa được câu thứ hai đổi
+    (cờ BẬT ⇒ về `cho_xac_minh`; cờ TẮT ⇒ `interrupted`), để người gọi log SỐ. Không thêm truy vấn.
 
     Returns the number of 'running' rows changed (0 on a clean boot is normal).
     """
@@ -1251,7 +1254,7 @@ def mark_running_as_interrupted(db_path: Path, co_giai: bool = False) -> int:
             # `cho_giai` (thiếu câu này thì sau crash worker mở Chromium chờ 5 phút không ai xem),
             # `dang_mo`, `dang_giai` đều về `cho_xac_minh` — người bấm "Tôi giải ngay" lại được.
             # Mốc 24 giờ tính lại từ đây.
-            conn.execute(
+            cur_giai = conn.execute(
                 "UPDATE jobs SET trang_thai = 'cho_xac_minh', vao_trang_thai_luc = ?, "
                 "ly_do_dung = ? "
                 "WHERE trang_thai IN ('cho_giai', 'dang_mo', 'dang_giai')",
@@ -1261,11 +1264,13 @@ def mark_running_as_interrupted(db_path: Path, co_giai: bool = False) -> int:
             # Cờ TẮT (ĐP-706): không còn lối ra tự động nào cho cả 4 trạng thái giải (worker không
             # nhặt `cho_giai`, bộ quét quá hạn 24 giờ không chạy, "Tôi giải ngay" trả 409) ⇒ để
             # nguyên là treo vô hạn. Kết thúc chúng là `interrupted`, lý do nói rõ vì tính năng tắt.
-            conn.execute(
+            cur_giai = conn.execute(
                 "UPDATE jobs SET trang_thai = 'interrupted', xong_luc = ?, ly_do_dung = ? "
                 "WHERE trang_thai IN ('cho_xac_minh', 'cho_giai', 'dang_mo', 'dang_giai')",
                 (_now(), gc.LD_TINH_NANG_GIAI_TAT),
             )
+        if dem_ra is not None:
+            dem_ra["giai"] = cur_giai.rowcount
         return cur.rowcount
 
 
