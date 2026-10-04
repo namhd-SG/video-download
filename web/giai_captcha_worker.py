@@ -357,17 +357,20 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
 
 
 def _dong_ctx(ctx, browser, profile_path: Path, dang_loi: bool) -> None:
-    """Đóng context/browser rồi nhả khoá profile; lỗi đóng không được đè lỗi gốc đang bay."""
+    """Đóng context/browser rồi nhả khoá profile. Lỗi đóng (`Exception`) chỉ LOG, không ném:
+    `_chay` gọi hàm này ở `finally`, nên lúc đó hoặc đã có lỗi gốc đang bay (`dang_loi` — lỗi
+    đóng không được đè nó), hoặc `_phien_tren_ctx` đã trả kết quả — ném ở đây là vứt kết quả
+    đó: job đã sang `running` với link trong tay bị `chay_luot_giai` kéo về `cho_xac_minh`."""
     try:
         try:
             ctx.close()
             if browser is not None:
                 browser.close()
         except Exception as loi_dong:  # noqa: BLE001
-            if not dang_loi:
-                raise
-            log.warning("[giai] đóng context lỗi sau lỗi gốc (%s: %s) — giữ lỗi gốc",
-                        type(loi_dong).__name__, loi_dong)
+            log.warning("[giai] đóng context lỗi %s (%s: %s) — %s",
+                        "sau lỗi gốc" if dang_loi else "sau khi đã có kết quả",
+                        type(loi_dong).__name__, loi_dong,
+                        "giữ lỗi gốc" if dang_loi else "giữ kết quả")
     finally:
         scraper._nha_profile_dir(profile_path)
 

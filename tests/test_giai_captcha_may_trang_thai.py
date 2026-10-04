@@ -1031,3 +1031,21 @@ def test_base_exception_xuyen_chay_van_dong_phien_va_bo_khoi_so(monkeypatch, db,
     assert gc.lay_phien(h.jid) is None
     assert phien.da_dong and phien.trang_thai_cuoi == worker.LOAI_CHO_XAC_MINH
     assert h.tt() == "dang_mo"
+
+
+def test_dong_ctx_loi_sau_khi_da_quet_ra_link_giu_ket_qua_va_running(monkeypatch, db, caplog):
+    """Đã giải, đã sang `running`, đã quét ra link — rồi `ctx.close()` nổ. Kết quả phải được GIỮ
+    (job tải tiếp), không bị kéo về `cho_xac_minh`; khoá profile vẫn nhả; lỗi đóng có một dòng
+    WARNING. Đột biến cho `_dong_ctx` ném lại khi không có lỗi gốc ⇒ `cho_xac_minh` ⇒ ĐỎ."""
+    h, _rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)], ra=[_ref("111"), _ref("112")])
+
+    def close_no():
+        raise OSError("Target closed")
+
+    h.ctx.close = close_no
+    with caplog.at_level(logging.WARNING, logger="videodl.web"):
+        kq = h.chay()
+    assert kq.loai == worker.LOAI_REFS and {r.video_id for r in kq.refs} == {"111", "112"}
+    assert h.tt() == "running"
+    assert not scraper_mod._PROFILE_DANG_MO, "khoá profile vẫn phải nhả"
+    assert any("sau khi đã có kết quả" in r.getMessage() for r in caplog.records)
