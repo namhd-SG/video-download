@@ -382,7 +382,7 @@ def test_ban_sao_lenh_huy_toi_muon_khong_huy_gesture_sau(dh):
 
 
 def test_huy_den_seq_am_400_khong_huy(dh):
-    """`den_seq` âm ⇒ 400, không huỷ. (Vượt `SEQ_NHAY_TOI_DA` KHÔNG còn là 400 — đồng bộ tiến, xem dưới.)"""
+    """`den_seq` âm ⇒ 400, không huỷ. (`den_seq` xa KHÔNG còn là 400 — xem phần lô xa bên dưới.)"""
     p = _phien()
     with pytest.raises(LoiGiai) as e:
         p.huy_gesture_cua_nguoi_giu("token-aaaaaaaa", "chu@x.vn", den_seq=-1)
@@ -390,12 +390,16 @@ def test_huy_den_seq_am_400_khong_huy(dh):
     assert p.lay_huy() is None and p.expected_seq == 0
 
 
-def test_seq_cu_bi_bo_la_trung_va_nhay_xa_dong_bo_tien(dh):
+def test_seq_cu_bi_bo_la_trung_va_nhay_xa_duoc_dem_roi_bo(dh):
+    """Lô xa không còn 400: được đệm như lô hụt, KHÔNG phát; quá 2 s ⇒ bỏ, mốc nhảy qua, huỷ gesture."""
     p = _phien()
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)])
     assert p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, [_ev("move", 1, 1, 0.0)]) == "trung"
     assert p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 10_000, [_ev("move", 1, 1, 0.0)]) == "ok"
-    assert p.expected_seq == 10_001 and p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
+    assert p.expected_seq == 1 and 10_000 in p._cho_lo
+    dh.t += gc.THIEU_LO_TOI_DA_GIAY + 0.1
+    p.kiem_thieu_lo(dh.t)
+    assert p.expected_seq == 10_001 and p._cho_lo == {} and p.lay_huy() == "thieu_lo"
 
 
 def test_token_khong_giu_khoa_bi_409(dh):
@@ -532,29 +536,47 @@ def test_phien_moi_lay_d_tu_env(monkeypatch):
 
 
 
+
 # ---------------------------------------------------------------------------
-# Đồng bộ tiến: popup chạy xa máy chủ (đứt mạng / mất khoá) ⇒ không 400 vĩnh viễn
+# Lô nhảy xa (popup chạy xa máy chủ sau đứt mạng / mất khoá): đệm như lô hụt, bỏ sau 2 s, KHÔNG phát ngay
 # ---------------------------------------------------------------------------
 
 A_, B_, CHU_ = "token-aaaaaaaa", "token-bbbbbbbb", "chu@x.vn"
 
 
-def test_seq_nhay_xa_sau_khi_noi_lai_cung_token_dong_bo_tien_khong_400(dh):
+def _qua_han_thieu(p, dh):
+    """Đẩy đồng hồ qua `THIEU_LO_TOI_DA_GIAY` rồi cho worker kiểm hụt như nhịp `_vong_giai`."""
+    dh.t += gc.THIEU_LO_TOI_DA_GIAY + 0.1
+    p.kiem_thieu_lo(dh.t)
+
+
+def _phat(p, dh):
+    return [e.k for e in p.den_han(dh.t + 999)]
+
+
+def test_noi_lai_cung_token_seq_nhay_xa_khong_400_khong_phat_ngay_roi_lanh(dh):
     """MỘT token: máy chủ nhận tới seq 4, SSE đứt rồi nối lại, popup đã tiêu seq tới 80 (POST trượt mạng).
-    Trước đây lô 80 và MỌI lô sau ⇒ 400 (popup hỏng tới khi đóng). ĐỘT BIẾN: bỏ đồng bộ tiến ⇒ ĐỎ."""
+    Trước đây lô 80 và MỌI lô sau ⇒ 400 (popup hỏng tới khi đóng). Nay: đệm, không phát; sau 2 s bỏ, mốc qua
+    81, cú kéo kế tiếp phát đủ. ĐỘT BIẾN: phát ngay lô xa (nhảy mốc rồi nhận) ⇒ `down up` phát ngay ⇒ ĐỎ."""
     p = _phien()
     for s in range(5):
         p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
+    _phat(p, dh)
     p.nha_khoa(A_, CHU_)
     assert p.nhan_khoa(A_, CHU_) is True and p.expected_seq == 5        # hợp đồng cùng-token giữ nguyên
-    assert p.nhan_lo(A_, CHU_, 80, [_ev("move", 2, 2, 2000.0)]) == "ok"
-    assert p.expected_seq == 81 and p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
-    assert p.nhan_lo(A_, CHU_, 81, [_ev("move", 3, 3, 2016.0)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 80, [_ev("down", 2, 2, 2000.0, 1)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 81, [_ev("up", 3, 2, 2016.0)]) == "ok"
+    assert _phat(p, dh) == [] and p.expected_seq == 5
+    _qua_han_thieu(p, dh)
+    assert p.lay_huy() == "thieu_lo" and p.expected_seq == 82 and p._cho_lo == {}
+    assert p.nhan_lo(A_, CHU_, 82, [_ev("down", 4, 4, 5000.0, 1)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 83, [_ev("up", 5, 4, 5016.0)]) == "ok"
+    assert _phat(p, dh) == ["down", "up"]
 
 
 def test_doi_token_roi_lay_lai_cung_token_huy_den_seq_xa_duoc_nhan(dh):
     """A(0..70) → B lấy khoá (seq về 0) → A lấy lại cùng token: lệnh huỷ `den_seq=71` của A được NHẬN và
-    đồng bộ mốc; lô 71 ok. ĐỘT BIẾN: giữ `den_seq > expected + SEQ_NHAY_TOI_DA ⇒ 400` ⇒ ĐỎ."""
+    nhảy mốc (lệnh huỷ không phát gì nên an toàn); lô 71 ok. ĐỘT BIẾN: `den_seq` xa ⇒ 400 ⇒ ĐỎ."""
     p = _phien()
     for s in range(71):
         dh.t += 0.05
@@ -569,10 +591,32 @@ def test_doi_token_roi_lay_lai_cung_token_huy_den_seq_xa_duoc_nhan(dh):
     assert p.nhan_lo(A_, CHU_, 71, [_ev("move", 2, 2, 5000.0)]) == "ok"
 
 
-def test_noi_lai_chong_khoa_khong_ve_trong_van_dong_bo_duoc(dh):
-    """EventSource nối lại khi kết nối cũ CHƯA bị phát hiện ngắt: khoá không bao giờ về trống (đếm 2 kết
-    nối, nhả 1). Phương án "kỳ khoá" không chữa được ca này; đồng bộ tiến thì có. Giữ test để chặn ai
-    định đổi sang kỳ khoá. ĐỘT BIẾN: bỏ đồng bộ tiến ở `nhan_lo` ⇒ lô 90 400 ⇒ ĐỎ."""
+def test_lo_cu_sau_doi_token_khong_phat_cu_keo_moi_sau_2s_phat(dh):
+    """Hồi quy reviewer bắt ở phương án nhảy-mốc-rồi-phát: lô CŨ 70 (down,move) / 71 (move,up) đang thử lại,
+    A đứt SSE, B lấy rồi nhả khoá, A lấy lại (mốc về 0), lô cũ tới ⇒ KHÔNG được phát (main: 400). Sau 2 s
+    chúng bị bỏ; cú kéo MỚI 72/73 phát đủ. ĐỘT BIẾN: phát ngay lô xa ⇒ cú kéo cũ phát = NỘP NHẦM ⇒ ĐỎ."""
+    p = _phien()
+    for s in range(70):
+        dh.t += 0.05
+        p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
+    _phat(p, dh)
+    p.nha_khoa(A_, CHU_)
+    assert p.nhan_khoa(B_, CHU_) is True
+    p.nha_khoa(B_, CHU_)
+    assert p.nhan_khoa(A_, CHU_) is True and p.expected_seq == 0
+    assert p.nhan_lo(A_, CHU_, 70, [_ev("down", 5, 5, 2000.0, 1), _ev("move", 6, 5, 2016.0, 1)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 71, [_ev("move", 7, 5, 2032.0, 1), _ev("up", 7, 5, 2048.0)]) == "ok"
+    assert _phat(p, dh) == []
+    _qua_han_thieu(p, dh)
+    assert _phat(p, dh) == [] and p.expected_seq == 72
+    assert p.nhan_lo(A_, CHU_, 72, [_ev("down", 9, 9, 6000.0, 1)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 73, [_ev("up", 9, 8, 6016.0)]) == "ok"
+    assert _phat(p, dh) == ["down", "up"]
+
+
+def test_noi_lai_chong_khoa_khong_ve_trong_lo_xa_van_lanh(dh):
+    """EventSource nối lại khi kết nối cũ CHƯA bị phát hiện ngắt: khoá không về trống (đếm 2, nhả 1). Lô 90
+    xa: không 400, đệm; sau 2 s bỏ, mốc 91; lô 91 ok."""
     p = _phien()
     for s in range(5):
         p.nhan_lo(A_, CHU_, s, [_ev("move", 1, 1, s * 16.0)])
@@ -580,40 +624,57 @@ def test_noi_lai_chong_khoa_khong_ve_trong_van_dong_bo_duoc(dh):
     p.nha_khoa(A_, CHU_)
     assert p.co_nguoi_giu() is True and p.expected_seq == 5
     assert p.nhan_lo(A_, CHU_, 90, [_ev("move", 2, 2, 3000.0)]) == "ok"
+    _qua_han_thieu(p, dh)
     assert p.expected_seq == 91
+    assert p.nhan_lo(A_, CHU_, 91, [_ev("move", 3, 3, 6000.0)]) == "ok"
 
 
-def test_lo_cu_toi_sau_cu_nhay_la_trung_khong_phat_va_hang_cho_bi_xoa(dh):
-    """Lô 50 tới sớm (chờ khe), rồi lô nhảy 150 ⇒ hàng chờ bị xoá (lô 50 không bao giờ được phát); lô cũ
-    còn đang thử lại (10, 149) tới SAU ⇒ "trung", không vào hàng phát. ĐỘT BIẾN: đồng bộ mà không xoá
-    `_cho_lo` ⇒ ĐỎ."""
+def test_lo_xa_va_lo_dem_bi_bo_sau_2s_lo_cu_toi_sau_la_trung(dh):
+    """Lô 50 và lô 150 cùng đệm; sau 2 s cả hai bị BỎ (không phát), mốc 151; lô cũ còn đang thử lại (10, 149)
+    tới SAU ⇒ "trung", không vào hàng phát."""
     p = _phien()
     assert p.nhan_lo(A_, CHU_, 50, [_ev("move", 9, 9, 800.0)]) == "ok"
-    assert 50 in p._cho_lo
     assert p.nhan_lo(A_, CHU_, 150, [_ev("down", 3, 3, 6000.0, 1)]) == "ok"
+    _qua_han_thieu(p, dh)
     assert p._cho_lo == {} and p.expected_seq == 151
     assert p.nhan_lo(A_, CHU_, 10, [_ev("move", 7, 7, 160.0)]) == "trung"
     assert p.nhan_lo(A_, CHU_, 149, [_ev("up", 7, 7, 5990.0)]) == "trung"
-    assert [(e.k, e.x) for e in p.den_han(dh.t + 30)] == [("down", 3.0)]
+    assert _phat(p, dh) == []
 
 
-def test_cu_nhay_huy_gesture_dang_nhan_nut(dh):
-    """`down` đã vào hàng (nút trên trang sắp/đang nhấn) rồi lô nhảy tới ⇒ gesture dở bị HUỶ (worker tải
-    lại nếu nút đang nhấn), `down` cũ không được phát. Hỏng âm thầm nếu thiếu (nút kẹt) ⇒ ĐỘT BIẾN: bỏ
-    `_huy_gesture_unlocked` trong đồng bộ tiến ⇒ ĐỎ."""
+def test_nut_dang_nhan_cu_keo_cu_tron_nhay_xa_khong_phat_len_trang(dh):
+    """Cùng token, `down` đã vào hàng (nút trên trang nhấn), rồi một cú kéo CŨ trọn (70: down,move / 71:
+    move,up) nhảy xa tới ⇒ KHÔNG được phát (phương án nhảy-mốc-rồi-phát phát nó lên trang sau khi tải lại).
+    Sau 2 s huỷ gesture (worker tải lại vì nút nhấn). ĐỘT BIẾN: phát ngay lô xa ⇒ `down…up` cũ phát ⇒ ĐỎ."""
     p = _phien()
     assert p.nhan_lo(A_, CHU_, 0, [_ev("down", 4, 4, 0.0, 1)]) == "ok"
-    assert p.bo_phat.nut_giu_nguon is True
-    assert p.nhan_lo(A_, CHU_, 100, [_ev("wheel", 5, 5, 3000.0, dy=10.0)]) == "ok"
-    assert p.lay_huy() == gc.LY_DO_HUY_NHAY_SEQ
-    assert p.bo_phat.nut_giu_nguon is False
-    assert "down" not in [e.k for e in p.den_han(dh.t + 30)]
+    assert _phat(p, dh) == ["down"] and p.bo_phat.nut_giu_nguon is True
+    assert p.nhan_lo(A_, CHU_, 70, [_ev("down", 5, 5, 2000.0, 1), _ev("move", 6, 5, 2016.0, 1)]) == "ok"
+    assert p.nhan_lo(A_, CHU_, 71, [_ev("move", 7, 5, 2032.0, 1), _ev("up", 7, 5, 2048.0)]) == "ok"
+    _qua_han_thieu(p, dh)
+    assert p.lay_huy() == "thieu_lo" and p.bo_phat.nut_giu_nguon is False
+    assert _phat(p, dh) == []
 
 
-def test_bo_lo_seq_xa_cung_dong_bo_tien(dh):
-    """Lô bị từ chối (400 vì nội dung) mang `seq` xa ⇒ vẫn đồng bộ tiến rồi làm mốc huỷ; trước đây
-    `bo_lo` im lặng bỏ ⇒ mốc đứng yên. ĐỘT BIẾN: bỏ đồng bộ tiến ở `bo_lo` ⇒ ĐỎ."""
+def test_lo_xa_toi_truoc_cac_lo_lien_truoc_van_phat_du_dung_thu_tu(dh):
+    """Lộn xộn khi mạng về: lô 70 tới TRƯỚC 5..69 vài ms ⇒ phát đủ 5..70 đúng thứ tự `seq`, không huỷ gì
+    (phương án nhảy-mốc-rồi-phát biến 65 lô hợp lệ này thành "trung", bỏ im lặng). ĐỘT BIẾN ⇒ ĐỎ."""
+    p = _phien()
+    for s in range(5):
+        p.nhan_lo(A_, CHU_, s, [_ev("move", s, 1, s * 16.0)])
+    _phat(p, dh)
+    assert p.nhan_lo(A_, CHU_, 70, [_ev("move", 70, 1, 70 * 16.0)]) == "ok"
+    for s in range(5, 70):
+        dh.t += 0.003
+        assert p.nhan_lo(A_, CHU_, s, [_ev("move", s, 1, s * 16.0)]) == "ok"
+    assert p.expected_seq == 71 and p.lay_huy() is None
+    assert [e.x for e in p.den_han(dh.t + 999)] == [float(s) for s in range(5, 71)]
+
+
+def test_bo_lo_seq_xa_duoc_dem_lam_moc_huy_roi_bo(dh):
+    """Lô bị từ chối (400 vì nội dung) mang `seq` xa ⇒ đệm làm mốc huỷ như lô gần; sau 2 s bỏ, mốc qua."""
     p = _phien()
     p.bo_lo(A_, CHU_, 100)
-    assert p.expected_seq == 101 and p._cho_lo == {}
-    assert p.lay_huy() == "lo_bi_tu_choi"       # ô huỷ một chỗ: lý do sau (mốc huỷ của chính lô) thắng
+    assert p.expected_seq == 0 and 100 in p._cho_lo
+    _qua_han_thieu(p, dh)
+    assert p.expected_seq == 101 and p._cho_lo == {} and p.lay_huy() == "thieu_lo"

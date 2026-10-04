@@ -578,7 +578,7 @@
     es.onerror = () => {
       if (P !== p || p.daKetThuc) return;
       // CONNECTING: EventSource tự nối lại với CÙNG token (máy chủ giữ nguyên số thứ tự lô; popup đã
-      // chạy xa hơn `SEQ_NHAY_TOI_DA` thì máy chủ tự đồng bộ tiến khi lô kế tới, huỷ gesture dở).
+      // chạy xa máy chủ thì lô xa được đệm như lô hụt, sau 2 s máy chủ bỏ chúng và huỷ gesture dở).
       // CLOSED: máy chủ từ chối hẳn (409/403/404…) hoặc phiên hết hạn ⇒ hỏi lại job.
       if (es.readyState === EventSource.CLOSED) suCoNoiMat();
       else { p.matKetNoi = true; ve(); }
