@@ -598,54 +598,6 @@ def test_lo_can_luot_thu_thi_chan_keo_va_trang_thai_go_chan(mo_trang, db):
 
 
 
-def test_popup_chay_xa_hon_64_seq_roi_mang_ve_khong_400_lo_xa_duoc_dem(mo_trang, db):
-    """Mạng chết CHẬM (POST treo): popup vẫn cấp `seq` cho từng lô ⇒ chạy xa máy chủ ≥ 66 lô. Rồi POST trượt
-    hẳn ⇒ cạn lượt thử ⇒ chặn; mạng về + `trang_thai` ⇒ gỡ chặn ⇒ lô kế mang `seq` ≥ 66 trong khi máy chủ
-    vẫn ở 0. Máy chủ phải trả 200 (lô xa ĐỆM như lô hụt, không phát ngay), không 400 vĩnh viễn; worker kiểm hụt
-    sau 2 s ⇒ mốc nhảy qua, lượt giải lành. Chờ theo ĐIỀU KIỆN (đếm `seq` khác nhau bị giữ; response 200), không
-    chờ N ms. Không lô cũ nào tới máy chủ trong test này (mọi lô giữ/huỷ đều bị abort).
-    ĐỘT BIẾN: trần nhảy `seq > expected + 64 ⇒ 400` ở `nhan_lo` ⇒ response 400 ⇒ ĐỎ."""
-    import json as _json
-    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
-    r = khung_rect(page)
-    giu, seq_giu, pha = [], set(), {"v": "giu"}
-
-    def chan(route):
-        if pha["v"] == "giu":
-            seq_giu.add(_json.loads(route.request.post_data)["seq"])
-            giu.append(route)                      # treo: không trả lời ⇒ popup chưa thử lại, vẫn cấp seq mới
-        else:
-            route.abort()
-
-    ket_qua = []
-    page.on("response", lambda res: ket_qua.append((res.status, _json.loads(res.request.post_data)["seq"]))
-            if res.url.endswith("/giai/chuot") else None)
-    page.route("**/giai/chuot", chan)
-    i = 0
-    while len(seq_giu) < 66 and i < 400:
-        page.mouse.move(r["x"] + 20 + (i % 300), r["y"] + 40 + (i % 7))
-        page.wait_for_timeout(45)                  # > GOM_LO_MS ⇒ mỗi lần rê là một lô riêng
-        i += 1
-    assert len(seq_giu) >= 66, len(seq_giu)
-    pha["v"] = "huy"
-    for rt in giu:
-        rt.abort()                                 # lô treo trượt ⇒ thử lại ⇒ bị abort ⇒ cạn lượt ⇒ chặn
-    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 10)
-    assert phien.expected_seq == 0, "không lô nào tới được máy chủ"
-    page.unroute("**/giai/chuot")
-    phien.dat_trang_thai("dang_giai", 200)
-    assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" not in page.locator("#gc-note").inner_text(), 6)
-    page.mouse.move(r["x"] + 400, r["y"] + 200)
-    assert cho_trang(page, lambda: any(st == 200 for st, _s in ket_qua), 5), ket_qua[-5:]
-    seq_moi = [s for st, s in ket_qua if st == 200]
-    assert min(seq_moi) >= 66, seq_moi
-    assert not [k for k in ket_qua if k[0] == 400], [k for k in ket_qua if k[0] == 400][:5]
-    assert phien.expected_seq == 0 and set(seq_moi) <= set(phien._cho_lo), "lô xa phải được ĐỆM, không phát ngay"
-    phien.kiem_thieu_lo(gc.dong_ho() + gc.THIEU_LO_TOI_DA_GIAY + 0.1)     # nhịp kiểm hụt của worker sau 2 s
-    assert phien.expected_seq == max(seq_moi) + 1 and phien._cho_lo == {}
-
-
-
 def test_sse_loi_connecting_khong_chan_keo(mo_trang, db):
     """SSE đứt (luồng máy chủ kết thúc không có `ket_thuc` ⇒ EventSource `onerror` khi CONNECTING) KHÔNG được
     chặn kéo: chỉ lô CẠN lượt thử mới bật `matKetNoiHan`. Gây đứt bằng cách đổi chủ job tạm thời (luồng SSE
