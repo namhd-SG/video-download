@@ -398,18 +398,21 @@ def _chay(db_path: Path, job: dict, phien: gc.PhienGiai, cookies_path: str | Non
 
 def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
                    headless: bool = True, user_agent: str | None = None) -> KetQuaGiai:
-    """Chạy một lượt giải cho job vừa được nhặt ở `dang_mo`. KHÔNG ném (trừ DB hỏng khi ghi
-    trạng thái — người gọi/vòng worker đưa job về `cho_xac_minh`).
+    """Chạy một lượt giải cho job vừa được nhặt ở `dang_mo`. Lỗi trong lượt giải (`_chay`) được quy
+    về `cho_xac_minh`, không ném. CÓ ném: lỗi đọc/ghi DB (`chon_ua_job`, ghi trạng thái) và mọi
+    `BaseException` — người gọi (`process_job`) đưa job về `cho_xac_minh`/`interrupted`. Phiên RAM
+    luôn được đóng và bỏ khỏi sổ, kể cả khi ném.
 
     Trả `KetQuaGiai`: `refs` (đã sang `running`, người gọi tải tiếp) hoặc job đã được đưa về
     `cho_xac_minh` / `failed` (người gọi dừng)."""
     job_id = job["id"]
     phien = gc.lay_hoac_tao_phien(job_id, job["nguoi_tao"], "dang_mo", worker_giu=True)
     phien.dat_trang_thai("dang_mo")
-    # `kq is None` trong `finally` ⇔ có lỗi chưa được quy về kết quả đang bay ra — thực tế là
-    # `BaseException` (SystemExit/KeyboardInterrupt) đi xuyên `_chay`: `_chay` đã đặt `dang_loi`,
-    # đóng ctx (lỗi đóng chỉ log) và nhả khoá profile rồi ném lại. Ở đây chỉ dọn RAM (đóng phiên ⇒
-    # popup nhận `ket_thuc`, bỏ khỏi sổ); trạng thái DB do `queue.process_job` ghi trước khi ném lại.
+    # `kq is None` trong `finally` ⇔ một lỗi đang bay ra TRƯỚC khi có kết quả. Hai nguồn: `Exception`
+    # từ `chon_ua_job` (DB) — trước đây nằm ngoài try nên phiên sót trong sổ với `worker_giu` —, và
+    # `BaseException` đi xuyên `_chay` (`_chay` đã đặt `dang_loi`, đóng ctx — lỗi đóng chỉ log — và
+    # nhả khoá profile rồi ném lại). Ở đây chỉ dọn RAM (đóng phiên ⇒ popup nhận `ket_thuc`, bỏ khỏi
+    # sổ); trạng thái DB do `queue.process_job` ghi.
     kq: KetQuaGiai | None = None
     try:
         ua = user_agent or models.chon_ua_job(db_path, job_id, scraper.random_user_agent)
@@ -426,9 +429,11 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
         elif kq.loai == LOAI_FAILED:
             mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai"), "failed", ly_do=kq.ly_do)
     finally:
-        if kq is None:
-            phien.dong(LOAI_CHO_XAC_MINH, gc.LD_LOI_TRINH_DUYET)
-        elif kq.loai != LOAI_REFS:
-            phien.dong(kq.loai, kq.ly_do)
-        gc.bo_phien(job_id, phien)
+        try:
+            if kq is None:
+                phien.dong(LOAI_CHO_XAC_MINH, gc.LD_LOI_TRINH_DUYET)
+            elif kq.loai != LOAI_REFS:
+                phien.dong(kq.loai, kq.ly_do)
+        finally:
+            gc.bo_phien(job_id, phien)
     return kq

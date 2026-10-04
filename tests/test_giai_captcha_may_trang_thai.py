@@ -1149,3 +1149,21 @@ def test_ti_le_khung_popup_trong_css_khop_viewport_cua_context_may_chu(tmp_path)
         ti_le = re.search(r"aspect-ratio:\s*(\d+)\s*/\s*(\d+)", khoi.group(1))
         assert ti_le, f"{lop} không còn aspect-ratio dạng W / H"
         assert (int(ti_le.group(1)), int(ti_le.group(2))) == (vp["width"], vp["height"]), lop
+
+
+def test_chon_ua_job_hong_van_dong_phien_bo_khoi_so_va_job_ve_cho_xac_minh(monkeypatch, db, tmp_path):
+    """`chon_ua_job` (đọc/ghi DB) ném ngay đầu lượt giải ⇒ phiên vẫn đóng và rời sổ (trước đây nằm ngoài
+    try ⇒ phiên sót trong sổ với `worker_giu`), job về `cho_xac_minh` qua `process_job`. Trên main ⇒ ĐỎ
+    (phiên còn trong sổ)."""
+    import sqlite3
+    h = Hien(monkeypatch, db)
+    phien = gc.lay_phien(h.jid)
+
+    def ua_hong(*a, **k):
+        raise sqlite3.OperationalError("disk I/O error")
+
+    monkeypatch.setattr(models, "chon_ua_job", ua_hong)
+    process_job(db, tmp_path / "dl", tmp_path / "ck", h.job)
+    assert gc.lay_phien(h.jid) is None, "phiên phải rời sổ"
+    assert phien.da_dong
+    assert h.tt() == "cho_xac_minh"
