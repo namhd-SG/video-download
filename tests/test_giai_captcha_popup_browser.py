@@ -397,7 +397,10 @@ def test_bo_gesture_khong_gui_up(mo_trang, db, cach):
     assert len(ev) == truoc, "sau khi bỏ gesture không được gửi thêm sự kiện nào của gesture đó"
     assert "up" not in [e["k"] for e in ev]
     assert "Thao tác bị ngắt" in page.locator("#gc-note").inner_text()
-    # Bỏ gesture không làm hỏng popup: lần nhấn kế tiếp là gesture mới.
+    # Bỏ gesture không làm hỏng popup: lần nhấn kế tiếp là gesture mới. Chờ lệnh huỷ được trả lời trước — trong
+    # lúc huỷ còn bay popup CHẶN chuột (ĐP-728 A1) và cú nhấn bị bỏ đúng thiết kế; chờ cố định thì chập chờn
+    # khi máy chậm (huỷ về sau ~300 ms).
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
     page.mouse.move(r["x"] + 200, r["y"] + 200)
     page.mouse.down()
     page.mouse.up()
