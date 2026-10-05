@@ -244,7 +244,10 @@ app = FastAPI(title="TikTok Music Downloader", lifespan=_lifespan)
 # would then pair with a two-hour-old app.js — and that mismatch is silent,
 # since a stale script simply stops finding the ids it expects.
 REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
-                              "/settings.html", "/settings.js"})
+                              "/settings.html", "/settings.js",
+                              # Popup giải captcha nói giao thức với máy chủ (`ky`): bản JS cũ đứng
+                              # cạnh máy chủ mới ⇒ mọi lô 400 tới khi tải lại trang. Phải tái kiểm.
+                              "/giai-captcha-popup.js"})
 
 
 # Nén phản hồi khi trình duyệt xin (`Accept-Encoding: gzip`). `/videos` của một thư viện
