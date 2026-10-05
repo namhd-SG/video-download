@@ -511,6 +511,108 @@ def test_ky_mat_nut_chi_tang_qua_hai_lan_huy(dh):
     assert p.ky == 2 and p.ky_mat_nut == 1
 
 
+def test_phien_tao_lai_trong_luot_khong_lui_ky():
+    """Review #54 M1: một lượt giải trải HAI đối tượng phiên — tab B học kỳ 1 (đổi token), rồi mọi SSE đóng lúc
+    `cho_giai` ⇒ phiên bị bỏ; B nối lại ⇒ phiên MỚI. Kỳ của phiên mới phải LỚN HƠN kỳ B đã học (popup chỉ nhận kỳ
+    tăng), lô và lệnh huỷ mang kỳ cũ ⇒ `ky_cu` kèm kỳ mới để popup học. ĐỘT BIẾN: đếm kỳ theo từng phiên (bắt đầu 0)
+    ⇒ phiên mới kỳ 0 < 1 ⇒ ĐỎ."""
+    gc._PHIEN.clear()
+    try:
+        p = gc.lay_hoac_tao_phien(7, "chu", "cho_giai")
+        p.so_sse += 1; p.nhan_khoa("tokA_aaaa", "u@x")
+        p.so_sse += 1; p.nhan_khoa("tokB_bbbb", "u@x")            # B chỉ xem
+        p.so_sse -= 1; p.nha_khoa("tokA_aaaa", "u@x")             # A đóng
+        p.so_sse += 1; assert p.nhan_khoa("tokB_bbbb", "u@x")     # B nối lại ⇒ giữ ⇒ đổi token ⇒ huỷ
+        ky_b = p.ky                                               # popup B học kỳ này
+        p.so_sse -= 1; p.nha_khoa("tokB_bbbb", "u@x")
+        p.so_sse -= 1; p.nha_khoa("tokB_bbbb", "u@x")
+        gc.don_phien_roi(7, p)                                    # mọi SSE đóng lúc `cho_giai` ⇒ bỏ phiên
+        q = gc.lay_hoac_tao_phien(7, "chu", "cho_giai")
+        assert q is not p
+        assert q.ky > ky_b, (q.ky, ky_b)
+        q.so_sse += 1; q.nhan_khoa("tokB_bbbb", "u@x")
+        q.trang_thai = "dang_giai"
+        with pytest.raises(gc.LoiKyCu) as e:
+            q.nhan_lo("tokB_bbbb", "u@x", 0, [_ev("down", 1, 1, 0.0, 1)], bay_gio=0.0, ky=ky_b)
+        assert e.value.ky == q.ky > ky_b
+    finally:
+        gc._PHIEN.clear()
+
+
+def test_lo_ky_cu_seq_nho_bi_ky_cu_khong_phai_trung(dh):
+    """Lô kỳ cũ có `seq` nhỏ hơn `expected_seq` của kỳ MỚI ⇒ 409 `ky_cu`, không phải 200 "trung" (200 làm popup chưa học
+    kỳ xoá lô khỏi Set ⇒ cú kéo mất không được báo). ĐỘT BIẾN: kiểm kỳ SAU nhánh "trung" ⇒ ĐỎ."""
+    p = _phien()
+    ky0 = p.ky
+    p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 0.0, 1)], ky=ky0)
+    p.huy_gesture("test")
+    p.nhan_lo(TK, CHU, 0, [_ev("move", 2, 2, 100.0)], ky=p.ky)
+    p.nhan_lo(TK, CHU, 1, [_ev("move", 3, 3, 116.0)], ky=p.ky)
+    assert p.expected_seq == 2
+    with pytest.raises(gc.LoiKyCu):
+        p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 0.0, 1)], ky=ky0)
+
+
+def test_huy_phia_may_chu_day_trang_thai_ngay(dh):
+    """Mọi lần huỷ (vd hụt lô) đẩy `trang_thai` NGAY (đổi `phien_ban` ⇒ SSE gửi trong ≤ 1 nhịp), không chờ nhịp nhắc
+    lại 5 s — popup học kỳ mới sớm, cửa sổ mất cú kéo nhỏ. ĐỘT BIẾN: huỷ không gọi `_doi()` ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 1, [_ev("move", 2, 2, 50.0)], ky=p.ky)
+    truoc = p.phien_ban
+    dh.t += 2.1
+    p.kiem_thieu_lo(dh.t)
+    assert p.lay_huy() == "thieu_lo" and p.phien_ban > truoc
+
+
+def test_bo_lo_tran_dem_huy_gesture(dh):
+    """Đệm đã đủ `CHO_LO_TOI_DA` lô chờ, thêm một lô 400 tới sớm ⇒ huỷ (kỳ mới), không im lặng bỏ qua.
+    ĐỘT BIẾN: `bo_lo` tràn đệm chỉ `return` ⇒ ĐỎ."""
+    p = _phien()
+    ky0 = p.ky
+    for seq in range(1, gc.CHO_LO_TOI_DA + 1):
+        p.nhan_lo(TK, CHU, seq, [_ev("move", seq, 1, float(seq))], ky=ky0)
+    assert len(p._cho_lo) == gc.CHO_LO_TOI_DA and p.ky == ky0
+    p.bo_lo(TK, CHU, gc.CHO_LO_TOI_DA + 5, ky=ky0)
+    assert p.ky > ky0 and p.lay_huy() == "qua_nhieu_lo_cho" and p._cho_lo == {}
+
+
+def test_bo_lo_ky_cu_khong_lam_moc_huy_o_ky_moi(dh):
+    """Review #54 S1/R8: lô kỳ cũ bị 400 tới SAU khi kỳ mới đã có cú kéo ⇒ KHÔNG thành mốc huỷ ở kỳ mới (huỷ oan cú kéo
+    hợp lệ, nút kẹt). ĐỘT BIẾN: `bo_lo` bỏ kiểm kỳ ⇒ ĐỎ."""
+    p = _phien()
+    ky0 = p.ky
+    p.huy_gesture("x")
+    p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 1000.0, 1)], ky=p.ky)   # cú kéo mới, seq 0 ⇒ chờ seq 1
+    ky1 = p.ky
+    p.bo_lo(TK, CHU, 1, ky=ky0)                                     # lô kỳ cũ 400 trùng đúng seq 1
+    assert p.ky == ky1 and p.lay_huy() == "x" and p.bo_phat.nut_giu_nguon
+
+
+def test_kiem_ky_lo_ky_cu_truoc_kiem_noi_dung():
+    """Review #54 S1: route kiểm kỳ TRƯỚC nội dung lô ⇒ lô kỳ cũ (dù nội dung sai) ⇒ `LoiKyCu` (409), không 400.
+    Đúng kỳ ⇒ không ném."""
+    p = _phien()
+    p.kiem_ky(p.ky)
+    ky0 = p.ky
+    p.huy_gesture("x")
+    with pytest.raises(gc.LoiKyCu):
+        p.kiem_ky(ky0)
+
+
+def test_doi_token_bo_nut_dang_cho_van_tinh_ky_mat_nut():
+    """Review #54 N2: A giữ, lô `down` của A đã 200 nằm chờ; A→B→A ⇒ huỷ vì đổi token phải tính `ky_mat_nut` TRƯỚC khi
+    xoá đệm (A quay lại thấy "kéo lại"). ĐỘT BIẾN: xoá đệm trước khi huỷ ⇒ `ky_mat_nut` 0 ⇒ ĐỎ."""
+    p = PhienGiai(1, "c", "dang_giai", d_ms=100)
+    p.nhan_khoa("tokA_aaaa", "u@x")
+    p.nhan_lo("tokA_aaaa", "u@x", 1, [_ev("down", 1, 1, 0.0, 1)], bay_gio=0.0, ky=p.ky)
+    assert list(p._cho_lo) == [1]
+    p.nha_khoa("tokA_aaaa", "u@x"); p.nhan_khoa("tokB_bbbb", "u@x")
+    ky_sau_b = p.ky
+    assert p.ky_mat_nut == ky_sau_b
+    p.nha_khoa("tokB_bbbb", "u@x"); p.nhan_khoa("tokA_aaaa", "u@x")
+    assert p.ky > ky_sau_b and p.ky_mat_nut == ky_sau_b
+
+
 def test_tab_sau_chi_xem_tab_dau_ngat_thi_tab_sau_lay_duoc():
     p = PhienGiai(1, "chu@x.vn", "dang_giai")
     assert p.nhan_khoa("token-aaaaaaaa", "chu@x.vn") is True

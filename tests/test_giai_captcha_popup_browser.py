@@ -697,7 +697,8 @@ def _doi_ky(phien, ky, mat_nut=False, day=True):
     huỷ đó bỏ thao tác nút chưa phát (⇒ `ky_mat_nut = ky`). `day=False`: chưa đẩy `trang_thai` (test tự bắn)."""
     with phien.khoa:
         phien.bo_phat.huy()
-        phien.ky = ky
+        phien.ky = gc._ky_ke_tiep()           # cùng bộ đếm với huỷ thật: kỳ sau đó vẫn tăng ngặt
+        assert phien.ky == ky, (phien.ky, ky)
         if mat_nut:
             phien.ky_mat_nut = ky
         phien.expected_seq = 0
@@ -1251,6 +1252,39 @@ def test_phan_hoi_huy_mang_ky_mat_nut_bao_mat_cu_nhap_da_200(mo_trang, db, monke
     page.evaluate("() => {" + _TRANG_THAI_KY_1.replace("ky_mat_nut: 0", "ky_mat_nut: 1") + "}")
     assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 3), \
         page.locator("#gc-note").inner_text()
+    page.unroute("**/giai/chuot")
+
+
+def test_lo_ky_cu_bi_400_toi_muon_khong_giet_cu_keo_ky_moi(mo_trang, db, monkeypatch):
+    """Review #54 S1 (phía popup): lô kỳ 0 treo, kỳ 1 về, người bắt đầu cú kéo MỚI; rồi lô kỳ 0 nhận 400 ⇒ popup KHÔNG bỏ
+    cú kéo kỳ 1 (máy chủ không huỷ nó) ⇒ `up` vẫn được gửi, không kẹt nút. ĐỘT BIẾN: mọi 400 đều `boCuChi` ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = []
+
+    def chuot(route):
+        if route.request.post_data_json.get("ky") == 0 and not giu:
+            giu.append(route)
+        else:
+            route.continue_()
+
+    page.route("**/giai/chuot", chuot)
+    page.mouse.move(r["x"] + 50, r["y"] + 50)
+    assert cho_trang(page, lambda: len(giu) == 1, 5)
+    _doi_ky(phien, 1)
+    _hoc_ky_moi(page, ghi, r, 1)
+    n = len(ghi.chuot)
+    page.mouse.move(r["x"] + 300, r["y"] + 300)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 320, r["y"] + 305)
+    assert cho_trang(page, lambda: any(e["k"] == "down" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    giu[0].fulfill(status=400, content_type="application/json", body='{"detail": "Điểm ngoài khung."}')
+    assert cho_trang(page, lambda: 400 in ghi.mat_chuot, 5)
+    page.mouse.up()
+    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5), \
+        "400 của lô kỳ cũ không được bỏ cú kéo kỳ mới"
     page.unroute("**/giai/chuot")
 
 

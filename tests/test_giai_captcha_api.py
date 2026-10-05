@@ -347,6 +347,22 @@ def test_chuot_khong_giu_khoa_gui_lo_xau_khong_huy_duoc_gesture_cua_nguoi_dang_g
     b.dong_ket_noi()
 
 
+def test_chuot_lo_ky_cu_noi_dung_sai_nhan_ky_cu_khong_400(api):
+    """Review #54 S1: lô kỳ CŨ có điểm ngoài khung ⇒ 409 `ky_cu` (kiểm kỳ TRƯỚC nội dung), KHÔNG 400 — 400 làm popup bỏ
+    cú kéo đang dở của kỳ mới; và lô đó không thành mốc huỷ ở kỳ mới. ĐỘT BIẾN: bỏ `kiem_ky` ở route ⇒ 400 ⇒ ĐỎ."""
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    p = f"/jobs/{jid}/giai/chuot"
+    ky0 = phien.ky
+    phien.huy_gesture("test")
+    assert goi(port, "POST", p, body=lo(0, [{"k": "down", "x": 5, "y": 5, "t": 1, "buttons": 1}], ky=phien.ky))[0] == 200
+    ky1 = phien.ky
+    st, ra = goi(port, "POST", p, body=lo(1, [move(x=9999)], ky=ky0))
+    assert st == 409 and ra["detail"]["ma"] == "ky_cu" and ra["detail"]["ky"] == ky1, (st, ra)
+    assert phien.ky == ky1 and phien.lay_huy() == "test" and phien.expected_seq == 1
+    s.dong_ket_noi()
+
+
 def test_chuot_quyen_va_trang_thai(api):
     port, db = api
     jid, s, phien = job_dang_giai_co_khung(api)
@@ -406,9 +422,11 @@ def test_chuot_so_khong_huu_han_nan_infinity_bi_400(api):
     p = f"/jobs/{jid}/giai/chuot"
     for tho in ('{"k":"move","x":NaN,"y":1,"t":1,"buttons":0}', '{"k":"move","x":1,"y":Infinity,"t":1,"buttons":0}',
                 '{"k":"move","x":1,"y":1,"t":-Infinity,"buttons":0}'):
-        raw = '{"token":"%s","seq":%d,"khung_w":800,"su_kien":[%s]}' % (TA, phien.expected_seq, tho)
+        # Có `ky` đúng: thiếu `ky` thì route trả mã "popup cũ" trước khi kiểm số ⇒ test không còn soi NaN.
+        raw = '{"token":"%s","ky":%d,"seq":%d,"khung_w":800,"su_kien":[%s]}' % (TA, phien.ky, phien.expected_seq, tho)
         assert goi(port, "POST", p, raw=raw)[0] == 400, tho
-    raw = '{"token":"%s","seq":%d,"khung_w":NaN,"su_kien":[%s]}' % (TA, phien.expected_seq, json.dumps(move()))
+    raw = '{"token":"%s","ky":%d,"seq":%d,"khung_w":NaN,"su_kien":[%s]}' % (TA, phien.ky, phien.expected_seq,
+                                                                         json.dumps(move()))
     assert goi(port, "POST", p, raw=raw)[0] == 400
     s.dong_ket_noi()
 
@@ -468,7 +486,7 @@ def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
     assert phien.lay_huy() is None
     assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture", "ky": 0})[0] == 403
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 400   # thiếu ky
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 401   # thiếu ky = popup cũ
     assert phien.lay_huy() is None
     assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "ky": 0, "den_seq": 0}) == (200, {"ok": True, "ky": 1, "ky_mat_nut": 0})
     assert phien.lay_huy() == gc.LY_DO_HUY_POPUP and phien.ky == 1
@@ -519,14 +537,15 @@ def test_sse_events_cu_giu_mo_cho_trang_thai_moi(api):
     c.close()
 
 
-def test_chuot_thieu_ky_la_popup_cu_400(api):
-    """Máy chủ mới + popup cũ (không gửi `ky`) ⇒ 400 với thông điệp "tải lại trang" (không đoán kỳ: popup cũ
-    không đặt lại seq nên sau lần huỷ đầu sẽ vào vòng hụt-lô vô tận). ĐỘT BIẾN: chấp nhận thiếu `ky` ⇒ ĐỎ."""
+def test_chuot_thieu_ky_la_popup_cu_401(api):
+    """Máy chủ mới + popup cũ (không gửi `ky`) ⇒ 401 với thông điệp "tải lại trang" (không đoán kỳ: popup cũ
+    không đặt lại seq nên sau lần huỷ đầu sẽ vào vòng hụt-lô vô tận). 401 vì JS cũ hiểu 401 là mất phiên và hiện nút
+    "Tải lại trang"; 400 thì nó bỏ cú kéo im lặng (review #54 S3). ĐỘT BIẾN: chấp nhận thiếu `ky` ⇒ ĐỎ; trả 400 ⇒ ĐỎ."""
     port, db = api
     jid, s, phien = job_dang_giai_co_khung(api)
     body = lo(0, [move()])
     body.pop("ky")
     st, ra = goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=body)
-    assert st == 400 and "tải lại trang" in ra["detail"], ra
+    assert st == 401 and "tải lại trang" in ra["detail"], ra
     assert phien.expected_seq == 0
     s.dong_ket_noi()

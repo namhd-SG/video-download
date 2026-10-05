@@ -588,7 +588,9 @@
       // 400: lô bị bỏ và máy chủ HUỶ gesture dở ⇒ dừng gửi phần còn lại của gesture này (không có
       // `up` mồ côi). 409: không còn giữ quyền / sai trạng thái — luồng SSE sẽ báo ngay.
       // Câu "kéo lại từ đầu" chờ SSE `bi_ngat` (chỉ khi máy chủ thật sự tải lại trang).
-      if (r.status === 400) boCuChi("may_chu", true);
+      // Chỉ khi lô thuộc kỳ đang dùng (hoặc máy chủ chưa có kỳ): 400 của lô kỳ CŨ tới muộn không được giết cú kéo của kỳ
+      // mới — máy chủ không huỷ nó, bỏ ở đây là không gửi `up` ⇒ nút trên trang kẹt nhấn.
+      if (r.status === 400 && (lo.ky === undefined || lo.ky === p.ky)) boCuChi("may_chu", true);
       if (laKyCu(r)) {
         // Lô thuộc ĐÚNG kỳ popup đang biết ⇒ máy chủ vừa sang kỳ mới mà popup chưa nhận `trang_thai`: gesture
         // dở đã chết ở máy chủ ⇒ bỏ im lặng, tạm chặn kéo tới khi `trang_thai` mang kỳ mới về (≤ 1 nhịp SSE,

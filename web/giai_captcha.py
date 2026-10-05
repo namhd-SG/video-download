@@ -88,6 +88,7 @@ from __future__ import annotations
 import logging
 import math
 import os
+import itertools
 import re
 import threading
 import time
@@ -124,6 +125,8 @@ TICK_VONG_GIAY = 0.010             # nhịp tối đa của vòng worker (chỉ 
 LO_TOI_DA_SU_KIEN = 64
 LO_TOI_DA_MOI_GIAY = 50
 CHO_LO_TOI_DA = 128                # lô đệm chờ khe tối đa (≈ 50 lô/s × 2 s + dư); KẾ THỪA, CHƯA ĐO ở job thật
+# Trần trên đếm CẢ mốc huỷ `None` (lô 400) lẫn lô thật. `seq` KHÔNG có trần trên: lô `seq` rất xa vẫn được đệm (nhận
+# "ok"), rồi hụt quá `THIEU_LO_TOI_DA_GIAY` thì huỷ — bộ nhớ bị chặn bởi trần này chứ không bởi `seq`.
 LECH_LICH_TOI_DA_GIAY = 10.0       # sự kiện hẹn phát xa hơn thế ⇒ đồng hồ popup lệch, bỏ lô
 MAC_DINH_GOM_LO_POPUP_MS = 40      # phía popup (để UI dùng; máy chủ không phụ thuộc)
 
@@ -311,6 +314,16 @@ def kiem_su_kien(raw: object, khung_w: float, khung_h: float, device_w: float) -
     return SuKien(k=k, x=cx, y=cy, t=float(t), buttons=buttons, dx=float(dx), dy=float(dy))
 
 
+# Bộ đếm KỲ toàn tiến trình: một lượt giải có thể trải NHIỀU đối tượng `PhienGiai` (phiên bị bỏ khi mọi SSE đóng lúc
+# `cho_giai` rồi tạo lại khi nối lại — `don_phien_roi`), mà popup chỉ nhận kỳ TĂNG. Đếm theo từng phiên thì phiên tạo
+# lại bắt đầu từ 0 ⇒ popup đang ở kỳ cao hơn bị `ky_cu` mọi lô tới hết lượt. Chỉ cần tăng ngặt, không cần liên tiếp.
+_DEM_KY = itertools.count()
+
+
+def _ky_ke_tiep() -> int:
+    return next(_DEM_KY)
+
+
 def la_su_kien_nut(ev: SuKien) -> bool:
     """Sự kiện có thao tác NÚT (nhấn, nhả, kéo khi giữ nút trái) — khác rê chuột."""
     return ev.k in ("down", "up") or (ev.k == "move" and bool(ev.buttons & 1))
@@ -469,7 +482,7 @@ class PhienGiai:
         # KỲ: tăng ở ĐÚNG MỘT chỗ — `_huy_gesture_unlocked`. Lô/lệnh mang kỳ khác ⇒ `LoiKyCu` (409 `ky_cu`).
         # `seq` đếm lại từ 0 mỗi kỳ. Popup gắn kỳ LÚC GỬI ⇒ lô tạo trước một lần huỷ luôn mang kỳ cũ, tới lúc
         # nào cũng bị chặn ở đây — kể cả request đã lên dây từ trước sự cố.
-        self.ky = 0
+        self.ky = _ky_ke_tiep()
         # Kỳ MỚI NHẤT do một lần huỷ BỎ thao tác nút chưa phát sinh ra (0 = chưa có). Chỉ tăng, không bao giờ xoá:
         # popup so với kỳ nó đang biết ⇒ biết cú kéo đã gửi (và đã được 200) có bị mất không, kể cả khi đọc muộn hoặc
         # hai lần huỷ liền nhau trong một nhịp SSE. Gửi trong `trang_thai` và phản hồi `huy_gesture`.
@@ -498,11 +511,12 @@ class PhienGiai:
                 if token != self._token_cuoi:
                     # Token MỚI lấy khoá: số thứ tự lô và ánh xạ đồng hồ làm lại; gesture dở của
                     # token cũ bị huỷ (worker quyết có phải tải lại không).
-                    self.expected_seq = 0
-                    self._cho_lo.clear()
-                    self._cho_lo_tu = None
                     if self._token_cuoi is not None:
-                        self._huy_gesture_unlocked("doi_token")
+                        self._huy_gesture_unlocked("doi_token")   # tính `ky_mat_nut` rồi mới xoá đệm, seq về 0
+                    else:
+                        self.expected_seq = 0
+                        self._cho_lo.clear()
+                        self._cho_lo_tu = None
                     self._tre_cu += self.bo_phat.tre_qua_D
                     self._tre_phat_cu += self.bo_phat.tre_phat_worker
                     self.bo_phat = BoPhatLai(self.d_ms)
@@ -570,6 +584,13 @@ class PhienGiai:
             self._xa_cho_lo(t_toi)
             return "ok"
 
+    def kiem_ky(self, ky: int) -> None:
+        """Lô mang kỳ khác ⇒ `LoiKyCu` NGAY, trước khi kiểm nội dung lô: lô kỳ cũ có điểm ngoài khung mà nhận 400 thì
+        popup coi là lô của kỳ hiện tại bị từ chối và bỏ cú kéo đang dở của kỳ MỚI (không gửi `up` ⇒ nút kẹt)."""
+        with self.khoa:
+            if ky != self.ky:
+                raise LoiKyCu(self.ky)
+
     def bo_lo(self, token: str, email: str, seq: int, bay_gio: float | None = None,
               ky: int | None = None) -> None:
         """Lô `seq` bị từ chối (400): số thứ tự của nó coi như ĐÃ DÙNG (nếu không, mọi lô sau nó kẹt
@@ -631,7 +652,7 @@ class PhienGiai:
                    or (lo_dang_xa is not None and any(la_su_kien_nut(e) for e in lo_dang_xa)))
         self.bo_phat.huy()
         self._co_huy = ly_do
-        self.ky += 1
+        self.ky = _ky_ke_tiep()
         if mat_nut:
             self.ky_mat_nut = self.ky
         self.expected_seq = 0
@@ -704,7 +725,7 @@ class PhienGiai:
                 raise LoiGiai(409, "Lượt giải không còn ở bước đang giải.")
             self._lenh.append(lenh)
 
-    def huy_gesture_cua_nguoi_giu(self, token: str, email: str, ky: int | None = None) -> None:
+    def huy_gesture_cua_nguoi_giu(self, token: str, email: str, ky: int | None = None) -> tuple[int, int]:
         """Lệnh `huy_gesture` (R15b KHÉP): popup tự bỏ gesture (`pointercancel`/`lostpointercapture`/
         `blur`) và KHÔNG gửi `up` — nhả chuột là bước nộp lần thử (ĐP-529/602). Không có lệnh này thì
         máy chủ không biết: chỉ HỤT `seq` mới huỷ (`kiem_thieu_lo`), còn popup im lặng thì nút kẹt nhấn.
@@ -723,6 +744,7 @@ class PhienGiai:
             if ky is not None and ky != self.ky:
                 raise LoiKyCu(self.ky)
             self._huy_gesture_unlocked(LY_DO_HUY_POPUP)
+            return self.ky, self.ky_mat_nut        # chụp trong khoá: phản hồi không trả cặp lệch nhau
 
     def xem_lenh(self) -> str | None:
         with self.khoa:
