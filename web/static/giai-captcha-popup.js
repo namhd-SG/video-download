@@ -58,6 +58,9 @@
 
   const ngu = (ms) => new Promise((xong) => setTimeout(xong, ms));
 
+  // Sự kiện có thao tác NÚT (nhấn, nhả, kéo khi giữ nút trái) — khác rê chuột: mất nó là mất một lần thử của người.
+  const coNut = (e) => e.k === "down" || e.k === "up" || (e.k === "move" && (e.buttons & 1));
+
   // Token riêng mỗi lần mở popup: khoá điều khiển và số thứ tự lô gắn với nó. 8–64 ký tự
   // [A-Za-z0-9_-]. `randomUUID` chỉ có ở ngữ cảnh an toàn (https / 127.0.0.1) ⇒ có đường dự phòng.
   function taoToken() {
@@ -453,6 +456,9 @@
         p.buf.length = 0;
         p.chanChuot = false;
         // Chưa học kỳ mới ⇒ chưa được kéo (lô gửi bây giờ sẽ mang kỳ cũ); `trang_thai` kế gỡ `choKy`.
+        // `p.ky === p.kyHuy` luôn đúng ở đây khi máy chủ giữ hai bất biến: (1) chỉ trả `ky_cu` cho lệnh CÓ mang `ky`;
+        // (2) `ky` chỉ TĂNG trong một lượt giải (nên `doiKy` luôn vô hiệu lần huỷ đang bay). Giữ điều kiện làm phòng
+        // thủ: bất biến nào vỡ thì `choKy` bật mà `trang_thai` cùng kỳ không gỡ ⇒ khoá kéo tới lần đổi kỳ sau.
         if (kq === "ky_cu" && p.ky !== null && p.ky === p.kyHuy) p.choKy = true;
       } else p.huyTruot = true;  // vẫn chặn; cú nhấn kế tiếp thử huỷ lại (`khiNhan`)
       ve();
@@ -500,13 +506,15 @@
   // gửi, bỏ gesture dở. Một cú kéo bị mất phải THẤY ĐƯỢC ⇒ BÁO "đồng bộ lại — kéo lại từ đầu" khi một trong ba
   // (không đoán theo thời gian — cửa sổ thời gian để lọt cú kéo khi mạng chậm):
   //  - gesture còn dở (`cuChi`);
+  //  - thao tác nút còn trong bộ gom (chưa gửi — bị bỏ ngay dưới đây; vd cú nhấp trọn trong 40 ms);
   //  - lô có thao tác nút của kỳ cũ CHƯA được 200 (`loNut`): có thể chưa tới máy chủ — máy chủ không biết nội dung
   //    lô hụt, chỉ popup biết;
   //  - máy chủ báo một lần huỷ SAU kỳ popup đang biết đã bỏ thao tác nút chưa phát (`ky_mat_nut` = kỳ mới nhất do
   //    một lần huỷ như thế sinh ra; không bao giờ giảm).
   // Báo thừa còn lại (đã chấp nhận): lô đã phát nhưng phản hồi 200 chưa về lúc đổi kỳ.
   function doiKy(p, kyMoi, kyMatNut) {
-    const coThaoTac = !!p.cuChi || p.loNut.size > 0 || (typeof kyMatNut === "number" && kyMatNut > p.ky);
+    const coThaoTac = !!p.cuChi || p.buf.some(coNut) || p.loNut.size > 0 ||
+      (typeof kyMatNut === "number" && kyMatNut > p.ky);
     p.ky = kyMoi;
     p.seqLo = 0;
     clearTimeout(p.hen);
@@ -544,7 +552,7 @@
     const than = { ...lo, seq: P.seqLo++ };
     if (P.ky !== null) than.ky = P.ky;      // máy chủ chưa có kỳ ⇒ không gửi (giao thức cũ)
     // Lô có thao tác nút: giữ trong Set của kỳ hiện tại tới khi được 200 (409/400/cạn lượt ⇒ ở lại: có thể chưa phát).
-    const tapNut = lo.su_kien.some((e) => e.k === "down" || e.k === "up" || (e.k === "move" && (e.buttons & 1)))
+    const tapNut = lo.su_kien.some(coNut)
       ? P.loNut : null;
     if (tapNut) tapNut.add(than);
     const bay = guiLo(than, tapNut);

@@ -1082,11 +1082,14 @@ def test_doi_ky_giua_cu_keo_khong_gui_up_mo_coi(mo_trang, db, monkeypatch):
     assert [e["k"] for lo in moi for e in lo["su_kien"] if e["k"] != "move"] == ["down", "up"], moi
 
 
-def test_doi_ky_bo_su_kien_dang_gom_cua_ky_cu(mo_trang, db, monkeypatch):
-    """Cú nhấn còn trong bộ gom (chưa xả — 40 ms) đúng lúc `trang_thai` mang kỳ mới tới ⇒ `down` đó thuộc kỳ đã
-    bỏ, phải bị BỎ cùng gesture: gửi nó ở kỳ mới là `down` không bao giờ có `up` (gesture đã bỏ ⇒ thả chuột không
-    gửi gì) ⇒ nút trên trang KẸT nhấn. `trang_thai` được bắn trong CÙNG lượt JS với cú nhấn (bắt EventSource của
-    popup) để thứ tự xác định. ĐỘT BIẾN: `doiKy` không xoá `buf` ⇒ ĐỎ."""
+# `trang_thai` kỳ 1 bắn thẳng vào EventSource của popup (bắt bởi `_mo_popup_bat_es`) — cùng lượt JS với sự kiện chuột.
+_TRANG_THAI_KY_1 = """ window.__es.dispatchEvent(new MessageEvent('trang_thai', { data: JSON.stringify({
+    trang_thai: 'dang_giai', vai: 'dieu_khien', con_lai_giay: 250, so_lan_tai_lai: 0, ky: 1, ky_mat_nut: 0 }) })); """
+
+
+def _mo_popup_bat_es(mo_trang, db, monkeypatch):
+    """Popup `dang_giai` với máy chủ giả có kỳ, giữ EventSource ở `window.__es`; máy chủ (giả) đã sang kỳ 1 nhưng
+    chưa đẩy `trang_thai` — test tự bắn bằng `_TRANG_THAI_KY_1`. Tắt nhịp nhắc lại. Trả (page, ghi, phien)."""
     import web.giai_captcha_api as api_mod
     monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
     _gia_ky(monkeypatch)
@@ -1101,11 +1104,62 @@ def test_doi_ky_bo_su_kien_dang_gom_cua_ky_cu(mo_trang, db, monkeypatch):
     page.wait_for_selector(".gc-frame.dieu-khien")
     page.wait_for_function("() => { const a = document.querySelector('#gc-anh'); return a && a.naturalWidth === 800; }")
     with phien.khoa:
-        phien.ky_gia = 1                     # máy chủ (giả) sang kỳ 1; `trang_thai` thật tới sau
+        phien.ky_gia = 1
+    return page, ghi, phien
+
+
+def test_cu_nhap_con_trong_bo_gom_luc_doi_ky_bao_keo_lai(mo_trang, db, monkeypatch):
+    """Review #52 vòng 2 SHOULD-1: cú nhấp TRỌN (down + up) còn trong bộ gom 40 ms đúng lúc kỳ mới về ⇒ `doiKy` bỏ nó
+    (không bao giờ được gửi) — máy chủ không biết, Set chưa có lô nào ⇒ chỉ popup biết ⇒ phải BÁO "kéo lại", không mất
+    im lặng. Không lô nào được gửi. ĐỘT BIẾN: bỏ vế `buf` trong `coThaoTac` ⇒ ĐỎ."""
+    page, ghi, phien = _mo_popup_bat_es(mo_trang, db, monkeypatch)
     n = len(ghi.chuot)
-    page.evaluate("() => {" + _con_tro(page, "pointerdown", 300, 300, 1) + """
-        window.__es.dispatchEvent(new MessageEvent('trang_thai', { data: JSON.stringify({
-            trang_thai: 'dang_giai', vai: 'dieu_khien', con_lai_giay: 250, so_lan_tai_lai: 0, ky: 1 }) })); }""")
+    page.evaluate("() => {" + _con_tro(page, "pointerdown", 300, 300, 1) + _con_tro(page, "pointerup", 300, 300, 0)
+                  + _TRANG_THAI_KY_1 + "}")
+    assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 3)
+    doi_gui(page)
+    assert not any(e["k"] in ("down", "up") for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), "cú nhấp đã bỏ"
+
+
+def test_chi_re_con_trong_bo_gom_luc_doi_ky_khong_bao(mo_trang, db, monkeypatch):
+    """Ca âm của vế `buf`: chỉ RÊ chuột còn trong bộ gom lúc kỳ mới về ⇒ không báo (rê không phải thao tác nút).
+    ĐỘT BIẾN: vế `buf` tính mọi sự kiện ⇒ ĐỎ."""
+    page, ghi, phien = _mo_popup_bat_es(mo_trang, db, monkeypatch)
+    page.evaluate("() => {" + _con_tro(page, "pointermove", 300, 300, 0) + _TRANG_THAI_KY_1 + "}")
+    doi_gui(page)
+    _hoc_ky_moi(page, ghi, khung_rect(page), 1)
+    assert "Đã đồng bộ lại với máy chủ" not in page.locator("#gc-note").inner_text()
+
+
+def test_doi_ky_khi_huy_dang_bay_lenh_da_giai_khong_cho_huy_cu(mo_trang, db, monkeypatch):
+    """Review #52 vòng 2 NIT-1: lệnh huỷ TREO, kỳ mới về (máy chủ đã huỷ ⇒ lần huỷ đó hết hiệu lực), người bấm "Đã giải
+    xong" ⇒ `da_giai` gửi NGAY, không đứng chờ lệnh huỷ cũ (≈ 13 s thử lại). ĐỘT BIẾN: `doiKy` không đặt
+    `dangHuy = false` ⇒ `guiLenh` chờ lệnh huỷ ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = chan_lenh_huy(page, 10, treo=True)
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: len(giu) == 1, 5)
+    _doi_ky(phien, 1)
+    assert cho_trang(page, lambda: "Cửa sổ vừa mất con trỏ" in page.locator("#gc-note").inner_text(), 5)
+    page.click("#gc-actions button:has-text('Đã giải xong')")
+    assert cho_trang(page, lambda: any(l["lenh"] == "da_giai" for l in ghi.lenh), 2), \
+        "da_giai phải gửi ngay, không chờ lệnh huỷ đã hết hiệu lực"
+    assert len(giu) == 1, "lệnh huỷ cũ vẫn còn treo lúc da_giai đi"
+
+
+def test_doi_ky_bo_su_kien_dang_gom_cua_ky_cu(mo_trang, db, monkeypatch):
+    """Cú nhấn còn trong bộ gom (chưa xả — 40 ms) đúng lúc `trang_thai` mang kỳ mới tới ⇒ `down` đó thuộc kỳ đã
+    bỏ, phải bị BỎ cùng gesture: gửi nó ở kỳ mới là `down` không bao giờ có `up` (gesture đã bỏ ⇒ thả chuột không
+    gửi gì) ⇒ nút trên trang KẸT nhấn. `trang_thai` được bắn trong CÙNG lượt JS với cú nhấn (bắt EventSource của
+    popup) để thứ tự xác định. ĐỘT BIẾN: `doiKy` không xoá `buf` ⇒ ĐỎ."""
+    page, ghi, phien = _mo_popup_bat_es(mo_trang, db, monkeypatch)
+    n = len(ghi.chuot)
+    page.evaluate("() => {" + _con_tro(page, "pointerdown", 300, 300, 1) + _TRANG_THAI_KY_1 + "}")
     page.evaluate("() => {" + _con_tro(page, "pointerup", 300, 300, 0) + "}")
     doi_gui(page)
     _keo(page, khung_rect(page), 400, 300)
