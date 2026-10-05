@@ -27,10 +27,6 @@
   // dài (ĐP-729). 3 s ⇒ ≈ 13 s tối đa. CHƯA ĐO.
   const HUY_HET_GIO_MS = 3000;
   const THU_LAI_CHO_MS = 150;
-  // Kỳ đổi mà người vừa có thao tác nút (down/up/kéo) trong chừng này ⇒ báo "đồng bộ lại — kéo lại từ đầu".
-  // Phủ cú kéo đã gửi trọn trước khi kỳ đổi (ca A8): máy chủ huỷ nó khi xếp lô, popup chỉ biết qua kỳ mới.
-  // 2,5 s = cửa sổ hụt lô 2 s của máy chủ + dư; KẾ THỪA, CHƯA ĐO.
-  const BAO_DONG_BO_MS = 2500;
   // Sau chừng này không bấm/lăn chuột thì nhắc "Không thấy captcha?" (popup không đọc được DOM
   // trang TikTok nên không tự biết có captcha hay không — chỉ gợi ý theo thời gian).
   // 15 s CHƯA ĐO (ĐP-711): mock không nêu điều kiện; đo ở job thật đầu tiên.
@@ -133,7 +129,8 @@
     if (P.panel) return P.panel.loai;
     if (!P.coKhung || (P.ttGiai !== "dang_giai")) return "cho-khung";
     if (P.vai !== "dieu_khien") return "chi-xem";
-    if (P.biNgat) return "bi-ngat";
+    // Đang chặn chuột (kể cả đồng bộ chủ động — không đặt `biNgat`) ⇒ phải hiện chữ "đang huỷ": cú nhấn lúc này bị bỏ.
+    if (P.biNgat || P.chanChuot) return "bi-ngat";
     if (P.khongThay) return "khong-thay";
     return "dang-giai";
   }
@@ -500,10 +497,16 @@
   }
 
   // `trang_thai` mang kỳ MỚI: mọi lô/seq trước đó thuộc kỳ cũ (máy chủ đã bỏ). Đánh số lại từ 0, bỏ phần chưa
-  // gửi, bỏ gesture dở. Nếu người vừa kéo (gesture dở, hoặc lô có thao tác nút gửi trong `BAO_DONG_BO_MS`) thì
-  // BÁO "đồng bộ lại — kéo lại từ đầu": một cú kéo bị mất phải THẤY ĐƯỢC, không mất im lặng.
-  function doiKy(p, kyMoi) {
-    const coThaoTac = !!p.cuChi || (p.gestureLuc !== null && performance.now() - p.gestureLuc < BAO_DONG_BO_MS);
+  // gửi, bỏ gesture dở. Một cú kéo bị mất phải THẤY ĐƯỢC ⇒ BÁO "đồng bộ lại — kéo lại từ đầu" khi một trong ba
+  // (không đoán theo thời gian — cửa sổ thời gian để lọt cú kéo khi mạng chậm):
+  //  - gesture còn dở (`cuChi`);
+  //  - lô có thao tác nút của kỳ cũ CHƯA được 200 (`loNut`): có thể chưa tới máy chủ — máy chủ không biết nội dung
+  //    lô hụt, chỉ popup biết;
+  //  - máy chủ báo một lần huỷ SAU kỳ popup đang biết đã bỏ thao tác nút chưa phát (`ky_mat_nut` = kỳ mới nhất do
+  //    một lần huỷ như thế sinh ra; không bao giờ giảm).
+  // Báo thừa còn lại (đã chấp nhận): lô đã phát nhưng phản hồi 200 chưa về lúc đổi kỳ.
+  function doiKy(p, kyMoi, kyMatNut) {
+    const coThaoTac = !!p.cuChi || p.loNut.size > 0 || (typeof kyMatNut === "number" && kyMatNut > p.ky);
     p.ky = kyMoi;
     p.seqLo = 0;
     clearTimeout(p.hen);
@@ -511,7 +514,7 @@
     p.buf.length = 0;
     p.cuChi = null;
     p.choKy = false;
-    p.gestureLuc = null;
+    p.loNut = new Set();   // lô kỳ cũ về sau tự xoá khỏi Set CŨ (đã bỏ) — không đụng kỳ mới
     // Máy chủ đã huỷ gesture khi sang kỳ mới ⇒ lần huỷ đang bay hết hiệu lực: gỡ chặn ngay, phản hồi của nó về
     // sau bị bỏ qua (`baoHuyGesture`), không chờ nó nữa (lệnh `da_giai`/`dung` không phải đứng sau nó).
     if (p.chanChuot && p.kyHuy !== null && kyMoi > p.kyHuy) {
@@ -540,17 +543,18 @@
   function guiLoTheoDoi(lo) {
     const than = { ...lo, seq: P.seqLo++ };
     if (P.ky !== null) than.ky = P.ky;      // máy chủ chưa có kỳ ⇒ không gửi (giao thức cũ)
-    if (lo.su_kien.some((e) => e.k === "down" || e.k === "up" || (e.k === "move" && (e.buttons & 1)))) {
-      P.gestureLuc = performance.now();
-    }
-    const bay = guiLo(than);
+    // Lô có thao tác nút: giữ trong Set của kỳ hiện tại tới khi được 200 (409/400/cạn lượt ⇒ ở lại: có thể chưa phát).
+    const tapNut = lo.su_kien.some((e) => e.k === "down" || e.k === "up" || (e.k === "move" && (e.buttons & 1)))
+      ? P.loNut : null;
+    if (tapNut) tapNut.add(than);
+    const bay = guiLo(than, tapNut);
     // Theo dõi lô đang bay để lệnh (`huy_gesture`, `da_giai`, `dung`) chờ chúng (guiLo không bao giờ ném).
     const dangBay = P.loDangBay;
     dangBay.add(bay);
     bay.finally(() => dangBay.delete(bay));
   }
 
-  async function guiLo(lo) {
+  async function guiLo(lo, tapNut) {
     const p = P;
     for (let lan = 0; lan <= THU_LAI_TOI_DA; lan++) {
       let r;
@@ -563,6 +567,7 @@
       }
       if (P !== p) return;
       if (r.matPhien) { matPhien(); return; }
+      if (r.ok && tapNut) tapNut.delete(lo);
       if (r.ok) { if (p.matKetNoi || p.matKetNoiHan) { p.matKetNoi = p.matKetNoiHan = false; ve(); } return; }
       if (r.status === 429 || r.status >= 500) { await ngu(THU_LAI_CHO_MS * (lan + 1)); if (P !== p) return; continue; }
       // 400: lô bị bỏ và máy chủ HUỶ gesture dở ⇒ dừng gửi phần còn lại của gesture này (không có
@@ -574,7 +579,6 @@
         // dở đã chết ở máy chủ ⇒ bỏ im lặng, tạm chặn kéo tới khi `trang_thai` mang kỳ mới về (≤ 1 nhịp SSE,
         // tối đa 5 s nhắc lại); `doiKy` lúc đó báo "kéo lại". Lô của kỳ cũ hơn ⇒ đã xử lý, bỏ qua.
         if (lo.ky === p.ky) {
-          p.gestureLuc = performance.now();
           if (p.cuChi) boCuChi("may_chu", true);
           p.choKy = true;
           ve();
@@ -625,7 +629,7 @@
       p.matKetNoi = p.matKetNoiHan = false;
       if (typeof d.ky === "number") {
         if (p.ky === null) { p.ky = d.ky; p.choKy = false; }   // lần đầu học kỳ: chưa có gì để bỏ
-        else if (d.ky !== p.ky) doiKy(p, d.ky);
+        else if (d.ky !== p.ky) doiKy(p, d.ky, d.ky_mat_nut);
       }
       if (d.trang_thai === "dang_giai" && !p.moc) p.moc = performance.now();
       // ĐỒNG BỘ CHỦ ĐỘNG: vừa có lô không tới được máy chủ (cạn lượt thử / 409) ⇒ ngay khi lại điều khiển
@@ -775,7 +779,7 @@
       dangGuiLenh: false, moc: performance.now(),
       khung: null, anh: null, khungMoi: null, khungHienSeq: null,
       buf: [], hen: null, bufKhungW: null, bufKhungSeq: null, seqLo: 0, cuChi: null, man: null,
-      ky: null, choKy: false, kyHuy: null, loMat: false, gestureLuc: null,
+      ky: null, choKy: false, kyHuy: null, loMat: false, loNut: new Set(),
       nhip: setInterval(nhipDongHo, 250),
     };
     window.addEventListener("blur", khiMatTieuCu);

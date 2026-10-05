@@ -675,20 +675,25 @@ def test_can_luot_giua_cu_keo_thi_bo_cu_keo_khong_gui_up_sau_khi_go_chan(mo_tran
 # ---------------------------------------------------------------------------
 
 def _gia_ky(monkeypatch):
-    """Máy chủ giả có kỳ: `trang_thai` mang `ky = phien.ky_gia` (mặc định 0). Đổi kỳ: gán rồi `_doi()`."""
+    """Máy chủ giả có kỳ: `trang_thai` mang `ky = phien.ky_gia` (mặc định 0) và `ky_mat_nut = phien.ky_mat_nut_gia`
+    (mặc định 0 = chưa lần huỷ nào bỏ thao tác nút). Đổi kỳ: `_doi_ky`."""
     goc = gc.PhienGiai.anh_chup
 
     def anh_chup(self, token, email):
         d = goc(self, token, email)
         d["ky"] = getattr(self, "ky_gia", 0)
+        d["ky_mat_nut"] = getattr(self, "ky_mat_nut_gia", 0)
         return d
 
     monkeypatch.setattr(gc.PhienGiai, "anh_chup", anh_chup)
 
 
-def _doi_ky(phien, ky):
+def _doi_ky(phien, ky, mat_nut=False):
+    """Máy chủ (giả) huỷ gesture ⇒ kỳ `ky`; `mat_nut` = lần huỷ đó bỏ thao tác nút chưa phát (⇒ `ky_mat_nut = ky`)."""
     with phien.khoa:
         phien.ky_gia = ky
+        if mat_nut:
+            phien.ky_mat_nut_gia = ky
         phien._doi()
 
 
@@ -704,16 +709,133 @@ def _lo_gui_sau(ghi, n):
 
 
 def test_doi_ky_sau_cu_keo_tron_bao_keo_lai(mo_trang, db, monkeypatch):
-    """ĐP-848 điều kiện (1), ca A8 nút=F: cú kéo đã gửi TRỌN rồi máy chủ mới huỷ nó (đổi kỳ) ⇒ popup phải BÁO
-    "đồng bộ lại — kéo lại từ đầu"; mất cú kéo phải THẤY ĐƯỢC. ĐỘT BIẾN: bỏ gán `biNgat = dong_bo` trong
-    `doiKy` ⇒ không có chữ ⇒ ĐỎ."""
+    """ĐP-848 điều kiện (1), ca A8 nút=F (C3/C4): cú kéo đã gửi TRỌN và được 200, rồi máy chủ huỷ nó trước khi phát
+    (đổi kỳ, `ky_mat_nut` = kỳ mới) ⇒ popup phải BÁO "đồng bộ lại — kéo lại từ đầu"; mất cú kéo phải THẤY ĐƯỢC.
+    ĐỘT BIẾN: bỏ gán `biNgat = dong_bo` trong `doiKy` ⇒ ĐỎ; bỏ vế `ky_mat_nut` ⇒ ĐỎ."""
     _gia_ky(monkeypatch)
     page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)
     _keo(page, r)
-    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    assert cho_trang(page, lambda: ghi.chuot and all(("lo_ve", lo["seq"]) in ghi.thu_tu for lo in ghi.chuot)
+                     and any(e["k"] == "up" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    _doi_ky(phien, 1, mat_nut=True)
+    assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 5)
+
+
+def test_doi_ky_sau_cu_keo_da_phat_khong_bao(mo_trang, db, monkeypatch):
+    """C5 (ca âm): cú kéo được 200 trọn, máy chủ huỷ vì lý do KHÔNG đụng nó (`ky_mat_nut` không đổi) ngay sau đó ⇒
+    KHÔNG báo "kéo lại" (cửa sổ thời gian cũ báo nhầm ở đây). Chờ điều kiện: popup đã học kỳ 1.
+    ĐỘT BIẾN: luôn báo khi đổi kỳ ⇒ ĐỎ; Set không xoá lô khi 200 ⇒ ĐỎ."""
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    _keo(page, r)
+    assert cho_trang(page, lambda: ghi.chuot and all(("lo_ve", lo["seq"]) in ghi.thu_tu for lo in ghi.chuot)
+                     and any(e["k"] == "up" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    doi_gui(page, 100)
+    _doi_ky(phien, 1)
+    _hoc_ky_moi(page, ghi, r, 1)
+    assert "Đã đồng bộ lại với máy chủ" not in page.locator("#gc-note").inner_text()
+
+
+def test_doi_ky_khi_lo_keo_chua_toi_bao_keo_lai(mo_trang, db, monkeypatch):
+    """C2 (ca A8 thieu_lo): lô chứa cú kéo CHƯA được 200 (còn treo trên mạng — máy chủ không biết nội dung lô hụt,
+    `ky_mat_nut` không đổi) mà kỳ đổi ⇒ popup tự biết và BÁO, bất kể đã bao lâu. ĐỘT BIẾN: bỏ vế `loNut` ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = []
+
+    def chuot(route):
+        # Mọi lô kỳ 0 (kể cả lần thử lại sau timeout 8 s) treo suốt test; kỳ sau đi thẳng tới máy chủ.
+        if route.request.post_data_json.get("ky") == 0:
+            giu.append(route)
+        else:
+            route.continue_()
+
+    page.route("**/giai/chuot", chuot)
+    _keo(page, r)
+    assert cho_trang(page, lambda: any(e["k"] == "up" for x in giu for e in x.request.post_data_json["su_kien"]), 5)
     _doi_ky(phien, 1)
     assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 5)
+    # Lô kỳ 0 vẫn treo (không bao giờ 200); route giữ tới hết test, context đóng thì tự dọn.
+    # Lô treo của kỳ 0 chỉ được tính ĐÚNG MỘT lần đổi kỳ: kéo trọn ở kỳ 1 (được 200), kỳ 2 về ⇒ KHÔNG báo.
+    # ĐỘT BIẾN: `doiKy` không thay Set mới ⇒ lô kỳ 0 còn treo làm báo lại ở kỳ 2 ⇒ ĐỎ.
+    n = len(ghi.chuot)
+    _keo(page, r, 300, 300)
+    assert cho_trang(page, lambda: _lo_gui_sau(ghi, n) and all(("lo_ve", lo["seq"]) in ghi.thu_tu
+                     for lo in _lo_gui_sau(ghi, n) if lo.get("ky") == 1)
+                     and any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    assert "Đã đồng bộ lại với máy chủ" not in page.locator("#gc-note").inner_text()
+    _doi_ky(phien, 2)
+    _hoc_ky_moi(page, ghi, r, 2)
+    assert "Đã đồng bộ lại với máy chủ" not in page.locator("#gc-note").inner_text()
+
+
+def test_lo_chi_re_bi_ky_cu_roi_doi_ky_khong_bao(mo_trang, db, monkeypatch):
+    """Lô CHỈ RÊ (buttons=0) nhận 409 `ky_cu` (chưa bao giờ 200) rồi kỳ mới về ⇒ KHÔNG báo "kéo lại": không có
+    thao tác nút nào bị mất (cửa sổ thời gian cũ cũng im ở đây; vế `loNut` không được nhận lô rê).
+    ĐỘT BIẾN: Set nhận cả lô rê ⇒ ĐỎ; tính rê là thao tác nút ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.route("**/giai/chuot", lambda route: route.fulfill(
+        status=409, content_type="application/json", body='{"detail": {"ma": "ky_cu", "ky": 1}}'))
+    page.mouse.move(r["x"] + 60, r["y"] + 60)
+    assert cho_trang(page, lambda: 409 in ghi.mat_chuot, 5)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 5), "phải tạm chặn"
+    page.unroute("**/giai/chuot")
+    _doi_ky(phien, 1)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 5), "kỳ mới phải gỡ chặn"
+    _hoc_ky_moi(page, ghi, r, 1)
+    assert "Đã đồng bộ lại với máy chủ" not in page.locator("#gc-note").inner_text()
+
+
+def test_doi_ky_khi_200_chua_ve_bao_thua_da_chap_nhan(mo_trang, db, monkeypatch):
+    """C6 — báo thừa ĐÃ CHẤP NHẬN (ĐP-862): lô kéo đã tới máy chủ (đã phát) nhưng phản hồi 200 chưa về lúc kỳ đổi ⇒
+    popup không phân biệt được với lô hụt ⇒ báo "kéo lại" (người kéo thêm một lần). Test ghi lại hành vi này để
+    thay đổi về sau là CÓ CHỦ ĐÍCH."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = []
+
+    def chuot(route):
+        giu.append((route, route.fetch()))     # máy chủ đã nhận + trả lời; popup chưa thấy phản hồi
+
+    page.route("**/giai/chuot", chuot)
+    _keo(page, r)
+    assert cho_trang(page, lambda: any(e["k"] == "up" for x, _ in giu for e in x.request.post_data_json["su_kien"]), 5)
+    assert all(resp.status == 200 for _, resp in giu)
+    _doi_ky(phien, 1)
+    assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 5)
+    for x, resp in giu:
+        x.fulfill(response=resp)
+    page.unroute("**/giai/chuot")
+
+
+def test_dong_bo_chu_dong_dang_huy_hien_chu_dang_huy(mo_trang, db, monkeypatch):
+    """Review agy vd-c7c R3b T2: đồng bộ chủ động (lô cạn lượt thử ⇒ `trang_thai` về ⇒ `huy_gesture`) chặn chuột mà
+    không đặt `biNgat` ⇒ trước đây chữ vẫn là gợi ý kéo bình thường trong khi cú nhấn bị BỎ IM LẶNG. Lệnh huỷ treo ⇒
+    chữ "đang huỷ thao tác cũ" phải hiện. ĐỘT BIẾN: `tinhMan` chỉ xét `biNgat` ⇒ ĐỎ."""
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = chan_lenh_huy(page, 1, treo=True)
+    page.route("**/giai/chuot", lambda route: route.abort())
+    page.mouse.move(r["x"] + 60, r["y"] + 60)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 6), "phải bị chặn"
+    page.unroute("**/giai/chuot")
+    phien.dat_trang_thai("dang_giai", 200)
+    assert cho_trang(page, lambda: len(giu) == 1, 5), "đồng bộ chủ động phải gửi huy_gesture"
+    assert cho_trang(page, lambda: "đang huỷ thao tác cũ" in page.locator("#gc-note").inner_text(), 3), \
+        page.locator("#gc-note").inner_text()
 
 
 def test_doi_ky_khi_chi_re_chuot_khong_bao(mo_trang, db, monkeypatch):
@@ -745,7 +867,7 @@ def test_doi_ky_lo_ke_mang_ky_moi_va_seq_ve_0(mo_trang, db, monkeypatch):
     _keo(page, r)
     assert cho_trang(page, lambda: len(ghi.chuot) >= 1, 5)
     assert all(lo.get("ky") == 0 for lo in ghi.chuot) and max(lo["seq"] for lo in ghi.chuot) >= 0
-    _doi_ky(phien, 1)
+    _doi_ky(phien, 1, mat_nut=True)
     assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 5)
     n = len(ghi.chuot)
     _keo(page, r, 300, 300)
