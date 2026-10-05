@@ -656,7 +656,10 @@ def test_can_luot_giua_cu_keo_thi_bo_cu_keo_khong_gui_up_sau_khi_go_chan(mo_tran
     page.mouse.move(r["x"] + 60, r["y"] + 60)
     page.mouse.down()
     page.mouse.move(r["x"] + 80, r["y"] + 62)
-    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 6), "phải bị chặn"
+    # Bằng chứng cú kéo đã bị BỎ khi cạn lượt: popup báo huỷ (`/lenh` vẫn tới được máy chủ ⇒ máy chủ có kỳ đổi
+    # kỳ và đẩy `trang_thai` ⇒ chặn chỉ thoáng qua), hoặc bị chặn nếu chưa kịp.
+    assert cho_trang(page, lambda: any(l["lenh"] == "huy_gesture" for l in ghi.lenh)
+                     or page.locator(".gc-frame.dieu-khien").count() == 0, 6), "phải bỏ cú kéo"
     page.unroute("**/giai/chuot")
     phien.dat_trang_thai("dang_giai", 200)
     assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 6)
@@ -946,9 +949,19 @@ def test_lo_khong_toi_duoc_thi_dong_bo_chu_dong_khi_dieu_khien_lai(mo_trang, db,
     assert huy.get("ky") == 0
 
 
-def test_may_chu_chua_co_ky_lo_khong_mang_ky(mo_trang, db):
-    """Máy chủ cũ (không gửi `ky` trong `trang_thai`): lô và lệnh huỷ KHÔNG mang trường `ky` — popup chạy đúng
-    giao thức cũ. ĐỘT BIẾN: luôn gửi `ky` ở lô ⇒ ĐỎ; luôn gửi `ky` ở lệnh huỷ ⇒ ĐỎ."""
+def test_may_chu_chua_co_ky_lo_khong_mang_ky(mo_trang, db, monkeypatch):
+    """Máy chủ cũ (không gửi `ky` trong `trang_thai` — giả bằng cách bỏ trường): lô và lệnh huỷ KHÔNG mang trường `ky`
+    — popup chạy đúng giao thức cũ (deploy popup trước máy chủ). ĐỘT BIẾN: luôn gửi `ky` ở lô ⇒ ĐỎ; luôn gửi `ky` ở
+    lệnh huỷ ⇒ ĐỎ."""
+    goc = gc.PhienGiai.anh_chup
+
+    def anh_chup_cu(self, token, email):
+        d = goc(self, token, email)
+        d.pop("ky", None)
+        d.pop("ky_mat_nut", None)
+        return d
+
+    monkeypatch.setattr(gc.PhienGiai, "anh_chup", anh_chup_cu)
     page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)
     _keo(page, r)
@@ -1194,6 +1207,138 @@ def test_ky_doi_giua_luc_thu_lai_huy_thi_thoi_gui(mo_trang, db, monkeypatch):
     doi_gui(page, 600)                       # > THU_LAI_CHO_MS: lần thử lại (nếu có) đã kịp gửi
     assert [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 1
     assert page.locator(".gc-frame.dieu-khien").count() == 1
+
+
+
+# ---------------------------------------------------------------------------
+# Kỳ (`ky`) với MÁY CHỦ THẬT (không giả): request treo thả muộn, đứt SSE thật, lộn xộn, không kẹt chặn
+# ---------------------------------------------------------------------------
+
+def _phat_ra(phien):
+    """Các loại sự kiện máy chủ sẽ phát lên trang (lấy hết hàng đợi)."""
+    return [e.k for e in phien.den_han(gc.dong_ho() + 100)]
+
+
+def test_lo_cu_treo_tha_muon_sau_doi_tay_khoa_khong_phat(mo_trang, db):
+    """Mạng giả lập THẬT: lô `down` của A bị TREO (đã lên dây, chưa tới); trong lúc đó khoá qua tay B rồi về A
+    (máy chủ huỷ ⇒ kỳ mới); rồi lô treo được THẢ. Máy chủ phải trả 409 `ky_cu` và KHÔNG phát `down` cũ (main:
+    lô cũ có thể thành "đúng thứ tự" và được phát = nộp nhầm). Cú kéo kế tiếp mang kỳ mới, `seq` 0.
+    ĐỘT BIẾN: bỏ kiểm `ky` trong `nhan_lo` ⇒ `down` cũ được nhận ⇒ ĐỎ."""
+    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    tk = ghi.token_sse[-1]
+    giu = []
+
+    def chan(route):
+        if '"down"' in (route.request.post_data or "") and not giu:
+            giu.append(route)                      # treo: request đã lên dây, chưa tới máy chủ
+        else:
+            route.continue_()
+
+    page.route("**/giai/chuot", chan)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    assert cho_trang(page, lambda: len(giu) == 1, 5)
+    ky_truoc = phien.ky
+    with phien.khoa:                               # khoá qua tay B rồi về A (như A đứt SSE, B chen vào)
+        phien.nha_khoa(tk, NGUOI)
+        assert phien.nhan_khoa("token-bbbbbbbb", NGUOI)
+        phien.nha_khoa("token-bbbbbbbb", NGUOI)
+        assert phien.nhan_khoa(tk, NGUOI)
+    assert phien.ky > ky_truoc
+    _phat_ra(phien)
+    giu[0].continue_()                             # lô cũ tới SAU khi máy chủ đã sang kỳ mới
+    assert cho_trang(page, lambda: 409 in ghi.mat_chuot, 5), ghi.mat_chuot
+    page.mouse.up()
+    doi_gui(page)
+    assert "down" not in _phat_ra(phien), "lô tạo trước lần huỷ không được phát"
+    page.unroute("**/giai/chuot")
+    assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text()
+                     or page.locator(".gc-frame.dieu-khien").count() == 1, 5)
+    n = len(ghi.chuot)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 6)
+    _keo(page, r, 300, 300)
+    assert cho_trang(page, lambda: any(lo.get("ky") == phien.ky for lo in ghi.chuot[n:]), 5)
+    moi = [lo for lo in ghi.chuot[n:] if lo.get("ky") == phien.ky]
+    assert moi[0]["seq"] == 0, moi[0]
+    assert cho_trang(page, lambda: "up" in [e.k for e in phien.den_han(gc.dong_ho() + 100)] or
+                     phien.expected_seq >= 1, 5)
+
+
+def test_sse_dut_that_giua_cu_keo_cung_token_van_phat_du(mo_trang, db):
+    """K2 với SSE đứt THẬT (luồng máy chủ dừng ⇒ `onerror`, nối lại CÙNG token): nối lại không huỷ ⇒ kỳ KHÔNG
+    đổi ⇒ cú kéo đang dở vẫn tới đủ `down … up` (như main). ĐỘT BIẾN: đổi kỳ mỗi lần cấp khoá (id kết nối) ⇒
+    phần sau của cú kéo bị `ky_cu`, không có `up` ⇒ ĐỎ."""
+    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    n_sse = len(ghi.token_sse)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 120, r["y"] + 102)
+    assert cho_trang(page, lambda: any(e["k"] == "down" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    ky_truoc = phien.ky
+    with models._connect(db) as conn:              # luồng SSE kiểm quyền mỗi giây ⇒ tự dừng
+        conn.execute("UPDATE jobs SET nguoi_tao = ? WHERE id = ?", ("khac@x.vn", jid))
+    try:
+        assert cho_trang(page, lambda: "Mất kết nối tới máy chủ" in page.locator("#gc-note").inner_text(), 8)
+    finally:
+        with models._connect(db) as conn:
+            conn.execute("UPDATE jobs SET nguoi_tao = ? WHERE id = ?", (NGUOI, jid))
+    assert cho_trang(page, lambda: len(ghi.token_sse) > n_sse and phien.co_nguoi_giu(), 10), "phải nối lại"
+    page.mouse.move(r["x"] + 140, r["y"] + 104)
+    page.mouse.up()
+    doi_gui(page, 500)
+    assert phien.ky == ky_truoc, "nối lại cùng token không được đổi kỳ"
+    loai = _phat_ra(phien)
+    assert "down" in loai and "up" in loai, loai
+
+
+def test_lo_toi_lech_thu_tu_van_phat_du_dung_thu_tu(mo_trang, db):
+    """Lộn xộn thật: lô `down` bị giữ lại, các lô sau (move, up) tới trước; thả lô `down` ⇒ máy chủ sắp lại và
+    phát đủ `down … up` đúng thứ tự, KHÔNG đổi kỳ (lộn xộn không phải sự cố). ĐỘT BIẾN: đổi kỳ khi nhận lô
+    không liền kề ⇒ ĐỎ."""
+    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = []
+
+    def chan(route):
+        if '"down"' in (route.request.post_data or "") and not giu:
+            giu.append(route)
+        else:
+            route.continue_()
+
+    page.route("**/giai/chuot", chan)
+    page.mouse.move(r["x"] + 100, r["y"] + 100)
+    page.mouse.down()
+    page.wait_for_timeout(60)
+    page.mouse.move(r["x"] + 120, r["y"] + 102)
+    page.wait_for_timeout(60)
+    page.mouse.up()
+    assert cho_trang(page, lambda: len(giu) == 1 and
+                     any(e["k"] == "up" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    assert cho_trang(page, lambda: len(phien._cho_lo) >= 1, 5), "lô sau phải đang đợi lô `down`"
+    ky_truoc = phien.ky
+    giu[0].continue_()
+    assert cho_trang(page, lambda: not phien._cho_lo, 5)
+    loai = _phat_ra(phien)
+    assert loai.index("down") < loai.index("up") and phien.ky == ky_truoc, loai
+    page.unroute("**/giai/chuot")
+
+
+def test_cho_ky_khong_ket_trang_thai_nhac_lai_go_chan(mo_trang, db, monkeypatch):
+    """B2 — không đường nào chặn kéo vĩnh viễn: một lô nhận 409 `ky_cu` (giả) trong khi kỳ máy chủ KHÔNG đổi
+    ⇒ popup tạm chặn; `trang_thai` nhắc lại (cùng kỳ) ⇒ gỡ chặn. ĐỘT BIẾN: chỉ gỡ `choKy` khi kỳ đổi ⇒ kẹt ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 1.0)
+    page, ghi, jid, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.route("**/giai/chuot", lambda route: route.fulfill(
+        status=409, content_type="application/json",
+        body='{"detail": {"ma": "ky_cu", "ky": %d, "thong_diep": "x"}}' % phien.ky))
+    page.mouse.move(r["x"] + 60, r["y"] + 60)
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 0, 5), "phải tạm chặn"
+    page.unroute("**/giai/chuot")
+    assert cho_trang(page, lambda: page.locator(".gc-frame.dieu-khien").count() == 1, 5), "nhắc lại phải gỡ"
 
 
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
