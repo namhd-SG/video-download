@@ -823,12 +823,198 @@ def test_lo_khong_toi_duoc_thi_dong_bo_chu_dong_khi_dieu_khien_lai(mo_trang, db,
 
 def test_may_chu_chua_co_ky_lo_khong_mang_ky(mo_trang, db):
     """Máy chủ cũ (không gửi `ky` trong `trang_thai`): lô và lệnh huỷ KHÔNG mang trường `ky` — popup chạy đúng
-    giao thức cũ. ĐỘT BIẾN: luôn gửi `ky` ⇒ ĐỎ."""
+    giao thức cũ. ĐỘT BIẾN: luôn gửi `ky` ở lô ⇒ ĐỎ; luôn gửi `ky` ở lệnh huỷ ⇒ ĐỎ."""
     page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
     r = khung_rect(page)
     _keo(page, r)
     assert cho_trang(page, lambda: len(ghi.chuot) >= 1, 5)
     assert all("ky" not in lo for lo in ghi.chuot)
+    _keo_roi_blur(page, r, 300)
+    page.mouse.up()
+    assert cho_trang(page, lambda: any(l["lenh"] == "huy_gesture" for l in ghi.lenh), 5)
+    assert all("ky" not in l for l in ghi.lenh if l["lenh"] == "huy_gesture")
+
+
+def _giu_lenh_huy_trong_trang(page):
+    """Lệnh `huy_gesture` đầu tiên đứng TRONG trang (không ra mạng) tới khi gọi `window.__thaHuy()`; lúc đó nó
+    nhận ngay một 200 giả. Thả bằng JS — cùng lượt với sự kiện chuột — để thứ tự "cú nhấn mới rồi phản hồi huỷ
+    về" là XÁC ĐỊNH (thả từ Python thì bộ gom 40 ms có thể xả trước)."""
+    page.evaluate("""() => { const f = window.fetch; let da = false;
+        window.fetch = async (u, o) => {
+            if (!da && String((o && o.body) || "").includes("huy_gesture")) {
+                da = true;
+                await new Promise((r) => { window.__thaHuy = r; });
+                return new Response('{"ok": true}', {status: 200, headers: {"content-type": "application/json"}});
+            }
+            return f(u, o); }; }""")
+
+
+def _con_tro(page, ten, x, y, buttons, button=0):
+    """Bắn một PointerEvent chuột tổng hợp vào khung (toạ độ tương đối ảnh)."""
+    return f"""document.querySelector('#gc-khung').dispatchEvent(new PointerEvent('{ten}', {{
+        pointerId: 7, pointerType: 'mouse', bubbles: true, cancelable: true, button: {button}, buttons: {buttons},
+        clientX: document.querySelector('#gc-anh').getBoundingClientRect().x + {x},
+        clientY: document.querySelector('#gc-anh').getBoundingClientRect().y + {y} }}));"""
+
+
+def test_huy_cu_tra_ve_sau_doi_ky_khong_xoa_cu_keo_moi(mo_trang, db, monkeypatch):
+    """Review #52 SHOULD-1: lệnh huỷ còn treo, kỳ mới về (`doiKy` gỡ chặn vì máy chủ đã huỷ khi đổi kỳ), người
+    bắt đầu cú kéo MỚI; rồi phản hồi của lệnh huỷ CŨ mới về. Phản hồi đó thuộc lần huỷ đã hết hiệu lực ⇒ KHÔNG
+    được xoá `buf` (mất `down` ⇒ move/`up` mồ côi, hoặc mất `up` ⇒ nút kẹt). Cú kéo mới phải tới máy chủ trọn
+    vẹn: `down` … `up`, kỳ 1, seq từ 0. ĐỘT BIẾN: `.then` của lệnh huỷ xoá `buf` vô điều kiện ⇒ ĐỎ; `doiKy` không
+    gỡ chặn ⇒ ĐỎ (chữ vẫn "đang huỷ thao tác cũ")."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    _giu_lenh_huy_trong_trang(page)
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: page.evaluate("() => typeof window.__thaHuy === 'function'"), 5)
+    assert "đang huỷ thao tác cũ" in page.locator("#gc-note").inner_text()
+    _doi_ky(phien, 1)
+    # Kỳ mới đã gỡ chặn: chữ thôi "đang huỷ", về chữ của lần bỏ gesture (blur ⇒ "cuc_bo").
+    assert cho_trang(page, lambda: "Cửa sổ vừa mất con trỏ" in page.locator("#gc-note").inner_text(), 5)
+    n = len(ghi.chuot)
+    # Cú nhấn mới vào `buf` (bộ gom chưa xả — còn 40 ms) rồi phản hồi huỷ cũ về NGAY trong cùng lượt JS.
+    page.evaluate("() => {" + _con_tro(page, "pointerdown", 300, 300, 1) + " window.__thaHuy(); }")
+    page.wait_for_timeout(100)
+    page.evaluate("() => {" + _con_tro(page, "pointermove", 330, 305, 1) + _con_tro(page, "pointerup", 330, 305, 0) + "}")
+    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    doi_gui(page)
+    moi = sorted(_lo_gui_sau(ghi, n), key=lambda x: x["seq"])
+    assert all(lo["ky"] == 1 for lo in moi) and [lo["seq"] for lo in moi] == list(range(len(moi))), moi
+    assert [e["k"] for lo in moi for e in lo["su_kien"]] == ["down", "move", "up"]
+    assert page.locator(".gc-frame.dieu-khien").count() == 1
+    assert "chưa báo được máy chủ" not in page.locator("#gc-note").inner_text()
+
+
+def _hoc_ky_moi(page, ghi, r, ky):
+    """Rê chuột tới khi một lô mang `ky` mới (popup đã học kỳ). Trả số lô trước đó."""
+    n = len(ghi.chuot)
+    i = 0
+    while not any(lo.get("ky") == ky for lo in _lo_gui_sau(ghi, n)) and i < 60:
+        page.mouse.move(r["x"] + 400 + i, r["y"] + 60)
+        page.wait_for_timeout(50)
+        i += 1
+    assert any(lo.get("ky") == ky for lo in _lo_gui_sau(ghi, n)), "popup chưa học kỳ mới"
+    return n
+
+
+def test_409_ky_cu_cua_lo_ky_cu_toi_muon_khong_khoa_keo(mo_trang, db, monkeypatch):
+    """Review #52 SHOULD-3 (khoá vĩnh viễn, lớp L1/B2): lô kỳ 0 còn đang bay, kỳ 1 về và popup đã học; rồi 409
+    `ky_cu` của lô kỳ 0 mới tới. Lô đó thuộc kỳ ĐÃ bỏ ⇒ bỏ qua: KHÔNG tạm chặn (`trang_thai` kế mang CÙNG kỳ 1 nên
+    không ai gỡ ⇒ chặn kéo + vô hiệu 2 nút tới lần đổi kỳ sau). Tắt nhịp nhắc lại. ĐỘT BIẾN: bỏ guard
+    `lo.ky === p.ky` ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = []
+
+    def chuot(route):
+        if not giu:
+            giu.append(route)              # lô đầu (kỳ 0) treo
+        else:
+            route.continue_()
+
+    page.route("**/giai/chuot", chuot)
+    page.mouse.move(r["x"] + 50, r["y"] + 50)
+    assert cho_trang(page, lambda: len(giu) == 1, 5)
+    assert giu[0].request.post_data_json["ky"] == 0
+    _doi_ky(phien, 1)
+    _hoc_ky_moi(page, ghi, r, 1)
+    giu[0].fulfill(status=409, content_type="application/json", body='{"detail": {"ma": "ky_cu", "ky": 1}}')
+    assert cho_trang(page, lambda: ("lo_ve", 0) in ghi.thu_tu and ghi.mat_chuot.count(409) == 1, 5)
+    doi_gui(page)
+    assert page.locator(".gc-frame.dieu-khien").count() == 1, "409 của lô kỳ cũ không được khoá kéo"
+    assert page.locator("#gc-actions button[data-lenh]:not([disabled])").count() == 2
+    page.unroute("**/giai/chuot")
+
+
+def test_doi_ky_giua_cu_keo_khong_gui_up_mo_coi(mo_trang, db, monkeypatch):
+    """Review #52 SHOULD-4: đang giữ chuột (down + move đã gửi ở kỳ 0) thì kỳ 1 về ⇒ gesture dở thuộc kỳ đã bỏ.
+    Người nhả chuột ⇒ KHÔNG lô kỳ 1 nào chứa `up` (một `up` mồ côi ở kỳ mới sẽ thả nút trên trang không có `down`),
+    có chữ "đồng bộ lại". Cú kéo mới sau đó chạy bình thường ở kỳ 1. ĐỘT BIẾN: `doiKy` không bỏ `cuChi` ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    page.mouse.move(r["x"] + 60, r["y"] + 60)
+    page.mouse.down()
+    page.mouse.move(r["x"] + 80, r["y"] + 62)
+    assert cho_trang(page, lambda: any(e["k"] == "down" for lo in ghi.chuot for e in lo["su_kien"]), 5)
+    _doi_ky(phien, 1)
+    assert cho_trang(page, lambda: "Đã đồng bộ lại với máy chủ" in page.locator("#gc-note").inner_text(), 5)
+    n = len(ghi.chuot)
+    page.mouse.up()
+    doi_gui(page)
+    _keo(page, r, 300, 300)
+    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    doi_gui(page)
+    moi = sorted(_lo_gui_sau(ghi, n), key=lambda x: x["seq"])
+    assert all(lo["ky"] == 1 for lo in moi)
+    assert [e["k"] for lo in moi for e in lo["su_kien"] if e["k"] != "move"] == ["down", "up"], moi
+
+
+def test_doi_ky_bo_su_kien_dang_gom_cua_ky_cu(mo_trang, db, monkeypatch):
+    """Cú nhấn còn trong bộ gom (chưa xả — 40 ms) đúng lúc `trang_thai` mang kỳ mới tới ⇒ `down` đó thuộc kỳ đã
+    bỏ, phải bị BỎ cùng gesture: gửi nó ở kỳ mới là `down` không bao giờ có `up` (gesture đã bỏ ⇒ thả chuột không
+    gửi gì) ⇒ nút trên trang KẸT nhấn. `trang_thai` được bắn trong CÙNG lượt JS với cú nhấn (bắt EventSource của
+    popup) để thứ tự xác định. ĐỘT BIẾN: `doiKy` không xoá `buf` ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    jid = tao_job(db)
+    page, ghi = mo_trang()
+    page.evaluate("""() => { const ES = window.EventSource;
+        window.EventSource = function (u, o) { const es = new ES(u, o); window.__es = es; return es; };
+        window.EventSource.prototype = ES.prototype; }""")
+    page.click(".nut-giai-ngay")
+    page.wait_for_selector("#gc-bg")
+    phien = den_dang_giai(page, db, jid)
+    page.wait_for_selector(".gc-frame.dieu-khien")
+    page.wait_for_function("() => { const a = document.querySelector('#gc-anh'); return a && a.naturalWidth === 800; }")
+    with phien.khoa:
+        phien.ky_gia = 1                     # máy chủ (giả) sang kỳ 1; `trang_thai` thật tới sau
+    n = len(ghi.chuot)
+    page.evaluate("() => {" + _con_tro(page, "pointerdown", 300, 300, 1) + """
+        window.__es.dispatchEvent(new MessageEvent('trang_thai', { data: JSON.stringify({
+            trang_thai: 'dang_giai', vai: 'dieu_khien', con_lai_giay: 250, so_lan_tai_lai: 0, ky: 1 }) })); }""")
+    page.evaluate("() => {" + _con_tro(page, "pointerup", 300, 300, 0) + "}")
+    doi_gui(page)
+    _keo(page, khung_rect(page), 400, 300)
+    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    doi_gui(page)
+    moi = sorted(_lo_gui_sau(ghi, n), key=lambda x: x["seq"])
+    assert all(lo["ky"] == 1 for lo in moi)
+    assert [e["k"] for lo in moi for e in lo["su_kien"] if e["k"] != "move"] == ["down", "up"], moi
+
+
+def test_ky_doi_giua_luc_thu_lai_huy_thi_thoi_gui(mo_trang, db, monkeypatch):
+    """Lệnh huỷ kỳ 0 trượt (500) đúng lúc kỳ 1 đã về ⇒ máy chủ đã tự huỷ khi đổi kỳ: KHÔNG thử lại (lần thử lại
+    chỉ là một POST mang kỳ cũ, chắc chắn bị 409). Lần trượt được thả SAU khi popup học kỳ 1 nên thứ tự xác định.
+    ĐỘT BIẾN: bỏ `return "ky_cu"` khi kỳ đổi giữa các lần thử ⇒ có lệnh huỷ thứ 2 ⇒ ĐỎ."""
+    import web.giai_captcha_api as api_mod
+    monkeypatch.setattr(api_mod, "SSE_NHAC_LAI_GIAY", 600.0)
+    _gia_ky(monkeypatch)
+    page, ghi, _, phien = mo_popup_dang_giai(mo_trang, db)
+    r = khung_rect(page)
+    giu = chan_lenh_huy(page, 1, treo=True)
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: len(giu) == 1, 5)
+    _doi_ky(phien, 1)
+    assert cho_trang(page, lambda: "Cửa sổ vừa mất con trỏ" in page.locator("#gc-note").inner_text(), 5)
+    _hoc_ky_moi(page, ghi, r, 1)
+    giu[0].fulfill(status=500, content_type="application/json", body='{"detail": "giả lập lỗi"}')
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
+    doi_gui(page, 600)                       # > THU_LAI_CHO_MS: lần thử lại (nếu có) đã kịp gửi
+    assert [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 1
+    assert page.locator(".gc-frame.dieu-khien").count() == 1
 
 
 def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):

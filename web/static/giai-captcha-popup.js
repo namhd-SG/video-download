@@ -440,11 +440,17 @@
     p.huyTruot = false;
     ve();
     p.kyHuy = p.ky;
+    const lan = ++p.soHuy;
+    p.huyHieuLuc = lan;
     const xong = guiHuyGesture(p).catch(() => false).then((kq) => {
-      p.dangHuy = false;
       // "ky_cu": máy chủ đã sang kỳ mới (mọi lần huỷ phía máy chủ đều đổi kỳ) ⇒ gesture cũ ĐÃ bị huỷ ở đó.
       const daHuy = kq === true || kq === "ky_cu";
       if (P !== p) return daHuy;
+      // Lần huỷ này đã hết hiệu lực (`doiKy` gỡ chặn vì kỳ mới, hoặc đã có lần huỷ sau): KHÔNG đụng trạng thái —
+      // `buf` lúc này là của cú kéo MỚI (xoá ⇒ mất `down`/`up`), chặn/`huyTruot` (nếu có) là của lần huỷ sau.
+      if (p.huyHieuLuc !== lan) return daHuy;
+      p.huyHieuLuc = null;
+      p.dangHuy = false;
       // Mở chặn: bỏ cả những gì bộ gom vừa nhặt trong lúc chặn (chưa tới lượt `xaLo` xoá) — "bỏ MỌI sự kiện".
       if (daHuy) {
         p.buf.length = 0;
@@ -506,7 +512,11 @@
     p.cuChi = null;
     p.choKy = false;
     p.gestureLuc = null;
-    if (p.chanChuot && p.kyHuy !== null && kyMoi > p.kyHuy) { p.chanChuot = false; p.huyTruot = false; }
+    // Máy chủ đã huỷ gesture khi sang kỳ mới ⇒ lần huỷ đang bay hết hiệu lực: gỡ chặn ngay, phản hồi của nó về
+    // sau bị bỏ qua (`baoHuyGesture`), không chờ nó nữa (lệnh `da_giai`/`dung` không phải đứng sau nó).
+    if (p.chanChuot && p.kyHuy !== null && kyMoi > p.kyHuy) {
+      p.chanChuot = false; p.huyTruot = false; p.dangHuy = false; p.huyHieuLuc = null;
+    }
     if (coThaoTac && !p.biNgat) p.biNgat = { loai: "dong_bo" };
   }
 
@@ -758,7 +768,7 @@
     document.body.classList.add("gc-lock-scroll");
     P = {
       job, goc, token: taoToken(), es: null, daDong: false, daKetThuc: false, loDangBay: new Set(),
-      chanChuot: false, dangHuy: false, huyTruot: false, huyDangBay: null,
+      chanChuot: false, dangHuy: false, huyTruot: false, huyDangBay: null, soHuy: 0, huyHieuLuc: null,
       ttGiai: ["cho_giai", "dang_mo", "dang_giai"].includes(job.trang_thai) ? job.trang_thai : "cho_giai",
       vai: null, viTri: null, soTaiLai: 0, conLai: null, coKhung: false,
       panel: null, biNgat: null, khongThay: false, matKetNoi: false, matKetNoiHan: false,
