@@ -647,7 +647,9 @@
       p.choKy = false;
       if (typeof d.ky === "number") {
         if (p.ky === null) { p.ky = d.ky; p.choKy = false; }   // lần đầu học kỳ: chưa có gì để bỏ
-        else if (d.ky !== p.ky) doiKy(p, d.ky, d.ky_mat_nut);
+        // Chỉ kỳ LỚN HƠN: kỳ chỉ tăng ở máy chủ; một `trang_thai` chụp TRƯỚC lần huỷ có thể tới SAU phản hồi huỷ (đã học
+        // kỳ mới) — nhận nó là lùi kỳ, lô kế mang kỳ cũ bị `ky_cu`.
+        else if (d.ky > p.ky) doiKy(p, d.ky, d.ky_mat_nut);
       }
       if (d.trang_thai === "dang_giai" && !p.moc) p.moc = performance.now();
       // ĐỒNG BỘ CHỦ ĐỘNG: vừa có lô không tới được máy chủ (cạn lượt thử / 409) ⇒ ngay khi lại điều khiển

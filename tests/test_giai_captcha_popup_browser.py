@@ -1254,6 +1254,29 @@ def test_phan_hoi_huy_mang_ky_mat_nut_bao_mat_cu_nhap_da_200(mo_trang, db, monke
     page.unroute("**/giai/chuot")
 
 
+def test_trang_thai_ky_cu_toi_sau_phan_hoi_huy_khong_lui_ky(mo_trang, db, monkeypatch):
+    """Kỳ chỉ tăng: popup đã học kỳ 1 từ phản hồi huỷ, rồi một `trang_thai` chụp TRƯỚC lần huỷ (kỳ 0) mới tới (đua SSE với
+    HTTP) ⇒ KHÔNG lùi về kỳ 0; cú kéo kế mang kỳ 1, `seq` 0, tới máy chủ (không `ky_cu`). ĐỘT BIẾN: nhận mọi kỳ khác
+    (`!==`) ⇒ lô kế mang kỳ 0 ⇒ ĐỎ."""
+    page, ghi, phien = _mo_popup_loc_trang_thai(mo_trang, db, monkeypatch)
+    r = khung_rect(page)
+    page.evaluate("() => { window.__boTrangThai = true; }")
+    _keo_roi_blur(page, r)
+    page.mouse.up()
+    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu, 5)
+    assert phien.ky == 1
+    doi_gui(page)
+    page.evaluate("() => {" + _TRANG_THAI_KY_1.replace("ky: 1, ky_mat_nut: 0", "ky: 0, ky_mat_nut: 0") + "}")
+    doi_gui(page, 100)
+    n = len(ghi.chuot)
+    _keo(page, r, 300, 300)
+    assert cho_trang(page, lambda: any(e["k"] == "up" for lo in _lo_gui_sau(ghi, n) for e in lo["su_kien"]), 5)
+    doi_gui(page)
+    moi = sorted(_lo_gui_sau(ghi, n), key=lambda x: x["seq"])
+    assert all(lo["ky"] == 1 for lo in moi) and moi[0]["seq"] == 0, moi
+    assert 409 not in ghi.mat_chuot[-len(moi):]
+
+
 def test_hoc_ky_tu_phan_hoi_huy_khi_tu_bo_gesture_khong_bao_chong(mo_trang, db, monkeypatch):
     """Popup tự bỏ gesture (blur ⇒ chữ "mất con trỏ") ⇒ phản hồi huỷ mang kỳ mới (và `ky_mat_nut` mới vì máy chủ bỏ
     `down` chưa phát) ⇒ học kỳ im lặng về chữ: giữ chữ "mất con trỏ", không đổi sang "đồng bộ lại"; lô kế mang kỳ 1,
