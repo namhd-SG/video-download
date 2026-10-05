@@ -1075,6 +1075,8 @@ def test_shell_and_its_assets_must_be_revalidated():
     assert _header_for("/index.html") == "no-cache"
     assert _header_for("/app.js") == "no-cache"
     assert _header_for("/app.css") == "no-cache"
+    # Popup giải captcha nói giao thức (`ky`) với máy chủ: JS cũ cạnh máy chủ mới ⇒ mọi lô 400.
+    assert _header_for("/giai-captcha-popup.js") == "no-cache"
 
 
 def test_other_routes_are_left_alone():
