@@ -433,6 +433,84 @@ def test_thieu_lo_qua_2_giay_huy_gesture_va_bo_qua_cho_hut(dh):
         p.nhan_lo(tk, chu, 3, [_ev("move", 3, 3, 70.0, 1), _ev("up", 3, 3, 80.0)], ky=0)
 
 
+# ---------------------------------------------------------------------------
+# `ky_mat_nut`: kỳ mới nhất do một lần huỷ BỎ thao tác nút chưa phát (popup dùng để báo "kéo lại")
+# ---------------------------------------------------------------------------
+
+TK, CHU = "token-aaaaaaaa", "chu@x.vn"
+
+
+def test_ky_mat_nut_khi_huy_bo_nut_dang_giu(dh):
+    """Lô `down` đã nhận (nút đang giữ ở luồng người) rồi huỷ ⇒ cú kéo mất ⇒ `ky_mat_nut` = kỳ mới. Có trong
+    `trang_thai` (`anh_chup`). ĐỘT BIẾN: bỏ vế `nut_giu_nguon` ⇒ ĐỎ (hàng phát đã rút hết `down`)."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 0.0, 1)], ky=0)
+    assert [e.k for e in p.den_han(dh.t + 5)] == ["down"]          # đã PHÁT; chỉ còn nút đang giữ
+    p.huy_gesture("test")
+    assert p.ky == 1 and p.ky_mat_nut == 1
+    assert p.anh_chup(TK, CHU)["ky_mat_nut"] == 1
+
+
+def test_ky_mat_nut_khi_huy_bo_up_chua_phat(dh):
+    """Cú nhấp trọn đã nhận (`nut_giu_nguon` đã hạ khi NHẬN `up`) nhưng chưa phát ⇒ huỷ bỏ nó ⇒ mất.
+    ĐỘT BIẾN: bỏ vế `_hang` ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 0.0, 1), _ev("up", 1, 1, 16.0, 0)], ky=0)
+    assert p.bo_phat.nut_giu_nguon is False
+    p.huy_gesture("test")
+    assert p.ky_mat_nut == 1
+
+
+def test_ky_mat_nut_khong_doi_khi_chi_bo_hover(dh):
+    """Chỉ rê chuột chưa phát rồi huỷ ⇒ không mất thao tác nút ⇒ `ky_mat_nut` giữ 0 (popup không báo nhầm).
+    ĐỘT BIẾN: tính mọi sự kiện là nút ⇒ ĐỎ; luôn gán `ky_mat_nut` khi huỷ ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 0, [_ev("move", 1, 1, 0.0), _ev("move", 2, 2, 16.0)], ky=0)
+    p.huy_gesture("test")
+    assert p.ky == 1 and p.ky_mat_nut == 0
+
+
+def test_ky_mat_nut_khi_thieu_lo_bo_lo_nut_dang_cho(dh):
+    """Lô 0 hụt (chỉ rê, popup chưa 200); lô 1 chứa cú nhấp đã 200 nhưng nằm chờ ⇒ hụt quá 2 s ⇒ huỷ bỏ lô đang
+    chờ ⇒ mất ⇒ `ky_mat_nut` = kỳ mới. ĐỘT BIẾN: bỏ vế `_cho_lo` ⇒ ĐỎ; tính `mat_nut` SAU khi xoá ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 1, [_ev("down", 2, 2, 50.0, 1), _ev("up", 2, 2, 66.0, 0)], ky=0)
+    dh.t += 2.1
+    p.kiem_thieu_lo(dh.t)
+    assert p.lay_huy() == "thieu_lo" and p.ky == 1 and p.ky_mat_nut == 1
+
+
+def test_ky_mat_nut_khong_tinh_lo_bi_tu_choi(dh):
+    """Lô 400 (`None`, không rõ nội dung) đang chờ + lô rê ⇒ huỷ ⇒ KHÔNG tính mất: popup không nhận 200 cho lô 400
+    nên tự biết nếu nó có nút; tính `None` sẽ báo nhầm lô chỉ rê bị 400. ĐỘT BIẾN: coi `None` là mất ⇒ ĐỎ."""
+    p = _phien()
+    p.bo_lo(TK, CHU, 1, ky=0)
+    p.nhan_lo(TK, CHU, 2, [_ev("move", 3, 3, 50.0)], ky=0)
+    dh.t += 2.1
+    p.kiem_thieu_lo(dh.t)
+    assert p.ky == 1 and p.ky_mat_nut == 0
+
+
+def test_ky_mat_nut_khi_lo_dang_xa_bi_bo_phat_tu_choi(dh):
+    """Lô có `down` tới đúng thứ tự (API trả 200) nhưng bộ phát từ chối nó (lịch lệch bất thường) ⇒ lô đã rời
+    `_cho_lo` mà chưa vào `_hang` ⇒ chỉ `lo_dang_xa` thấy ⇒ `ky_mat_nut` = kỳ mới. ĐỘT BIẾN: không truyền
+    `lo_dang_xa` ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 0, [_ev("move", 1, 1, 0.0)], ky=0)          # rê chưa phát: giữ ánh xạ đồng hồ, không phải nút
+    assert p.nhan_lo(TK, CHU, 1, [_ev("down", 2, 2, 60_000.0, 1)], ky=0) == "ok"
+    assert p.lay_huy() == "lo_khong_hop_le" and p.ky == 1 and p.ky_mat_nut == 1
+
+
+def test_ky_mat_nut_chi_tang_qua_hai_lan_huy(dh):
+    """Huỷ 1 bỏ nút (`ky_mat_nut` = 1), huỷ 2 không bỏ gì ⇒ `ky_mat_nut` GIỮ 1 (popup ở kỳ 0 đọc `ky=2,
+    ky_mat_nut=1` vẫn biết đã mất). ĐỘT BIẾN: gán `ky_mat_nut = 0` khi không mất ⇒ ĐỎ."""
+    p = _phien()
+    p.nhan_lo(TK, CHU, 0, [_ev("down", 1, 1, 0.0, 1)], ky=0)
+    p.huy_gesture("a")
+    p.huy_gesture("b")
+    assert p.ky == 2 and p.ky_mat_nut == 1
+
+
 def test_tab_sau_chi_xem_tab_dau_ngat_thi_tab_sau_lay_duoc():
     p = PhienGiai(1, "chu@x.vn", "dang_giai")
     assert p.nhan_khoa("token-aaaaaaaa", "chu@x.vn") is True

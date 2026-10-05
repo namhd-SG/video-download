@@ -470,7 +470,7 @@ def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
     assert phien.lay_huy() is None
     assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 400   # thiếu ky
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "ky": 0, "den_seq": 0}) == (200, {"ok": True, "ky": 1})
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "ky": 0, "den_seq": 0}) == (200, {"ok": True, "ky": 1, "ky_mat_nut": 0})
     assert phien.lay_huy() == gc.LY_DO_HUY_POPUP and phien.ky == 1
     assert phien.xem_lenh() is None
     # Bản sao muộn của chính lệnh đó (kỳ 0) ⇒ 409 ky_cu, KHÔNG huỷ nhầm kỳ mới.

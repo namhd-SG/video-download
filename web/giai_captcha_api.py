@@ -246,7 +246,7 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
                 phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao, ky=body.ky)
                 # Trả luôn kỳ MỚI: popup học ngay, không phải chờ `trang_thai` (≤ 1 nhịp SSE) — khoảng chờ đó
                 # là khe mà cú kéo bắt đầu ngay sau khi huỷ xong bị `ky_cu` (mất cú kéo).
-                return {"ok": True, "ky": phien.ky}
+                return {"ok": True, "ky": phien.ky, "ky_mat_nut": phien.ky_mat_nut}
             else:
                 phien.dat_lenh(body.token, nguoi_tao, body.lenh)
         except gc.LoiGiai as loi:

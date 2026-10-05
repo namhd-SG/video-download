@@ -311,6 +311,11 @@ def kiem_su_kien(raw: object, khung_w: float, khung_h: float, device_w: float) -
     return SuKien(k=k, x=cx, y=cy, t=float(t), buttons=buttons, dx=float(dx), dy=float(dy))
 
 
+def la_su_kien_nut(ev: SuKien) -> bool:
+    """Sự kiện có thao tác NÚT (nhấn, nhả, kéo khi giữ nút trái) — khác rê chuột."""
+    return ev.k in ("down", "up") or (ev.k == "move" and bool(ev.buttons & 1))
+
+
 def tham_so_cdp(ev: SuKien) -> dict:
     """`Input.dispatchMouseEvent` cho MỘT sự kiện của người — `buttons` NGUYÊN từ người (move
     hover ⇒ `buttons: 0`), chỉ nút trái. Không thêm trường nào ngoài những gì người tạo ra."""
@@ -412,6 +417,10 @@ class BoPhatLai:
     def con_hang(self) -> bool:
         return bool(self._hang)
 
+    def co_nut_chua_phat(self) -> bool:
+        """Có thao tác nút sẽ MẤT nếu huỷ ngay: nút đang giữ ở luồng người, hoặc sự kiện nút đã nhận mà chưa phát."""
+        return self.nut_giu_nguon or any(la_su_kien_nut(ev) for _, ev in self._hang)
+
     def huy(self) -> None:
         """Bỏ mọi sự kiện chưa phát; ánh xạ đồng hồ làm lại ở sự kiện kế. Nút đang giữ ở luồng
         người ⇒ bỏ tàn dư của gesture đó (move có nút, `up`) tới khi có `down` mới."""
@@ -461,6 +470,10 @@ class PhienGiai:
         # `seq` đếm lại từ 0 mỗi kỳ. Popup gắn kỳ LÚC GỬI ⇒ lô tạo trước một lần huỷ luôn mang kỳ cũ, tới lúc
         # nào cũng bị chặn ở đây — kể cả request đã lên dây từ trước sự cố.
         self.ky = 0
+        # Kỳ MỚI NHẤT do một lần huỷ BỎ thao tác nút chưa phát sinh ra (0 = chưa có). Chỉ tăng, không bao giờ xoá:
+        # popup so với kỳ nó đang biết ⇒ biết cú kéo đã gửi (và đã được 200) có bị mất không, kể cả khi đọc muộn hoặc
+        # hai lần huỷ liền nhau trong một nhịp SSE. Gửi trong `trang_thai` và phản hồi `huy_gesture`.
+        self.ky_mat_nut = 0
         # `None` = MỐC HUỶ: lô `seq` đó bị từ chối (400) ⇒ huỷ gesture ĐÚNG lúc xả tới `seq` này, không
         # sớm hơn — lô trước nó (vd chứa `down`) có thể còn đang bay vì popup POST song song.
         self._cho_lo: dict[int, list[SuKien] | None] = {}
@@ -587,7 +600,8 @@ class PhienGiai:
                 try:
                     self.bo_phat.nhan_lo(lo, t_toi)
                 except LoiGiai:
-                    self._huy_gesture_unlocked("lo_khong_hop_le")
+                    # Lô đã rời `_cho_lo` mà (một phần) chưa vào `_hang` ⇒ truyền nó để tính có mất thao tác nút không.
+                    self._huy_gesture_unlocked("lo_khong_hop_le", lo_dang_xa=lo)
         if not self._cho_lo:
             self._cho_lo_tu = None
 
@@ -603,14 +617,23 @@ class PhienGiai:
         with self.khoa:
             self._huy_gesture_unlocked(ly_do)
 
-    def _huy_gesture_unlocked(self, ly_do: str) -> None:
+    def _huy_gesture_unlocked(self, ly_do: str, lo_dang_xa: list[SuKien] | None = None) -> None:
         """Huỷ gesture dở VÀ sang kỳ mới: mọi lô/lệnh của kỳ cũ (kể cả lô đang đệm, lô còn đang thử lại tới
         sau) không bao giờ được phát; popup học kỳ mới qua `trang_thai` (≤ 1 nhịp SSE) và đánh số lại từ 0.
         Đây là CHỖ DUY NHẤT đổi kỳ — mọi lý do huỷ (đổi token, hụt lô, lô bị từ chối, popup huỷ, đệm tràn)
-        đều đi qua đây. Nối lại SSE cùng token không huỷ ⇒ không đổi kỳ ⇒ cú kéo đang dở vẫn tiếp tục."""
+        đều đi qua đây. Nối lại SSE cùng token không huỷ ⇒ không đổi kỳ ⇒ cú kéo đang dở vẫn tiếp tục.
+
+        `ky_mat_nut` tính TRƯỚC khi xoá: nút đang giữ ở luồng người, sự kiện nút đã nhận chưa phát (`_hang`), lô đang
+        chờ sau chỗ hụt (`_cho_lo`), lô đang xả dở (`lo_dang_xa`). Lô `None` (400) KHÔNG tính: popup không nhận 200
+        cho nó nên tự biết (lô có nút) — tính nó sẽ báo nhầm lô chỉ rê."""
+        mat_nut = (self.bo_phat.co_nut_chua_phat()
+                   or any(lo and any(la_su_kien_nut(e) for e in lo) for lo in self._cho_lo.values())
+                   or (lo_dang_xa is not None and any(la_su_kien_nut(e) for e in lo_dang_xa)))
         self.bo_phat.huy()
         self._co_huy = ly_do
         self.ky += 1
+        if mat_nut:
+            self.ky_mat_nut = self.ky
         self.expected_seq = 0
         self._cho_lo.clear()
         self._cho_lo_tu = None
@@ -757,6 +780,7 @@ class PhienGiai:
                 "con_lai_giay": self.con_lai_giay(),
                 "so_lan_tai_lai": self.so_lan_tai_lai,
                 "ky": self.ky,
+                "ky_mat_nut": self.ky_mat_nut,
             }
 
     def cho_nguoi_giu(self, toi_da_giay: float, cho: Callable[[float], None]) -> bool:
