@@ -25,7 +25,7 @@ from dataclasses import replace
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_VONG,
     STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
-    parse_tag_slug, random_user_agent,
+    che_url, parse_tag_slug, random_user_agent,
 )
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, profile_theo_job
@@ -484,9 +484,9 @@ class _JobProgress:
         if da_log:
             pass
         elif la_tiktok:
-            log.warning("job %s: video %s lỗi phía TikTok (%s)", self._job_id, ref.video_id, ly_do)
+            log.warning("job %s: video %s lỗi phía TikTok (%s)", self._job_id, ref.video_id, che_url(ly_do))
         else:
-            log.error("job %s: video %s lỗi hệ thống (%s)", self._job_id, ref.video_id, ly_do)
+            log.error("job %s: video %s lỗi hệ thống (%s)", self._job_id, ref.video_id, che_url(ly_do))
         models.increment_job_counts(self._db_path, self._job_id, loi_delta=1,
                                     loi_tiktok_delta=1 if la_tiktok else 0)
 

@@ -1,6 +1,6 @@
 # Plan — log không in URL nguồn / thông điệp lỗi thô / token khung (ĐP-1115 duyệt hướng)
 
-Trạng thái: **v2 — agy KHÉP R2b 22:52 (cơ học R1b + phán R2b); chờ ĐP duyệt, chưa code.** Lane V 9b0abf0b,
+Trạng thái: **v2 — agy KHÉP R2b 22:52; ĐP-1121 DUYỆT; đã code (1623 passed, 4/4 đột biến ĐỎ).** Lane V 9b0abf0b,
 worktree `~/Projects/video-download-wt-log-tai`, nhánh `fix/log-khong-in-url-token` từ origin/main `5b21567`.
 
 ## 1. Đo (log mini 57 473 dòng, từ 21/09; code 5b21567)
@@ -29,6 +29,8 @@ D2 (v2). Hàm thuần `che_url(text, toi_da=300)` ở `utils.py`: thay mọi `ht
     Regex (agy R2b, KHÉP 22:52): URL `(?i)(?:https?://|https?%3A%2F%2F|www\.)[^\s"']+` → `<url>`; handle
     `(?i)(?:/|%2F)(?:@|%40)[\w.\-]+` → `/@<h>`. Handle BẮT BUỘC có `/` hoặc `%2F` đứng trước (lệch R2b — bỏ `?`) để không
     che email trong log (`a@x.vn`); `@handle` trần trong Call log luôn nằm trong URL nên đã bị regex URL che.
+    Kiểm chỗ lệch (ĐP-1121): `test_che_url_khong_che_email` (email `x@y.com` KHÔNG bị che; đột biến trả regex R2b gốc ⇒ ĐỎ) ·
+    `test_che_url_che_call_log_playwright_that` + `test_che_url_che_dang_ma_hoa_va_khong_scheme` (Call log thật, `%2F%40` BỊ che).
 D3. `web/app.py` (uvicorn 0.53.0 `h11_impl.py:477-484`: args = (client, method, path_with_query, http_version, status);
     tuple ⇒ gán lại cả tuple): `logging.Filter` gắn vào logger `uvicorn.access` (gắn trong `_lifespan`, SAU khi uvicorn dựng log config,
     cạnh `_dong_dau_thoi_gian_vao_uvicorn`) che giá trị query `token=` trong `record.args` (đường dẫn) cho MỌI route —

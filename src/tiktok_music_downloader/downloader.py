@@ -19,6 +19,7 @@ from yt_dlp.utils import DownloadError
 
 from tiktok_music_downloader.phan_loai_loi import phan_loai_loi
 from tiktok_music_downloader.utils import (
+    che_url,
     JitterThrottle,
     VideoRef,
     adaptive_backoff,
@@ -225,7 +226,7 @@ def download_all(
         try:
             cookiefile_tmp = _write_netscape_cookies(Path(cookies_path))
         except Exception as exc:  # noqa: BLE001
-            log.warning("could not load cookies for yt-dlp (%s) — continuing without", exc)
+            log.warning("could not load cookies for yt-dlp (%s) — continuing without", che_url(exc))
     opts = _ydl_opts(output_dir, proxy, str(cookiefile_tmp) if cookiefile_tmp else None)
     throttle = JitterThrottle(delay_seconds)
 
@@ -297,9 +298,9 @@ def download_all(
                 # thường của việc quét nguồn — WARNING, để ERROR dành cho lỗi
                 # thật của hệ thống. Không rõ loại nào thì mặc định ERROR.
                 if phan_loai_loi(exc) == "tiktok":
-                    log.warning("✗ %s: %s", ref.video_id, exc)
+                    log.warning("✗ %s: [tiktok] %s", ref.video_id, che_url(exc))
                 else:
-                    log.error("✗ %s: %s", ref.video_id, exc)
+                    log.error("✗ %s: [he_thong] %s", ref.video_id, che_url(exc))
                 note_info = {"loi": str(exc)}
                 if _looks_like_rate_limit(exc):
                     failure_streak += 1

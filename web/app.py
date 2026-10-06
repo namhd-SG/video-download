@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -103,6 +104,32 @@ def _dong_dau_thoi_gian_vao_uvicorn() -> None:
     for ten in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         for handler in logging.getLogger(ten).handlers:
             handler.setFormatter(dinh_dang)
+
+
+_MAU_TOKEN_QUERY = re.compile(r"(?i)((?:^|[?&])token=)[^&#\s]*")
+
+
+class CheTokenAccessLog(logging.Filter):
+    """Che GIÁ TRỊ `token=` trong đường dẫn của dòng `uvicorn.access` (vd token khung giải
+    `/jobs/N/giai/khung?token=…`) — mọi route, để không route nào mang token lọt vào log.
+
+    uvicorn (h11/httptools) gọi `access_logger.info('%s - "%s %s HTTP/%s" %d', client, method,
+    path_with_query, http_version, status)` ⇒ `record.args` là tuple 5 phần tử; tuple bất biến nên
+    dựng lại cả tuple. Bản ghi khác dạng thì để nguyên."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            record.args = (args[0], args[1], _MAU_TOKEN_QUERY.sub(r"\1<redacted>", args[2]), args[3], args[4])
+        return True
+
+
+def _che_token_trong_access_log() -> None:
+    """Gắn bộ lọc vào LOGGER `uvicorn.access` (không phải handler: đổi handler là đổi nơi dòng chảy tới).
+    Chạy trong `_lifespan`, SAU khi uvicorn dựng log config. Gắn đúng một lần."""
+    lg = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, CheTokenAccessLog) for f in lg.filters):
+        lg.addFilter(CheTokenAccessLog())
 
 
 _dat_dinh_dang_log()
@@ -204,6 +231,7 @@ async def _lifespan(app: FastAPI):
     # Trước mọi thứ khác: từ đây mọi dòng log phải có giờ, kể cả dòng do chính
     # bước khởi động bên dưới sinh ra.
     _dong_dau_thoi_gian_vao_uvicorn()
+    _che_token_trong_access_log()
     prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
     # Dựng/di trú lược đồ TRƯỚC mọi thứ đọc nó. `worker.start()` cũng gọi
     # `init_db`, nhưng nó chạy SAU bước mồi admin bên dưới — và một cơ sở dữ
