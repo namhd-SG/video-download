@@ -506,7 +506,9 @@ def test_giu_nut_xuyen_qua_luc_huy_truot_roi_tha_khong_gui_gi(mo_trang, db):
     assert len(ghi.su_kien()) == truoc, "huỷ trượt: không sự kiện nào được tới máy chủ"
     page.mouse.down()                                    # chỉ để thử huỷ lại — bị bỏ
     page.mouse.up()
-    assert cho_trang(page, lambda: ("lenh_ve", "huy_gesture") in ghi.thu_tu[-1:], 5)
+    # Chờ lệnh huỷ THỨ 5 được trả lời (đếm, không xem phần tử cuối: phần tử cuối đã là `lenh_ve` của lần thứ 4 nên điều
+    # kiện cũ đúng ngay, rồi chờ cố định 300 ms — huỷ thứ 5 chậm hơn thế thì đỏ).
+    assert cho_trang(page, lambda: ghi.thu_tu.count(("lenh_ve", "huy_gesture")) == 5, 5)
     doi_gui(page)
     assert [l["lenh"] for l in ghi.lenh].count("huy_gesture") == 5 and len(ghi.su_kien()) == truoc
     page.mouse.move(r["x"] + 300, r["y"] + 300)
