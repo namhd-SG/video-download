@@ -42,6 +42,7 @@ _THONG_DIEP_SAI_TRANG_THAI = {
 
 class ChuotBody(BaseModel):
     token: str
+    ky: StrictInt | None = None     # bắt buộc (thiếu ⇒ 400 "popup cũ"); Optional để báo lỗi rõ thay vì 422
     seq: StrictInt
     khung_w: float
     khung_seq: StrictInt | None = None
@@ -51,7 +52,23 @@ class ChuotBody(BaseModel):
 class LenhBody(BaseModel):
     token: str
     lenh: str
-    den_seq: int | None = None   # bắt buộc với `huy_gesture`: `seq` kế tiếp popup sẽ cấp
+    ky: StrictInt | None = None   # bắt buộc với `huy_gesture`: kỳ popup đang biết lúc gửi
+    den_seq: int | None = None    # giao thức cũ — nhận nhưng bỏ qua (popup vẫn gửi để nói được với máy chủ cũ)
+
+
+_THONG_DIEP_POPUP_CU = "Popup phiên bản cũ — tải lại trang rồi mở lại lượt giải."
+# Thiếu `ky` = JS popup CŨ (trước giao thức kỳ) còn sống trong một tab mở từ trước lần deploy (popup là hộp thoại trong
+# trang chính, JS nạp một lần mỗi lần tải trang). Trả 401 chứ không 400: JS cũ hiểu 401 là mất phiên và hiện nút "Tải lại
+# trang" (400 thì nó im lặng bỏ cú kéo, mọi lần kéo chết tới khi người tự tải lại). Đánh đổi: chữ nói "phiên đăng nhập đã
+# hết" dù phiên còn — nhưng tải lại đúng là cách chữa. Popup mới luôn gửi `ky` nên không bao giờ gặp mã này.
+_MA_POPUP_CU = 401
+
+
+def _http_tu_loi(loi: "gc.LoiGiai") -> HTTPException:
+    """`LoiKyCu` ⇒ 409 kèm `{"ma": "ky_cu", "ky": <kỳ hiện tại>}` để popup biết đồng bộ lại; lỗi khác ⇒ chuỗi."""
+    if isinstance(loi, gc.LoiKyCu):
+        return HTTPException(status_code=409, detail={"ma": "ky_cu", "ky": loi.ky, "thong_diep": loi.thong_diep})
+    return HTTPException(status_code=loi.ma, detail=loi.thong_diep)
 
 
 def _thong_diep_trang_thai(trang_thai: str, can: str) -> str:
@@ -180,11 +197,14 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
             raise HTTPException(status_code=409, detail="Lượt giải không còn mở.")
         if not gc.token_hop_le(body.token) or body.seq < 0:
             raise HTTPException(status_code=400, detail="`token`/`seq` không hợp lệ.")
+        if body.ky is None:
+            raise HTTPException(status_code=_MA_POPUP_CU, detail=_THONG_DIEP_POPUP_CU)
         if not phien.la_giu(body.token, nguoi_tao):
             raise HTTPException(status_code=409,
                                 detail="Bạn không giữ quyền điều khiển (người/tab khác đang giải).")
         try:
             phien.kiem_tan_suat(gc.dong_ho())
+            phien.kiem_ky(body.ky)          # lô kỳ cũ ⇒ 409 `ky_cu` trước mọi 400 về nội dung
             if not 1 <= len(body.su_kien) <= gc.LO_TOI_DA_SU_KIEN:
                 raise gc.LoiGiai(400, f"Mỗi lô cần 1–{gc.LO_TOI_DA_SU_KIEN} sự kiện.", True)
             if not (isinstance(body.khung_w, float) and 0 < body.khung_w < 1e6
@@ -200,13 +220,13 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
                 ev = gc.kiem_su_kien(raw, body.khung_w, khung_h, device_w)
                 if ev is not None:
                     events.append(ev)
-            ket_qua = phien.nhan_lo(body.token, nguoi_tao, body.seq, events)
+            ket_qua = phien.nhan_lo(body.token, nguoi_tao, body.seq, events, ky=body.ky)
         except gc.LoiGiai as loi:
             if loi.huy_gesture:
                 # Lô bị từ chối: `seq` của nó coi như đã dùng và thành MỐC HUỶ gesture dở — áp khi các
                 # lô trước nó đã tới (không huỷ ngay: lô `down` trước nó có thể còn đang bay).
-                phien.bo_lo(body.token, nguoi_tao, body.seq)
-            raise HTTPException(status_code=loi.ma, detail=loi.thong_diep) from loi
+                phien.bo_lo(body.token, nguoi_tao, body.seq, ky=body.ky)
+            raise _http_tu_loi(loi) from loi
         return {"ok": True, "trung": ket_qua == "trung"}
 
     @app.post("/jobs/{job_id}/giai/lenh")
@@ -227,11 +247,14 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
         try:
             if body.lenh == "huy_gesture":
                 # Không vào hàng `_lenh` (worker tiêu hàng đó như lệnh kết thúc lượt): huỷ ngay.
-                if body.den_seq is None:
-                    raise HTTPException(status_code=400, detail="`huy_gesture` cần `den_seq`.")
-                phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao, body.den_seq)
+                if body.ky is None:
+                    raise HTTPException(status_code=_MA_POPUP_CU, detail=_THONG_DIEP_POPUP_CU)
+                ky_moi, ky_mat_nut = phien.huy_gesture_cua_nguoi_giu(body.token, nguoi_tao, ky=body.ky)
+                # Trả luôn kỳ MỚI: popup học ngay, không phải chờ `trang_thai` (≤ 1 nhịp SSE) — khoảng chờ đó
+                # là khe mà cú kéo bắt đầu ngay sau khi huỷ xong bị `ky_cu` (mất cú kéo).
+                return {"ok": True, "ky": ky_moi, "ky_mat_nut": ky_mat_nut}
             else:
                 phien.dat_lenh(body.token, nguoi_tao, body.lenh)
         except gc.LoiGiai as loi:
-            raise HTTPException(status_code=loi.ma, detail=loi.thong_diep) from loi
+            raise _http_tu_loi(loi) from loi
         return {"ok": True}

@@ -271,12 +271,19 @@ class LuotGiai:
         return sk
 
     def gui_lo(self, su_kien, seq=None, token=None):
+        # Như popup: gắn KỲ đang biết (đọc kỳ hiện tại của phiên ⇔ `trang_thai` mới nhất); kỳ đổi ⇒ đánh số lô
+        # lại từ 0 (máy chủ đặt `expected_seq = 0` mỗi kỳ).
+        ky = gc.lay_phien(self.jid).ky
+        if ky != getattr(self, "ky_biet", 0):
+            self.ky_biet = ky
+            self.seq = 0
         if seq is None:
             seq = self.seq
             self.seq += 1
         so = seq
         return goi(self.port, "POST", f"/jobs/{self.jid}/giai/chuot",
-                   body={"token": token or self.token, "seq": so, "khung_w": KHUNG_W, "su_kien": su_kien})
+                   body={"token": token or self.token, "ky": ky, "seq": so, "khung_w": KHUNG_W,
+                         "su_kien": su_kien})
 
     def gui_ok(self, su_kien, **kw):
         st, ra = self.gui_lo(su_kien, **kw)

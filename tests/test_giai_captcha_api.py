@@ -113,8 +113,9 @@ def job_dang_giai_co_khung(api, token=TA, nguoi=CHU):
     return jid, s, phien
 
 
-def lo(seq, su_kien, token=TA, khung_w=800, **them):
-    return {"token": token, "seq": seq, "khung_w": khung_w, "su_kien": su_kien, **them}
+def lo(seq, su_kien, token=TA, khung_w=800, ky=0, **them):
+    """Một lô `/giai/chuot`. `ky` mặc định 0 (kỳ đầu của lượt giải); sau một lần huỷ phải truyền kỳ mới."""
+    return {"token": token, "ky": ky, "seq": seq, "khung_w": khung_w, "su_kien": su_kien, **them}
 
 
 def move(x=3, y=7, t=10.5, buttons=0, **them):
@@ -237,14 +238,21 @@ def test_sse_cung_token_noi_lai_giu_expected_seq(api):
     a.dong_ket_noi()
     assert _cho(lambda: not phien.co_nguoi_giu())
     a2 = Sse(port, jid, TA)
-    assert a2.doc("trang_thai")[1]["vai"] == "dieu_khien"
+    tt2 = a2.doc("trang_thai")[1]
+    assert tt2["vai"] == "dieu_khien"
     assert phien.expected_seq == 1, "cùng token nối lại ⇒ giữ nguyên số thứ tự lô"
+    assert tt2["ky"] == 0, "cùng token nối lại KHÔNG huỷ ⇒ không đổi kỳ (cú kéo dở vẫn tiếp tục)"
     assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(1, [move()]))[0] == 200
     a2.dong_ket_noi()
     assert _cho(lambda: not phien.co_nguoi_giu())
-    a3 = Sse(port, jid, TC)                            # popup tải lại ⇒ token mới ⇒ seq 0
-    assert a3.doc("trang_thai")[1]["vai"] == "dieu_khien"
-    assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(0, [move()], token=TC))[0] == 200
+    a3 = Sse(port, jid, TC)                            # popup tải lại ⇒ token mới ⇒ huỷ ⇒ KỲ mới, seq 0
+    tt3 = a3.doc("trang_thai")[1]
+    assert tt3["vai"] == "dieu_khien" and tt3["ky"] == 1
+    st, _ = goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(2, [move()], ky=0))   # lô CŨ của token A
+    assert st == 409, "token A không còn giữ khoá ⇒ không phát"
+    st, ra = goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(0, [move()], token=TC, ky=0))
+    assert st == 409 and ra["detail"]["ma"] == "ky_cu" and ra["detail"]["ky"] == 1, ra
+    assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(0, [move()], token=TC, ky=1))[0] == 200
     a3.dong_ket_noi()
 
 
@@ -339,6 +347,22 @@ def test_chuot_khong_giu_khoa_gui_lo_xau_khong_huy_duoc_gesture_cua_nguoi_dang_g
     b.dong_ket_noi()
 
 
+def test_chuot_lo_ky_cu_noi_dung_sai_nhan_ky_cu_khong_400(api):
+    """Review #54 S1: lô kỳ CŨ có điểm ngoài khung ⇒ 409 `ky_cu` (kiểm kỳ TRƯỚC nội dung), KHÔNG 400 — 400 làm popup bỏ
+    cú kéo đang dở của kỳ mới; và lô đó không thành mốc huỷ ở kỳ mới. ĐỘT BIẾN: bỏ `kiem_ky` ở route ⇒ 400 ⇒ ĐỎ."""
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    p = f"/jobs/{jid}/giai/chuot"
+    ky0 = phien.ky
+    phien.huy_gesture("test")
+    assert goi(port, "POST", p, body=lo(0, [{"k": "down", "x": 5, "y": 5, "t": 1, "buttons": 1}], ky=phien.ky))[0] == 200
+    ky1 = phien.ky
+    st, ra = goi(port, "POST", p, body=lo(1, [move(x=9999)], ky=ky0))
+    assert st == 409 and ra["detail"]["ma"] == "ky_cu" and ra["detail"]["ky"] == ky1, (st, ra)
+    assert phien.ky == ky1 and phien.lay_huy() == "test" and phien.expected_seq == 1
+    s.dong_ket_noi()
+
+
 def test_chuot_quyen_va_trang_thai(api):
     port, db = api
     jid, s, phien = job_dang_giai_co_khung(api)
@@ -383,10 +407,12 @@ def test_chuot_400_huy_gesture_va_dung_het_seq(api, su_kien):
     assert goi(port, "POST", p, body=lo(0, [{"k": "down", "x": 5, "y": 5, "t": 1, "buttons": 1}]))[0] == 200
     st, ra = goi(port, "POST", p, body=lo(1, su_kien))
     assert st == 400, ra
-    assert phien.expected_seq == 2, "lô bị từ chối vẫn dùng hết số thứ tự của nó"
     assert phien.lay_huy() == "lo_bi_tu_choi"
+    assert phien.ky == 1 and phien.expected_seq == 0, "lô bị từ chối ⇒ huỷ ⇒ kỳ mới, đánh số lại từ 0"
     assert phien.den_han(gc.dong_ho() + 100) == [], "gesture dở bị huỷ ⇒ không phát gì nữa"
-    assert goi(port, "POST", p, body=lo(2, [move()]))[0] == 200, "lô sau đó vẫn chạy"
+    st, ra = goi(port, "POST", p, body=lo(2, [move()]))                  # lô kỳ cũ tới sau
+    assert st == 409 and ra["detail"]["ma"] == "ky_cu", ra
+    assert goi(port, "POST", p, body=lo(0, [move()], ky=1))[0] == 200, "lô của kỳ mới vẫn chạy"
     s.dong_ket_noi()
 
 
@@ -396,9 +422,11 @@ def test_chuot_so_khong_huu_han_nan_infinity_bi_400(api):
     p = f"/jobs/{jid}/giai/chuot"
     for tho in ('{"k":"move","x":NaN,"y":1,"t":1,"buttons":0}', '{"k":"move","x":1,"y":Infinity,"t":1,"buttons":0}',
                 '{"k":"move","x":1,"y":1,"t":-Infinity,"buttons":0}'):
-        raw = '{"token":"%s","seq":%d,"khung_w":800,"su_kien":[%s]}' % (TA, phien.expected_seq, tho)
+        # Có `ky` đúng: thiếu `ky` thì route trả mã "popup cũ" trước khi kiểm số ⇒ test không còn soi NaN.
+        raw = '{"token":"%s","ky":%d,"seq":%d,"khung_w":800,"su_kien":[%s]}' % (TA, phien.ky, phien.expected_seq, tho)
         assert goi(port, "POST", p, raw=raw)[0] == 400, tho
-    raw = '{"token":"%s","seq":%d,"khung_w":NaN,"su_kien":[%s]}' % (TA, phien.expected_seq, json.dumps(move()))
+    raw = '{"token":"%s","ky":%d,"seq":%d,"khung_w":NaN,"su_kien":[%s]}' % (TA, phien.ky, phien.expected_seq,
+                                                                         json.dumps(move()))
     assert goi(port, "POST", p, raw=raw)[0] == 400
     s.dong_ket_noi()
 
@@ -454,16 +482,19 @@ def test_lenh_huy_gesture_chi_nguoi_giu_khoa_huy_ngay_khong_vao_hang_lenh(api):
     port, db = api
     jid, s, phien = job_dang_giai_co_khung(api)
     p = f"/jobs/{jid}/giai/lenh"
-    assert goi(port, "POST", p, body={"token": TB, "lenh": "huy_gesture", "den_seq": 0})[0] == 409
+    assert goi(port, "POST", p, body={"token": TB, "lenh": "huy_gesture", "ky": 0})[0] == 409
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 403
+    assert goi(port, "POST", p, user=KHAC, body={"token": TA, "lenh": "huy_gesture", "ky": 0})[0] == 403
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture"})[0] == 400       # thiếu den_seq
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 10_000})[0] == 400
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0})[0] == 401   # thiếu ky = popup cũ
     assert phien.lay_huy() is None
-    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "den_seq": 0}) == (200, {"ok": True})
-    assert phien.lay_huy() == gc.LY_DO_HUY_POPUP
+    assert goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "ky": 0, "den_seq": 0}) == (200, {"ok": True, "ky": 1, "ky_mat_nut": 0})
+    assert phien.lay_huy() == gc.LY_DO_HUY_POPUP and phien.ky == 1
     assert phien.xem_lenh() is None
+    # Bản sao muộn của chính lệnh đó (kỳ 0) ⇒ 409 ky_cu, KHÔNG huỷ nhầm kỳ mới.
+    st, ra = goi(port, "POST", p, body={"token": TA, "lenh": "huy_gesture", "ky": 0})
+    assert st == 409 and ra["detail"] == {"ma": "ky_cu", "ky": 1, "thong_diep": ra["detail"]["thong_diep"]}, ra
+    assert phien.lay_huy() is None and phien.ky == 1
     s.dong_ket_noi()
 
 
@@ -504,3 +535,17 @@ def test_sse_events_cu_giu_mo_cho_trang_thai_moi(api):
     dong = r.readline() + r.readline()
     assert b"cho_giai" in dong
     c.close()
+
+
+def test_chuot_thieu_ky_la_popup_cu_401(api):
+    """Máy chủ mới + popup cũ (không gửi `ky`) ⇒ 401 với thông điệp "tải lại trang" (không đoán kỳ: popup cũ
+    không đặt lại seq nên sau lần huỷ đầu sẽ vào vòng hụt-lô vô tận). 401 vì JS cũ hiểu 401 là mất phiên và hiện nút
+    "Tải lại trang"; 400 thì nó bỏ cú kéo im lặng (review #54 S3). ĐỘT BIẾN: chấp nhận thiếu `ky` ⇒ ĐỎ; trả 400 ⇒ ĐỎ."""
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    body = lo(0, [move()])
+    body.pop("ky")
+    st, ra = goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=body)
+    assert st == 401 and "tải lại trang" in ra["detail"], ra
+    assert phien.expected_seq == 0
+    s.dong_ket_noi()

@@ -444,13 +444,19 @@
     p.huyHieuLuc = lan;
     const xong = guiHuyGesture(p).catch(() => false).then((kq) => {
       // "ky_cu": máy chủ đã sang kỳ mới (mọi lần huỷ phía máy chủ đều đổi kỳ) ⇒ gesture cũ ĐÃ bị huỷ ở đó.
-      const daHuy = kq === true || kq === "ky_cu";
+      // `{ky, kyMatNut}`: máy chủ nhận lệnh và trả kỳ MỚI ⇒ học ngay để cú kéo kế tiếp mang đúng kỳ, không rơi vào
+      // khe chờ `trang_thai`.
+      const kyMoi = kq && typeof kq === "object" && typeof kq.ky === "number" ? kq.ky : null;
+      const daHuy = kq === true || kq === "ky_cu" || kyMoi !== null;
       if (P !== p) return daHuy;
       // Lần huỷ này đã hết hiệu lực (`doiKy` gỡ chặn vì kỳ mới, hoặc đã có lần huỷ sau): KHÔNG đụng trạng thái —
       // `buf` lúc này là của cú kéo MỚI (xoá ⇒ mất `down`/`up`), chặn/`huyTruot` (nếu có) là của lần huỷ sau.
       if (p.huyHieuLuc !== lan) return daHuy;
       p.huyHieuLuc = null;
       p.dangHuy = false;
+      // Học kỳ mới ngay từ phản hồi (SAU cổng hiệu lực). `doiKy` tự báo "kéo lại" nếu có thao tác mất; popup tự bỏ
+      // gesture thì chữ "bị ngắt" đã hiện (`biNgat`) nên không báo chồng.
+      if (kyMoi !== null && p.ky !== null && kyMoi !== p.ky) doiKy(p, kyMoi, kq.kyMatNut);
       // Mở chặn: bỏ cả những gì bộ gom vừa nhặt trong lúc chặn (chưa tới lượt `xaLo` xoá) — "bỏ MỌI sự kiện".
       if (daHuy) {
         p.buf.length = 0;
@@ -487,7 +493,8 @@
       }
       if (P !== p) return false;
       if (r.matPhien) { matPhien(); return false; }
-      if (r.ok) return true;
+      // Máy chủ có kỳ trả kỳ MỚI (sau lần huỷ này) + `ky_mat_nut` để popup học ngay, không chờ `trang_thai`.
+      if (r.ok) return r.data && typeof r.data.ky === "number" ? { ky: r.data.ky, kyMatNut: r.data.ky_mat_nut } : true;
       if (laKyCu(r)) return "ky_cu";
       if (r.status === 409) return false; // lượt đã đổi / không còn giữ quyền — SSE sẽ báo
       if (lan < THU_LAI_TOI_DA) await ngu(THU_LAI_CHO_MS * (lan + 1));   // sau lần cuối: không chờ suông
@@ -581,7 +588,9 @@
       // 400: lô bị bỏ và máy chủ HUỶ gesture dở ⇒ dừng gửi phần còn lại của gesture này (không có
       // `up` mồ côi). 409: không còn giữ quyền / sai trạng thái — luồng SSE sẽ báo ngay.
       // Câu "kéo lại từ đầu" chờ SSE `bi_ngat` (chỉ khi máy chủ thật sự tải lại trang).
-      if (r.status === 400) boCuChi("may_chu", true);
+      // Chỉ khi lô thuộc kỳ đang dùng (hoặc máy chủ chưa có kỳ): 400 của lô kỳ CŨ tới muộn không được giết cú kéo của kỳ
+      // mới — máy chủ không huỷ nó, bỏ ở đây là không gửi `up` ⇒ nút trên trang kẹt nhấn.
+      if (r.status === 400 && (lo.ky === undefined || lo.ky === p.ky)) boCuChi("may_chu", true);
       if (laKyCu(r)) {
         // Lô thuộc ĐÚNG kỳ popup đang biết ⇒ máy chủ vừa sang kỳ mới mà popup chưa nhận `trang_thai`: gesture
         // dở đã chết ở máy chủ ⇒ bỏ im lặng, tạm chặn kéo tới khi `trang_thai` mang kỳ mới về (≤ 1 nhịp SSE,
@@ -635,9 +644,14 @@
       if (typeof d.con_lai_giay === "number") p.conLai = { giay: d.con_lai_giay, luc: performance.now() };
       if (d.vai !== "dieu_khien") boCuChi("cuc_bo", true);
       p.matKetNoi = p.matKetNoiHan = false;
+      // `choKy` (tạm chặn sau một lô `ky_cu`) chỉ sống tới `trang_thai` KẾ — kể cả nhịp nhắc lại cùng kỳ —
+      // để không có đường nào chặn kéo vĩnh viễn; nếu kỳ vẫn lệch, lô sau lại `ky_cu` và chặn tiếp.
+      p.choKy = false;
       if (typeof d.ky === "number") {
         if (p.ky === null) { p.ky = d.ky; p.choKy = false; }   // lần đầu học kỳ: chưa có gì để bỏ
-        else if (d.ky !== p.ky) doiKy(p, d.ky, d.ky_mat_nut);
+        // Chỉ kỳ LỚN HƠN: kỳ chỉ tăng ở máy chủ; một `trang_thai` chụp TRƯỚC lần huỷ có thể tới SAU phản hồi huỷ (đã học
+        // kỳ mới) — nhận nó là lùi kỳ, lô kế mang kỳ cũ bị `ky_cu`.
+        else if (d.ky > p.ky) doiKy(p, d.ky, d.ky_mat_nut);
       }
       if (d.trang_thai === "dang_giai" && !p.moc) p.moc = performance.now();
       // ĐỒNG BỘ CHỦ ĐỘNG: vừa có lô không tới được máy chủ (cạn lượt thử / 409) ⇒ ngay khi lại điều khiển

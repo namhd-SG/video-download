@@ -254,9 +254,14 @@ class Nguoi:
             if ev is not None:
                 events.append(ev)
         self.da_tao.extend(events)
+        # Như popup: gắn KỲ đang biết (kỳ hiện tại ⇔ `trang_thai` mới nhất); kỳ đổi ⇒ đánh số lô lại từ 0.
+        ky = self.phien.ky
+        if ky != getattr(self, "ky_biet", 0):
+            self.ky_biet = ky
+            self.seq = 0
         so = self.seq if seq is None else seq
         self.seq = so + 1
-        return self.phien.nhan_lo(self.token, self.email, so, events)
+        return self.phien.nhan_lo(self.token, self.email, so, events, ky=ky)
 
     def tham_so_nguoi(self) -> list[dict]:
         return [gc.tham_so_cdp(e) for e in self.da_tao]
