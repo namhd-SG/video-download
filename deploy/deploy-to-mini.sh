@@ -24,6 +24,7 @@ RC_NGHIEM_THU=4     # đẩy xong nhưng nghiệm thu trượt
 RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁC "đang bận"
 RC_MOC=6            # mã mới đã chạy + nghiệm thu qua, nhưng KHÔNG ghi được mốc .deployed-sha
 RC_BANG_MAY=7       # bảng máy đích (deploy/may-dich.sh): tên máy lạ — đặt trong chính bảng
+RC_GIAI_SE_MAT=8    # có job "Cần xác minh" mà cờ giải trên máy đích TẮT — khởi động lại sẽ kết thúc chúng
 
 # HOST + EXPECT_HOST (tên máy đích sau khi chuẩn hoá: `hostname` thật trả về dạng
 # "Autos-Mac-mini.local" — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn
@@ -207,7 +208,13 @@ say "2b. Kiểm có job đang chạy không"
 # `|| dang_tai=""`: lệnh xa trượt (ssh 255, sqlite 1) dưới `set -e` sẽ thoát
 # ngay bằng mã của NÓ — mã 1 trùng "sai máy" — và không bao giờ tới `case` dưới.
 # Ép về chuỗi rỗng để `case` nói đúng: phép đo hỏng.
-dang_tai="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai NOT IN ('done','failed','interrupted')\"")" || dang_tai=""
+#
+# Không chặn `cancelled` (đã kết thúc) và `cho_xac_minh` ("Cần xác minh": chờ NGƯỜI bấm giải, có thể tới 24 giờ — chặn nó
+# là chặn mọi lần deploy trong lúc đó). Không có tiến trình nào đang chạy cho `cho_xac_minh`, và lượt khởi động kế tiếp
+# với cờ BẬT để nguyên nó, kể cả mốc 24 giờ (`mark_running_as_interrupted`, web/models.py). Vẫn CHẶN `cho_giai`/`dang_*`
+# (người đang giải: khởi động lại đưa lượt về `cho_xac_minh`, mất lượt đang giải) cùng `pending`/`running`. Viết dạng
+# LOẠI TRỪ: trạng thái mới về sau mặc định bị chặn cho tới khi có người xét.
+dang_tai="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai NOT IN ('done','failed','interrupted','cancelled','cho_xac_minh')\"")" || dang_tai=""
 
 # Truy vấn trượt trả chuỗi RỖNG, và `[ "" != "0" ]` cũng đúng ⇒ cổng vẫn chặn.
 # Chặn là hướng an toàn, nhưng thông điệp khi đó nói "N job đang chạy" trong khi
@@ -225,6 +232,31 @@ if [ "$dang_tai" != "0" ]; then
   echo "DỪNG: $dang_tai job đang chạy hoặc đang chờ — khởi động lại sẽ cắt ngang." >&2
   echo "      Chưa đụng gì tới máy đích. Đợi job xong rồi chạy lại script này." >&2
   exit "$RC_DANG_TAI"
+fi
+
+# Job "Cần xác minh" sống qua lần khởi động lại CHỈ khi cờ giải BẬT: cờ TẮT thì lượt khởi động kết thúc chúng thành
+# `interrupted` (tinh_nang_giai_tat). Cờ đọc từ ~/.config/videodl/env (run-service.sh nạp file đó) — chỉ ĐẾM dòng bật,
+# không in nội dung (file có secret).
+cho_xm="$(ssh "$HOST" "sqlite3 ~/$REMOTE_REPO/web/data/jobs.db \"SELECT COUNT(*) FROM jobs WHERE trang_thai = 'cho_xac_minh'\"")" || cho_xm=""
+case "$cho_xm" in
+  ''|*[!0-9]*)
+    echo "DỪNG: không đọc được số job Cần xác minh (nhận: '$cho_xm') — PHÉP ĐO HỎNG." >&2
+    exit "$RC_DO_HONG" ;;
+esac
+echo "   job Cần xác minh: $cho_xm"
+if [ "$cho_xm" != "0" ]; then
+  co_bat="$(ssh "$HOST" "grep -cE '^VIDEODL_PROFILE_CAPTCHA=(1|true|yes|on)\$' ~/.config/videodl/env || true")" || co_bat=""
+  case "$co_bat" in
+    ''|*[!0-9]*)
+      echo "DỪNG: không đọc được cờ giải trên máy đích (nhận: '$co_bat') — PHÉP ĐO HỎNG." >&2
+      exit "$RC_DO_HONG" ;;
+  esac
+  if [ "$co_bat" = "0" ]; then
+    echo "DỪNG: $cho_xm job Cần xác minh nhưng cờ VIDEODL_PROFILE_CAPTCHA trên máy đích không bật —" >&2
+    echo "      khởi động lại sẽ chuyển chúng thành 'interrupted'. Bật cờ, hoặc đợi chúng xong/hết hạn." >&2
+    exit "$RC_GIAI_SE_MAT"
+  fi
+  echo "   cờ giải BẬT ⇒ $cho_xm job Cần xác minh giữ nguyên sau khởi động lại"
 fi
 
 if [ "$THAT" -eq 0 ]; then
