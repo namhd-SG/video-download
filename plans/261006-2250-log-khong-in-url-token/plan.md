@@ -1,6 +1,6 @@
 # Plan — log không in URL nguồn / thông điệp lỗi thô / token khung (ĐP-1115 duyệt hướng)
 
-Trạng thái: **v2 — agy KHÉP R2b 22:52; ĐP-1121 DUYỆT; đã code (1623 passed, 4/4 đột biến ĐỎ).** Lane V 9b0abf0b,
+Trạng thái: **v3 — agy KHÉP R3b 23:18 (sau reviewer vòng 1); ĐP-1128 chọn (B); đã code (1627 passed, 7/7 đột biến ĐỎ).** Lane V 9b0abf0b,
 worktree `~/Projects/video-download-wt-log-tai`, nhánh `fix/log-khong-in-url-token` từ origin/main `5b21567`.
 
 ## 1. Đo (log mini 57 473 dòng, từ 21/09; code 5b21567)
@@ -51,3 +51,25 @@ D4. Không đổi DB, API, hành vi tải/quét.
 ## 4. Câu hỏi mở
 0. (v2) Mở rộng D2 sang toàn bộ chỗ in `exc`/`reason` thô ở §1 thay vì chỉ 2 dòng ĐP-1115 nêu — cùng nguyên tắc, cùng một hàm.
 1. "+ job_id" ở dòng scraping (D1): bỏ (đề xuất) hay thêm tham số `job_id` xuống `scrape_music_page_multi`?
+
+## 5. v3 — sửa tận gốc (ĐP-1128 chọn (B) sau code-reviewer vòng 1)
+Lỗ có từ trước, reviewer bắt (đếm log mini từ 21/09):
+- `web/queue.py:702` `log.exception("job %s crashed")`: traceback in `str(exc)`; `page.goto` lần 1 (`scraper.py:529`) timeout/proxy
+  ⇒ Call log `navigating to "https://www.tiktok.com/@…"` lên ERROR. Đếm: `crashed` 0, `navigating to` 0 (chưa từng lộ).
+- yt-dlp ghi THẲNG stderr (không có `logger` trong `_ydl_opts`; launchd gom vào cùng file). Đếm: 56 dòng `ERROR: [`, 2 có
+  `tiktok.com` (chỉ host), 0 có `/@`.
+- `exc_info`/`log.exception` khác: `queue.py:654,734,870,877,926,934`, `vao_bo_lap.py:79,89`.
+D5. `CheUrlFormatter(logging.Formatter)`: `format()` = `super().format(record)` (đã gồm `exc_text`/traceback) rồi che bằng cùng
+    hàm che (KHÔNG cắt độ dài). Gắn cho MỌI handler của root (`_dat_dinh_dang_log`) và của `uvicorn`, `uvicorn.access`,
+    `uvicorn.error` (`_dong_dau_thoi_gian_vao_uvicorn`, thay `logging.Formatter` hiện có — cùng chuỗi định dạng). Test đo: sau
+    khi gắn, mọi handler của 4 logger đó là `CheUrlFormatter`.
+D6. yt-dlp: `_ydl_opts` thêm `"logger": log` (logger `ttmd`, propagate root ⇒ qua D5) ⇒ không ghi stderr thô.
+D7. Regex sửa (ĐP-1128): URL có scheme (thường/mã hoá) che tới khoảng trắng/`"'<>(),`; dạng không scheme chỉ che khi `www.<host>/…`
+    (có đường dẫn) ⇒ `host='www.tiktok.com'` GIỮ; không ăn `)` `,`. `che_url(text, toi_da=300)` giữ cho từng dòng; Formatter
+    dùng bản không cắt.
+D8. Không ai đọc dạng dòng `✗` ngoài repo (đo mini CHỈ ĐỌC 06/10 23:1x): crontab 0 dòng lệnh; LaunchAgents 6 plist, chỉ
+    `com.astronex.videodl` nhắc `videodl.log` (đường ghi của launchd); `deploy/*.sh`, `scripts/*` không grep `✗`;
+    `scripts/do-nghiem-thu-t4.sh:111` chỉ in 20 dòng cuối có dấu thời gian.
+Kiểm thêm: (1) `process_job` gặp `PWTimeout` có Call log ⇒ đầu ra qua handler gắn `CheUrlFormatter` (cả traceback) không có
+`/@`/`http`; đột biến Formatter trả `super().format` ⇒ ĐỎ. (2) `host='www.tiktok.com'` giữ; `(https://…), next` giữ `)` và
+`, next`. (3) `_ydl_opts` có `logger`.

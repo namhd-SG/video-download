@@ -155,3 +155,76 @@ def test_bo_loc_gan_vao_logger_uvicorn_access_mot_lan():
         assert sum(isinstance(f, CheTokenAccessLog) for f in lg.filters) == 1
     finally:
         lg.filters = truoc
+
+
+# ---------------------------------------------------------------- v3: một lưới chung ở formatter (ĐP-1128)
+
+def test_che_url_giu_host_tran_va_dau_dong():
+    """Host được phép giữ; không ăn `)` `,` theo sau URL."""
+    host = "HTTPSConnectionPool(host='www.tiktok.com', port=443): Read timed out. (read timeout=20)"
+    assert che_url(host) == host
+    assert che_url(f"see (https://www.tiktok.com/@{HANDLE}/video/1), next") == "see (<url>), next"
+    assert che_url(f"www.tiktok.com/@{HANDLE}/x") == "<url>"
+
+
+def test_formatter_che_ca_traceback_cua_process_job(tmp_path, monkeypatch):
+    """`page.goto` lần đầu quá giờ ⇒ `log.exception("job %s crashed")` in traceback có Call log mang URL hồ sơ.
+    ĐỘT BIẾN: formatter trả nguyên `super().format` ⇒ ĐỎ."""
+    import io
+
+    from web import models
+    from web import queue as queue_mod
+    from web.app import CheUrlFormatter
+
+    try:
+        from playwright.sync_api import TimeoutError as PWTimeout
+    except ImportError:  # pragma: no cover
+        PWTimeout = TimeoutError
+
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    job = models.get_job(db_path, models.create_job(db_path, URL_HO_SO, 5, "a"))
+
+    def goto_qua_gio(*a, **kw):
+        raise PWTimeout(CALL_LOG)
+
+    monkeypatch.setattr(queue_mod, "_fetch_refs", goto_qua_gio)
+    ra = io.StringIO()
+    h = logging.StreamHandler(ra)
+    h.setFormatter(CheUrlFormatter("%(levelname)s %(name)s: %(message)s"))
+    lg = logging.getLogger("videodl.web")
+    lg.addHandler(h)
+    try:
+        queue_mod.process_job(db_path, tmp_path / "dl", tmp_path / "ck", job)
+    finally:
+        lg.removeHandler(h)
+    text = ra.getvalue()
+    assert "crashed" in text and "Traceback" in text and "Timeout 30000ms exceeded." in text, text
+    _sach(text)
+
+
+def test_formatter_gan_vao_moi_handler_root_va_uvicorn():
+    from web import app as app_mod
+
+    root = logging.getLogger()
+    cu_root = list(root.handlers)
+    cu_lv = root.level
+    ten_uv = ("uvicorn", "uvicorn.access", "uvicorn.error")
+    cu_uv = {t: list(logging.getLogger(t).handlers) for t in ten_uv}
+    try:
+        app_mod._dat_dinh_dang_log()
+        for t in ten_uv:
+            logging.getLogger(t).handlers = [logging.StreamHandler()]
+        app_mod._dong_dau_thoi_gian_vao_uvicorn()
+        hs = list(root.handlers) + [h for t in ten_uv for h in logging.getLogger(t).handlers]
+        assert hs and all(isinstance(h.formatter, app_mod.CheUrlFormatter) for h in hs)
+    finally:
+        root.handlers = cu_root
+        root.setLevel(cu_lv)
+        for t, hs in cu_uv.items():
+            logging.getLogger(t).handlers = hs
+
+
+def test_ytdlp_ghi_qua_logger_khong_ghi_stderr(tmp_path):
+    opts = downloader._ydl_opts(tmp_path, None, None)
+    assert opts.get("logger") is logging.getLogger("ttmd")

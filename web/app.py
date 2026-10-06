@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
-from tiktok_music_downloader.utils import is_tiktok_collection
+from tiktok_music_downloader.utils import che_url, is_tiktok_collection
 from web import giai_captcha
 from web import giai_captcha_api
 from web import models
@@ -50,6 +50,19 @@ from web.queue import JobWorker
 from web.vao_bo_lap import LapVaoBo
 
 log = logging.getLogger("videodl.web")
+
+
+_DINH_DANG_LOG = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+_DINH_DANG_GIO = "%Y-%m-%d %H:%M:%S"
+
+
+class CheUrlFormatter(logging.Formatter):
+    """Formatter che URL và `/@handle` trên CHUỖI ĐÃ ĐỊNH DẠNG — gồm cả traceback (`exc_text`), nơi thông điệp
+    Playwright/yt-dlp mang "Call log … navigating to <url hồ sơ>". Một lưới chung cho mọi dòng đi qua handler,
+    kể cả `log.exception` ở bất kỳ đâu; không cắt độ dài (traceback phải còn đủ để chẩn đoán)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return che_url(super().format(record), toi_da=None)
 
 
 def _dat_dinh_dang_log() -> None:
@@ -78,12 +91,9 @@ def _dat_dinh_dang_log() -> None:
     Phần vá thật nằm ở `_dong_dau_thoi_gian_vao_uvicorn()`, gọi trong
     `_lifespan` (chạy SAU cấu hình của uvicorn).
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True,
-    )
+    logging.basicConfig(level=logging.INFO, force=True)
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(CheUrlFormatter(_DINH_DANG_LOG, _DINH_DANG_GIO))
 
 
 def _dong_dau_thoi_gian_vao_uvicorn() -> None:
@@ -99,8 +109,7 @@ def _dong_dau_thoi_gian_vao_uvicorn() -> None:
     `%(levelprefix)s` của uvicorn là formatter riêng của nó (kèm mã màu); thay
     bằng `%(levelname)s` để dòng đọc được trong tệp, nơi mã màu chỉ là rác.
     """
-    dinh_dang = logging.Formatter(
-        "%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    dinh_dang = CheUrlFormatter(_DINH_DANG_LOG, _DINH_DANG_GIO)
     for ten in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         for handler in logging.getLogger(ten).handlers:
             handler.setFormatter(dinh_dang)

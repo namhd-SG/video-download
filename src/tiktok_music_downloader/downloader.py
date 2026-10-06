@@ -59,6 +59,9 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        # Không có `logger` thì yt-dlp ghi THẲNG stderr (launchd gom vào cùng tệp log), bỏ qua formatter che URL
+        # của lớp web. Qua logger `ttmd` ⇒ propagate root ⇒ đi qua formatter đó.
+        "logger": log,
         "concurrent_fragment_downloads": 1,
         "retries": 2,
         "fragment_retries": 2,
