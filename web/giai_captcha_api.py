@@ -42,7 +42,7 @@ _THONG_DIEP_SAI_TRANG_THAI = {
 
 class ChuotBody(BaseModel):
     token: str
-    ky: StrictInt | None = None     # bắt buộc (thiếu ⇒ 400 "popup cũ"); Optional để báo lỗi rõ thay vì 422
+    ky: StrictInt | None = None     # bắt buộc (thiếu ⇒ 401 "popup cũ"); Optional để báo lỗi rõ thay vì 422
     seq: StrictInt
     khung_w: float
     khung_seq: StrictInt | None = None

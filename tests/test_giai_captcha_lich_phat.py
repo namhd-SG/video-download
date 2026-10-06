@@ -539,6 +539,19 @@ def test_phien_tao_lai_trong_luot_khong_lui_ky():
         gc._PHIEN.clear()
 
 
+def test_bo_dem_ky_moi_tien_trinh_bat_dau_cao_hon_lan_truoc():
+    """Kỳ phải tăng QUA lần khởi động lại tiến trình: bộ đếm mới (như sau restart) bắt đầu lớn hơn mọi kỳ bộ đếm cũ đã
+    cấp, nên một tab cũ còn giữ kỳ cao không gặp phiên mới kỳ thấp hơn — với điều kiện tiến trình cũ cấp ít kỳ hơn số
+    mili-giây đã trôi (nhịp người: vài kỳ, restart mất giây). Ở đây 3 kỳ rồi restart sau 10 ms.
+    ĐỘT BIẾN: hạt giống 0 ⇒ ĐỎ."""
+    import time
+    cu = gc._tao_dem_ky()
+    da_cap = [next(cu) for _ in range(3)]
+    time.sleep(0.01)
+    moi = gc._tao_dem_ky()
+    assert next(moi) > max(da_cap)
+
+
 def test_lo_ky_cu_seq_nho_bi_ky_cu_khong_phai_trung(dh):
     """Lô kỳ cũ có `seq` nhỏ hơn `expected_seq` của kỳ MỚI ⇒ 409 `ky_cu`, không phải 200 "trung" (200 làm popup chưa học
     kỳ xoá lô khỏi Set ⇒ cú kéo mất không được báo). ĐỘT BIẾN: kiểm kỳ SAU nhánh "trung" ⇒ ĐỎ."""
