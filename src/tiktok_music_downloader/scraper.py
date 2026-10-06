@@ -539,7 +539,8 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
         except PWTimeout as exc:
             # Lượt mở lại quá giờ: giữ kết quả như chưa vá (lượt chạy tiếp với
             # những gì lượt đầu có), đừng biến một job "0 video" thành "failed".
-            log.warning("[ham-phien] lan=2 feed=%s goto timed out: %s", feed, exc)
+            # Chỉ tên lớp: thông điệp timeout của Playwright kèm "Call log" có URL hồ sơ (handle khách).
+            log.warning("[ham-phien] lan=2 feed=%s goto timed out (%s)", feed, type(exc).__name__)
             so_link = -1
         # Một dòng đếm được để đo tần suất trên mini: grep "[ham-phien]".
         log.info("[ham-phien] lan=2 feed=%s bytes=%d links=%d", feed,

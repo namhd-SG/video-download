@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from types import SimpleNamespace
@@ -755,7 +756,8 @@ def test_guard_chan_che_do_chan_ca_duong_dan_khac_va_host_khac(caplog):
     assert all(p["responseCode"] == 204 for p in ful)
     assert g.so_chan == 2
     texto = "\n".join(r.getMessage() for r in caplog.records)
-    assert "BIMAT" not in texto and "path=/@nguoi.khac" in texto
+    # Chỉ host + LOẠI đường dẫn (USER CHỐT 06/10): handle/id video không bao giờ vào log.
+    assert "BIMAT" not in texto and "loai=profile" in texto and "nguoi.khac" not in texto
 
 
 def test_guard_che_do_log_cho_qua_duong_dan_khac_cung_mien_nhung_ghi_log_va_chan_khac_mien(caplog):
@@ -765,7 +767,7 @@ def test_guard_che_do_log_cho_qua_duong_dan_khac_cung_mien_nhung_ghi_log_va_chan
         _tam_dung(g, "https://evil.example/", rid="r2")
     assert [m for m, _ in cdp.goi] == ["Fetch.continueRequest", "Fetch.fulfillRequest"]
     texto = "\n".join(r.getMessage() for r in caplog.records)
-    assert "host=www.tiktok.com path=/verify/page" in texto and "SECRET" not in texto
+    assert "host=www.tiktok.com loai=khac" in texto and "/verify/page" not in texto and "SECRET" not in texto
 
 
 def test_guard_iframe_va_request_khong_phai_document_luon_continue_khong_bo_sot():
@@ -1171,3 +1173,86 @@ def test_chon_ua_job_hong_van_dong_phien_bo_khoi_so_va_job_ve_cho_xac_minh(monke
     assert gc.lay_phien(h.jid) is None, "phiên phải rời sổ"
     assert phien.da_dong
     assert h.tt() == "cho_xac_minh"
+
+
+# ---------------------------------------------------------------------------
+# Log đo mỗi lượt (USER CHỐT 06/10): số để bàn trần "Tôi giải ngay" — KHÔNG mang dữ liệu khách
+# ---------------------------------------------------------------------------
+
+_CAM_TRONG_LOG = re.compile(r"token=|https?://|\d{15,}|driveId|nguoi\.dung|/@")
+
+
+def _dong_giai(caplog):
+    return [r.getMessage() for r in caplog.records if r.getMessage().startswith("[giai]")]
+
+
+def _khong_lo(caplog):
+    """Quét MỌI bản ghi của lượt (mọi logger, mọi tiền tố), không chỉ dòng `[giai]`."""
+    lo = [r.getMessage() for r in caplog.records if _CAM_TRONG_LOG.search(r.getMessage())]
+    assert lo == [], f"log mang token/URL/id/handle: {lo}"
+
+
+def test_log_luot_giai_co_so_do_va_kiem_sau_giai_van_chan(monkeypatch, db, caplog):
+    h, rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=True)])
+    h.trang.kich_ban = [(0.1, lambda: (h.nguoi.gui(("down", 10, 10, 1)), h.nguoi.gui(("move", 20, 10, 1)),
+                                       h.nguoi.gui(("up", 20, 10, 0)))),
+                        (0.6, h.lenh("da_giai"))]
+    with caplog.at_level(logging.INFO):
+        h.chay()
+    dong = _dong_giai(caplog)
+    ket = [d for d in dong if "vòng giải kết thúc" in d]
+    assert len(ket) == 1
+    for truong in ("luot=1/3", "so_phat=3", "gesture_nop=1", "tre_phat_p50_ms=", "tre_phat_p95_ms=",
+                   "tre_phat_max_ms=", "popup_huy=0", "huy_khac=0", "mo_s="):
+        assert truong in ket[0], (truong, ket[0])
+    kiem = [d for d in dong if "kiểm sau giải" in d]
+    assert kiem == [f"[giai] job {h.jid}: kiểm sau giải luot=1/3 ket_qua=van_chan so_trang=1"]
+    _khong_lo(caplog)
+
+
+def test_log_kiem_sau_giai_qua(monkeypatch, db, caplog):
+    h, rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)], ra=[_ref("111")])
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        h.chay()
+    kiem = [d for d in _dong_giai(caplog) if "kiểm sau giải" in d]
+    assert len(kiem) == 1 and "ket_qua=qua" in kiem[0]
+
+
+def test_log_kiem_sau_giai_khi_quet_nem_chi_ghi_ten_lop(monkeypatch, db, caplog):
+    """Mọi lối ra ghi đúng MỘT dòng; ngoại lệ chỉ để lại TÊN LỚP, không thông điệp (có thể mang URL)."""
+    h, rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)])
+
+    def hong(*a, **k):
+        raise RuntimeError("https://www.tiktok.com/@nguoi.dung/video/7692740350766517525 hỏng")
+
+    monkeypatch.setattr(worker.scraper, "quet_tren_trang", hong)
+    with caplog.at_level(logging.INFO):
+        h.chay()
+    dong = _dong_giai(caplog)
+    kiem = [d for d in dong if "kiểm sau giải" in d]
+    assert len(kiem) == 1 and "ket_qua=loi:RuntimeError" in kiem[0]
+    _khong_lo(caplog)
+
+
+def test_log_popup_huy_dem_ca_luc_khong_nhan_nut(monkeypatch, db, caplog):
+    """`popup_huy` đếm mọi lệnh huỷ của popup; `gesture_bo_do` chỉ khi nút đang nhấn (dẫn tới tải lại)."""
+    h = Hien(monkeypatch, db)
+    h.trang.kich_ban = [(0.1, lambda: h.phien.huy_gesture(gc.LY_DO_HUY_POPUP)), (0.5, h.lenh("dung"))]
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        h.chay()
+    ket = [d for d in _dong_giai(caplog) if "vòng giải kết thúc" in d]
+    assert len(ket) == 1 and "popup_huy=1" in ket[0] and "gesture_bo_do=0" in ket[0]
+
+
+def test_log_duong_dan_chi_ghi_loai_khong_ghi_path(monkeypatch, db, caplog):
+    h = Hien(monkeypatch, db)
+
+    def mo():
+        h.ctx.mo_trang_moi("https://www.tiktok.com/@khach.hang/video/7692740350766517525")
+
+    h.trang.kich_ban = [(0.1, mo), (0.2, h.lenh("dung"))]
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        h.chay()
+    dong = _dong_giai(caplog)
+    assert any("đóng trang mới host=www.tiktok.com loai=video" in d for d in dong), dong
+    assert not any("khach.hang" in d or "7692740350766517525" in d for d in dong)

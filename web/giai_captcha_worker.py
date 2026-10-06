@@ -41,6 +41,17 @@ LOAI_CHO_XAC_MINH = "cho_xac_minh"
 LOAI_FAILED = "failed"
 
 
+def _loai_duong_dan(path: str | None) -> str:
+    """Loại trang của một đường dẫn để LOG — không bao giờ in chính đường dẫn: nó mang handle hồ sơ và id
+    video của khách (USER CHỐT 06/10 "log không in id video", thay ĐP-592 "host + đường dẫn")."""
+    p = path or ""
+    if "/video/" in p or "/photo/" in p:
+        return "video"
+    if p.startswith("/@"):
+        return "profile"
+    return "khac"
+
+
 @dataclass
 class KetQuaGiai:
     loai: str                          # LOAI_*
@@ -115,9 +126,9 @@ class GacDieuHuong:
             chan = (not self._la_cung_mien(url)
                     or (self.che_do == gc.DIEU_HUONG_CHAN and not self._la_dich_ban_dau(url)))
             if not self._la_dich_ban_dau(url):
-                # Chỉ host + đường dẫn, KHÔNG query (ĐP-592).
-                log.info("[giai] điều hướng main-frame host=%s path=%s %s",
-                         sp.hostname, sp.path, "CHẶN" if chan else "cho qua (chế độ log)")
+                # Chỉ host + LOẠI đường dẫn, không đường dẫn, không query (ĐP-592 → USER CHỐT 06/10).
+                log.info("[giai] điều hướng main-frame host=%s loai=%s %s",
+                         sp.hostname, _loai_duong_dan(sp.path), "CHẶN" if chan else "cho qua (chế độ log)")
             if chan:
                 self.so_chan += 1
                 self.cdp.send("Fetch.fulfillRequest", {"requestId": rid, "responseCode": 204,
@@ -125,8 +136,8 @@ class GacDieuHuong:
             else:
                 self.so_cho_qua += 1 if not self._la_dich_ban_dau(url) else 0
                 self.cdp.send("Fetch.continueRequest", {"requestId": rid})
-        except Exception:  # noqa: BLE001 — request đã tạm dừng thì phải được giải quyết, không treo trang
-            log.warning("[giai] xử lý request tạm dừng lỗi — thử chặn", exc_info=True)
+        except Exception as exc:  # noqa: BLE001 — request đã tạm dừng thì phải được giải quyết, không treo trang
+            log.warning("[giai] xử lý request tạm dừng lỗi (%s) — thử chặn", type(exc).__name__)
             try:
                 self.cdp.send("Fetch.failRequest", {"requestId": rid, "errorReason": "BlockedByClient"})
             except Exception:  # noqa: BLE001
@@ -145,9 +156,10 @@ class GacDieuHuong:
             if la:
                 self.trang_la = True
                 sp = urlsplit(url)
-                log.warning("[giai] trang đã rời miền/đường dẫn: host=%s path=%s", sp.hostname, sp.path)
-        except Exception:  # noqa: BLE001
-            log.debug("[giai] frameNavigated lỗi", exc_info=True)
+                log.warning("[giai] trang đã rời miền/đường dẫn: host=%s loai=%s", sp.hostname,
+                            _loai_duong_dan(sp.path))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[giai] frameNavigated lỗi (%s)", type(exc).__name__)
 
 
 def _bat_khung(cdp, phien: gc.PhienGiai, guard: GacDieuHuong) -> None:
@@ -155,8 +167,8 @@ def _bat_khung(cdp, phien: gc.PhienGiai, guard: GacDieuHuong) -> None:
         try:
             if not guard.trang_la:
                 phien.dat_khung(p["data"], p.get("metadata") or {})
-        except Exception:  # noqa: BLE001
-            log.debug("[giai] ghi khung lỗi", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[giai] ghi khung lỗi (%s)", type(exc).__name__)
         finally:
             try:
                 cdp.send("Page.screencastFrameAck", {"sessionId": p["sessionId"]})
@@ -179,13 +191,13 @@ class _DongTrangMoi:
         self.so_dong += 1
         try:
             sp = urlsplit(trang.url)
-            log.info("[giai] đóng trang mới host=%s path=%s", sp.hostname, sp.path)
+            log.info("[giai] đóng trang mới host=%s loai=%s", sp.hostname, _loai_duong_dan(sp.path))
         except Exception:  # noqa: BLE001
             pass
         try:
             trang.close()
-        except Exception:  # noqa: BLE001
-            log.debug("[giai] đóng trang mới lỗi", exc_info=True)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("[giai] đóng trang mới lỗi (%s)", type(exc).__name__)
 
 
 def _ve_trang_profile(page, profile_url: str, ref_path: str) -> None:
@@ -256,21 +268,48 @@ def _vong_giai(page, cdp, phien: gc.PhienGiai, guard: GacDieuHuong, profile_url:
         page.wait_for_timeout(ms)
 
 
+def _nhan_luot(job: dict) -> str:
+    """`k/TRẦN` — lượt "Tôi giải ngay" thứ mấy (bộ đếm đã tăng khi người bấm, trước khi worker nhận job)."""
+    return f"{int(job.get('so_lan_giai_ngay') or 0)}/{gc.TRAN_GIAI_NGAY}"
+
+
 def _quet_sau_giai(page, cdp, guard, phien, db_path: Path, job: dict, profile_url: str,
                    max_videos: int) -> KetQuaGiai:
+    """Bọc `_quet_sau_giai_than` để MỌI lối ra (kể cả ngoại lệ) ghi đúng một dòng "kiểm sau giải"."""
+    ket_qua = "loi_chua_ro"
+    so_trang = {"n": int(job.get("so_trang") or 0)}
+    try:
+        kq = _quet_sau_giai_than(page, cdp, guard, phien, db_path, job, profile_url, max_videos, so_trang)
+        if kq.loai == LOAI_REFS:
+            ket_qua = "qua"
+        elif kq.ly_do == gc.LD_CAPTCHA_CHUA_XONG:
+            ket_qua = "van_chan"
+        else:
+            ket_qua = kq.ly_do or "khac"
+        return kq
+    except Exception as exc:
+        ket_qua = f"loi:{type(exc).__name__}"
+        raise
+    finally:
+        log.info("[giai] job %s: kiểm sau giải luot=%s ket_qua=%s so_trang=%d",
+                 job["id"], _nhan_luot(job), ket_qua, so_trang["n"])
+
+
+def _quet_sau_giai_than(page, cdp, guard, phien, db_path: Path, job: dict, profile_url: str,
+                        max_videos: int, so_trang: dict) -> KetQuaGiai:
     """Sau lệnh `da_giai`. Thứ tự CỐ ĐỊNH (ĐP-606): tắt screencast → nhả khoá + đóng SSE khung →
     ĐỔI sang `running` → tải lại trang ĐÚNG MỘT lần (lệnh của người) → nếu còn dấu hiệu bị chặn
     thì DỪNG, không `_auto_scroll` → ngược lại quét MỘT lượt như `bfbafc1`."""
     job_id = job["id"]
     try:
         cdp.send("Page.stopScreencast")
-    except Exception:  # noqa: BLE001 — tắt trượt thì ctx đóng cũng dừng; không chặn việc quét
-        log.debug("[giai] Page.stopScreencast lỗi", exc_info=True)
+    except Exception as exc:  # noqa: BLE001 — tắt trượt thì ctx đóng cũng dừng; không chặn việc quét
+        log.debug("[giai] Page.stopScreencast lỗi (%s)", type(exc).__name__)
     try:
         guard.tat()
         cdp.detach()
-    except Exception:  # noqa: BLE001
-        log.debug("[giai] gỡ ngăn điều hướng lỗi", exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("[giai] gỡ ngăn điều hướng lỗi (%s)", type(exc).__name__)
     phien.dong("running")
     if not phien.cho_sse_dong(gc.CHO_SSE_DONG_GIAY,
                               lambda g: page.wait_for_timeout(max(1.0, g * 1000))):
@@ -278,8 +317,6 @@ def _quet_sau_giai(page, cdp, guard, phien, db_path: Path, job: dict, profile_ur
                     gc.CHO_SSE_DONG_GIAY)
     if not mgc.chuyen_trang_thai(db_path, job_id, "dang_giai", "running", ly_do=None):
         return _cho_xac_minh("trang_thai_doi")
-
-    so_trang = {"n": int(job.get("so_trang") or 0)}
 
     def dem_trang() -> None:
         so_trang["n"] += 1
@@ -342,9 +379,18 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
     con_lai = gc.con_lai_tu_moc(mgc.vao_luc(db_path, job_id), gc.CUA_SO_GIAI_GIAY)
     phien.dat_trang_thai("dang_giai", con_lai)
 
-    ket, ly_do = _vong_giai(page, cdp, phien, guard, profile_url, gc.dong_ho() + con_lai)
-    log.info("[giai] job %s: vòng giải kết thúc (%s) — tre_qua_D=%d tre_phat_worker=%d D=%d ms "
+    luot = _nhan_luot(job)
+    bat_dau = gc.dong_ho()
+    ket, ly_do = _vong_giai(page, cdp, phien, guard, profile_url, bat_dau + con_lai)
+    sd = phien.so_do_luot()
+    # Chỉ job_id + số + nhãn cố định. `gesture_nop` là PROXY (số lần nhả chuột), KHÔNG phải số bước captcha.
+    log.info("[giai] job %s: vòng giải kết thúc (%s) — luot=%s mo_s=%.1f so_phat=%d "
+             "tre_phat_p50_ms=%s tre_phat_p95_ms=%s tre_phat_max_ms=%s popup_huy=%d huy_khac=%d "
+             "gesture_nop=%d tre_qua_D=%d tre_phat_worker=%d D=%d ms "
              "gesture_bo_do=%d tai_lai=%d trang_moi_dong=%d chan_dieu_huong=%d", job_id, ly_do or ket,
+             luot, gc.dong_ho() - bat_dau, sd["so_phat"],
+             sd["tre_phat_p50_ms"], sd["tre_phat_p95_ms"], sd["tre_phat_max_ms"],
+             sd["popup_huy"], sd["huy_khac"], sd["gesture_nop"],
              phien.tre_qua_d_tong(), phien.tre_phat_worker_tong(), phien.d_ms,
              phien.so_gesture_bo_do, phien.so_lan_tai_lai,
              trang_moi.so_dong, guard.so_chan)
@@ -367,9 +413,9 @@ def _dong_ctx(ctx, browser, profile_path: Path, dang_loi: bool) -> None:
             if browser is not None:
                 browser.close()
         except Exception as loi_dong:  # noqa: BLE001
-            log.warning("[giai] đóng context lỗi %s (%s: %s) — %s",
+            log.warning("[giai] đóng context lỗi %s (%s) — %s",
                         "sau lỗi gốc" if dang_loi else "sau khi đã có kết quả",
-                        type(loi_dong).__name__, loi_dong,
+                        type(loi_dong).__name__,
                         "giữ lỗi gốc" if dang_loi else "giữ kết quả")
     finally:
         scraper._nha_profile_dir(profile_path)
@@ -420,7 +466,7 @@ def chay_luot_giai(db_path: Path, job: dict, cookies_path: str | None, *,
             kq = _chay(db_path, job, phien, cookies_path, headless, ua, gc.che_do_dieu_huong())
         except Exception as exc:  # noqa: BLE001 — L13: lỗi trong `dang_*` ⇒ cho_xac_minh, luồng worker sống
             log.warning("[giai] job %s: lỗi trong lượt giải (%s) — về cho_xac_minh", job_id,
-                        type(exc).__name__, exc_info=True)
+                        type(exc).__name__)
             kq = _cho_xac_minh(gc.LD_LOI_TRINH_DUYET)
         if kq.loai == LOAI_CHO_XAC_MINH:
             if not mgc.chuyen_trang_thai(db_path, job_id, ("dang_mo", "dang_giai", "running"),

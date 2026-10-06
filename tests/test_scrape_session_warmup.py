@@ -87,7 +87,8 @@ class FakePage:
     def goto(self, url: str, **_kw) -> None:
         self.gotos.append(url)
         if self._timeout_on == len(self.gotos):
-            raise PWTimeout("Timeout 30000ms exceeded.")
+            # Như Playwright thật: thông điệp kèm "Call log" có URL đích (mang handle).
+            raise PWTimeout(f"Timeout 30000ms exceeded.\nCall log:\n  - navigating to \"{url}\"")
         visit = self.visits[len(self.gotos) - 1] if len(self.gotos) <= len(self.visits) else []
         for resp in visit:
             self.handler(resp)
@@ -146,7 +147,8 @@ def test_reopen_timeout_keeps_the_first_visit_result_instead_of_failing(caplog):
     assert len(page.gotos) == 2
     assert page.eval_on_selector_all("", "") == [STRAY_HREF]
     msgs = [r.getMessage() for r in caplog.records]
-    assert any("goto timed out" in m for m in msgs)
+    assert any("goto timed out (TimeoutError)" in m for m in msgs)
+    assert not any("http" in m or "/@" in m for m in msgs), "URL/handle không được vào log"
     assert "[ham-phien] lan=2 feed=search bytes=0 links=-1" in msgs
 
 

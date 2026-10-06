@@ -470,7 +470,8 @@ def test_che_do_log_cho_qua_duong_dan_khac_cung_mien_nhung_chan_khac_mien(luot, 
         _bam_css(luot, 50, 35)     # a1: /other cùng miền ⇒ cho qua + log host/path
         assert cho(lambda: trang.so_lan_tai("/other") == 1, 6), "chế độ LOG cho qua đường dẫn cùng miền"
     texto = "\n".join(r.getMessage() for r in caplog.records)
-    assert "path=/other" in texto and "host=127.0.0.1" in texto
+    # Chỉ host + LOẠI đường dẫn (USER CHỐT 06/10), không bao giờ chính đường dẫn.
+    assert "loai=khac" in texto and "/other" not in texto and "host=127.0.0.1" in texto
     assert "CHẶN" in texto and "cho qua (chế độ log)" in texto
 
 
