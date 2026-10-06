@@ -41,7 +41,9 @@ case "$cmd" in
                  if da_kickstart; then printf '2\t0\tcom.astronex.la\n'; fi ;;
       *) printf 'PID\tStatus\tLabel\n1\t0\tcom.astronex.videodl\n' ;;
     esac ;;
-  *sqlite3*)
+  # `that`: sqlite3 / grep cờ chạy THẬT trên jobs.db + env giả trong MOC_HOME — đo chính câu SELECT, không tự khai.
+  *sqlite3*|*VIDEODL_PROFILE_CAPTCHA*)
+    if [ "$KICH_BAN" = that ]; then HOME="$MOC_HOME" bash -c "$cmd"; exit $?; fi
     case "$KICH_BAN" in
       sqlite_loi) echo "Error: unable to open database file" >&2; exit 1 ;;
       ssh_chet_o_2b) exit 255 ;;
@@ -141,6 +143,63 @@ def test_co_job_dang_chay_la_3(clone):
     r = _chay(clone, "ban")
     assert r.returncode == 3, (r.returncode, r.stderr)
     assert "2 job đang chạy" in r.stderr
+
+
+def _home_that(tmp_path, trang_thai: list[str], co: str | None) -> Path:
+    """Home giả có jobs.db THẬT (mỗi hàng một trạng thái) và ~/.config/videodl/env (dòng cờ `co`, hoặc không có)."""
+    import sqlite3
+    h = tmp_path / "home"
+    db = h / "Projects/video-download/web/data/jobs.db"
+    db.parent.mkdir(parents=True)
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, trang_thai TEXT)")
+        c.executemany("INSERT INTO jobs (trang_thai) VALUES (?)", [(t,) for t in trang_thai])
+    env = h / ".config/videodl/env"
+    env.parent.mkdir(parents=True)
+    env.write_text("GDRIVE_SERVICE_ACCOUNT_FILE=/x\n" + (f"VIDEODL_PROFILE_CAPTCHA={co}\n" if co else ""), encoding="utf-8")
+    return h
+
+
+_KET_THUC = ["done", "failed", "interrupted", "cancelled"]
+
+
+@pytest.mark.skipif(shutil.which("sqlite3") is None, reason="cần sqlite3 CLI")
+@pytest.mark.parametrize("dang", ["pending", "running", "cho_giai", "dang_mo", "dang_giai", "trang_thai_moi_la"])
+def test_cong_chan_job_dang_chay_va_trang_thai_la(clone, tmp_path, dang):
+    """Câu SELECT THẬT: job đang chạy/đang giải (và trạng thái chưa ai xét) ⇒ chặn, mã 3. ĐỘT BIẾN: viết dạng liệt kê
+    (IN …) thay cho loại trừ ⇒ trạng thái lạ lọt ⇒ ĐỎ."""
+    r = _chay(clone, "that", MOC_HOME=str(_home_that(tmp_path, _KET_THUC + [dang], "1")))
+    assert r.returncode == 3, (r.returncode, r.stdout, r.stderr)
+    assert "1 job đang chạy" in r.stderr
+
+
+@pytest.mark.skipif(shutil.which("sqlite3") is None, reason="cần sqlite3 CLI")
+def test_cong_khong_chan_can_xac_minh_khi_co_bat(clone, tmp_path):
+    """Job "Cần xác minh" + `cancelled` không chặn deploy khi cờ BẬT (chúng giữ nguyên qua khởi động lại). ĐỘT BIẾN: bỏ
+    `cho_xac_minh` khỏi danh sách loại trừ ⇒ mã 3 ⇒ ĐỎ."""
+    r = _chay(clone, "that", MOC_HOME=str(_home_that(tmp_path, _KET_THUC + ["cho_xac_minh"] * 2, "1")))
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    assert "job đang chạy/chờ: 0" in r.stdout and "job Cần xác minh: 2" in r.stdout
+    assert "2 job Cần xác minh giữ nguyên" in r.stdout
+
+
+@pytest.mark.skipif(shutil.which("sqlite3") is None, reason="cần sqlite3 CLI")
+@pytest.mark.parametrize("co", [None, "0"])
+def test_cong_chan_can_xac_minh_khi_co_tat(clone, tmp_path, co):
+    """Có job "Cần xác minh" mà cờ trên máy đích TẮT (thiếu dòng, hoặc =0) ⇒ chặn mã 8: khởi động lại sẽ biến chúng thành
+    `interrupted`. ĐỘT BIẾN: bỏ kiểm cờ ⇒ mã 0 ⇒ ĐỎ."""
+    r = _chay(clone, "that", MOC_HOME=str(_home_that(tmp_path, ["done", "cho_xac_minh"], co)))
+    assert r.returncode == 8, (r.returncode, r.stdout, r.stderr)
+    assert "interrupted" in r.stderr
+
+
+@pytest.mark.skipif(shutil.which("sqlite3") is None, reason="cần sqlite3 CLI")
+def test_cong_khong_job_can_xac_minh_thi_khong_hoi_co(clone, tmp_path):
+    """Không có job "Cần xác minh" ⇒ không đọc cờ (cờ TẮT vẫn deploy được như trước)."""
+    log = tmp_path / "ssh.log"
+    r = _chay(clone, "that", ssh_log=log, MOC_HOME=str(_home_that(tmp_path, _KET_THUC, None)))
+    assert r.returncode == 0, (r.returncode, r.stdout, r.stderr)
+    assert "VIDEODL_PROFILE_CAPTCHA" not in log.read_text()
 
 
 def test_thu_kho_lanh_di_toi_2b_va_rc_0(clone):
