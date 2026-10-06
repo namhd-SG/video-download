@@ -19,6 +19,7 @@ from yt_dlp.utils import DownloadError
 
 from tiktok_music_downloader.phan_loai_loi import phan_loai_loi
 from tiktok_music_downloader.utils import (
+    che_url,
     JitterThrottle,
     VideoRef,
     adaptive_backoff,
@@ -41,6 +42,16 @@ BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
 
+class _YtdlpLog:
+    """Đích log của yt-dlp: mọi mức xuống DEBUG của `ttmd`. Lỗi tải được ghi ĐÚNG MỘT lần bởi dòng `✗`
+    của `download_all` (có phân loại tiktok/hệ thống, đã che URL); cảnh báo yt-dlp vốn đã tắt (`no_warnings`)."""
+
+    def debug(self, msg: str) -> None:
+        log.debug("yt-dlp: %s", msg)
+
+    info = warning = error = debug
+
+
 def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> dict:
     """yt-dlp options for TikTok no-watermark MP4."""
     opts: dict = {
@@ -58,6 +69,10 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        # Không có `logger` thì yt-dlp ghi THẲNG stderr (launchd gom vào cùng tệp log), bỏ qua formatter che URL.
+        # KHÔNG đưa thẳng `log`: yt-dlp gọi `logger.error` cho mọi lỗi tải (×3 vì retry) và `logger.warning` bất
+        # kể `no_warnings` ⇒ lỗi phía TikTok sẽ lên ERROR, trái với "lỗi TikTok chỉ WARNING" (queue `_ghi_loi`).
+        "logger": _YtdlpLog(),
         "concurrent_fragment_downloads": 1,
         "retries": 2,
         "fragment_retries": 2,
@@ -225,7 +240,7 @@ def download_all(
         try:
             cookiefile_tmp = _write_netscape_cookies(Path(cookies_path))
         except Exception as exc:  # noqa: BLE001
-            log.warning("could not load cookies for yt-dlp (%s) — continuing without", exc)
+            log.warning("could not load cookies for yt-dlp (%s) — continuing without", che_url(exc))
     opts = _ydl_opts(output_dir, proxy, str(cookiefile_tmp) if cookiefile_tmp else None)
     throttle = JitterThrottle(delay_seconds)
 
@@ -297,9 +312,9 @@ def download_all(
                 # thường của việc quét nguồn — WARNING, để ERROR dành cho lỗi
                 # thật của hệ thống. Không rõ loại nào thì mặc định ERROR.
                 if phan_loai_loi(exc) == "tiktok":
-                    log.warning("✗ %s: %s", ref.video_id, exc)
+                    log.warning("✗ %s: [tiktok] %s", ref.video_id, che_url(exc))
                 else:
-                    log.error("✗ %s: %s", ref.video_id, exc)
+                    log.error("✗ %s: [he_thong] %s", ref.video_id, che_url(exc))
                 note_info = {"loi": str(exc)}
                 if _looks_like_rate_limit(exc):
                     failure_streak += 1

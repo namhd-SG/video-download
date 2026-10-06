@@ -20,6 +20,8 @@ from playwright.sync_api import (
 )
 
 from tiktok_music_downloader.utils import (
+    che_url,
+    loai_nguon,
     STOP_ALREADY_OWNED,
     STOP_COMPLETE,
     STOP_HET_THOI_GIAN,
@@ -281,7 +283,7 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
                         "(%s). Chromium reports this both for a 0-byte body "
                         "and for a response it already dropped — this cannot "
                         "tell which.",
-                        marker, resp.status, exc,
+                        marker, resp.status, che_url(exc),
                     )
                     # Ô RIÊNG, không vào `rong`/`co_du_lieu` (không phân định
                     # được). Chỉ lượt hâm phiên đọc nó: không link + không feed
@@ -294,9 +296,9 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
                     # feed, so warning here would cry wolf on the healthy path
                     # — and a warning users learn to ignore protects nobody.
                     log.debug("feed %s: HTTP %d, body unreadable (%s)",
-                              marker, resp.status, exc)
+                              marker, resp.status, che_url(exc))
         except Exception as exc:  # noqa: BLE001 — never escape the listener
-            log.debug("feed watcher gave up on %s: %s", resp.url[:120], exc)
+            log.debug("feed watcher gave up on %s: %s", che_url(resp.url), che_url(exc))
 
     page.on("response", on_response)
 
@@ -640,8 +642,8 @@ def scrape_music_page(
     """
     ua = user_agent or random_user_agent()
     log.info(
-        "scraping %s (max=%d, headless=%s, proxy=%s, profile=%s)",
-        music_url,
+        "scraping host=%s loai=%s (max=%d, headless=%s, proxy=%s, profile=%s)",
+        urlsplit(music_url).hostname, loai_nguon(music_url),
         max_videos,
         headless,
         bool(proxy),
@@ -685,7 +687,7 @@ def scrape_music_page(
                     # chỉ là hệ quả, không được đè lỗi gốc đang bay (log + ném lại
                     # lỗi gốc ở cuối khối).
                     log.warning("đóng context lỗi sau lỗi gốc (%s: %s) — giữ lỗi gốc",
-                                type(loi_dong).__name__, loi_dong)
+                                type(loi_dong).__name__, che_url(loi_dong))
             finally:
                 _nha_profile_dir(profile_path)
 

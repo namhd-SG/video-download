@@ -106,6 +106,39 @@ class VideoRef:
         return f"{self.video_id}.mp4"
 
 
+# Log không được mang URL hay handle của khách (nguồn quét, thông điệp lỗi yt-dlp/Playwright có "Call log").
+# URL có scheme (thường hoặc mã hoá `https%3A%2F%2F`) che tới khoảng trắng/ngoặc/dấu phẩy — không ăn `)` `]` `,` theo sau.
+# Dạng không scheme chỉ che khi là `www.<host>/<đường dẫn>`: host trần (`host='www.tiktok.com'`) được phép giữ.
+# Handle: `@`/`%40` NGAY SAU `/`/`%2F` — bắt buộc có dấu gạch để không che email (`a@x.vn`); `@handle` trần trong Call
+# log luôn nằm trong một URL nên đã bị mẫu URL che.
+_KY_DUNG = r"[^\s\"'<>(),\[\]]"
+_MAU_URL = re.compile(rf"(?i)(?:https?://|https?%3A%2F%2F){_KY_DUNG}+|www\.[^\s\"'<>(),/]+/{_KY_DUNG}*")
+_MAU_HANDLE = re.compile(r"(?i)(?:/|%2F)(?:@|%40)[\w.\-]+")
+
+
+def che_url(text: object, toi_da: int | None = 300) -> str:
+    """Thông điệp để LOG: URL → `<url>`, `/@handle` → `/@<h>`, cắt `toi_da` ký tự (`None` = không cắt — dùng
+    cho formatter, nơi traceback phải còn đủ). Giữ phần chữ còn lại (mã lỗi, lý do): log là nơi duy nhất còn
+    thông điệp lỗi tải."""
+    s = _MAU_URL.sub("<url>", str(text))
+    s = _MAU_HANDLE.sub("/@<h>", s)
+    return s if toi_da is None or len(s) <= toi_da else s[:toi_da] + "…"
+
+
+def loai_nguon(url: str) -> str:
+    """Loại nguồn quét để LOG thay cho chính URL: `video|profile|music|tag|khac`."""
+    s = (url or "").lower()
+    if "/video/" in s or "/photo/" in s:
+        return "video"
+    if "/@" in s:
+        return "profile"
+    if "/music/" in s:
+        return "music"
+    if "/tag/" in s:
+        return "tag"
+    return "khac"
+
+
 def parse_video_url(url: str) -> VideoRef | None:
     """Extract video_id from a TikTok video URL. Returns None if no match."""
     m = _VIDEO_RE.match(url.strip())

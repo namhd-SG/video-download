@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -25,7 +26,7 @@ from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
-from tiktok_music_downloader.utils import is_tiktok_collection
+from tiktok_music_downloader.utils import che_url, is_tiktok_collection
 from web import giai_captcha
 from web import giai_captcha_api
 from web import models
@@ -49,6 +50,19 @@ from web.queue import JobWorker
 from web.vao_bo_lap import LapVaoBo
 
 log = logging.getLogger("videodl.web")
+
+
+_DINH_DANG_LOG = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+_DINH_DANG_GIO = "%Y-%m-%d %H:%M:%S"
+
+
+class CheUrlFormatter(logging.Formatter):
+    """Formatter che URL và `/@handle` trên CHUỖI ĐÃ ĐỊNH DẠNG — gồm cả traceback (`exc_text`), nơi thông điệp
+    Playwright/yt-dlp mang "Call log … navigating to <url hồ sơ>". Một lưới chung cho mọi dòng đi qua handler,
+    kể cả `log.exception` ở bất kỳ đâu; không cắt độ dài (traceback phải còn đủ để chẩn đoán)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return che_url(super().format(record), toi_da=None)
 
 
 def _dat_dinh_dang_log() -> None:
@@ -77,12 +91,9 @@ def _dat_dinh_dang_log() -> None:
     Phần vá thật nằm ở `_dong_dau_thoi_gian_vao_uvicorn()`, gọi trong
     `_lifespan` (chạy SAU cấu hình của uvicorn).
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-        force=True,
-    )
+    logging.basicConfig(level=logging.INFO, force=True)
+    for handler in logging.getLogger().handlers:
+        handler.setFormatter(CheUrlFormatter(_DINH_DANG_LOG, _DINH_DANG_GIO))
 
 
 def _dong_dau_thoi_gian_vao_uvicorn() -> None:
@@ -98,11 +109,36 @@ def _dong_dau_thoi_gian_vao_uvicorn() -> None:
     `%(levelprefix)s` của uvicorn là formatter riêng của nó (kèm mã màu); thay
     bằng `%(levelname)s` để dòng đọc được trong tệp, nơi mã màu chỉ là rác.
     """
-    dinh_dang = logging.Formatter(
-        "%(asctime)s %(levelname)s %(name)s: %(message)s", "%Y-%m-%d %H:%M:%S")
+    dinh_dang = CheUrlFormatter(_DINH_DANG_LOG, _DINH_DANG_GIO)
     for ten in ("uvicorn", "uvicorn.access", "uvicorn.error"):
         for handler in logging.getLogger(ten).handlers:
             handler.setFormatter(dinh_dang)
+
+
+_MAU_TOKEN_QUERY = re.compile(r"(?i)((?:^|[?&])token=)[^&#\s]*")
+
+
+class CheTokenAccessLog(logging.Filter):
+    """Che GIÁ TRỊ `token=` trong đường dẫn của dòng `uvicorn.access` (vd token khung giải
+    `/jobs/N/giai/khung?token=…`) — mọi route, để không route nào mang token lọt vào log.
+
+    uvicorn (h11/httptools) gọi `access_logger.info('%s - "%s %s HTTP/%s" %d', client, method,
+    path_with_query, http_version, status)` ⇒ `record.args` là tuple 5 phần tử; tuple bất biến nên
+    dựng lại cả tuple. Bản ghi khác dạng thì để nguyên."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) == 5 and isinstance(args[2], str):
+            record.args = (args[0], args[1], _MAU_TOKEN_QUERY.sub(r"\1<redacted>", args[2]), args[3], args[4])
+        return True
+
+
+def _che_token_trong_access_log() -> None:
+    """Gắn bộ lọc vào LOGGER `uvicorn.access` (không phải handler: đổi handler là đổi nơi dòng chảy tới).
+    Chạy trong `_lifespan`, SAU khi uvicorn dựng log config. Gắn đúng một lần."""
+    lg = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, CheTokenAccessLog) for f in lg.filters):
+        lg.addFilter(CheTokenAccessLog())
 
 
 _dat_dinh_dang_log()
@@ -204,6 +240,7 @@ async def _lifespan(app: FastAPI):
     # Trước mọi thứ khác: từ đây mọi dòng log phải có giờ, kể cả dòng do chính
     # bước khởi động bên dưới sinh ra.
     _dong_dau_thoi_gian_vao_uvicorn()
+    _che_token_trong_access_log()
     prepare_data_dir(DATA_DIR, DOWNLOADS_DIR, COOKIES_DIR, DB_PATH, COOKIE_TMP_DIR)
     # Dựng/di trú lược đồ TRƯỚC mọi thứ đọc nó. `worker.start()` cũng gọi
     # `init_db`, nhưng nó chạy SAU bước mồi admin bên dưới — và một cơ sở dữ

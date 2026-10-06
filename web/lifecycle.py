@@ -26,7 +26,7 @@ from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from tiktok_music_downloader.gdrive_upload import DriveUploader, UploadOutcome, UploadResult
-from tiktok_music_downloader.utils import VideoRef
+from tiktok_music_downloader.utils import VideoRef, che_url
 from tiktok_music_downloader.watermark import find_ffmpeg
 from web import models
 from web.cookies import cookie_identity
@@ -239,7 +239,7 @@ def _ensure_job_folder(job_id: int, uploader: UploaderLike,
         log.warning(
             "job %s: không tạo được thư mục Drive riêng (%s: %s) — upload thẳng "
             "vào thư mục Shared Drive gốc",
-            job_id, result.outcome.value, result.reason,
+            job_id, result.outcome.value, che_url(result.reason),
         )
         return None
 
@@ -669,11 +669,11 @@ def _upload_co_thu_lai(uploader: UploaderLike, path: Path,
             # biết vì sao video không lên được Drive.
             if lan_thu_lai:
                 log.warning("upload %s trượt sau %d lần thử lại (%s)",
-                            path.name, lan_thu_lai, result.reason)
+                            path.name, lan_thu_lai, che_url(result.reason))
             return result, lan_thu_lai
         lan_thu_lai += 1
         log.info("upload %s trượt (%s) — thử lại lần %d sau %.0fs",
-                 path.name, result.reason, lan_thu_lai, cho)
+                 path.name, che_url(result.reason), lan_thu_lai, cho)
         _cho_giua_lan_thu(cho)
         cho = min(cho * 2, DRIVE_RETRY_CHO_TOI_DA)
 
@@ -719,7 +719,7 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
             path.unlink()
         except OSError as exc:
             log.error("job %s: upload %s xong nhưng xoá local trượt: %s",
-                      job_id, ref.video_id, exc)
+                      job_id, ref.video_id, che_url(exc))
         else:
             log.info("job %s: %s lên Drive xong (driveId=%s), đã xoá local",
                       job_id, ref.video_id, result.drive_id)
@@ -727,6 +727,6 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
 
     log.warning(
         "job %s: %s CHƯA lên Drive (%s: %s) — GIỮ file local",
-        job_id, ref.video_id, result.outcome.value, result.reason,
+        job_id, ref.video_id, result.outcome.value, che_url(result.reason),
     )
     return result
