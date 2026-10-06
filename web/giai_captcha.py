@@ -317,7 +317,15 @@ def kiem_su_kien(raw: object, khung_w: float, khung_h: float, device_w: float) -
 # Bộ đếm KỲ toàn tiến trình: một lượt giải có thể trải NHIỀU đối tượng `PhienGiai` (phiên bị bỏ khi mọi SSE đóng lúc
 # `cho_giai` rồi tạo lại khi nối lại — `don_phien_roi`), mà popup chỉ nhận kỳ TĂNG. Đếm theo từng phiên thì phiên tạo
 # lại bắt đầu từ 0 ⇒ popup đang ở kỳ cao hơn bị `ky_cu` mọi lô tới hết lượt. Chỉ cần tăng ngặt, không cần liên tiếp.
-_DEM_KY = itertools.count()
+# Hạt giống = mili-giây hiện tại: kỳ vẫn tăng QUA các lần khởi động lại tiến trình (kẽ hẹp: restart xong, ai đó bấm
+# "Tôi giải ngay" trước khi tab cũ tự nối lại SSE ⇒ tab cũ vào lượt mới với kỳ cao). Điều kiện: tiến trình cũ cấp ÍT kỳ
+# hơn số mili-giây từ lúc nó khởi động tới lúc restart — luôn đúng ở nhịp người (một kỳ mỗi lần huỷ/phiên, cách nhau cỡ
+# giây; restart mất vài giây). ≈1,8e12 < 2^53: an toàn với số JS.
+def _tao_dem_ky() -> itertools.count:
+    return itertools.count(time.time_ns() // 1_000_000)
+
+
+_DEM_KY = _tao_dem_ky()
 
 
 def _ky_ke_tiep() -> int:
@@ -514,6 +522,7 @@ class PhienGiai:
                     if self._token_cuoi is not None:
                         self._huy_gesture_unlocked("doi_token")   # tính `ky_mat_nut` rồi mới xoá đệm, seq về 0
                     else:
+                        # Phòng thủ: token đầu tiên của phiên — trạng thái khởi tạo đã sạch sẵn (seq 0, đệm rỗng).
                         self.expected_seq = 0
                         self._cho_lo.clear()
                         self._cho_lo_tu = None
