@@ -1186,9 +1186,10 @@ def _dong_giai(caplog):
     return [r.getMessage() for r in caplog.records if r.getMessage().startswith("[giai]")]
 
 
-def _khong_lo(dong):
-    lo = [d for d in dong if _CAM_TRONG_LOG.search(d)]
-    assert lo == [], f"dòng [giai] mang token/URL/id/handle: {lo}"
+def _khong_lo(caplog):
+    """Quét MỌI bản ghi của lượt (mọi logger, mọi tiền tố), không chỉ dòng `[giai]`."""
+    lo = [r.getMessage() for r in caplog.records if _CAM_TRONG_LOG.search(r.getMessage())]
+    assert lo == [], f"log mang token/URL/id/handle: {lo}"
 
 
 def test_log_luot_giai_co_so_do_va_kiem_sau_giai_van_chan(monkeypatch, db, caplog):
@@ -1196,7 +1197,7 @@ def test_log_luot_giai_co_so_do_va_kiem_sau_giai_van_chan(monkeypatch, db, caplo
     h.trang.kich_ban = [(0.1, lambda: (h.nguoi.gui(("down", 10, 10, 1)), h.nguoi.gui(("move", 20, 10, 1)),
                                        h.nguoi.gui(("up", 20, 10, 0)))),
                         (0.6, h.lenh("da_giai"))]
-    with caplog.at_level(logging.INFO, logger="videodl.web"):
+    with caplog.at_level(logging.INFO):
         h.chay()
     dong = _dong_giai(caplog)
     ket = [d for d in dong if "vòng giải kết thúc" in d]
@@ -1206,7 +1207,7 @@ def test_log_luot_giai_co_so_do_va_kiem_sau_giai_van_chan(monkeypatch, db, caplo
         assert truong in ket[0], (truong, ket[0])
     kiem = [d for d in dong if "kiểm sau giải" in d]
     assert kiem == [f"[giai] job {h.jid}: kiểm sau giải luot=1/3 ket_qua=van_chan so_trang=1"]
-    _khong_lo(dong)
+    _khong_lo(caplog)
 
 
 def test_log_kiem_sau_giai_qua(monkeypatch, db, caplog):
@@ -1225,12 +1226,12 @@ def test_log_kiem_sau_giai_khi_quet_nem_chi_ghi_ten_lop(monkeypatch, db, caplog)
         raise RuntimeError("https://www.tiktok.com/@nguoi.dung/video/7692740350766517525 hỏng")
 
     monkeypatch.setattr(worker.scraper, "quet_tren_trang", hong)
-    with caplog.at_level(logging.INFO, logger="videodl.web"):
+    with caplog.at_level(logging.INFO):
         h.chay()
     dong = _dong_giai(caplog)
     kiem = [d for d in dong if "kiểm sau giải" in d]
     assert len(kiem) == 1 and "ket_qua=loi:RuntimeError" in kiem[0]
-    _khong_lo(dong)
+    _khong_lo(caplog)
 
 
 def test_log_popup_huy_dem_ca_luc_khong_nhan_nut(monkeypatch, db, caplog):
