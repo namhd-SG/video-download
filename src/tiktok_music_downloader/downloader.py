@@ -42,6 +42,16 @@ BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
 
+class _YtdlpLog:
+    """Đích log của yt-dlp: mọi mức xuống DEBUG của `ttmd`. Lỗi tải được ghi ĐÚNG MỘT lần bởi dòng `✗`
+    của `download_all` (có phân loại tiktok/hệ thống, đã che URL); cảnh báo yt-dlp vốn đã tắt (`no_warnings`)."""
+
+    def debug(self, msg: str) -> None:
+        log.debug("yt-dlp: %s", msg)
+
+    info = warning = error = debug
+
+
 def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> dict:
     """yt-dlp options for TikTok no-watermark MP4."""
     opts: dict = {
@@ -59,9 +69,10 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
-        # Không có `logger` thì yt-dlp ghi THẲNG stderr (launchd gom vào cùng tệp log), bỏ qua formatter che URL
-        # của lớp web. Qua logger `ttmd` ⇒ propagate root ⇒ đi qua formatter đó.
-        "logger": log,
+        # Không có `logger` thì yt-dlp ghi THẲNG stderr (launchd gom vào cùng tệp log), bỏ qua formatter che URL.
+        # KHÔNG đưa thẳng `log`: yt-dlp gọi `logger.error` cho mọi lỗi tải (×3 vì retry) và `logger.warning` bất
+        # kể `no_warnings` ⇒ lỗi phía TikTok sẽ lên ERROR, trái với "lỗi TikTok chỉ WARNING" (queue `_ghi_loi`).
+        "logger": _YtdlpLog(),
         "concurrent_fragment_downloads": 1,
         "retries": 2,
         "fragment_retries": 2,

@@ -164,6 +164,7 @@ def test_che_url_giu_host_tran_va_dau_dong():
     host = "HTTPSConnectionPool(host='www.tiktok.com', port=443): Read timed out. (read timeout=20)"
     assert che_url(host) == host
     assert che_url(f"see (https://www.tiktok.com/@{HANDLE}/video/1), next") == "see (<url>), next"
+    assert che_url(f"[https://www.tiktok.com/@{HANDLE}]") == "[<url>]"
     assert che_url(f"www.tiktok.com/@{HANDLE}/x") == "<url>"
 
 
@@ -225,6 +226,18 @@ def test_formatter_gan_vao_moi_handler_root_va_uvicorn():
             logging.getLogger(t).handlers = hs
 
 
-def test_ytdlp_ghi_qua_logger_khong_ghi_stderr(tmp_path):
+def test_ytdlp_khong_ghi_stderr_va_khong_day_loi_tiktok_len_error(tmp_path, caplog, capsys):
+    """Chạy yt-dlp THẬT với opts của downloader: cảnh báo và lỗi của nó không ra stderr thô, cũng không lên
+    WARNING/ERROR (dòng `✗` của download_all mới là nơi ghi lỗi, đúng mức). ĐỘT BIẾN: đưa thẳng `log` ⇒ ĐỎ."""
+    from yt_dlp import YoutubeDL
+    from yt_dlp.utils import DownloadError
+
     opts = downloader._ydl_opts(tmp_path, None, None)
-    assert opts.get("logger") is logging.getLogger("ttmd")
+    with caplog.at_level(logging.DEBUG, logger="ttmd"), YoutubeDL(opts) as ydl:
+        ydl.report_warning(f"canh bao https://www.tiktok.com/@{HANDLE}")
+        with pytest.raises(DownloadError):
+            ydl.report_error(f"[TikTok] 1: No video formats found https://www.tiktok.com/@{HANDLE}/video/1")
+    assert capsys.readouterr().err == "", "yt-dlp không được ghi thẳng stderr"
+    nang = [r for r in caplog.records if r.name == "ttmd" and r.levelno >= logging.WARNING]
+    assert nang == [], [r.getMessage() for r in nang]
+    assert any("No video formats found" in r.getMessage() for r in caplog.records), "vẫn có ở DEBUG để soi khi cần"

@@ -107,11 +107,11 @@ class VideoRef:
 
 
 # Log không được mang URL hay handle của khách (nguồn quét, thông điệp lỗi yt-dlp/Playwright có "Call log").
-# URL có scheme (thường hoặc mã hoá `https%3A%2F%2F`) che tới khoảng trắng/ngoặc/dấu phẩy — không ăn `)` `,` theo sau.
+# URL có scheme (thường hoặc mã hoá `https%3A%2F%2F`) che tới khoảng trắng/ngoặc/dấu phẩy — không ăn `)` `]` `,` theo sau.
 # Dạng không scheme chỉ che khi là `www.<host>/<đường dẫn>`: host trần (`host='www.tiktok.com'`) được phép giữ.
 # Handle: `@`/`%40` NGAY SAU `/`/`%2F` — bắt buộc có dấu gạch để không che email (`a@x.vn`); `@handle` trần trong Call
 # log luôn nằm trong một URL nên đã bị mẫu URL che.
-_KY_DUNG = r"[^\s\"'<>(),]"
+_KY_DUNG = r"[^\s\"'<>(),\[\]]"
 _MAU_URL = re.compile(rf"(?i)(?:https?://|https?%3A%2F%2F){_KY_DUNG}+|www\.[^\s\"'<>(),/]+/{_KY_DUNG}*")
 _MAU_HANDLE = re.compile(r"(?i)(?:/|%2F)(?:@|%40)[\w.\-]+")
 
