@@ -801,3 +801,55 @@ def test_huy_lap_lai_khong_phinh_bo_nho(dh):
         cao_nhat = max(cao_nhat, len(p._cho_lo))
         p.huy_gesture_cua_nguoi_giu(A_, CHU_, ky=p.ky)
     assert cao_nhat <= gc.CHO_LO_TOI_DA and len(p._cho_lo) == 0
+
+
+# ---------------------------------------------------------------------------
+# Số đo phát của một lượt (log mỗi lượt, USER CHỐT 06/10)
+# ---------------------------------------------------------------------------
+
+def test_tom_tat_tre_nearest_rank():
+    assert gc.tom_tat_tre([]) is None
+    assert gc.tom_tat_tre([0.25]) == (250, 250)
+    mau = [i / 1000 for i in range(1, 101)]          # 1..100 ms
+    assert gc.tom_tat_tre(mau) == (50, 95)
+    assert gc.tom_tat_tre(list(reversed(mau))) == (50, 95), "không phụ thuộc thứ tự vào"
+
+
+def test_bo_phat_ghi_moi_su_kien_da_phat_vao_thong_ke():
+    """ĐỘT BIẾN: bỏ `thong_ke.ghi` trong `den_han` ⇒ ĐỎ."""
+    tk = gc.ThongKePhat()
+    b = BoPhatLai(100.0, tk)
+    evs = chuoi_nguoi()
+    b.nhan_lo(evs, t_toi=1000.0)
+    ra = b.den_han(10_000.0)                          # muộn xa ⇒ phát hết
+    assert len(ra) == len(evs) == tk.so_phat
+    assert tk.gesture_nop == 1, "đúng một `up` đã phát"
+    assert len(tk.mau) == tk.so_phat and min(tk.mau) > 0
+
+
+def test_reservoir_giu_tran_va_lap_lai_duoc():
+    def chay():
+        tk = gc.ThongKePhat(tran=10, seed=0)
+        for i in range(1000):
+            tk.ghi(i / 1000, la_up=False)
+        return tk
+
+    a, b = chay(), chay()
+    assert a.so_phat == 1000 and len(a.mau) == 10 and a.mau == b.mau
+    assert a.tre_max == pytest.approx(0.999)
+
+
+def test_doi_token_khong_mat_so_do_phat():
+    """Đổi token thay bộ lịch, nhưng số đo của lượt phải cộng dồn (reservoir liền mạch)."""
+    p = PhienGiai(1, "chu@x.vn", d_ms=0.0)
+    assert p.nhan_khoa("token-aaaaaaaa", "chu@x.vn")
+    p.bo_phat.nhan_lo([_ev("move", 1, 1, 0.0)], t_toi=10.0)
+    p.bo_phat.den_han(20.0)
+    tk = p.thong_ke_phat
+    p.nha_khoa("token-aaaaaaaa", "chu@x.vn")
+    assert p.nhan_khoa("token-bbbbbbbb", "chu@x.vn")
+    assert p.bo_phat.thong_ke is tk
+    p.bo_phat.nhan_lo([_ev("move", 2, 2, 0.0)], t_toi=30.0)
+    p.bo_phat.den_han(40.0)
+    sd = p.so_do_luot()
+    assert sd["so_phat"] == 2 and sd["huy_khac"] == 0, "huỷ vì đổi token không tính là huỷ khác"

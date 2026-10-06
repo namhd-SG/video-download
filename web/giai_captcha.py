@@ -87,6 +87,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import os
 import itertools
 import re
@@ -112,6 +113,7 @@ CHO_XAC_MINH_QUA_HAN_GIO = 24      # `cho_xac_minh` quá hạn này ⇒ failed `
 TRAN_GIAI_NGAY = 3                 # trần "Tôi giải ngay" mỗi job (CHƯA CÓ NỀN)
 TRAN_TAI_LAI_MOI_LUOT = 2          # reload do gesture dở, mỗi lượt `dang_giai`
 TRE_PHAT_NGUONG_GIAY = 0.05        # phát muộn hơn lịch chừng này ⇒ đếm `tre_phat_worker` (CHƯA ĐO ngưỡng)
+TRAN_MAU_TRE = 4096                # trần mẫu độ trễ phát mỗi lượt giải (reservoir; đủ cho p95 ổn định)
 LY_DO_HUY_POPUP = "popup_huy"      # lý do huỷ gesture khi popup gửi lệnh `huy_gesture` (đi kèm SSE `bi_ngat`)
 THIEU_LO_TOI_DA_GIAY = 2.0         # lô thiếu quá lâu ⇒ huỷ gesture
 KHUNG_MAX_WIDTH = 800              # `maxWidth` screencast
@@ -357,6 +359,50 @@ def tham_so_cdp(ev: SuKien) -> dict:
 # Lịch phát lại
 # ---------------------------------------------------------------------------
 
+class ThongKePhat:
+    """Số đo phát chuột của MỘT lượt giải, dùng CHUNG qua mọi `BoPhatLai` của lượt đó (đổi token thay
+    bộ lịch nhưng không được làm mất số): tổng sự kiện đã phát, số lần nhả chuột đã phát, và mẫu độ trễ
+    phát (giây, `bây giờ − lịch`) giữ bằng reservoir có trần `TRAN_MAU_TRE` — một reservoir liền mạch
+    nên phân phối đúng dù đổi token giữa lượt. Seed cố định ⇒ kết quả lặp lại được.
+
+    `gesture_nop` là số lần người thực sự NHẢ chuột (`up` đã phát) = số lần nộp thử một cú kéo. Đây là
+    PROXY, KHÔNG phải số bước captcha: worker không đọc DOM captcha nên không đếm được số bước thật.
+    """
+
+    def __init__(self, tran: int = TRAN_MAU_TRE, seed: int = 0):
+        self.tran = tran
+        self.so_phat = 0
+        self.gesture_nop = 0
+        self.tre_max = 0.0
+        self.mau: list[float] = []
+        self._rng = random.Random(seed)
+
+    def ghi(self, tre_giay: float, la_up: bool) -> None:
+        self.so_phat += 1
+        if la_up:
+            self.gesture_nop += 1
+        if tre_giay > self.tre_max:
+            self.tre_max = tre_giay
+        if len(self.mau) < self.tran:
+            self.mau.append(tre_giay)
+        else:
+            j = self._rng.randrange(self.so_phat)
+            if j < self.tran:
+                self.mau[j] = tre_giay
+
+
+def tom_tat_tre(mau: list[float]) -> tuple[int, int] | None:
+    """(p50, p95) theo nearest-rank, đơn vị ms làm tròn xuống. Mẫu rỗng ⇒ None."""
+    if not mau:
+        return None
+    xs = sorted(mau)
+
+    def hang(p: float) -> int:
+        return int(xs[max(0, math.ceil(p * len(xs)) - 1)] * 1000)
+
+    return hang(0.50), hang(0.95)
+
+
 class BoPhatLai:
     """Lịch phát với độ trễ cố định D (thuần: không I/O, đồng hồ do người gọi đưa vào).
 
@@ -369,8 +415,9 @@ class BoPhatLai:
     "Đợt" = từ lúc hàng đợi rỗng và không có nút đang nhấn, tới lúc nó lại rỗng.
     """
 
-    def __init__(self, d_ms: float):
+    def __init__(self, d_ms: float, thong_ke: ThongKePhat | None = None):
         self.d = d_ms / 1000.0
+        self.thong_ke = thong_ke if thong_ke is not None else ThongKePhat()
         self._hang: deque[tuple[float, SuKien]] = deque()
         self._anh_xa: float | None = None
         self._d_hieu_luc = self.d
@@ -429,6 +476,7 @@ class BoPhatLai:
             lich, ev = self._hang.popleft()
             if bay_gio - lich > TRE_PHAT_NGUONG_GIAY:
                 self.tre_phat_worker += 1
+            self.thong_ke.ghi(max(0.0, bay_gio - lich), ev.k == "up")
             ra.append(ev)
         return ra
 
@@ -499,7 +547,11 @@ class PhienGiai:
         # sớm hơn — lô trước nó (vd chứa `down`) có thể còn đang bay vì popup POST song song.
         self._cho_lo: dict[int, list[SuKien] | None] = {}
         self._cho_lo_tu: float | None = None
-        self.bo_phat = BoPhatLai(self.d_ms)
+        # Số đo phát của cả lượt: một đối tượng, mọi bộ lịch (kể cả sau đổi token) ghi vào cùng chỗ.
+        self.thong_ke_phat = ThongKePhat()
+        # Số lần huỷ gesture theo lý do, cả lượt (đếm ở `_huy_gesture_unlocked` — chỗ duy nhất mọi lần huỷ đi qua).
+        self.huy_theo_ly_do: dict[str, int] = {}
+        self.bo_phat = BoPhatLai(self.d_ms, self.thong_ke_phat)
         self._tre_cu = 0                      # `tre_qua_D` của các token đã qua (bộ lịch bị thay khi đổi token)
         self._tre_phat_cu = 0                 # `tre_phat_worker` của các token đã qua
         self._co_huy: str | None = None
@@ -528,7 +580,7 @@ class PhienGiai:
                         self._cho_lo_tu = None
                     self._tre_cu += self.bo_phat.tre_qua_D
                     self._tre_phat_cu += self.bo_phat.tre_phat_worker
-                    self.bo_phat = BoPhatLai(self.d_ms)
+                    self.bo_phat = BoPhatLai(self.d_ms, self.thong_ke_phat)
                 self.token, self.email, self._token_cuoi = token, email, token
                 self._so_ket_noi_token = 1
                 self._doi()
@@ -660,6 +712,7 @@ class PhienGiai:
                    or any(lo and any(la_su_kien_nut(e) for e in lo) for lo in self._cho_lo.values())
                    or (lo_dang_xa is not None and any(la_su_kien_nut(e) for e in lo_dang_xa)))
         self.bo_phat.huy()
+        self.huy_theo_ly_do[ly_do] = self.huy_theo_ly_do.get(ly_do, 0) + 1
         self._co_huy = ly_do
         self.ky = _ky_ke_tiep()
         if mat_nut:
@@ -690,6 +743,23 @@ class PhienGiai:
         """Số lần sự kiện tới trễ hơn lịch D trong cả lượt giải (để log, hiệu chỉnh D về sau)."""
         with self.khoa:
             return self._tre_cu + self.bo_phat.tre_qua_D
+
+    def so_do_luot(self) -> dict[str, int | None]:
+        """Số đo của lượt để log — chỉ số, không mang dữ liệu khách. `popup_huy` đếm mọi lệnh huỷ của popup
+        (kể cả lúc không nhấn nút, khác `so_gesture_bo_do`); `huy_khac` mọi lý do khác trừ đổi token."""
+        with self.khoa:
+            tk = self.thong_ke_phat
+            tt = tom_tat_tre(tk.mau)
+            return {
+                "so_phat": tk.so_phat,
+                "gesture_nop": tk.gesture_nop,
+                "tre_phat_p50_ms": tt[0] if tt else None,
+                "tre_phat_p95_ms": tt[1] if tt else None,
+                "tre_phat_max_ms": int(tk.tre_max * 1000) if tk.so_phat else None,
+                "popup_huy": self.huy_theo_ly_do.get(LY_DO_HUY_POPUP, 0),
+                "huy_khac": sum(n for ld, n in self.huy_theo_ly_do.items()
+                                if ld not in (LY_DO_HUY_POPUP, "doi_token")),
+            }
 
     def tre_phat_worker_tong(self) -> int:
         """Số sự kiện phát muộn > `TRE_PHAT_NGUONG_GIAY` so với lịch vì worker trễ, cả lượt giải."""
