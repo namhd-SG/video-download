@@ -186,3 +186,58 @@ def test_an_existing_db_gets_the_new_columns(tmp_path):
     conn.close()
     assert {"description", "track", "artist"} <= cot
     assert n == 1
+
+
+# ---- thời lượng cho nguồn không có info yt-dlp (Facebook Ads, Drive) --------------------------
+
+def _hang_video(db: Path, video_id: str):
+    with sqlite3.connect(db) as c:
+        c.row_factory = sqlite3.Row
+        return c.execute("SELECT * FROM videos WHERE video_id = ?", (video_id,)).fetchone()
+
+
+@pytest.mark.parametrize("video_id, url", [
+    ("fb-1234567890123", "https://video.xx.fbcdn.net/v/t42/x.mp4?oh=a&oe=b"),
+    ("gd-1AbCdEfGhIjKlMnOpQrStUvWxYz0123", "https://drive.google.com/uc?id=x&export=download"),
+])
+def test_nguon_khong_co_thoi_luong_van_cat_du_khung_phu_va_ghi_thoi_luong(
+        tmp_path, uploader_ok, video_id, url):
+    """Facebook Ads / Drive tới `on_video_verified` với `duration=None` (không có info yt-dlp).
+    Đo từ tệp ⇒ cắt đủ khung phụ và hàng `videos` có thời lượng thật.
+    ĐỘT BIẾN: bỏ bước đo thời lượng ⇒ 0 khung phụ, duration NULL ⇒ ĐỎ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = _video_that(tmp_path, 10)
+
+    lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id=video_id, url=url), path=video,
+                                db_path=db)
+
+    assert not video.exists()
+    for pt in lifecycle.KHUNG_PHU_PHAN_TRAM:
+        khung = lifecycle.khung_phu_path_for(db, video_id, pt)
+        assert khung.is_file() and khung.stat().st_size > 0, f"thiếu khung {pt}%"
+    assert _hang_video(db, video_id)["duration"] == 10
+
+
+def test_tiktok_da_co_thoi_luong_thi_khong_do_lai(tmp_path, uploader_ok, monkeypatch):
+    """Đối chứng: TikTok có thời lượng từ info yt-dlp ⇒ không gọi ffmpeg đo thêm lần nào, và
+    giá trị yt-dlp được giữ nguyên (không bị số đo từ tệp đè)."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = _video_that(tmp_path, 10)
+    goi = []
+    monkeypatch.setattr(lifecycle, "_do_thoi_luong_quietly", lambda p: goi.append(p) or 99)
+
+    lifecycle.on_video_verified(job_id=1, ref=_ref(duration=10), path=video, db_path=db)
+
+    assert goi == []
+    assert _hang_video(db, "7009")["duration"] == 10
+
+
+def test_do_thoi_luong_tu_tep_that_va_tep_hong(tmp_path):
+    video = _video_that(tmp_path, 7)
+    assert lifecycle._do_thoi_luong_quietly(video) == 7
+    hong = tmp_path / "hong.mp4"
+    hong.write_bytes(b"khong phai video")
+    assert lifecycle._do_thoi_luong_quietly(hong) is None
+    assert lifecycle._do_thoi_luong_quietly(tmp_path / "khong-ton-tai.mp4") is None
