@@ -161,7 +161,7 @@ def test_nghi_bi_chan_khong_co_nut_chay_lai_nhung_van_chep_link(trang, db):
 
 
 @pytest.mark.parametrize("ma, co_nut", [
-    ("het_vong", True), ("het_thoi_gian", True), ("page_cap", True),
+    ("het_vong", True), ("het_thoi_gian", True), ("page_cap", True), ("het_dia", True),
     ("nghi_bi_chan", False), ("stalled", False), ("already_owned", False),
     ("source_empty", False), ("feed_rong", False), ("index_failed", False),
     ("cookie_het_han", False), (None, False),

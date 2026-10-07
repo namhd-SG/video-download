@@ -13,11 +13,13 @@
   // Trần `so_luong` của POST /jobs — bằng `web/app.py::MAX_SO_LUONG`.
   const MAX_SO_LUONG = 2000;
 
-  // Ba mã dừng mà CHẠY LẠI có thể ra thêm video. Các mã còn lại cố ý không có
+  // Bốn mã dừng mà CHẠY LẠI có thể ra thêm video. Các mã còn lại cố ý không có
   // nút: `nghi_bi_chan` cần NGHỈ (chạy lại ngay làm đậm dấu vết), `stalled` /
   // `already_owned` / `source_empty` chạy lại cũng ra đúng như vậy, và mã cookie
   // phải chữa cookie trước.
-  const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap"]);
+  // `het_dia` (đĩa máy chạy dưới ngưỡng giữa job nền tảng khác) cũng chạy lại được: sau khi đĩa có chỗ,
+  // lọc trùng bỏ phần đã lên Drive và tải phần còn lại.
+  const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap", "het_dia"]);
 
   // Nhãn theo LÝ DO DỪNG cho bốn mã không chạy lại được ngay — nhãn phải nói
   // đúng việc nên làm, nên trùng ý câu ở `app.js::STOP_REASON_TEXT`:

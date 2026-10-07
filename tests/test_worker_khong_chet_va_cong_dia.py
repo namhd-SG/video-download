@@ -184,6 +184,11 @@ def test_chu_badge_worker_js():
     assert "3 lần" in do["loi"] and "OperationalError" in do["loi"]
     assert "đĩa còn 1 MB" in do["dia"]
     assert "2 job kẹt" in do["ket"]
+    # Badge nhiều lane: vắng `lanes` ⇒ y như cũ; lane `khac` chết/lỗi hiện riêng, không bị lane TikTok che.
+    assert do["cacLaneNull"] == "" and do["cacLaneOk"] == ""
+    assert do["cacLaneKhongLanes"] == do["dia"]
+    assert "Lane nền tảng khác" in do["cacLaneKhacChet"] and "đã dừng" in do["cacLaneKhacChet"]
+    assert "đĩa 1 MB" in do["cacLaneCaHai"] and "lặp 2 lần" in do["cacLaneCaHai"]
 
 
 def test_tran_nghi_loi_co_han():

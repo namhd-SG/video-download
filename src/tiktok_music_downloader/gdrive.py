@@ -12,11 +12,15 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
 import gdown
+
+from tiktok_music_downloader.utils import che_url
 
 log = logging.getLogger("ttmd")
 
@@ -107,6 +111,77 @@ def download_folder(url: str, output_dir: Path) -> list[Path]:
     else:
         log.info("gdown: downloaded %d file(s)", len(paths))
     return paths
+
+
+# Đuôi file được coi là video khi liệt kê thư mục Drive. Khớp những gì ffmpeg đọc được luồng video
+# (cổng `verify_video_stream` quyết cuối cùng, không dựa vào đuôi); ảnh/phụ đề/tài liệu bị loại ngay
+# từ lúc liệt kê để không tốn một lượt tải và không chiếm chỗ trong trần `max_videos`.
+VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+
+DRIVE_FILE_URL = "https://drive.google.com/uc?id={}"
+
+
+def mo_ta_loi(exc: BaseException) -> str:
+    """Mô tả lỗi Drive AN TOÀN cho log: chỉ loại lỗi + mã HTTP nếu có, KHÔNG kèm văn bản ngoại lệ.
+
+    Văn bản lỗi của gdown/urllib3/requests nhúng id thư mục/file ("folder ID: <id>", "url: /uc?id=<id>"),
+    mà id Drive là quyền truy cập. Che bằng regex chỉ là lưới thứ hai; lưới đầu là không bao giờ đưa
+    văn bản đó vào thông điệp.
+    """
+    ma = getattr(getattr(exc, "response", None), "status_code", None)
+    mo_ta = f"{type(exc).__name__}, HTTP {ma}" if isinstance(ma, int) else type(exc).__name__
+    # Phân loại TRÊN văn bản gốc trước khi bỏ nó: lỗi hết quota của gdown ("Too many users have
+    # viewed or downloaded this file recently") không có `response`, nên chỉ văn bản mới biết. Gắn
+    # nhãn cố định (không id) để bộ nhận rate-limit của `download_all` vẫn nghỉ lùi như trước.
+    # Che id/URL TRƯỚC khi so: id Drive ngẫu nhiên có thể chứa "429"/"quota" ⇒ khớp nhầm.
+    goc = che_url(exc, toi_da=None).lower()
+    if any(s in goc for s in ("too many", "quota", "rate limit", "429")):
+        mo_ta += ", quá tải: too many"
+    return mo_ta
+
+
+def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, str]]:
+    """Liệt kê video trong thư mục Drive công khai MÀ KHÔNG TẢI gì: `[(file_id, tên file)]`.
+
+    `skip_download=True` chỉ đọc cấu trúc thư mục. Tải cả thư mục một lượt (`download_folder`) trái
+    nguyên tắc tải-1-đẩy-1-xoá-1 của lớp web: đĩa máy chạy chỉ còn vài GB. Thư mục con được duyệt
+    (gdown trả đường dẫn tương đối); chỉ giữ đuôi trong `VIDEO_EXTS`, trùng id bỏ.
+    """
+    # ⚠ gdown in "Using proxy: <proxy>" THẲNG ra stderr khi có `proxy` (bỏ qua `quiet` và formatter che
+    # log). Lớp web không truyền proxy; ai thêm proxy cho đường này phải xử lý dòng đó trước.
+    raw = gdown.download_folder(url=url, quiet=True, use_cookies=False, proxy=proxy,
+                                skip_download=True)
+    ra: list[tuple[str, str]] = []
+    thay: set[str] = set()
+    for f in raw or []:
+        ten = Path(f.path).name
+        if Path(ten).suffix.lower() not in VIDEO_EXTS or f.id in thay:
+            continue
+        thay.add(f.id)
+        ra.append((f.id, ten))
+    return ra
+
+
+def download_file(file_id: str, target: Path, proxy: str | None = None) -> None:
+    """Tải ĐÚNG MỘT file Drive (theo id) về `target`; `target` chỉ tồn tại khi đã trọn vẹn.
+
+    gdown KHÔNG ghi thẳng vào `output`: nó tạo `<tên>….part<ngẫu nhiên>.part` cạnh đó và CHỦ Ý giữ lại
+    khi đứt giữa luồng (để resume). Ta không resume, nên mỗi file tải vào một thư mục tạm riêng rồi
+    `rmtree` trong `finally`: mọi tệp dở của gdown biến mất dù lỗi kiểu nào, không cần đoán tên chúng.
+    """
+    tam = Path(tempfile.mkdtemp(prefix=".gd-", dir=target.parent))
+    try:
+        ra = tam / target.name
+        try:
+            # ⚠ `proxy` ⇒ gdown in "Using proxy: <proxy>" thẳng stderr (xem `list_folder_videos`).
+            gdown.download(id=file_id, output=str(ra), quiet=True, use_cookies=False, proxy=proxy)
+        except Exception as exc:  # noqa: BLE001 — văn bản lỗi gốc mang id Drive, không được đi tiếp
+            raise RuntimeError(f"Drive không tải được file ({mo_ta_loi(exc)})") from None
+        if not ra.exists() or ra.stat().st_size == 0:
+            raise RuntimeError("Drive không trả nội dung file (hết quota, không công khai, hoặc đã xoá)")
+        ra.replace(target)
+    finally:
+        shutil.rmtree(tam, ignore_errors=True)
 
 
 def iter_mp4s_under(root: Path) -> list[Path]:

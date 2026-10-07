@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
-from tiktok_music_downloader.nguon import chon_nguon
+from tiktok_music_downloader.nguon import chon_nguon, mo_ta_cac_nguon
 from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
@@ -168,6 +168,10 @@ MAX_SO_LUONG = 2000
 # Id TikTok đo được là 19 chữ số. Trần này để một id dài bất thường bị chặn ở
 # cổng thay vì làm hệ tệp ném ra ngoài.
 MAX_VIDEO_ID_LEN = 32
+# Id video hợp lệ cho đường dẫn tệp: số trần (TikTok) hoặc `fb-`/`gd-` + ký tự chữ-số/gạch (id file
+# Drive tới ~44 ký tự nên trần dài hơn). Vẫn là HÌNH DẠNG chặn traversal: không có `/`, `.`, NUL.
+MAX_VIDEO_ID_TIEN_TO_LEN = 64
+_MAU_VIDEO_ID_TIEN_TO = re.compile(r"(?:fb|gd)-[A-Za-z0-9_\-]+")
 SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
@@ -439,15 +443,18 @@ def create_job(payload: CreateJobRequest,
         raise HTTPException(status_code=503, detail=rejection)
     # Trần ngày theo cookie. Cũng chạy TRƯỚC khi ghi hàng job, cùng lý do như
     # gate trên: một lượt bị chặn không được để lại hàng 'pending' ma.
-    over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
-                                   nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
-    if over_cap is not None:
-        raise HTTPException(status_code=429, detail=over_cap)
     nguon = chon_nguon(payload.url)
+    # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
+    # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác chưa có trần ngày riêng ở pha này.
+    if nguon is None or nguon.ten == models.NEN_TANG_MAC_DINH:
+        over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
+                                       nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
+        if over_cap is not None:
+            raise HTTPException(status_code=429, detail=over_cap)
     if nguon is None:
         raise HTTPException(
             status_code=400,
-            detail="url phải là trang TikTok music/tag/search/profile",
+            detail=f"url không được nhận. Link hỗ trợ: {mo_ta_cac_nguon()}",
         )
     # Cùng luật chuẩn hoá/độ dài `models_cum` dùng cho `/cum`. `insight_goc`
     # không có trần riêng trong `models_cum` — trần duy nhất áp lên nó là
@@ -1146,7 +1153,10 @@ def get_thumb(video_id: str, nguoi_tao: str = Depends(require_user)) -> FileResp
     # 300 chữ số đi qua, rồi `is_file()` ném OSError "File name too long" —
     # lỗi KHÔNG CÓ BIÊN trên một endpoint đã qua xác thực, client nhận 500.
     # Id TikTok là 19 chữ số; 32 đã rất rộng.
-    if not video_id.isdigit() or len(video_id) > MAX_VIDEO_ID_LEN:
+    la_id_so = video_id.isdigit() and len(video_id) <= MAX_VIDEO_ID_LEN
+    la_id_tien_to = (len(video_id) <= MAX_VIDEO_ID_TIEN_TO_LEN
+                     and _MAU_VIDEO_ID_TIEN_TO.fullmatch(video_id) is not None)
+    if not (la_id_so or la_id_tien_to):
         raise HTTPException(status_code=404, detail="video_id không hợp lệ")
     path = thumb_path_for(DB_PATH, video_id)
     if not path.is_file():

@@ -22,7 +22,7 @@ from tiktok_music_downloader.nguon import NGUON_MAC_DINH, chon_nguon
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
-    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_VONG,
+    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
     STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
@@ -636,7 +636,29 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     output_dir = downloads_dir / str(job_id)
     progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
                              nguon=source_label(job["url"]))
-    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress)
+    # Job nền tảng khác (file lớn, đĩa máy chạy chỉ còn vài GB và do swap của account khác kéo xuống):
+    # kiểm đĩa SỐNG trước TỪNG file, cùng ngưỡng với cổng lúc tạo/nhận job. Dưới ngưỡng ⇒ dừng job có lý do
+    # `het_dia`, không tải tiếp. Job TikTok giữ nguyên (không truyền hook).
+    het_dia: dict = {}
+    la_nen_tang_khac = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) != models.NEN_TANG_MAC_DINH
+
+    def _kiem_dia(_ref: VideoRef) -> str | None:
+        dia = check_disk_guard(downloads_dir)
+        if dia.ok:
+            return None
+        het_dia["ly_do"] = dia.reason
+        return dia.reason
+
+    # TikTok: lời gọi y hệt trước (không thêm kwarg nào).
+    kw_cong_dia = {"truoc_moi_file": _kiem_dia} if la_nen_tang_khac else {}
+    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress, **kw_cong_dia)
+    if het_dia:
+        try:
+            models.set_job_stop_reason(db_path, job_id, STOP_HET_DIA)
+        except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+            log.warning("job %s: không ghi được lý do dừng", job_id)
+        models.finish_job(db_path, job_id, "failed")
+        return
     # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
     # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
     # phải là "done" dù download_all không raise.
@@ -669,7 +691,10 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     job_id = job["id"]
     la_luot_giai = job.get("trang_thai") == "dang_mo" and profile_theo_job.profile_captcha_dang_bat()
     try:
-        cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"])
+        # Cookie là của TikTok (jar riêng từng người). Job nền tảng khác không dùng nó, và một jar
+        # TikTok hỏng/hết hạn không được làm hỏng job Facebook Ads / Drive không liên quan.
+        la_tiktok = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) == models.NEN_TANG_MAC_DINH
+        cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"]) if la_tiktok else None
         # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
         # cookie. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy
         # ẩn danh — với dòng lệnh đó là tiện, với lớp web dùng chung thì job
@@ -821,6 +846,7 @@ class JobWorker:
             self._quet_profile_dinh_ky(buoc_ep=True)
             self._canh_bao_profiles_khi_co_tat()
         self._stop.clear()
+        log.info("worker lane %s: bắt đầu", self._lane)
         self._thread = threading.Thread(target=self._loop, name=f"videodl-worker-{self._lane}", daemon=True)
         self._thread.start()
 
@@ -864,7 +890,7 @@ class JobWorker:
                     # lên chính cái đĩa đang dưới ngưỡng. `_cho_dia` vẫn cập nhật số mới.
                     bay_gio = time.monotonic()
                     if self._cho_dia is None or bay_gio - self._nhac_cho_dia_luc >= NHAC_CHO_DIA_GIAY:
-                        log.warning("worker %s, chưa nhận job pending: %s",
+                        log.warning("worker lane %s: %s, chưa nhận job pending: %s", self._lane,
                                     "CHỜ" if self._cho_dia is None else "VẪN CHỜ", dia.reason)
                         self._nhac_cho_dia_luc = bay_gio
                     self._cho_dia = dia.reason
@@ -872,7 +898,7 @@ class JobWorker:
                     self._stop.wait(self._poll_interval)
                     continue
                 if self._cho_dia is not None:
-                    log.info("worker hết chờ đĩa, nhận job lại")
+                    log.info("worker lane %s: hết chờ đĩa, nhận job lại", self._lane)
                 self._cho_dia = None
                 # Cờ BẬT: job `cho_giai` (người đã bấm "Tôi giải ngay") được nhặt TRƯỚC `pending`.
                 # Cờ TẮT: lời gọi y hệt trước (một tham số, không SELECT thêm).

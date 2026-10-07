@@ -5,7 +5,7 @@ import logging
 import tempfile
 import time
 from pathlib import Path
-from typing import Iterable
+from typing import Callable, Iterable
 
 from tenacity import (
     RetryError,
@@ -203,13 +203,20 @@ def _download_url_direct(url: str, target: Path, proxy: str | None) -> None:
         if r.status_code == 410:
             # Don't retry — URL is permanently expired.
             raise RuntimeError("FBCDN URL expired (410 Gone) — re-scrape needed")
+        if r.status_code == 403:
+            # Chữ ký HMAC hết hạn / bị từ chối cũng trả 403 — cùng bản chất với 410, thử lại chỉ tốn backoff.
+            raise RuntimeError("FBCDN URL refused (403 Forbidden) — re-scrape needed")
         r.raise_for_status()
         tmp = target.with_suffix(target.suffix + ".part")
-        with open(tmp, "wb") as f:
-            for chunk in r.iter_content(chunk_size=64 * 1024):
-                if chunk:
-                    f.write(chunk)
-        tmp.replace(target)
+        try:
+            with open(tmp, "wb") as f:
+                for chunk in r.iter_content(chunk_size=64 * 1024):
+                    if chunk:
+                        f.write(chunk)
+            tmp.replace(target)
+        finally:
+            # Lỗi giữa luồng (đứt mạng) không được để lại `.part` trên đĩa; thành công thì đã đổi tên.
+            tmp.unlink(missing_ok=True)
 
 
 def download_all(
@@ -222,6 +229,7 @@ def download_all(
     batch_rest: float = BATCH_REST_SECONDS,
     cookies_path: str | None = None,
     watermark: WatermarkConfig | None = None,
+    truoc_moi_file: Callable[[VideoRef], str | None] | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     Download each VideoRef.
@@ -231,6 +239,9 @@ def download_all(
     Resumable: skip if file already on disk.
     Auth: `cookies_path` (the same JSON used by the scraper) is converted to
     Netscape format and passed to yt-dlp — unlocks age-gated videos.
+
+    `truoc_moi_file(ref)` chạy ngay trước khi tải từng ref (sau bước "đã có trên đĩa"): trả chuỗi lý do
+    ⇒ DỪNG cả lượt (không tải ref này và các ref sau), trả None ⇒ tải tiếp. Dùng cho cổng đĩa.
 
     Returns (downloaded, skipped, failed_ids).
     """
@@ -278,6 +289,12 @@ def download_all(
                     progress.update(1)
                 continue
 
+            if truoc_moi_file is not None:
+                ly_do_dung = truoc_moi_file(ref)
+                if ly_do_dung:
+                    log.warning("dừng lượt tải trước %s: %s", ref.filename, ly_do_dung)
+                    break
+
             if since_rest >= batch_size:
                 log.info("batch of %d done — resting %.0fs", batch_size, batch_rest)
                 time.sleep(batch_rest)
@@ -293,6 +310,11 @@ def download_all(
                 info: dict | None = None
                 if ref.video_id.startswith("fb-"):
                     _download_url_direct(ref.url, target, proxy)
+                elif ref.video_id.startswith("gd-"):
+                    # Drive: từng file theo id (nguồn đã liệt kê, không tải cả thư mục), để file
+                    # đi đúng đường verify → đẩy Drive → xoá local rồi mới tới file kế.
+                    from tiktok_music_downloader.gdrive import download_file
+                    download_file(ref.video_id[len("gd-"):], target, proxy)
                 else:
                     info = _download_one(ref.url, opts)
                 # Post-process: apply watermark in-place if configured. Failures
