@@ -15,11 +15,12 @@ Wired into `web/queue.py` via a direct module-level import
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Protocol
@@ -536,6 +537,35 @@ def khung_phu_path_for(db_path: Path, video_id: str, phan_tram: int) -> Path:
     return thumbs_dir_for(db_path) / "khung" / f"{video_id}-{phan_tram}.webp"
 
 
+# Neo đầu dòng: ffmpeg in khối `Metadata:` (title, comment do người đăng đặt) TRƯỚC dòng thời lượng
+# thật, nên `.search` không neo sẽ khớp một title chứa chữ "Duration: …".
+_MAU_THOI_LUONG = re.compile(r"^\s*Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)", re.M)
+
+
+def _do_thoi_luong_quietly(path: Path) -> int | None:
+    """Thời lượng (giây, làm tròn) đọc từ chính tệp mp4 bằng `ffmpeg -i`. Never raises.
+
+    Chỉ dùng khi nguồn liệt kê/tải KHÔNG cho thời lượng: TikTok lấy nó từ info yt-dlp, còn
+    Facebook Ads (HTTP thẳng) và Drive (gdown) thì không có info nào ⇒ thiếu nó thì khung phụ bị
+    bỏ qua, mà mp4 bị xoá ngay sau đó nên không bao giờ cắt bù được. Cùng binary ffmpeg với cổng
+    kiểm stream (`find_ffmpeg` có đường dự phòng: PATH của launchd không có Homebrew).
+    """
+    try:
+        ffmpeg_bin = find_ffmpeg()
+        if not ffmpeg_bin:
+            return None
+        result = subprocess.run([ffmpeg_bin, "-i", str(path)], capture_output=True, text=True,
+                                errors="replace", timeout=THUMB_TIMEOUT_SECONDS)
+        m = _MAU_THOI_LUONG.search(result.stderr or "")
+        if not m:
+            return None
+        giay = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
+        return int(round(giay)) or None
+    except Exception as exc:  # noqa: BLE001 — cùng lý do `_cut_thumbnail_quietly`: phải tới được unlink
+        log.warning("thời lượng: không đo được (%s)", type(exc).__name__)
+        return None
+
+
 def _cut_extra_frames_quietly(path: Path, db_path: Path, video_id: str,
                               duration: int | None) -> int:
     """Cắt các khung phụ. Trả SỐ khung đã cắt được (0..len(KHUNG_PHU_PHAN_TRAM)).
@@ -708,6 +738,12 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
         # the file both exists and is known to be on Drive, and an escape would
         # leave the mp4 behind with no row to find it by.
         if db_path is not None:
+            # Nguồn không có info yt-dlp (Facebook Ads, Drive) tới đây không có thời lượng: đo từ
+            # tệp, để khung phụ cắt được và hàng `videos` có thời lượng. TikTok đã có thì bỏ qua.
+            if not ref.duration:
+                do_duoc = _do_thoi_luong_quietly(path)
+                if do_duoc:
+                    ref = replace(ref, duration=do_duoc)
             _cut_thumbnail_quietly(path, db_path, ref.video_id)
             _cut_extra_frames_quietly(path, db_path, ref.video_id, ref.duration)
             # `result.file_id` is this video's own Drive id — `result.drive_id`
