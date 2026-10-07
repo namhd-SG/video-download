@@ -443,11 +443,14 @@ def create_job(payload: CreateJobRequest,
         raise HTTPException(status_code=503, detail=rejection)
     # Trần ngày theo cookie. Cũng chạy TRƯỚC khi ghi hàng job, cùng lý do như
     # gate trên: một lượt bị chặn không được để lại hàng 'pending' ma.
-    over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
-                                   nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
-    if over_cap is not None:
-        raise HTTPException(status_code=429, detail=over_cap)
     nguon = chon_nguon(payload.url)
+    # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
+    # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác chưa có trần ngày riêng ở pha này.
+    if nguon is None or nguon.ten == models.NEN_TANG_MAC_DINH:
+        over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
+                                       nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
+        if over_cap is not None:
+            raise HTTPException(status_code=429, detail=over_cap)
     if nguon is None:
         raise HTTPException(
             status_code=400,

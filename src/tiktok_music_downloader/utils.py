@@ -120,8 +120,12 @@ _MAU_HANDLE = re.compile(r"(?i)(?:/|%2F)(?:@|%40)[\w.\-]+")
 # (tên file, `video_id` trong dòng "✓/✗"). Host FBCDN trần (không scheme) mang chữ ký `oh=`/`oe=`
 # trong query nên che cả đường dẫn lẫn query.
 _MAU_DRIVE = re.compile(
-    r"(?i)(?:drive|docs)\.google\.com/[^\s\"'<>(),\[\]]*|folders/[\w\-]+|\bgd-[\w\-]+")
-_MAU_FBCDN = re.compile(r"(?i)[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")
+    r"(?i)(?:drive|docs)\.google\.com/[^\s\"'<>(),\[\]]*|folders/[\w\-]+|\bgd-[\w\-]+"
+    # gdown báo lỗi thư mục bằng "… for folder ID: <id> (status code …)".
+    r"|\bID:\s*[\w\-]{20,}")
+# Neo đầu token (`(?<![\w.\-])`): không có nó, `[\w.\-]*` thử lại từ MỌI vị trí trong một token dài ⇒ O(n²),
+# mà formatter chạy trên mọi dòng log.
+_MAU_FBCDN = re.compile(r"(?i)(?<![\w.\-])[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")
 
 
 def che_url(text: object, toi_da: int | None = 300) -> str:
@@ -322,3 +326,6 @@ STOP_FEED_RONG = "feed_rong"
 # (`hashtag_enumerator.resolve_challenge_id`). Trước đây ca này trả rỗng mà
 # không báo lý do ⇒ lượt tải hiện "Xong"/"Thiếu" không một chữ giải thích.
 STOP_HASHTAG_KHONG_TRA_DUOC = "hashtag_khong_tra_duoc"
+# Đĩa dưới ngưỡng an toàn GIỮA job nền tảng khác: dừng trước khi tải file kế, không tải tiếp
+# cho tới khi đầy. Các file đã lên Drive vẫn tính; chạy lại sẽ bỏ qua chúng (lọc trùng).
+STOP_HET_DIA = "het_dia"

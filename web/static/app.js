@@ -79,6 +79,10 @@
     // Nguồn còn sống, chỉ là thư viện đã có hết những gì nó đưa ra. Câu này
     // KHÔNG được bảo "thử chạy lại" — chạy lại cũng ra đúng như vậy, chỉ tốn
     // thêm lượt gọi TikTok.
+    // Đĩa máy chạy dưới ngưỡng an toàn giữa job (Drive / Facebook Ads): job dừng TRƯỚC file kế. File đã
+    // lên Drive vẫn còn; chạy lại sau khi đĩa có chỗ sẽ bỏ qua chúng và tải phần còn lại.
+    het_dia: "Dừng: ổ đĩa của máy chạy sắp đầy nên job dừng trước khi tải tiếp. Những video đã lên " +
+             "Drive vẫn còn — chạy lại sau khi đĩa có chỗ để tải phần còn lại.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
                    "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
     // Lượt rỗng với mã này giờ ghi "Lỗi" (không còn "Xong"), nên câu không được

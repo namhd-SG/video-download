@@ -22,7 +22,7 @@ from tiktok_music_downloader.nguon import NGUON_MAC_DINH, chon_nguon
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
-    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_VONG,
+    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
     STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
@@ -636,7 +636,29 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     output_dir = downloads_dir / str(job_id)
     progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
                              nguon=source_label(job["url"]))
-    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress)
+    # Job nền tảng khác (file lớn, đĩa máy chạy chỉ còn vài GB và do swap của account khác kéo xuống):
+    # kiểm đĩa SỐNG trước TỪNG file, cùng ngưỡng với cổng lúc tạo/nhận job. Dưới ngưỡng ⇒ dừng job có lý do
+    # `het_dia`, không tải tiếp. Job TikTok giữ nguyên (không truyền hook).
+    het_dia: dict = {}
+    la_nen_tang_khac = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) != models.NEN_TANG_MAC_DINH
+
+    def _kiem_dia(_ref: VideoRef) -> str | None:
+        dia = check_disk_guard(downloads_dir)
+        if dia.ok:
+            return None
+        het_dia["ly_do"] = dia.reason
+        return dia.reason
+
+    # TikTok: lời gọi y hệt trước (không thêm kwarg nào).
+    kw_cong_dia = {"truoc_moi_file": _kiem_dia} if la_nen_tang_khac else {}
+    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress, **kw_cong_dia)
+    if het_dia:
+        try:
+            models.set_job_stop_reason(db_path, job_id, STOP_HET_DIA)
+        except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+            log.warning("job %s: không ghi được lý do dừng", job_id)
+        models.finish_job(db_path, job_id, "failed")
+        return
     # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
     # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
     # phải là "done" dù download_all không raise.

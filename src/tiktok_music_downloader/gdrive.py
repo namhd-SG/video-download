@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import io
 import logging
+import shutil
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
@@ -138,16 +140,21 @@ def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, st
 
 
 def download_file(file_id: str, target: Path, proxy: str | None = None) -> None:
-    """Tải ĐÚNG MỘT file Drive (theo id) về `target`. Ghi vào `.part` rồi đổi tên, nên `target`
-    chỉ tồn tại khi đã trọn vẹn; trượt thì không để lại tệp dở. Ném lỗi khi gdown không trả nội dung."""
-    tam = target.with_suffix(target.suffix + ".part")
+    """Tải ĐÚNG MỘT file Drive (theo id) về `target`; `target` chỉ tồn tại khi đã trọn vẹn.
+
+    gdown KHÔNG ghi thẳng vào `output`: nó tạo `<tên>….part<ngẫu nhiên>.part` cạnh đó và CHỦ Ý giữ lại
+    khi đứt giữa luồng (để resume). Ta không resume, nên mỗi file tải vào một thư mục tạm riêng rồi
+    `rmtree` trong `finally`: mọi tệp dở của gdown biến mất dù lỗi kiểu nào, không cần đoán tên chúng.
+    """
+    tam = Path(tempfile.mkdtemp(prefix=".gd-", dir=target.parent))
     try:
-        gdown.download(id=file_id, output=str(tam), quiet=True, use_cookies=False, proxy=proxy)
-        if not tam.exists() or tam.stat().st_size == 0:
+        ra = tam / target.name
+        gdown.download(id=file_id, output=str(ra), quiet=True, use_cookies=False, proxy=proxy)
+        if not ra.exists() or ra.stat().st_size == 0:
             raise RuntimeError("Drive không trả nội dung file (hết quota, không công khai, hoặc đã xoá)")
-        tam.replace(target)
+        ra.replace(target)
     finally:
-        tam.unlink(missing_ok=True)
+        shutil.rmtree(tam, ignore_errors=True)
 
 
 def iter_mp4s_under(root: Path) -> list[Path]:

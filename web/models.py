@@ -724,8 +724,8 @@ def sum_pages_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT nguoi_tao, COALESCE(SUM(so_trang), 0) AS n FROM jobs "
-            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
-            (since,),
+            "WHERE tao_luc >= ? AND nen_tang = ? GROUP BY nguoi_tao",
+            (since, NEN_TANG_MAC_DINH),
         ).fetchall()
     return {row["nguoi_tao"]: row["n"] for row in rows}
 
@@ -747,10 +747,12 @@ def count_jobs_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
             # đó vẫn bị bó — bởi trần LIỆT KÊ, không phải trần này.
             # Chỉ ca NÀY được miễn; `index_failed` vẫn tính, nếu không thì ép
             # lỗi là một đường lách trần.
+            # Trần ngày này là trần của TÀI KHOẢN TikTok (cookie): chỉ đếm job `tiktok`. Job nền tảng
+            # khác (Facebook Ads, Drive) không ăn vào nó, và cũng không bị nó chặn.
             "SELECT nguoi_tao, COUNT(*) AS n FROM jobs "
-            "WHERE tao_luc >= ? AND COALESCE(ly_do_dung, '') != 'already_owned' "
+            "WHERE tao_luc >= ? AND nen_tang = ? AND COALESCE(ly_do_dung, '') != 'already_owned' "
             "GROUP BY nguoi_tao",
-            (since,),
+            (since, NEN_TANG_MAC_DINH),
         ).fetchall()
     return {row["nguoi_tao"]: row["n"] for row in rows}
 
@@ -788,8 +790,8 @@ def sum_videos_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
             "SELECT nguoi_tao, COALESCE(SUM("
             "  CASE WHEN trang_thai IN ('done', 'failed') THEN tim_thay ELSE tong END"
             "), 0) AS n FROM jobs "
-            "WHERE tao_luc >= ? GROUP BY nguoi_tao",
-            (since,),
+            "WHERE tao_luc >= ? AND nen_tang = ? GROUP BY nguoi_tao",
+            (since, NEN_TANG_MAC_DINH),
         ).fetchall()
     return {row["nguoi_tao"]: row["n"] for row in rows}
 

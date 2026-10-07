@@ -16,6 +16,7 @@ import random
 import time
 import urllib.parse
 from pathlib import Path
+from typing import Callable
 
 from playwright.sync_api import (
     Browser,
@@ -33,6 +34,10 @@ from tiktok_music_downloader.utils import (
 )
 
 log = logging.getLogger("ttmd")
+
+
+# Trần số ref khi đếm riêng video mới (xem `_auto_scroll`).
+HE_SO_TRAN_DA_CO = 3
 
 
 def _dedup_key(url: str) -> str:
@@ -55,14 +60,22 @@ def _auto_scroll(
     max_videos: int,
     scroll_pause: float,
     idle_rounds: int,
+    da_co: Callable[[list[str]], set[str]] | None = None,
 ) -> list[VideoRef]:
     """Scroll Ads Library and dedupe video URLs by asset id.
 
     Returns a list of VideoRef. Stops on: reaching `max_videos`, end of feed,
     or `idle_rounds` consecutive scrolls with no new asset.
+
+    `da_co` (ids → tập id thư viện đã có): khi truyền, `max_videos` đếm video MỚI chứ không đếm cả cái
+    đã có, với trần tổng `max_videos * HE_SO_TRAN_DA_CO` ref (chạm trần thì dừng — không cuộn vô hạn
+    trên trang toàn video đã tải). Trả về MỌI ref thu được (cả cái đã có); người gọi lọc và cắt.
     """
     seen_keys: set[str] = set()
+    owned: set[str] = set()
     refs: list[VideoRef] = []
+    tran = max_videos * HE_SO_TRAN_DA_CO if da_co is not None else max_videos
+    da_hoi = 0
     stale = 0
     while True:
         for src in _collect_video_urls(page):
@@ -76,7 +89,11 @@ def _auto_scroll(
             refs.append(ref)
         log.debug("scroll: %d unique videos", len(refs))
 
-        if len(refs) >= max_videos:
+        if da_co is not None and da_hoi < len(refs):
+            owned |= da_co([r.video_id for r in refs[da_hoi:]])
+            da_hoi = len(refs)
+        moi = len(refs) - len(owned)
+        if (moi if da_co is not None else len(refs)) >= max_videos or len(refs) >= tran:
             log.info("reached --max=%d, stopping scroll", max_videos)
             break
 
@@ -95,7 +112,7 @@ def _auto_scroll(
                 break
         else:
             stale = 0
-    return refs[:max_videos]
+    return refs[:tran]
 
 
 def _open_context(
@@ -127,6 +144,7 @@ def scrape_ads_library(
     idle_rounds: int = 6,
     proxy: str | None = None,
     profile_dir: str | None = None,
+    da_co: Callable[[list[str]], set[str]] | None = None,
 ) -> list[VideoRef]:
     """Open an Ads Library URL, scroll, and return up to `max_videos` unique refs.
 
@@ -149,7 +167,7 @@ def scrape_ads_library(
             except PWTimeout:
                 log.warning("no <video> after 15s — Ads Library may need cookies "
                             "or your IP is being challenged")
-            refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+            refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds, da_co=da_co)
         finally:
             ctx.close()
             if browser is not None:

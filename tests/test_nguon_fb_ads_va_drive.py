@@ -581,3 +581,293 @@ def test_thumb_van_chan_hinh_dang_la(db, monkeypatch, video_id):
     with pytest.raises(HTTPException) as e:
         app_mod.get_thumb(video_id, nguoi_tao="a@x.vn")
     assert e.value.detail == "video_id không hợp lệ"
+
+
+# ---------------------------------------------------------------- gdown THẬT, chỉ giả phiên HTTP
+
+import re
+import requests
+from gdown.exceptions import DownloadError as GdownDownloadError
+
+
+def _phan_hoi(status=200, text="", headers=None, chunks=None, loi_giua_luong=None, content_length=None):
+    """`requests.Response` thật; thân là luồng tự dựng để ép đứt / thiếu byte giữa chừng."""
+    r = requests.Response()
+    r.status_code = status
+    r.url = "https://drive.google.com/uc?id=x"
+    r._content = text.encode() if chunks is None and loi_giua_luong is None else False
+    r.headers.update(headers or {})
+    if chunks is not None or loi_giua_luong is not None:
+        class Luong:
+            def stream(self, n, decode_content=True):
+                yield from (chunks or [])
+                if loi_giua_luong is not None:
+                    raise loi_giua_luong
+
+            def close(self): pass
+        r.raw = Luong()
+        if content_length is not None:
+            r.headers["Content-Length"] = str(content_length)
+        r.headers.update({"Content-Type": "video/mp4",
+                          "Content-Disposition": 'attachment; filename="clip.mp4"'})
+    return r
+
+
+def _cai_session(monkeypatch, phan_hoi):
+    monkeypatch.setattr(requests.Session, "get", lambda self, url, **kw: phan_hoi)
+
+
+def _tat_ca_duoi(goc: Path):
+    return sorted(str(p) for p in goc.rglob("*"))
+
+
+# Câu chữ lấy từ mã gdown đã cài (`download_folder.py`, `download.py`) — không tự bịa.
+@pytest.mark.parametrize("phan_hoi,mong", [
+    (_phan_hoi(status=404, text="nope"), "status code 404"),
+    (_phan_hoi(status=200, text="<html><body>x</body></html>"), "Failed to parse folder contents"),
+])
+def test_drive_loi_gdown_that_khong_lo_id_thu_muc_qua_traceback(monkeypatch, phan_hoi, mong):
+    """Lỗi THẬT của gdown mang "… folder ID: <id>". Qua `CheUrlFormatter` (cả traceback) không còn id.
+    ĐỘT BIẾN: bỏ `from None` ⇒ `__cause__`/ngữ cảnh còn lỗi gốc ⇒ ĐỎ; bỏ mẫu `ID:` ⇒ ĐỎ."""
+    from web.app import CheUrlFormatter
+
+    _cai_session(monkeypatch, phan_hoi)
+    ra = io.StringIO()
+    h = logging.StreamHandler(ra)
+    h.setFormatter(CheUrlFormatter("%(levelname)s %(name)s: %(message)s"))
+    lg = logging.getLogger("videodl.web")
+    lg.addHandler(h)
+    try:
+        try:
+            DriveFolder().liet_ke(URL_DRIVE, max_videos=5, already_have=lambda ids: set(),
+                                  on_skip=lambda r: None, on_stop=lambda s: None)
+            pytest.fail("phải ném lỗi")
+        except RuntimeError as exc:
+            assert exc.__cause__ is None and exc.__suppress_context__, "không xích lỗi gốc mang id"
+            lg.exception("job crashed")
+    finally:
+        lg.removeHandler(h)
+    text = ra.getvalue()
+    assert "Traceback" in text and "nguồn drive" in text and mong in text, text
+    assert ID_THU_MUC not in text and "drive.google.com" not in text, text
+
+
+@pytest.mark.parametrize("t", [
+    f"Failed to retrieve folder contents for folder ID: {ID_THU_MUC} (status code 404). You may need",
+    f"Failed to parse folder contents for folder ID: {ID_THU_MUC}. The page structure may have changed.",
+    f"folder id:{ID_THU_MUC}",
+])
+def test_che_url_che_dang_folder_id_cua_gdown(t):
+    assert ID_THU_MUC not in che_url(t)
+
+
+def test_che_url_giu_chu_id_ngan_khong_phai_id_drive():
+    assert che_url("job ID: 42 xong") == "job ID: 42 xong"
+
+
+def _gdown_that_tai(monkeypatch, tmp_path, phan_hoi):
+    monkeypatch.setattr(gdrive_mod, "gdown", __import__("gdown"))
+    _cai_session(monkeypatch, phan_hoi)
+    dl = tmp_path / "dl"
+    dl.mkdir()
+    return dl, dl / "gd-abc.mp4"
+
+
+def test_drive_tai_that_thanh_cong_chi_con_dung_file_dich(monkeypatch, tmp_path):
+    dl, target = _gdown_that_tai(monkeypatch, tmp_path, _phan_hoi(chunks=[b"a" * 300, b"b" * 200], content_length=500))
+    gdrive_mod.download_file("abc", target)
+    assert _tat_ca_duoi(dl) == [str(target)] and target.stat().st_size == 500
+
+
+@pytest.mark.parametrize("ten,phan_hoi", [
+    ("dut_mang", _phan_hoi(chunks=[b"a" * 300], loi_giua_luong=requests.exceptions.ConnectionError("reset"),
+                           content_length=1000)),
+    ("thieu_byte", _phan_hoi(chunks=[b"a" * 400], content_length=1000)),
+])
+def test_drive_tai_dang_do_khong_de_lai_tep_nao(monkeypatch, tmp_path, ten, phan_hoi):
+    """gdown THẬT tạo `<tên>.part<rand>.part` và CHỦ Ý giữ khi đứt. ĐỘT BIẾN: bỏ `rmtree` ⇒ ĐỎ."""
+    dl, target = _gdown_that_tai(monkeypatch, tmp_path, phan_hoi)
+    with pytest.raises(Exception):
+        gdrive_mod.download_file("abc", target)
+    assert _tat_ca_duoi(dl) == [], "mọi tệp dưới thư mục tải phải biến mất"
+
+
+# ---------------------------------------------------------------- hiệu năng mẫu che
+
+@pytest.mark.parametrize("mau", ["a" * 200_000, "a." * 100_000, "x-" * 100_000, "1" * 200_000,
+                                 "ID: " + "z" * 200_000, "folders/" * 25_000, "drive.google" * 16_000])
+def test_che_url_khong_bung_no_tren_chuoi_dai(mau):
+    t0 = time.perf_counter()
+    che_url(mau, toi_da=None)
+    assert time.perf_counter() - t0 < 0.5
+
+
+def test_che_url_fbcdn_van_che_sau_khi_neo_dau_token():
+    ra = che_url("x scontent.xx.fbcdn.net/v/a.mp4?oh=1&oe=2 y")
+    assert ra == "x <url> y"
+
+
+# ---------------------------------------------------------------- cổng đĩa từng file
+
+def test_drive_dung_job_truoc_file_ke_khi_dia_duoi_nguong(db, monkeypatch, tmp_path, nhanh):
+    """ĐỘT BIẾN: không truyền hook kiểm đĩa cho `download_all` ⇒ tải đủ 3 file ⇒ ĐỎ."""
+    g = _cai_gdown(monkeypatch, tmp_path)
+    lan = {"n": 0}
+
+    class Dia:
+        def __init__(self, ok): self.ok, self.reason = ok, "đĩa còn 10 MB, dưới ngưỡng an toàn 300 MB"
+
+    def guard(path):
+        lan["n"] += 1
+        return Dia(lan["n"] <= 1)
+
+    monkeypatch.setattr(queue_mod, "check_disk_guard", guard)
+    job = _chay_job(db, tmp_path, URL_DRIVE, 10, "drive", HookDayDrive(db, g.dem_dia))
+    assert g.goi_file == [VIDEO_DRIVE[0][0]], "chỉ file đầu được tải"
+    assert job["trang_thai"] == "failed" and job["ly_do_dung"] == "het_dia" and job["xong"] == 1
+    assert g.dem_dia() == 0
+
+
+def test_job_tiktok_khong_bi_cong_dia_moi_file(db, monkeypatch, tmp_path, nhanh):
+    monkeypatch.setattr(queue_mod, "check_disk_guard",
+                        lambda p: pytest.fail("job TikTok không đi cổng đĩa từng file"))
+    refs = [VideoRef(video_id="777", url="https://www.tiktok.com/@a/video/777")]
+    monkeypatch.setattr(queue_mod, "_fetch_refs", lambda *a, **k: refs)
+    def tai_yt(url, opts):
+        Path(opts["outtmpl"] % {"id": "777", "ext": "mp4"}).write_bytes(b"v" * 9)
+        return {}
+
+    monkeypatch.setattr(downloader_mod, "_download_one", tai_yt)
+    jid = models.create_job(db, "https://www.tiktok.com/tag/abc", 3, "a@x.vn")
+    job = models.claim_next_pending_job(db, lane=models.LANE_TIKTOK)
+    queue_mod.process_job(db, tmp_path / "dl", tmp_path / "ck", job,
+                          lifecycle_hook=HookDayDrive(db, _dem_file(tmp_path / "dl")))
+    assert models.get_job(db, jid)["xong"] == 1
+
+
+# ---------------------------------------------------------------- FB: .part, 403, lọc trùng khi cuộn
+
+class _LuongFb:
+    def __init__(self, status=200, loi=None):
+        self.status_code, self.loi = status, loi
+
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def raise_for_status(self): pass
+
+    def iter_content(self, chunk_size):
+        yield b"x" * 100
+        if self.loi:
+            raise self.loi
+
+
+def _tat_tenacity(monkeypatch):
+    monkeypatch.setattr(downloader_mod._download_url_direct.retry, "sleep", lambda s: None)
+
+
+def test_fb_tai_dut_giua_luong_khong_de_lai_part(monkeypatch, tmp_path):
+    """ĐỘT BIẾN: bỏ `try/finally` xoá `.part` ⇒ ĐỎ."""
+    _tat_tenacity(monkeypatch)
+    import requests as rq
+    monkeypatch.setattr(rq, "get", lambda *a, **k: _LuongFb(loi=rq.exceptions.ConnectionError("reset")))
+    with pytest.raises(rq.exceptions.ConnectionError):
+        downloader_mod._download_url_direct("https://x.fbcdn.net/a.mp4", tmp_path / "fb-1.mp4", None)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("ma", [403, 410])
+def test_fb_403_va_410_la_loi_tung_video_khong_retry(monkeypatch, tmp_path, ma):
+    """ĐỘT BIẾN: bỏ nhánh 403 ⇒ `raise_for_status` không ném (giả) hoặc retry ⇒ ĐỎ."""
+    _tat_tenacity(monkeypatch)
+    import requests as rq
+    goi = []
+    monkeypatch.setattr(rq, "get", lambda *a, **k: goi.append(1) or _LuongFb(status=ma))
+    with pytest.raises(RuntimeError, match=str(ma)):
+        downloader_mod._download_url_direct("https://x.fbcdn.net/a.mp4", tmp_path / "fb-1.mp4", None)
+    assert len(goi) == 1 and list(tmp_path.iterdir()) == []
+
+
+def test_fb_cuon_den_khi_du_video_moi_khong_dem_cai_da_co(monkeypatch):
+    """Trang có 3 video đã có rồi mới tới video mới. `max_videos=2` mà dừng ở 3 ref đầu thì lượt chạy lại
+    nhận toàn cái đã có. ĐỘT BIẾN: bỏ `da_co` khỏi điều kiện dừng ⇒ ĐỎ."""
+    monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
+    page = FakePage([[_url_fbcdn(i, f"k{i}") for i in (1, 2, 3)], [_url_fbcdn(4, "k4")], [_url_fbcdn(5, "k5")]])
+    da_co = {"fb-1", "fb-2", "fb-3"}
+    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=10,
+                                   da_co=lambda ids: da_co & set(ids))
+    assert {"fb-4", "fb-5"} <= {r.video_id for r in refs}
+
+
+def test_fb_cuon_co_tran_khi_trang_toan_video_da_co(monkeypatch):
+    monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
+    lo = [[_url_fbcdn(i, f"k{i}") for i in range(b * 3, b * 3 + 3)] for b in range(10)]
+    page = FakePage(lo)
+    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=30,
+                                   da_co=lambda ids: set(ids))
+    assert len(refs) <= 2 * scraper_fb.HE_SO_TRAN_DA_CO + 3, "dừng ở trần, không cuộn vô hạn"
+
+
+def test_fb_liet_ke_truyen_da_co_cho_trinh_quet(monkeypatch):
+    goi: list = []
+    _gia_scrape(monkeypatch, [parse_fb_video_url(_url_fbcdn(1))], goi)
+    ds = lambda ids: set()
+    FbAdsLibrary().liet_ke(URL_FB, max_videos=3, already_have=ds, on_skip=lambda r: None, on_stop=lambda s: None)
+    assert goi[0][1]["da_co"] is ds
+
+
+# ---------------------------------------------------------------- trần ngày chỉ của TikTok
+
+URL_TIKTOK = "https://www.tiktok.com/tag/abc"
+
+
+def _dung_app_co_tran(db, monkeypatch, tmp_path, toi_da_job=2):
+    """Cổng trần THẬT (`daily_cap_rejection`, đếm trên DB thật) với trần job hạ còn `toi_da_job`."""
+    from web import lifecycle
+    thật = lifecycle.daily_cap_rejection
+    monkeypatch.setattr(app_mod, "DB_PATH", db)
+    monkeypatch.setattr(app_mod, "COOKIES_DIR", tmp_path / "ck")
+    monkeypatch.setattr(app_mod, "should_reject_new_job", lambda **kw: None)
+    monkeypatch.setattr(app_mod, "daily_cap_rejection",
+                        lambda **kw: thật(max_jobs_per_day=toi_da_job, **kw))
+
+
+def _tao(url, so_luong=5):
+    return app_mod.create_job(app_mod.CreateJobRequest(url=url, so_luong=so_luong), nguoi_tao="a@x.vn")
+
+
+def test_nguoi_cham_tran_tiktok_van_tao_duoc_job_drive_va_fb(db, monkeypatch, tmp_path):
+    _dung_app_co_tran(db, monkeypatch, tmp_path)
+    _tao(URL_TIKTOK), _tao(URL_TIKTOK)
+    with pytest.raises(HTTPException) as e:
+        _tao(URL_TIKTOK)
+    assert e.value.status_code == 429, "đối chứng: trần TikTok đang thật sự chặn"
+    assert _tao(URL_DRIVE)["nen_tang"] == "drive"
+    assert _tao(URL_FB)["nen_tang"] == "fb_ads"
+
+
+def test_job_drive_fb_khong_an_vao_tran_tiktok(db, monkeypatch, tmp_path):
+    """ĐỘT BIẾN: bỏ lọc `nen_tang` (ở cổng hoặc ở các hàm đếm) ⇒ ĐỎ."""
+    from web import lifecycle
+    _dung_app_co_tran(db, monkeypatch, tmp_path)
+    for _ in range(4):
+        _tao(URL_DRIVE)
+        _tao(URL_FB)
+    assert lifecycle.jobs_today_for_cookie(db, tmp_path / "ck", "a@x.vn") == 0
+    assert lifecycle.videos_today_for_cookie(db, tmp_path / "ck", "a@x.vn") == 0
+    assert _tao(URL_TIKTOK)["nen_tang"] == "tiktok"
+    assert lifecycle.jobs_today_for_cookie(db, tmp_path / "ck", "a@x.vn") == 1
+
+
+def test_tran_tiktok_cu_khong_doi(db, monkeypatch, tmp_path):
+    from web import lifecycle
+    _dung_app_co_tran(db, monkeypatch, tmp_path)
+    _tao(URL_TIKTOK, 7)
+    assert lifecycle.jobs_today_for_cookie(db, tmp_path / "ck", "a@x.vn") == 1
+    assert lifecycle.videos_today_for_cookie(db, tmp_path / "ck", "a@x.vn") == 7
+    _tao(URL_TIKTOK)
+    with pytest.raises(HTTPException) as e:
+        _tao(URL_TIKTOK)
+    assert e.value.status_code == 429 and "2/2 job" in e.value.detail
+    with pytest.raises(HTTPException) as e:        # URL lạ: vẫn qua cổng trần trước, như cũ
+        _tao("https://www.youtube.com/watch?v=a")
+    assert e.value.status_code == 429
