@@ -241,3 +241,36 @@ def test_do_thoi_luong_tu_tep_that_va_tep_hong(tmp_path):
     hong.write_bytes(b"khong phai video")
     assert lifecycle._do_thoi_luong_quietly(hong) is None
     assert lifecycle._do_thoi_luong_quietly(tmp_path / "khong-ton-tai.mp4") is None
+
+
+def test_do_thoi_luong_khong_khop_chu_duration_trong_metadata(tmp_path):
+    """Title do người đăng đặt có thể chứa "Duration: …" và ffmpeg in nó TRƯỚC dòng thời lượng thật.
+    ĐỘT BIẾN: bỏ neo đầu dòng ⇒ đọc 1 thay vì 7 ⇒ ĐỎ."""
+    goc = _video_that(tmp_path, 7)
+    co_meta = tmp_path / "meta.mp4"
+    subprocess.run([find_ffmpeg(), "-y", "-loglevel", "error", "-i", str(goc), "-c", "copy",
+                    "-metadata", "title=Duration: 00:00:01.00", str(co_meta)],
+                   capture_output=True, check=True)
+    assert lifecycle._do_thoi_luong_quietly(co_meta) == 7
+
+
+def test_do_thoi_luong_loi_bat_ky_van_xoa_mp4_va_ghi_hang(tmp_path, uploader_ok, monkeypatch):
+    """`_do_thoi_luong_quietly` chạy giữa upload xong và `path.unlink()`: lỗi lọt ra ở đó để mp4 nằm lại
+    trên đĩa không hàng nào trỏ tới. ĐỘT BIẾN: thu hẹp/bỏ `except` ⇒ ĐỎ."""
+    db = tmp_path / "jobs.db"
+    models.init_db(db)
+    video = _video_that(tmp_path, 10)
+    that = subprocess.run
+
+    def run_gia(cmd, *a, **k):
+        if isinstance(cmd, list) and cmd[1:2] == ["-i"] and len(cmd) == 3:   # đúng lời gọi đo thời lượng
+            raise subprocess.TimeoutExpired(cmd, 20)
+        return that(cmd, *a, **k)
+
+    monkeypatch.setattr(lifecycle.subprocess, "run", run_gia)
+    vid = "fb-9876543210987"
+    lifecycle.on_video_verified(job_id=1, ref=VideoRef(video_id=vid, url="https://x.fbcdn.net/a.mp4"),
+                                path=video, db_path=db)
+    assert not video.exists(), "mp4 phải bị xoá dù đo thời lượng lỗi"
+    hang = _hang_video(db, vid)
+    assert hang is not None and hang["duration"] is None

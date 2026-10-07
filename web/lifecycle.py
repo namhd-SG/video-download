@@ -537,7 +537,9 @@ def khung_phu_path_for(db_path: Path, video_id: str, phan_tram: int) -> Path:
     return thumbs_dir_for(db_path) / "khung" / f"{video_id}-{phan_tram}.webp"
 
 
-_MAU_THOI_LUONG = re.compile(r"Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)")
+# Neo đầu dòng: ffmpeg in khối `Metadata:` (title, comment do người đăng đặt) TRƯỚC dòng thời lượng
+# thật, nên `.search` không neo sẽ khớp một title chứa chữ "Duration: …".
+_MAU_THOI_LUONG = re.compile(r"^\s*Duration:\s*(\d+):(\d{2}):(\d{2}(?:\.\d+)?)", re.M)
 
 
 def _do_thoi_luong_quietly(path: Path) -> int | None:
@@ -553,7 +555,7 @@ def _do_thoi_luong_quietly(path: Path) -> int | None:
         if not ffmpeg_bin:
             return None
         result = subprocess.run([ffmpeg_bin, "-i", str(path)], capture_output=True, text=True,
-                                timeout=THUMB_TIMEOUT_SECONDS)
+                                errors="replace", timeout=THUMB_TIMEOUT_SECONDS)
         m = _MAU_THOI_LUONG.search(result.stderr or "")
         if not m:
             return None
