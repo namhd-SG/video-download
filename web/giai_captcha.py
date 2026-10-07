@@ -475,6 +475,7 @@ class BoPhatLai:
                 self.tre_qua_D += 1
             lich = max(ev.t / 1000.0 + self._anh_xa + self._d_hieu_luc, self._lich_cuoi)
             if lich - t_toi > LECH_LICH_TOI_DA_GIAY:
+                # Không bao giờ lên tới API: chỉ `_xa_cho_lo` gọi, bắt ngay thành `lo_khong_hop_le` ⇒ không cần `nhan`.
                 raise LoiGiai(400, "Đồng hồ popup lệch bất thường.", True)
             self._lich_cuoi = lich
             self._hang.append((lich, ev))
@@ -786,7 +787,10 @@ class PhienGiai:
                 "huy": _dem_thanh_chuoi(
                     {ld: n for ld, n in self.huy_theo_ly_do.items() if ld not in (LY_DO_HUY_POPUP, "doi_token")},
                     LY_DO_HUY_DEM),
-                # `tu_choi` = vì sao lô bị 400 (mỗi lô như vậy về sau thành một `lo_bi_tu_choi` khi xả tới mốc).
+                # `tu_choi` = số lô bị API trả 400 có huỷ gesture, theo nhãn, đếm LÚC TRẢ 400. Hai trường đo hai việc
+                # khác nhau: `lo_bi_tu_choi` ≤ tổng `tu_choi` — mốc 400 có thể không thành một lần huỷ riêng (`bo_lo` trả
+                # sớm; đệm đầy ⇒ `qua_nhieu_lo_cho`; lần huỷ khác xoá `_cho_lo` trước khi xả tới mốc), và một lô gửi lại
+                # sau lỗi mạng có thể bị đếm hai lần. Chênh lệch giữa hai số KHÔNG phải lỗi.
                 "tu_choi": _dem_thanh_chuoi(self.tu_choi_theo_nhan, NHAN_TU_CHOI),
             }
 
