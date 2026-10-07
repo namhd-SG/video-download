@@ -17,9 +17,8 @@ from typing import Callable, Protocol
 
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
-from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO, phan_loai_loi
-from tiktok_music_downloader.scraper import scrape_music_page_multi
+from tiktok_music_downloader.nguon import NGUON_MAC_DINH, chon_nguon
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
@@ -292,16 +291,6 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         except Exception as exc:  # noqa: BLE001
             log.warning("job %s: không ghi được lý do dừng (%s)", job_id, type(exc).__name__)
 
-    tag = parse_tag_slug(url)
-    if tag is not None:
-        # The hashtag path filters page by page, so "go deeper until N new"
-        # works; the scrapers below hand back one finished list, so they are
-        # filtered once at the end.
-        return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
-                                  already_have=_already_have, on_skip=_note_skip,
-                                  on_stop=_note_stop,
-                                  on_pages=_note_pages)
-
     # Đào sâu tới khi đủ `max_videos` video MỚI — không còn "lấy một danh sách
     # rồi lọc một lần ở cuối".
     #
@@ -328,18 +317,25 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             # Bộ đếm feed cộng dồn mọi lượt: 0/0 (không đo được feed nào) khác "feed rỗng".
             "thong_ke_feed_ra": tk_feed,
         }
-    refs = scrape_music_page_multi(
+    # Bảng nguồn chọn cách liệt kê: hashtag đi `enumerate_hashtag` (lọc từng trang nên "đào sâu
+    # tới khi đủ N mới" chạy được, không cookie/profile), còn music/search/profile đi
+    # `scrape_music_page_multi`. URL tới được đây đã qua cổng `chon_nguon` ở `POST /jobs`.
+    # Job cũ trong DB / đường không qua cổng mà URL không nguồn nào nhận: giữ đúng cách trước đây
+    # (mọi URL không phải hashtag đều đi trình quét music/profile) thay vì ném lỗi.
+    nguon_url = chon_nguon(url) or NGUON_MAC_DINH
+    refs = nguon_url.liet_ke(
         url,
-        passes=SO_VONG_DAO_SAU,
         max_videos=max_videos,
-        max_seconds=TRAN_GIAY_MOT_LUOT,
+        proxy=proxy,
+        cookies_path=cookies_path,
         already_have=_already_have,
         on_skip=_note_skip,
         on_stop=_note_stop,
-        cookies_path=cookies_path,
-        proxy=proxy,
+        on_pages=_note_pages,
         dem_trang=_dem_mot_trang,
-        **kw_profile,
+        passes=SO_VONG_DAO_SAU,
+        max_seconds=TRAN_GIAY_MOT_LUOT,
+        kw_profile=kw_profile,
     )
     # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
     # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
@@ -737,19 +733,52 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 profile_theo_job.xoa_profile_job(db_path, job_id)
 
 
-class JobWorker:
-    """Owns the single background thread that drains the job queue.
+def quet_khoi_dong(db_path: Path) -> int:
+    """Boot sweep: job còn 'running' từ lần tiến trình chết trước ⇒ 'interrupted'.
 
-    Sequential by construction: `_loop` claims one job, calls `process_job`
-    (which blocks until that job is fully done), then loops back to claim
-    the next. There is no path that starts a second job before the first
-    returns.
+    Chạy ĐÚNG MỘT LẦN, trước khi worker nào start (gọi từ lifespan của `web/app.py`). Nó không nằm
+    trong `JobWorker.start()` nữa: có hai worker, nếu mỗi worker tự quét thì worker start sau sẽ
+    đánh `interrupted` job mà worker start trước vừa nhận. Trả số job 'running' đã đổi."""
+    co_giai = profile_theo_job.profile_captcha_dang_bat()
+    dem: dict = {}
+    interrupted = models.mark_running_as_interrupted(db_path, co_giai=co_giai, dem_ra=dem)
+    if interrupted:
+        log.warning(
+            "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
+            interrupted,
+        )
+    # Số job ở trạng thái giải vừa bị đổi — trước đây câu này chạy mà không ai thấy số.
+    if dem.get("giai"):
+        log.warning("boot sweep: %d job %s (cờ %s %s)", dem["giai"],
+                    "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if co_giai
+                    else "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted (tinh_nang_giai_tat)",
+                    profile_theo_job.ENV_PROFILE_CAPTCHA, "BẬT" if co_giai else "TẮT")
+    return interrupted
+
+
+class JobWorker:
+    """Owns one background thread that drains ONE lane of the job queue.
+
+    Sequential by construction within its lane: `_loop` claims one job, calls `process_job`
+    (which blocks until that job is fully done), then loops back to claim the next. There is no
+    path that starts a second job of the same lane before the first returns.
+
+    Hai lane, hai worker cùng tiến trình: `tiktok` (y nguyên mọi thứ vốn có: captcha, quét
+    profile, đào sâu) và `khac` (mọi nền tảng khác). Job dài của lane này không chặn lane kia.
+    Lane `khac` KHÔNG quét profile, KHÔNG nhặt job `cho_giai`. `loai_tru_fn` trả các nền tảng
+    lane `khac` phải bỏ qua lúc nhận job (tắt / hết trần); gọi mỗi vòng nhận.
     """
 
     def __init__(self, db_path: Path, downloads_dir: Path, cookies_dir: Path,
                  poll_interval: float = POLL_INTERVAL_SECONDS,
                  process_job_fn: Callable[..., None] = process_job,
-                 disk_guard_fn: Callable[[Path], object] = check_disk_guard):
+                 disk_guard_fn: Callable[[Path], object] = check_disk_guard,
+                 lane: str = models.LANE_TIKTOK,
+                 loai_tru_fn: Callable[[], tuple[str, ...]] = lambda: ()):
+        if lane not in (models.LANE_TIKTOK, models.LANE_KHAC):
+            raise ValueError(f"lane không hợp lệ: {lane!r}")
+        self._lane = lane
+        self._loai_tru_fn = loai_tru_fn
         self._db_path = db_path
         self._downloads_dir = downloads_dir
         self._cookies_dir = cookies_dir
@@ -775,28 +804,16 @@ class JobWorker:
         self._quet_profile_luc: float | None = None
 
     def start(self) -> None:
-        """Init schema, sweep crashed-mid-job rows (constraint b), then run."""
+        """Init schema rồi chạy. KHÔNG quét job 'running' dở: việc đó là `quet_khoi_dong`, gọi
+        đúng một lần trước khi worker nào start."""
         models.init_db(self._db_path)
-        co_giai = profile_theo_job.profile_captcha_dang_bat()
-        dem: dict = {}
-        interrupted = models.mark_running_as_interrupted(self._db_path, co_giai=co_giai, dem_ra=dem)
-        if interrupted:
-            log.warning(
-                "boot sweep: %d job(s) were 'running' at crash time -> 'interrupted'",
-                interrupted,
-            )
-        # Số job ở trạng thái giải vừa bị đổi — trước đây câu này chạy mà không ai thấy số.
-        if dem.get("giai"):
-            log.warning("boot sweep: %d job %s (cờ %s %s)", dem["giai"],
-                        "cho_giai/dang_mo/dang_giai -> cho_xac_minh" if co_giai
-                        else "cho_xac_minh/cho_giai/dang_mo/dang_giai -> interrupted (tinh_nang_giai_tat)",
-                        profile_theo_job.ENV_PROFILE_CAPTCHA, "BẬT" if co_giai else "TẮT")
-        # Cùng chỗ boot sweep: dir profile còn sót từ lần chết trước (SIGKILL không
-        # chạy `finally`) phải dọn trước khi nhận job.
-        self._quet_profile_dinh_ky(buoc_ep=True)
-        self._canh_bao_profiles_khi_co_tat()
+        if self._lane == models.LANE_TIKTOK:
+            # Dir profile còn sót từ lần chết trước (SIGKILL không chạy `finally`) phải dọn
+            # trước khi nhận job; profile chỉ có ở lane TikTok.
+            self._quet_profile_dinh_ky(buoc_ep=True)
+            self._canh_bao_profiles_khi_co_tat()
         self._stop.clear()
-        self._thread = threading.Thread(target=self._loop, name="videodl-worker", daemon=True)
+        self._thread = threading.Thread(target=self._loop, name=f"videodl-worker-{self._lane}", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 5.0) -> None:
@@ -826,7 +843,8 @@ class JobWorker:
             # TRƯỚC cổng đĩa: nhánh chờ đĩa `continue` trước `claim`, đặt bộ quét sau
             # cổng thì đúng lúc đĩa cạn — lúc dir profile (cookie) cần được dọn nhất —
             # nó không bao giờ chạy. Chạy cả khi hàng có job pending.
-            self._quet_profile_dinh_ky()
+            if self._lane == models.LANE_TIKTOK:
+                self._quet_profile_dinh_ky()
             try:
                 # Cổng đĩa LÚC NHẬN job, cùng ngưỡng với cổng lúc tạo job (`POST /jobs`):
                 # job đã chờ trước khi đĩa tụt không được bắt đầu tải khi đĩa đã cạn.
@@ -850,10 +868,15 @@ class JobWorker:
                 self._cho_dia = None
                 # Cờ BẬT: job `cho_giai` (người đã bấm "Tôi giải ngay") được nhặt TRƯỚC `pending`.
                 # Cờ TẮT: lời gọi y hệt trước (một tham số, không SELECT thêm).
-                if profile_theo_job.profile_captcha_dang_bat():
-                    job = models.claim_next_pending_job(self._db_path, uu_tien_cho_giai=True)
+                # Lane `khac` không bao giờ truyền `uu_tien_cho_giai`: giải captcha là việc của TikTok.
+                if self._lane == models.LANE_KHAC:
+                    job = models.claim_next_pending_job(self._db_path, lane=models.LANE_KHAC,
+                                                        loai_tru=tuple(self._loai_tru_fn()))
+                elif profile_theo_job.profile_captcha_dang_bat():
+                    job = models.claim_next_pending_job(self._db_path, uu_tien_cho_giai=True,
+                                                        lane=models.LANE_TIKTOK)
                 else:
-                    job = models.claim_next_pending_job(self._db_path)
+                    job = models.claim_next_pending_job(self._db_path, lane=models.LANE_TIKTOK)
                 self._loi_lien_tiep = 0  # nhận được (hoặc hàng rỗng): DB đang đọc/ghi được
                 if job is not None:
                     self._process_job_fn(self._db_path, self._downloads_dir, self._cookies_dir, job)

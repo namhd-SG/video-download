@@ -26,7 +26,8 @@ from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
-from tiktok_music_downloader.utils import che_url, is_tiktok_collection
+from tiktok_music_downloader.nguon import chon_nguon
+from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
 from web import models
@@ -46,7 +47,7 @@ from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
                            pages_today_for_cookie, should_reject_new_job,
                            trash_drive_file, videos_today_for_cookie,
                            thumb_path_for, thumbs_dir_for)
-from web.queue import JobWorker
+from web.queue import JobWorker, quet_khoi_dong
 from web.vao_bo_lap import LapVaoBo
 
 log = logging.getLogger("videodl.web")
@@ -170,7 +171,11 @@ MAX_VIDEO_ID_LEN = 32
 SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
-worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR)
+# Hai worker, hai hàng đợi (xem `JobWorker`): `worker` = lane TikTok (giữ tên cũ), `worker_khac` =
+# mọi nền tảng khác. `_lifespan` dựng lại `worker_khac` từ đường dẫn HIỆN TẠI lúc khởi động, để
+# không có luồng nào bám vào đường dẫn cũ nếu cấu hình đổi sau lúc import.
+worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_TIKTOK)
+worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC)
 
 # Đặt biến này (giá trị bất kỳ, không rỗng) thì `_lifespan` KHÔNG khởi bộ kiểm định kỳ
 # "đã vào bộ" — đường lùi tính năng mà không cần deploy lại.
@@ -254,7 +259,13 @@ async def _lifespan(app: FastAPI):
     da_moi = models.moi_admin_tu_env(DB_PATH, admin_tu_env())
     if da_moi:
         log.info("mồi %d admin từ cấu hình máy (bảng trước đó chưa có admin nào)", da_moi)
+    # Boot sweep ĐÚNG MỘT LẦN, trước khi worker nào start (worker sau mà tự quét sẽ đánh
+    # `interrupted` job worker trước vừa nhận).
+    quet_khoi_dong(DB_PATH)
+    global worker_khac
+    worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC)
     worker.start()
+    worker_khac.start()
     # Bộ kiểm "đã vào bộ": ẩn video đã được copy vào bộ tự tìm, dọn tệp nguồn sau 7
     # ngày. Tắt nhanh bằng env nếu cần lùi mà không deploy lại.
     lap = None if os.environ.get(ENV_TAT_LAP_VAO_BO) else LapVaoBo(DB_PATH)
@@ -265,6 +276,7 @@ async def _lifespan(app: FastAPI):
     finally:
         if lap is not None:
             lap.stop()
+        worker_khac.stop()
         worker.stop()
 
 
@@ -375,16 +387,24 @@ def healthz() -> dict:
     (current loop failing, or a job stuck unmarked) · "cho_dia" (waiting: disk below the
     new-job threshold). HTTP stays 200: the web side is up either way, and
     deploy scripts gate on the status code."""
-    tt = worker.trang_thai()
-    ma = ("chet" if not tt["song"] else "loi_lap" if tt["loi_lien_tiep"] > 0 or tt.get("job_ket")
-          else "cho_dia" if tt["cho_dia"] else "ok")
-    return {"status": "ok", "worker": ma}
+    ma_tiktok = _ma_worker(worker.trang_thai())
+    return {"status": "ok", "worker": ma_tiktok,
+            "lanes": {"tiktok": ma_tiktok, "khac": _ma_worker(worker_khac.trang_thai())}}
+
+
+def _ma_worker(tt: dict) -> str:
+    """Mã healthz của MỘT lane — mỗi lane tự phán, không gộp: một lane chết không được bị lane
+    còn lại che đi (và ngược lại)."""
+    return ("chet" if not tt["song"] else "loi_lap" if tt["loi_lien_tiep"] > 0 or tt.get("job_ket")
+            else "cho_dia" if tt["cho_dia"] else "ok")
 
 
 @app.get("/admin/worker")
 def admin_worker(nguoi_tao: str = Depends(require_admin)) -> dict:
-    """Chi tiết trạng thái worker cho badge quản trị (loại lỗi, số lần lặp, lý do chờ đĩa)."""
-    return worker.trang_thai()
+    """Chi tiết trạng thái worker cho badge quản trị (loại lỗi, số lần lặp, lý do chờ đĩa).
+    Các trường phẳng là của lane TikTok (badge hiện có đọc chúng); `lanes` có đủ từng lane."""
+    tiktok = worker.trang_thai()
+    return {**tiktok, "lanes": {"tiktok": tiktok, "khac": worker_khac.trang_thai()}}
 
 
 # Cột nội bộ của hàng job: không phải dữ liệu cho người dùng nên không ra API/SSE.
@@ -422,7 +442,8 @@ def create_job(payload: CreateJobRequest,
                                    nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
     if over_cap is not None:
         raise HTTPException(status_code=429, detail=over_cap)
-    if not is_tiktok_collection(payload.url):
+    nguon = chon_nguon(payload.url)
+    if nguon is None:
         raise HTTPException(
             status_code=400,
             detail="url phải là trang TikTok music/tag/search/profile",
@@ -441,7 +462,7 @@ def create_job(payload: CreateJobRequest,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     job_id = models.create_job(DB_PATH, payload.url, payload.so_luong, nguoi_tao,
-                               usecase=usecase, insight_goc=insight_goc)
+                               usecase=usecase, insight_goc=insight_goc, nen_tang=nguon.ten)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng
     return _job_ra_api(job)
