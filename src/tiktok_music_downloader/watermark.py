@@ -187,6 +187,28 @@ def find_ffmpeg() -> str | None:
     return None
 
 
+# Deno cho yt-dlp (giải thử thách JS của YouTube). Dịch vụ chạy dưới launchd với PATH `/usr/bin:/bin:/usr/sbin:/sbin`
+# (không có Homebrew), nên `shutil.which` không thấy — cùng lý do `find_ffmpeg` có danh sách dự phòng.
+_DENO_FALLBACK_PATHS = (
+    "~/.deno/bin/deno",                      # cài bằng script chính thức vào home
+    "/opt/homebrew/bin/deno",                # Apple-silicon Homebrew (mini)
+    "/usr/local/bin/deno",                   # Intel Homebrew
+)
+
+
+def find_deno() -> str | None:
+    """Đường dẫn tới Deno, hoặc None nếu máy không có. PATH trước, rồi các chỗ cài thường gặp.
+    yt-dlp nhận đường này qua `js_runtimes={'deno': {'path': ...}}`, không cần PATH."""
+    found = shutil.which("deno")
+    if found:
+        return found
+    for cand in _DENO_FALLBACK_PATHS:
+        p = Path(cand).expanduser()
+        if p.is_file():
+            return str(p)
+    return None
+
+
 def _render_text_png(text: str) -> Path:
     """Rasterize `text` into a fully-opaque transparent-background PNG.
 

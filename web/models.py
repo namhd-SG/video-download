@@ -56,6 +56,26 @@ CREATE TABLE IF NOT EXISTS jobs (
 """
 
 
+# Pacer trần IP của lane nền tảng khác (`web/pacer.py`). Hai bảng THÊM thuần tuý, không đụng bảng cũ: DB có sẵn
+# chỉ được tạo thêm hai bảng rỗng. `luot_tai` không có khoá chính riêng (rowid ngầm): mỗi lời gọi tới nền tảng
+# là một hàng, kể cả lời gọi lỗi và lần thử lại.
+_LUOT_TAI_SCHEMA = """
+CREATE TABLE IF NOT EXISTS luot_tai (
+    nen_tang TEXT NOT NULL,
+    luc TEXT NOT NULL,
+    job_id INTEGER
+)
+"""
+_LUOT_TAI_INDEX = "CREATE INDEX IF NOT EXISTS idx_luot_tai_nen_tang_luc ON luot_tai(nen_tang, luc)"
+_NEN_TANG_TAT_SCHEMA = """
+CREATE TABLE IF NOT EXISTS nen_tang_tat (
+    nen_tang TEXT PRIMARY KEY,
+    luc TEXT NOT NULL,
+    ly_do TEXT NOT NULL
+)
+"""
+
+
 _VIDEOS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS videos (
     video_id TEXT PRIMARY KEY,
@@ -403,6 +423,9 @@ def init_db(db_path: Path) -> None:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
         conn.execute(_SIGHTINGS_SCHEMA)
+        conn.execute(_LUOT_TAI_SCHEMA)
+        conn.execute(_LUOT_TAI_INDEX)
+        conn.execute(_NEN_TANG_TAT_SCHEMA)
         conn.execute(_NGUOI_DUNG_SCHEMA)
         # Bổ khuyết người đã có job từ trước khi bảng này tồn tại. Không có
         # bước này thì ngay sau khi nâng cấp, trang Quản trị gần như TRỐNG và

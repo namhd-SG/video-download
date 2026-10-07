@@ -124,6 +124,29 @@ _MAU_DRIVE = re.compile(
     # `id`/`ID` kèm `:` hoặc `=` rồi một chuỗi dài: gdown báo "… for folder ID: <id> (status code …)" và
     # urllib3/requests báo "… url: /uc?id=<id>&export=download". Tuyến tính (không lồng lượng từ).
     r"|\bid\s*[:=]\s*[\w\-]{20,}")
+# Id video của link lẻ đa nền tảng (`yt-`, `ig-`, `fbv-`, `x-`, `pin-`, `dy-`, `bili-`, `snap-` + id nền tảng) là
+# dấu vết nội dung khách đã tải nên không vào log, cùng lý do với `gd-`. Cần ≥6 ký tự sau gạch để `yt-dlp:` (tên thư
+# viện, vào log DEBUG) không bị che; che dư một chuỗi như `x-forwarded-for` chỉ làm log kém đọc, che thiếu mới là rò.
+# `fb-` (Ads Library, số tài sản quảng cáo công khai) và `fbv-` trước giờ không che: `fb-` giữ nguyên; `fbv-` che vì
+# là id video người dùng dán link.
+_MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|x|pin|dy|bili|snap)-([\w\-]{6,})")
+# Thông điệp lỗi của yt-dlp mở đầu bằng `[extractor] <id video>:` (id TRẦN, không tiền tố) — vd
+# `ERROR: [youtube] dQw4w9WgXcQ: Video unavailable`. Che id, giữ nhãn extractor và lý do.
+# TikTok KHÔNG che: id video TikTok trong thông điệp lỗi được GIỮ có chủ đích (để dò đúng video hỏng).
+_MAU_ID_YTDLP = re.compile(r"(?i)(\[(?!tiktok)[\w:\-]+\]\s+)([\w\-]{6,64})(?=:)")
+
+
+def _giong_id_nen_tang(tok: str) -> bool:
+    """Chuỗi sau tiền tố có HÌNH id thật (có chữ số, chữ HOA hoặc `_`) chứ không phải một từ thường như
+    `dlp-ejs` (trong `yt-dlp-ejs`) hay `forwarded-for` (trong `x-forwarded-for`). Dấu `-` KHÔNG tính: từ ghép
+    tiếng Anh có `-`. Id thật không có chữ số/HOA/`_` nào (11 ký tự toàn chữ thường và `-`) là khả năng cực nhỏ."""
+    return any(c.isdigit() or c.isupper() or c == "_" for c in tok)
+
+
+def _giong_id_ytdlp(tok: str) -> bool:
+    """Như trên cho id đứng sau `[extractor] `: từ thường tiếng Anh (`Destination`, `Traceback`, `Extracting`)
+    chỉ viết hoa chữ đầu nên không tính chữ hoa ĐẦU; `-` được tính (id YouTube có `-` giữa chừng)."""
+    return any(c.isdigit() or c.isupper() or c in "_-" for c in tok[1:]) or tok[0].isdigit()
 # Neo đầu token (`(?<![\w.\-])`): không có nó, `[\w.\-]*` thử lại từ MỌI vị trí trong một token dài ⇒ O(n²),
 # mà formatter chạy trên mọi dòng log.
 _MAU_FBCDN = re.compile(r"(?i)(?<![\w.\-])[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")
@@ -135,6 +158,8 @@ def che_url(text: object, toi_da: int | None = 300) -> str:
     thông điệp lỗi tải."""
     s = _MAU_URL.sub("<url>", str(text))
     s = _MAU_DRIVE.sub("<drive>", s)
+    s = _MAU_ID_NEN_TANG.sub(lambda m: "<id>" if _giong_id_nen_tang(m.group(1)) else m.group(0), s)
+    s = _MAU_ID_YTDLP.sub(lambda m: m.group(1) + ("<id>" if _giong_id_ytdlp(m.group(2)) else m.group(2)), s)
     s = _MAU_FBCDN.sub("<url>", s)
     s = _MAU_HANDLE.sub("/@<h>", s)
     return s if toi_da is None or len(s) <= toi_da else s[:toi_da] + "…"
@@ -253,14 +278,19 @@ def random_user_agent(rng: random.Random | None = None) -> str:
 
 
 class JitterThrottle:
-    """Enforce a random delay in [base*0.75, base*2.0] between calls."""
+    """Enforce a random delay in [base*0.75, base*2.0] between calls — hoặc trong `khoang=(thấp, cao)` giây
+    khi được truyền (nền tảng link lẻ: khoảng cố định 10–20 s, không suy từ `base`)."""
 
-    def __init__(self, base_seconds: float, rng: random.Random | None = None):
+    def __init__(self, base_seconds: float, rng: random.Random | None = None,
+                 khoang: tuple[float, float] | None = None):
         self.base = max(0.0, base_seconds)
         self.rng = rng or random.Random()
+        self.khoang = khoang
         self._last = 0.0
 
     def _next_interval(self) -> float:
+        if self.khoang is not None:
+            return self.rng.uniform(*self.khoang)
         if self.base <= 0:
             return 0.0
         return self.rng.uniform(self.base * 0.75, self.base * 2.0)
@@ -330,3 +360,11 @@ STOP_HASHTAG_KHONG_TRA_DUOC = "hashtag_khong_tra_duoc"
 # Đĩa dưới ngưỡng an toàn GIỮA job nền tảng khác: dừng trước khi tải file kế, không tải tiếp
 # cho tới khi đầy. Các file đã lên Drive vẫn tính; chạy lại sẽ bỏ qua chúng (lọc trùng).
 STOP_HET_DIA = "het_dia"
+# Pacer trần IP toàn hệ thống (lane nền tảng khác, `web/pacer.py`): job dừng KHÔNG ngủ để lane không bị chặn.
+# `tran_gio` chạm trần theo giờ — chạy lại được khi cửa sổ trống; `tran_ngay` hết trần ngày (giờ VN).
+STOP_TRAN_GIO = "tran_gio"
+STOP_TRAN_NGAY = "tran_ngay"
+# Nền tảng trả tín hiệu CHẶN (bot-check / captcha / bị giới hạn tần suất / HTTP 429): nền tảng bị tắt tới khi admin bật lại.
+STOP_BI_CHAN = "bi_chan"
+# Job YouTube mà máy không có Deno: dừng trước khi gọi yt-dlp lần nào (cấu hình máy hỏng, không phải lỗi video).
+STOP_THIEU_DENO = "thieu_deno"

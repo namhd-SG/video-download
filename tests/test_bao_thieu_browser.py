@@ -143,7 +143,7 @@ def test_job_140_xin_88_do_duoc_hien_87_tren_88_va_dong_nguon(trang, db):
     nguon = h.locator(".nguon").inner_text()
     assert "Nguồn lần này có 89 video" in nguon and "bạn xin 140" in nguon
     assert "88 mới · 1 đã có trong kho" in nguon
-    assert h.locator(".lo-tt").count() == 1 and "1 video TikTok không cho tải" in h.locator(".lo-tt").inner_text()
+    assert h.locator(".lo-tt").count() == 1 and "1 video nguồn không cho tải" in h.locator(".lo-tt").inner_text()
     assert h.locator(".lo-ht").count() == 0, "lỗi TikTok không được tô đỏ"
     assert h.locator(".progress-fill.has-errors").count() == 0
     assert h.get_by_role("button", name="Chạy lại để kiếm thêm 53 video…").count() == 1

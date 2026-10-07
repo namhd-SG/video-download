@@ -83,6 +83,16 @@
     // lên Drive vẫn còn; chạy lại sau khi đĩa có chỗ sẽ bỏ qua chúng và tải phần còn lại.
     het_dia: "Dừng: ổ đĩa của máy chạy sắp đầy nên job dừng trước khi tải tiếp. Những video đã lên " +
              "Drive vẫn còn — chạy lại sau khi đĩa có chỗ để tải phần còn lại.",
+    // Trần IP của nền tảng link lẻ (YouTube, Instagram…): dùng chung cho cả văn phòng, nên job DỪNG chứ không
+    // ngủ chờ — để các nền tảng khác phía sau không bị kẹt.
+    tran_gio: "Dừng: nền tảng này đã chạm trần số lượt mỗi giờ của cả hệ thống (giữ cho IP văn phòng không bị " +
+              "gắn cờ). Video đã tải vẫn còn — chạy lại sau chừng một giờ để tải phần còn lại.",
+    tran_ngay: "Dừng: nền tảng này đã chạm trần số lượt trong NGÀY (giờ VN) của cả hệ thống. Video đã tải vẫn " +
+               "còn — chạy lại vào ngày mai để tải phần còn lại.",
+    bi_chan: "Dừng: nền tảng báo nghi ngờ truy cập tự động (bot-check / captcha / giới hạn tần suất). Nền tảng " +
+             "này tạm tắt cho tới khi quản trị viên bật lại — đừng chạy lại ngay, việc đó chỉ làm đậm dấu vết.",
+    thieu_deno: "Dừng: máy chạy chưa có Deno nên không tải được YouTube — đây là lỗi cấu hình máy, không phải " +
+                "lỗi video. Báo người quản trị.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
                    "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
     // Lượt rỗng với mã này giờ ghi "Lỗi" (không còn "Xong"), nên câu không được
@@ -247,10 +257,53 @@
 
   // Rút gọn URL nguồn để hiện trong hộp lọc/pill mà không mất khả năng nhận
   // ra nguồn nào là nguồn nào (URL đầy đủ vẫn nằm trong `title=`).
+  // Nhãn nền tảng cho nguồn là LINK VIDEO LẺ (mỗi video có nguồn riêng là URL của chính nó): "YouTube · <id ngắn>".
+  // Chỉ tên nền tảng thì mọi chip trùng nhau; URL đầy đủ vẫn nằm trong `title=`. `null` = không phải link lẻ.
+  const NEN_TANG_THEO_HOST = [
+    [/(^|\.)(youtube\.com|youtu\.be)$/, "YouTube"], [/(^|\.)instagram\.com$/, "Instagram"],
+    [/(^|\.)(facebook\.com|fb\.watch)$/, "Facebook"], [/(^|\.)(x\.com|twitter\.com)$/, "X"],
+    [/(^|\.)pinterest\.[a-z.]+$/, "Pinterest"], [/(^|\.)douyin\.com$/, "Douyin"],
+    [/(^|\.)bilibili\.com$/, "Bilibili"], [/(^|\.)snapchat\.com$/, "Snapchat"],
+    [/(^|\.)tiktok\.com$/, "TikTok"],
+  ];
+  function thongTinLinkLe(url) {
+    const host = url.hostname.toLowerCase();
+    const ten = (NEN_TANG_THEO_HOST.find(([re]) => re.test(host)) || [])[1];
+    if (!ten) return null;
+    const path = url.pathname.replace(/\/+$/, "");
+    const id = url.searchParams.get("v") || (path.match(/\/(?:video|shorts|reel|reels|p|status|pin|spotlight)\/([^/]+)/) || [])[1]
+      || (host.endsWith("youtu.be") ? path.slice(1) : "") || url.searchParams.get("fbid") || "";
+    // TikTok: trang tag/music/profile giữ nhãn cũ; chỉ `/video/<id>` là link lẻ.
+    if (ten === "TikTok" && !/\/video\/\d+/.test(path)) return null;
+    if (ten === "Facebook" && /\/ads\/library/.test(path)) return null;
+    return { ten, id };
+  }
+
+  function nhanLinkLe(url) {
+    const t = thongTinLinkLe(url);
+    if (!t) return null;
+    if (!t.id) return t.ten;
+    return `${t.ten} · ${t.id.length > 12 ? t.id.slice(0, 11) + "…" : t.id}`;
+  }
+
+  // Bộ lọc nguồn cho link lẻ: khoá theo NỀN TẢNG, không theo URL đầy đủ — mỗi video link lẻ có nguồn riêng, khoá theo
+  // URL sinh ra hàng trăm hộp một-video. `null` = không phải link lẻ (giữ bucket theo URL như cũ).
+  function bucketNenTangLinkLe(u) {
+    try {
+      const t = thongTinLinkLe(new URL(u));
+      if (!t) return null;
+      return { key: `nen-tang:${t.ten}`, label: t.ten === "TikTok" ? "TikTok · video lẻ" : t.ten };
+    } catch {
+      return null;
+    }
+  }
+
   function shortenSourceUrl(u) {
     try {
       const url = new URL(u);
       const path = url.pathname.replace(/\/+$/, "");
+      const le = nhanLinkLe(url);
+      if (le) return le;
       if (path.startsWith("/tag/")) return "#" + path.slice(5);
       if (path.startsWith("/music/")) return "🎵 " + decodeURIComponent(path.slice(7));
       if (path.startsWith("/@")) return path.slice(1);
@@ -263,7 +316,10 @@
 
   function sourceBuckets(video) {
     if (!video.nguon || video.nguon.length === 0) return [{ key: UNKNOWN, label: "Không rõ" }];
-    return video.nguon.map((u) => ({ key: u, label: shortenSourceUrl(u) }));
+    return video.nguon.map((u) => {
+      const le = bucketNenTangLinkLe(u);
+      return le ? { ...le, title: u } : { key: u, label: shortenSourceUrl(u) };
+    });
   }
 
   function durationBucket(sec) {
@@ -301,7 +357,7 @@
       for (const b of group.getBuckets(v)) {
         if (seenThisVideo.has(b.key)) continue;
         seenThisVideo.add(b.key);
-        if (!map.has(b.key)) map.set(b.key, { key: b.key, label: b.label, count: 0 });
+        if (!map.has(b.key)) map.set(b.key, { key: b.key, label: b.label, title: b.title, count: 0 });
         map.get(b.key).count += 1;
       }
     }
@@ -495,7 +551,7 @@
     return `
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
-          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
+          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
         </div>
         <div class="progress-row">
@@ -568,7 +624,7 @@
     }
     const selected = state.filters[group.id];
     panel.innerHTML = buckets.map((b) => `
-      <label title="${escapeHtml(b.key === UNKNOWN ? "" : b.key)}">
+      <label title="${escapeHtml(b.key === UNKNOWN ? "" : (b.title || b.key))}">
         <input type="checkbox" data-group="${group.id}" value="${escapeHtml(b.key)}" ${selected.has(b.key) ? "checked" : ""} />
         ${escapeHtml(b.label)}
         <span class="opt-count">${b.count}</span>
@@ -2392,6 +2448,16 @@
       return { ok: false, loi: "Lỗi mạng: " + err.message };
     }
   }
+
+  // Ctrl/⌘+Enter trong ô nhập nhiều dòng ⇒ gửi form (Enter trần xuống dòng để dán nhiều link).
+  function laPhimGuiForm(ev) {
+    return !!(ev && (ev.ctrlKey || ev.metaKey) && ev.key === "Enter");
+  }
+  document.getElementById("url").addEventListener("keydown", (ev) => {
+    if (!laPhimGuiForm(ev)) return;
+    ev.preventDefault();
+    document.getElementById("job-form").requestSubmit();
+  });
 
   document.getElementById("job-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();

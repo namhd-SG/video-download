@@ -19,7 +19,9 @@
   // phải chữa cookie trước.
   // `het_dia` (đĩa máy chạy dưới ngưỡng giữa job nền tảng khác) cũng chạy lại được: sau khi đĩa có chỗ,
   // lọc trùng bỏ phần đã lên Drive và tải phần còn lại.
-  const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap", "het_dia"]);
+  // `tran_gio` / `tran_ngay` (trần IP của nền tảng link lẻ): job dừng để KHÔNG chặn hàng đợi; chạy lại sau khi cửa
+  // sổ giờ/ngày trống bỏ qua phần đã tải nhờ lọc trùng.
+  const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap", "het_dia", "tran_gio", "tran_ngay"]);
 
   // Nhãn theo LÝ DO DỪNG cho bốn mã không chạy lại được ngay — nhãn phải nói
   // đúng việc nên làm, nên trùng ý câu ở `app.js::STOP_REASON_TEXT`:
@@ -136,8 +138,8 @@
       h += `<div class="lo-ht">Có thể là sự cố hàng loạt (nhiều video cùng báo ` +
         `'Requested format') — không phải lỗi từng video, báo người phát triển.</div>`;
     } else if (s.loiTiktok > 0) {
-      h += `<div class="lo-tt">${s.loiTiktok} video TikTok không cho tải ` +
-        `(bài dạng ảnh, bị gỡ hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
+      h += `<div class="lo-tt">${s.loiTiktok} video nguồn không cho tải ` +
+        `(bài dạng ảnh, bị gỡ, riêng tư, quá dài/nặng hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
     }
     if (s.loiChuaPhanLoai > 0) {
       h += `<div class="lo-tt">${s.loiChuaPhanLoai} lỗi (chưa phân loại — lượt trước bản cập nhật)</div>`;
@@ -179,6 +181,13 @@
     return `<div class="actions">${nut}</div>`;
   }
 
+  // Dòng hiển thị cho `job.url`: job nhiều link (mỗi dòng một link) hiện link đầu kèm số link còn lại, không
+  // dồn cả khối vào một dòng. Job một link: trả nguyên chuỗi (y hệt trước).
+  function nhanUrl(url) {
+    const dong = String(url || "").split("\n").map((d) => d.trim()).filter(Boolean);
+    return dong.length > 1 ? `${dong[0]} (+${dong.length - 1} link)` : String(url || "");
+  }
+
   // Ép số gõ vào ô xác nhận về 1..MAX_SO_LUONG; không phải số nguyên ⇒ null.
   function chuanHoaSoChayLai(raw) {
     const n = Number(raw);
@@ -188,6 +197,6 @@
 
   window.BaoThieu = Object.freeze({
     MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, coSuCoHangLoat, anCauDung, chuTienDo, nhanThieu, dongNguon, khungLoi,
-    soChayLai, khungHanhDong, chuanHoaSoChayLai,
+    soChayLai, khungHanhDong, chuanHoaSoChayLai, nhanUrl,
   });
 })();

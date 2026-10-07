@@ -38,7 +38,7 @@
     <div class="panel">
       <h2>Tạo lượt tải mới</h2>
       <form id="job-form">
-        <input type="url" id="url" placeholder="URL TikTok (music / hashtag / @profile), Facebook Ads Library hoặc thư mục Google Drive" required />
+        <textarea id="url" rows="2" placeholder="URL TikTok (music / hashtag / @profile), Facebook Ads Library, thư mục Google Drive — hoặc link video lẻ (YouTube, TikTok, Instagram, Facebook, X…): mỗi dòng một link, cùng một nền tảng, tối đa 50" required></textarea>
         <input type="number" id="so-luong" min="1" max="2000" value="20" required />
         <!-- Tuỳ chọn: bỏ trống thì hỏi lại lúc duyệt màn nháp. `maxlength`
              khớp trần server (`USECASE_TOI_DA`/`INSIGHT_CON_TOI_DA` ở
@@ -51,6 +51,7 @@
         <label for="insight-goc" class="lb">Insight gốc</label>
         <input type="text" id="insight-goc" placeholder="Insight gốc (tuỳ chọn)" maxlength="120" />
         <button type="submit">Tạo lượt tải</button>
+        <p class="muted" id="goi-y-o-nhap">Mỗi dòng một link · Ctrl/⌘+Enter để tạo</p>
       </form>
       <p id="error" class="error-text" role="alert"></p>
       <!-- Lịch sử đo, không phải một lời phán:
