@@ -286,6 +286,7 @@ def test_t7_healthz_lane_khac_chet_thi_tiktok_van_ok(db, tmp_path, monkeypatch):
         ra = app_mod.healthz()
         assert ra["lanes"] == {"tiktok": "ok", "khac": "chet"}
         assert ra["worker"] == "ok"                           # trường cũ = lane tiktok
+        monkeypatch.setattr(app_mod, "DB_PATH", db)          # `/admin/worker` còn đọc bảng `nen_tang_tat`
         chi_tiet = app_mod.admin_worker(nguoi_tao="sep@astronex.ai")
         assert chi_tiet["lanes"]["tiktok"]["song"] is True
         assert chi_tiet["lanes"]["khac"]["song"] is False

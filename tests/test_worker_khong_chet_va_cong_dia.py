@@ -282,7 +282,8 @@ def test_admin_worker_qua_http_nguoi_thuong_403_admin_200(may_chu):
     assert ma == 403
     ai["email"] = "sep@astronex.ai"
     ma, than = _get(goc + "/admin/worker")
-    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia", "job_ket", "lanes"}
+    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia", "job_ket", "lanes",
+                                                  "nen_tang_tat"}
     assert set(than["lanes"]) == {"tiktok", "khac"}
     ma, than = _get(goc + "/healthz")
     assert ma == 200 and set(than) == {"status", "worker", "lanes"}, "healthz chỉ có mã, không chi tiết"

@@ -83,6 +83,16 @@
     // lên Drive vẫn còn; chạy lại sau khi đĩa có chỗ sẽ bỏ qua chúng và tải phần còn lại.
     het_dia: "Dừng: ổ đĩa của máy chạy sắp đầy nên job dừng trước khi tải tiếp. Những video đã lên " +
              "Drive vẫn còn — chạy lại sau khi đĩa có chỗ để tải phần còn lại.",
+    // Trần IP của nền tảng link lẻ (YouTube, Instagram…): dùng chung cho cả văn phòng, nên job DỪNG chứ không
+    // ngủ chờ — để các nền tảng khác phía sau không bị kẹt.
+    tran_gio: "Dừng: nền tảng này đã chạm trần số lượt mỗi giờ của cả hệ thống (giữ cho IP văn phòng không bị " +
+              "gắn cờ). Video đã tải vẫn còn — chạy lại sau chừng một giờ để tải phần còn lại.",
+    tran_ngay: "Dừng: nền tảng này đã chạm trần số lượt trong NGÀY (giờ VN) của cả hệ thống. Video đã tải vẫn " +
+               "còn — chạy lại vào ngày mai để tải phần còn lại.",
+    bi_chan: "Dừng: nền tảng báo nghi ngờ truy cập tự động (bot-check / captcha / giới hạn tần suất). Nền tảng " +
+             "này tạm tắt cho tới khi quản trị viên bật lại — đừng chạy lại ngay, việc đó chỉ làm đậm dấu vết.",
+    thieu_deno: "Dừng: máy chạy chưa có Deno nên không tải được YouTube — đây là lỗi cấu hình máy, không phải " +
+                "lỗi video. Báo người quản trị.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
                    "Chạy lại cũng không ra thêm — thử hashtag hoặc nguồn khác.",
     // Lượt rỗng với mã này giờ ghi "Lỗi" (không còn "Xong"), nên câu không được
@@ -495,7 +505,7 @@
     return `
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
-          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(job.url)}</span>
+          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
         </div>
         <div class="progress-row">

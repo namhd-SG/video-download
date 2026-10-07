@@ -26,7 +26,8 @@ from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
-from tiktok_music_downloader.nguon import chon_nguon, mo_ta_cac_nguon
+from tiktok_music_downloader.nguon import (
+    TIEN_TO_ID_LINK_LE, LinkLe, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
@@ -35,6 +36,7 @@ from web import models_chia
 from web import models_cum
 from web import models_giai_captcha
 from web import models_vao_bo
+from web import pacer
 from web import profile_theo_job
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
@@ -171,7 +173,8 @@ MAX_VIDEO_ID_LEN = 32
 # Id video hợp lệ cho đường dẫn tệp: số trần (TikTok) hoặc `fb-`/`gd-` + ký tự chữ-số/gạch (id file
 # Drive tới ~44 ký tự nên trần dài hơn). Vẫn là HÌNH DẠNG chặn traversal: không có `/`, `.`, NUL.
 MAX_VIDEO_ID_TIEN_TO_LEN = 64
-_MAU_VIDEO_ID_TIEN_TO = re.compile(r"(?:fb|gd)-[A-Za-z0-9_\-]+")
+# Cộng tiền tố id của link lẻ đa nền tảng (`yt-`, `ig-`, …), lấy từ bảng nguồn để không chép hai nơi.
+_MAU_VIDEO_ID_TIEN_TO = re.compile(r"(?:fb|gd|" + "|".join(TIEN_TO_ID_LINK_LE) + r")-[A-Za-z0-9_\-]+")
 SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
@@ -179,8 +182,15 @@ _END_STATES = ("done", "failed", "interrupted")
 # mọi nền tảng khác. `_lifespan` dựng lại `worker_khac` từ đường dẫn HIỆN TẠI lúc khởi động: test
 # đổi `DB_PATH` rồi chạy lifespan (chỉ stub `worker`) thì luồng lane khác bám DB tạm của test,
 # không bám DB thật đã đọc lúc import. Test thay `worker_khac` phải dùng `monkeypatch.setattr`.
+def _loai_tru_lane_khac() -> tuple[str, ...]:
+    """Nền tảng lane khác phải bỏ qua lúc nhận job: TẮT (bị chặn) ∪ hết trần giờ ∪ hết trần ngày ∪ không bật
+    trong cấu hình. Đọc `DB_PATH` LÚC GỌI (không chụp lúc import) để bám DB mà test/lifespan đã đổi."""
+    return pacer.nen_tang_loai_tru(DB_PATH)
+
+
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_TIKTOK)
-worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC)
+worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC,
+                        loai_tru_fn=_loai_tru_lane_khac)
 
 # Đặt biến này (giá trị bất kỳ, không rỗng) thì `_lifespan` KHÔNG khởi bộ kiểm định kỳ
 # "đã vào bộ" — đường lùi tính năng mà không cần deploy lại.
@@ -268,7 +278,8 @@ async def _lifespan(app: FastAPI):
     # `interrupted` job worker trước vừa nhận).
     quet_khoi_dong(DB_PATH)
     global worker_khac
-    worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC)
+    worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC,
+                            loai_tru_fn=_loai_tru_lane_khac)
     worker.start()
     worker_khac.start()
     # Bộ kiểm "đã vào bộ": ẩn video đã được copy vào bộ tự tìm, dọn tệp nguồn sau 7
@@ -348,6 +359,44 @@ class CreateJobRequest(BaseModel):
     insight_goc: str | None = None
 
 
+# Ô nhập nhận NHIỀU link video lẻ (mỗi dòng một link, cùng nền tảng). Trần số link một lượt, và trần độ dài cả
+# khối để một thân yêu cầu khổng lồ không bị tách dòng/nhận dạng từng link rồi mới bị từ chối.
+MAX_LINK_MOT_JOB = 50
+MAX_KY_TU_O_LINK = MAX_LINK_MOT_JOB * 2048
+
+
+def _chon_nguon_cho_o_nhap(links: list[str]):
+    """`(nguồn, nền tảng)` cho nội dung ô nhập, hoặc ném `HTTPException(400)` cho lỗi nhiều link.
+
+    Một link: đúng như trước (nguồn nhận hoặc None). Nhiều link: TẤT CẢ phải là link video lẻ (`LinkLe`) CÙNG
+    một nền tảng — trang TikTok music/tag/profile, Ads Library, thư mục Drive vẫn MỘT URL mỗi lượt. Link lẻ
+    mà nền tảng chưa bật ⇒ 400 nói rõ (nền tảng nằm trong bảng nhưng cấu hình chưa bật)."""
+    if not links:
+        return None, None
+    nguon = chon_nguon(links[0])
+    if len(links) > 1:
+        for i, link in enumerate(links, start=1):
+            n = chon_nguon(link)
+            if not isinstance(n, LinkLe):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"nhiều link chỉ nhận link video lẻ; link thứ {i} không phải "
+                           f"({n.mo_ta_url if n is not None else 'không nhận ra'})")
+        nen_tang = {nguon.nen_tang(link) for link in links}
+        if len(nen_tang) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail=f"mọi link trong một lượt phải cùng một nền tảng (đang có: {', '.join(sorted(nen_tang))})")
+    if nguon is None:
+        return None, None
+    nen_tang_job = nguon.nen_tang(links[0])
+    if isinstance(nguon, LinkLe) and nen_tang_job not in nen_tang_bat():
+        raise HTTPException(
+            status_code=400,
+            detail=f"nền tảng {nen_tang_job} chưa bật (đang bật: {', '.join(sorted(nen_tang_bat())) or 'không có'})")
+    return nguon, nen_tang_job
+
+
 def _chuan_hoa_truong_tuy_chon(gia_tri: str | None, toi_da: int, ten_truong: str) -> str | None:
     """Chuẩn hoá một trường tuỳ chọn kiểu chữ trong `CreateJobRequest`.
 
@@ -409,7 +458,20 @@ def admin_worker(nguoi_tao: str = Depends(require_admin)) -> dict:
     """Chi tiết trạng thái worker cho badge quản trị (loại lỗi, số lần lặp, lý do chờ đĩa).
     Các trường phẳng là của lane TikTok (badge hiện có đọc chúng); `lanes` có đủ từng lane."""
     tiktok = worker.trang_thai()
-    return {**tiktok, "lanes": {"tiktok": tiktok, "khac": worker_khac.trang_thai()}}
+    return {**tiktok, "lanes": {"tiktok": tiktok, "khac": worker_khac.trang_thai()},
+            # Nền tảng link lẻ đang bị TẮT sau tín hiệu chặn: `{nen_tang: {luc, ly_do}}`, rỗng = không nền tảng nào.
+            "nen_tang_tat": pacer.nen_tang_dang_tat(DB_PATH)}
+
+
+@app.post("/admin/nen-tang/{nen_tang}/bat")
+def admin_bat_nen_tang(nen_tang: str, nguoi_tao: str = Depends(require_admin)) -> dict:
+    """Bật lại một nền tảng đã bị tắt sau tín hiệu chặn. Không có tự bật theo giờ: người vận hành xem tình hình
+    (IP còn bị gắn cờ không?) rồi mới bật. Chỉ nền tảng có bộ điều tốc (link lẻ) — tên khác ⇒ 404."""
+    if nen_tang not in pacer.TRAN:
+        raise HTTPException(status_code=404, detail="nền tảng không có bộ điều tốc")
+    da_tat = pacer.bat_lai(DB_PATH, nen_tang)
+    log.warning("admin bật lại nền tảng %s (trước đó %s)", nen_tang, "đang tắt" if da_tat else "không tắt")
+    return {"nen_tang": nen_tang, "da_bat_lai": da_tat}
 
 
 # Cột nội bộ của hàng job: không phải dữ liệu cho người dùng nên không ra API/SSE.
@@ -443,10 +505,13 @@ def create_job(payload: CreateJobRequest,
         raise HTTPException(status_code=503, detail=rejection)
     # Trần ngày theo cookie. Cũng chạy TRƯỚC khi ghi hàng job, cùng lý do như
     # gate trên: một lượt bị chặn không được để lại hàng 'pending' ma.
-    nguon = chon_nguon(payload.url)
+    links = tach_link(payload.url)
+    if len(payload.url) > MAX_KY_TU_O_LINK or len(links) > MAX_LINK_MOT_JOB:
+        raise HTTPException(status_code=400, detail=f"tối đa {MAX_LINK_MOT_JOB} link mỗi lượt")
+    nguon, nen_tang = _chon_nguon_cho_o_nhap(links)
     # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
-    # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác chưa có trần ngày riêng ở pha này.
-    if nguon is None or nguon.ten == models.NEN_TANG_MAC_DINH:
+    # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác có trần IP riêng ở `web/pacer.py`.
+    if nguon is None or nen_tang == models.NEN_TANG_MAC_DINH:
         over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
                                        nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
         if over_cap is not None:
@@ -469,8 +534,9 @@ def create_job(payload: CreateJobRequest,
             payload.insight_goc, models_cum.INSIGHT_CON_TOI_DA, "insight gốc")
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    job_id = models.create_job(DB_PATH, payload.url, payload.so_luong, nguoi_tao,
-                               usecase=usecase, insight_goc=insight_goc, nen_tang=nguon.ten)
+    # Nhiều link lưu nguyên khối, mỗi dòng một link (không thêm cột/bảng): `jobs.url` vẫn là MỘT chuỗi.
+    job_id = models.create_job(DB_PATH, "\n".join(links), payload.so_luong, nguoi_tao,
+                               usecase=usecase, insight_goc=insight_goc, nen_tang=nen_tang)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng
     return _job_ra_api(job)

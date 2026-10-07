@@ -154,8 +154,8 @@ def test_chon_nguon_nhan_fb_ads_va_drive():
     assert chon_nguon(URL_FB).ten == "fb_ads"
     assert chon_nguon(URL_DRIVE).ten == "drive"
     assert chon_nguon(f"https://drive.google.com/drive/u/1/folders/{ID_THU_MUC}").ten == "drive"
-    # Link lẻ Facebook / file Drive đơn không phải trang Ads Library / thư mục.
-    assert chon_nguon("https://www.facebook.com/watch/?v=1") is None
+    # Link lẻ Facebook không phải trang Ads Library: nó thuộc `LinkLe`. File Drive đơn không thuộc nguồn nào.
+    assert chon_nguon("https://www.facebook.com/watch/?v=1").ten == "link_le"
     assert chon_nguon("https://drive.google.com/file/d/abc/view") is None
 
 
@@ -917,8 +917,11 @@ def test_moi_ma_dung_deu_duoc_phan_loai_o_bang_bao_thieu():
     nhan |= set(re.findall(r"\b(\w+): \"", re.search(r"NHAN_THEO_LY_DO = Object.freeze\(\{(.*?)\}\)", js, re.S).group(1)))
     ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
     ma |= set(cookies_mod.MA_LOI_COOKIE)
-    da_can_nhac_khong_nut = {"index_failed", "feed_rong", "hashtag_khong_tra_duoc"} | set(cookies_mod.MA_LOI_COOKIE)
-    assert chay_lai >= {"het_vong", "het_thoi_gian", "page_cap", "het_dia"}, chay_lai
+    # `bi_chan` (nền tảng nghi bot, đã tắt tới khi admin bật lại) và `thieu_deno` (cấu hình máy hỏng): chạy lại
+    # ngay vô ích hoặc có hại ⇒ cố ý không nút.
+    da_can_nhac_khong_nut = ({"index_failed", "feed_rong", "hashtag_khong_tra_duoc", "bi_chan", "thieu_deno"}
+                             | set(cookies_mod.MA_LOI_COOKIE))
+    assert chay_lai >= {"het_vong", "het_thoi_gian", "page_cap", "het_dia", "tran_gio", "tran_ngay"}, chay_lai
     assert ma - chay_lai - nhan - da_can_nhac_khong_nut == set()
 
 

@@ -17,17 +17,21 @@ from typing import Callable, Protocol
 
 from tiktok_music_downloader.downloader import download_all
 from tiktok_music_downloader.gdrive_upload import UploadResult
-from tiktok_music_downloader.phan_loai_loi import LOI_KHONG_CO_LUONG_VIDEO, phan_loai_loi
-from tiktok_music_downloader.nguon import NGUON_MAC_DINH, chon_nguon
+from tiktok_music_downloader.phan_loai_loi import (
+    LOI_CAN_DANG_NHAP, LOI_KHONG_CO_LUONG_VIDEO, LOI_LA_PLAYLIST, LOI_QUA_DAI, LOI_QUA_NANG, LOI_TRUC_TIEP,
+    phan_loai_loi,
+)
+from tiktok_music_downloader.nguon import NGUON_MAC_DINH, LinkLe, chon_nguon, tach_link
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
-    STOP_ALREADY_OWNED, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
+    STOP_ALREADY_OWNED, STOP_BI_CHAN, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
+    STOP_THIEU_DENO, STOP_TRAN_GIO, STOP_TRAN_NGAY,
     STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
-from tiktok_music_downloader.watermark import find_ffmpeg
-from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, profile_theo_job
+from tiktok_music_downloader.watermark import find_deno, find_ffmpeg
+from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, pacer, profile_theo_job
 # Re-exported: `cookies_path_for_user` moved to `web/cookies.py` so
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
@@ -50,6 +54,8 @@ NHIP_QUET_PROFILE_GIAY = 60.0
 _LY_DO_RONG_LA_LOI = frozenset({
     STOP_FEED_RONG, STOP_SOURCE_EMPTY, STOP_NGHI_BI_CHAN,
     STOP_INDEX_FAILED, STOP_HASHTAG_KHONG_TRA_DUOC,
+    # Lane nền tảng khác: dừng vì trần IP / tín hiệu chặn / thiếu Deno mà chưa lấy được video nào cũng là "Lỗi".
+    STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_BI_CHAN, STOP_THIEU_DENO,
 })
 # Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
 # Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
@@ -168,8 +174,16 @@ def source_label(url: str) -> str:
     data migration, not an edit. `#tag` for a hashtag, the URL otherwise —
     music, search and profile pages are already distinguished by their path.
     """
+    links = tach_link(url)
+    if len(links) > 1:
+        # Job nhiều link (link lẻ): nhãn là link đầu kèm số link còn lại, không phải cả khối nhiều dòng.
+        return f"{links[0]} (+{len(links) - 1} link)"
     tag = parse_tag_slug(url)
     return f"#{tag}" if tag is not None else url
+
+
+# Lỗi riêng của một link mà do PHÍA NGUỒN (không phải hệ thống của mình) — xem `_ghi_loi_link`.
+_LOI_LINK_PHIA_NGUON = frozenset({LOI_CAN_DANG_NHAP, LOI_QUA_DAI, LOI_QUA_NANG, LOI_LA_PLAYLIST, LOI_TRUC_TIEP})
 
 
 def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
@@ -318,6 +332,17 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             # Bộ đếm feed cộng dồn mọi lượt: 0/0 (không đo được feed nào) khác "feed rỗng".
             "thong_ke_feed_ra": tk_feed,
         }
+    # Lỗi RIÊNG một link của job link lẻ (video riêng tư, quá dài, lỗi mạng…): đếm vào `loi` và đi tiếp. Lỗi do
+    # phía nguồn (riêng tư/giới hạn tuổi/quá dài/quá nặng/playlist/trực tiếp) xếp vào `loi_tiktok` — cột này
+    # nghĩa là "nguồn không cho tải video này", không phải lỗi hệ thống của mình; còn lại là lỗi hệ thống.
+    # Log chỉ có MÃ (không URL, không id): `chi_tiet` đã qua `che_url` ở nơi gọi.
+    def _ghi_loi_link(ma: str, chi_tiet: str) -> None:
+        la_nguon = ma in _LOI_LINK_PHIA_NGUON
+        (log.warning if la_nguon else log.error)(
+            "job %s: một link lỗi [%s]%s", job_id, ma, f" {chi_tiet}" if chi_tiet else "")
+        if db_path is not None and job_id is not None:
+            models.increment_job_counts(db_path, job_id, loi_delta=1, loi_tiktok_delta=1 if la_nguon else 0)
+
     # Bảng nguồn chọn cách liệt kê: hashtag đi `enumerate_hashtag` (lọc từng trang nên "đào sâu
     # tới khi đủ N mới" chạy được, không cookie/profile), còn music/search/profile đi
     # `scrape_music_page_multi`. URL tới được đây đã qua cổng `chon_nguon` ở `POST /jobs`.
@@ -325,11 +350,22 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # (mọi URL không phải hashtag đều đi trình quét music/profile) thay vì ném lỗi.
     # Chỉ job TikTok mới được rơi về nguồn mặc định: job nền tảng khác mà URL không nguồn nào nhận
     # thì lỗi rõ, KHÔNG âm thầm chạy trình quét TikTok (Playwright, captcha) trong lane `khac`.
-    nguon_url = chon_nguon(url)
+    # Ô nhập có thể mang NHIỀU link (mỗi dòng một, cùng nền tảng): chọn nguồn theo link đầu — bộ nhận dạng
+    # `.match` chỉ trên một chuỗi một dòng — còn `liet_ke` nhận nguyên khối.
+    nguon_url = chon_nguon((tach_link(url) or [url])[0])
     if nguon_url is None:
         if nen_tang != models.NEN_TANG_MAC_DINH:
             raise ValueError(f"không nguồn nào nhận url của job nền tảng {nen_tang!r}")
         nguon_url = NGUON_MAC_DINH
+    kw_link_le: dict = {}
+    if isinstance(nguon_url, LinkLe):
+        # Link lẻ: mọi lời gọi nền tảng ở bước liệt kê đi qua cổng IP (ghi lượt TRƯỚC khi gọi, nghỉ jitter giữa
+        # hai lời gọi); lỗi riêng từng link đếm vào job mà không dừng job. TikTok video lẻ không gọi mạng ở bước
+        # này nên không có cổng. Nguồn khác không nhận các tham số này: kwargs của chúng y hệt trước.
+        cong = (pacer.CongNenTang(db_path, job_id, nen_tang)
+                if nen_tang in pacer.TRAN and db_path is not None and job_id is not None else None)
+        kw_link_le = {"cong": cong, "ghi_loi_video": _ghi_loi_link,
+                      "nghi": pacer.nghi_giua_luot if cong is not None else None}
     refs = nguon_url.liet_ke(
         url,
         max_videos=max_videos,
@@ -343,6 +379,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         passes=SO_VONG_DAO_SAU,
         max_seconds=TRAN_GIAY_MOT_LUOT,
         kw_profile=kw_profile,
+        **kw_link_le,
     )
     # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
     # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
@@ -651,7 +688,21 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
 
     # TikTok: lời gọi y hệt trước (không thêm kwarg nào).
     kw_cong_dia = {"truoc_moi_file": _kiem_dia} if la_nen_tang_khac else {}
+    # Nền tảng link lẻ: opts yt-dlp riêng + cổng IP (ghi lượt TRƯỚC mỗi lần gọi, kể cả lần thử lại) + nghỉ jitter.
+    nen_tang_job = job.get("nen_tang") or models.NEN_TANG_MAC_DINH
+    cong = pacer.CongNenTang(db_path, job_id, nen_tang_job) if nen_tang_job in pacer.TRAN else None
+    if cong is not None:
+        kw_cong_dia.update(nen_tang=nen_tang_job, cong=cong, delay_range=pacer.NGHI_GIUA_LUOT)
     download_all(refs, output_dir, cookies_path=cookies_path, progress=progress, **kw_cong_dia)
+    if cong is not None and cong.ly_do_dung and not het_dia:
+        # Cổng bảo dừng (trần giờ/ngày, nền tảng bị tắt, tín hiệu chặn): các video đã lên Drive vẫn tính; chạy lại
+        # (hoặc admin bật lại) sẽ bỏ qua chúng nhờ lọc trùng. Ghi lý do TRƯỚC khi đóng job.
+        try:
+            models.set_job_stop_reason(db_path, job_id, cong.ly_do_dung)
+        except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+            log.warning("job %s: không ghi được lý do dừng", job_id)
+        models.finish_job(db_path, job_id, "failed")
+        return
     if het_dia:
         try:
             models.set_job_stop_reason(db_path, job_id, STOP_HET_DIA)
@@ -694,6 +745,13 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
         # Cookie là của TikTok (jar riêng từng người). Job nền tảng khác không dùng nó, và một jar
         # TikTok hỏng/hết hạn không được làm hỏng job Facebook Ads / Drive không liên quan.
         la_tiktok = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) == models.NEN_TANG_MAC_DINH
+        # YouTube cần Deno để giải thử thách JS. Máy không có ⇒ cấu hình máy hỏng: dừng NGAY, trước mọi lời gọi
+        # yt-dlp (yt-dlp không tự phanh — nó chỉ cảnh báo "deprecated, some formats may be missing" rồi chạy tiếp).
+        if job.get("nen_tang") == "youtube" and find_deno() is None:
+            log.error("job %s: máy không có Deno — dừng trước khi gọi YouTube", job_id)
+            models.set_job_stop_reason(db_path, job_id, STOP_THIEU_DENO)
+            models.finish_job(db_path, job_id, "failed")
+            return
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"]) if la_tiktok else None
         # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
         # cookie. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy

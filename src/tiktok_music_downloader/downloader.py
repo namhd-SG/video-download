@@ -10,6 +10,7 @@ from typing import Callable, Iterable
 from tenacity import (
     RetryError,
     retry,
+    retry_if_exception,
     retry_if_not_exception_type,
     stop_after_attempt,
     wait_exponential,
@@ -17,7 +18,7 @@ from tenacity import (
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
-from tiktok_music_downloader.phan_loai_loi import phan_loai_loi
+from tiktok_music_downloader.phan_loai_loi import LOI_THIEU_JS, ly_do_loi_video, phan_loai_loi, phat_hien_chan
 from tiktok_music_downloader.utils import (
     che_url,
     JitterThrottle,
@@ -25,7 +26,7 @@ from tiktok_music_downloader.utils import (
     adaptive_backoff,
     random_user_agent,
 )
-from tiktok_music_downloader.watermark import WatermarkConfig, apply_watermark
+from tiktok_music_downloader.watermark import WatermarkConfig, apply_watermark, find_deno, find_ffmpeg
 
 log = logging.getLogger("ttmd")
 
@@ -42,14 +43,29 @@ BATCH_SIZE = 50
 BATCH_REST_SECONDS = 60.0
 
 
+# Cảnh báo yt-dlp khi KHÔNG tìm được JS runtime (đường Deno trỏ sai / Deno hỏng). yt-dlp vẫn chạy tiếp và có
+# thể ra thiếu định dạng, nên với nền tảng link lẻ cảnh báo này phải biến thành LỖI của video đó.
+_MAU_THIEU_JS = "no supported javascript runtime"
+
+
 class _YtdlpLog:
     """Đích log của yt-dlp: mọi mức xuống DEBUG của `ttmd`. Lỗi tải được ghi ĐÚNG MỘT lần bởi dòng `✗`
-    của `download_all` (có phân loại tiktok/hệ thống, đã che URL); cảnh báo yt-dlp vốn đã tắt (`no_warnings`)."""
+    của `download_all` (có phân loại tiktok/hệ thống, đã che URL); cảnh báo yt-dlp vốn đã tắt (`no_warnings`).
+
+    Ngoại lệ: cảnh báo "No supported JavaScript runtime" được BẮT riêng (cờ `thieu_js`) rồi vẫn xuống DEBUG —
+    người dùng object này (`download_all`, bước liệt kê) đọc cờ sau mỗi lời gọi yt-dlp."""
+
+    thieu_js = False
 
     def debug(self, msg: str) -> None:
         log.debug("yt-dlp: %s", msg)
 
-    info = warning = error = debug
+    info = error = debug
+
+    def warning(self, msg: str) -> None:
+        if _MAU_THIEU_JS in str(msg).lower():
+            self.thieu_js = True
+        self.debug(msg)
 
 
 def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> dict:
@@ -88,6 +104,68 @@ def _ydl_opts(output_dir: Path, proxy: str | None, cookiefile: str | None) -> di
         # sensitive videos that the music page lists but won't serve to anon).
         opts["cookiefile"] = cookiefile
     return opts
+
+
+# Nền tảng KHÁC TikTok (link lẻ qua yt-dlp). Mọi nhánh mang luồng HÌNH (`vcodec!=none`) — cùng bài học với dict
+# TikTok: một nhánh `/best` trần nhận được tệp chỉ có tiếng rồi yt-dlp báo thành công. Ưu tiên ≤1080p, mp4/m4a
+# trước (ghép bằng remux, không mã hoá lại); rơi dần về bất kỳ định dạng có hình.
+FORMAT_NEN_TANG_KHAC = (
+    "bv*[height<=1080][ext=mp4][vcodec!=none]+ba[ext=m4a]/"
+    "bv*[height<=1080][vcodec!=none]+ba/"
+    "b[height<=1080][vcodec!=none]/"
+    "bv*[vcodec!=none]+ba/b[vcodec!=none]"
+)
+
+
+def opts_chung_nen_tang_khac(proxy: str | None = None) -> dict:
+    """Phần dùng chung cho liệt kê (`extract_info(download=False)`) và tải của nền tảng KHÁC TikTok.
+
+    Dịch vụ chạy với PATH không có Homebrew nên yt-dlp KHÔNG tự thấy ffmpeg (ghép DASH) lẫn Deno (JS của
+    YouTube): chỉ đường tường minh. Không tìm thấy thì bỏ khoá (để yt-dlp tự báo), không truyền `None`.
+    Không đặt `http_headers`/`extractor_args` của TikTok: UA ngẫu nhiên lệch với client YouTube mà yt-dlp mô phỏng."""
+    opts: dict = {
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "logger": _YtdlpLog(),
+        # Link `watch?v=…&list=…` là MỘT video; playlist thật không được nhận ở bước nhận dạng.
+        "noplaylist": True,
+        "concurrent_fragment_downloads": 1,
+        "retries": 2,
+        "fragment_retries": 2,
+    }
+    ffmpeg = find_ffmpeg()
+    if ffmpeg:
+        opts["ffmpeg_location"] = ffmpeg
+    deno = find_deno()
+    if deno:
+        opts["js_runtimes"] = {"deno": {"path": deno}}
+    if proxy:
+        opts["proxy"] = proxy
+    return opts
+
+
+def _ydl_opts_nen_tang_khac(output_dir: Path, proxy: str | None, cookiefile: str | None) -> dict:
+    """yt-dlp options cho nền tảng KHÁC TikTok. `outtmpl` đặt lại theo TỪNG ref ở `download_all` (tên tệp là
+    `ref.video_id` đã có tiền tố nền tảng, không phải id trần của yt-dlp)."""
+    opts = opts_chung_nen_tang_khac(proxy)
+    opts.update({
+        "format": FORMAT_NEN_TANG_KHAC,
+        "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
+        "merge_output_format": "mp4",
+    })
+    if cookiefile:
+        opts["cookiefile"] = cookiefile
+    return opts
+
+
+class DungTai(Exception):
+    """Cổng nền tảng (`cong.truoc_goi`) từ chối lời gọi kế tiếp: hết trần giờ/ngày hoặc nền tảng đã tắt. Mang
+    mã lý do dừng. Không phải lỗi của video — `_download_one` không thử lại và `download_all` dừng cả lượt."""
+
+    def __init__(self, ly_do: str):
+        super().__init__(ly_do)
+        self.ly_do = ly_do
 
 
 def _write_netscape_cookies(json_path: Path) -> Path:
@@ -149,12 +227,22 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     return Path(tmp)
 
 
+def _nen_thu_lai(exc: BaseException) -> bool:
+    """Thử lại mọi lỗi, TRỪ lệnh dừng của cổng nền tảng và lỗi đã đánh dấu `khong_thu_lai` (nền tảng link lẻ:
+    tín hiệu chặn, video riêng tư/giới hạn tuổi). Thử lại hai loại đó vô ích, và mỗi lần thử là một lượt tính vào
+    trần IP — còn gõ lại vào đúng thứ đang chặn mình thì làm đậm dấu vết."""
+    # `Exception` chứ không phải mọi `BaseException`: SystemExit/KeyboardInterrupt không bao giờ được thử lại
+    # (mặc định của tenacity cũng vậy — bản này không được rộng hơn).
+    return isinstance(exc, Exception) and not isinstance(exc, DungTai) and not getattr(exc, "khong_thu_lai", False)
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=2, min=2, max=20),
+    retry=retry_if_exception(_nen_thu_lai),
     reraise=True,
 )
-def _download_one(url: str, opts: dict) -> dict | None:
+def _download_one(url: str, opts: dict, truoc_goi: Callable[[], str | None] | None = None) -> dict | None:
     """Tải một video, và trả về metadata yt-dlp đã phải đọc để tải được nó.
 
     `extract_info(download=True)` làm đúng việc `download()` làm, chỉ khác là
@@ -162,9 +250,21 @@ def _download_one(url: str, opts: dict) -> dict | None:
     mọi nguồn: chỉ trang hashtag có index trả `title`/`author`/`region`; music
     page và profile thì scraper chỉ dựng được `VideoRef(video_id, url)` trần,
     nên thư viện hiện "chưa có tiêu đề" cho mọi video tải từ hai nguồn đó.
+
+    `truoc_goi` (chỉ nền tảng link lẻ): chạy ĐẦU MỖI LẦN THỬ — kể cả lần thử lại của tenacity, vì mỗi lần là một
+    lời gọi thật tới nền tảng — để bộ đếm lượt ghi TRƯỚC khi gọi. Trả lý do ⇒ `DungTai`, không gọi, không thử lại.
     """
-    with YoutubeDL(opts) as ydl:
-        return ydl.extract_info(url, download=True)
+    if truoc_goi is not None:
+        ly_do = truoc_goi()
+        if ly_do:
+            raise DungTai(ly_do)
+    try:
+        with YoutubeDL(opts) as ydl:
+            return ydl.extract_info(url, download=True)
+    except Exception as exc:
+        if truoc_goi is not None and (phat_hien_chan(exc) or ly_do_loi_video(exc)):
+            exc.khong_thu_lai = True
+        raise
 
 
 def _looks_like_rate_limit(exc: BaseException) -> bool:
@@ -219,6 +319,26 @@ def _download_url_direct(url: str, target: Path, proxy: str | None) -> None:
             tmp.unlink(missing_ok=True)
 
 
+def _tai_nen_tang_khac(ref: VideoRef, opts: dict, output_dir: Path, cong) -> dict | None:
+    """Tải MỘT video của nền tảng KHÁC TikTok. Tên tệp đích = `ref.video_id` (có tiền tố nền tảng).
+
+    Hai lỗi cấu hình phải LỘ NGAY thành lỗi của video, không được trôi thành tệp thiếu:
+      · không có ffmpeg ⇒ yt-dlp chỉ cảnh báo rồi để hai luồng rời, không ra `<id>.mp4`;
+      · cảnh báo "No supported JavaScript runtime" lọt tới `_YtdlpLog` ⇒ định dạng có thể thiếu: xoá tệp vừa
+        tải (nếu không, lượt chạy lại sẽ coi nó "đã có trên đĩa" và nuốt lỗi) rồi báo lỗi."""
+    if not opts.get("ffmpeg_location"):
+        raise RuntimeError("thiếu ffmpeg: không ghép được hình và tiếng của video")
+    logger = opts["logger"]
+    logger.thieu_js = False
+    opts_ref = {**opts, "outtmpl": str(output_dir / f"{ref.video_id}.%(ext)s")}
+    info = (_download_one(ref.url, opts_ref, cong.truoc_goi) if cong is not None
+            else _download_one(ref.url, opts_ref))
+    if logger.thieu_js:
+        (output_dir / ref.filename).unlink(missing_ok=True)
+        raise RuntimeError(f"{LOI_THIEU_JS}: yt-dlp không thấy JavaScript runtime (Deno) — đường Deno sai hoặc hỏng")
+    return info
+
+
 def download_all(
     refs: Iterable[VideoRef],
     output_dir: Path,
@@ -230,6 +350,9 @@ def download_all(
     cookies_path: str | None = None,
     watermark: WatermarkConfig | None = None,
     truoc_moi_file: Callable[[VideoRef], str | None] | None = None,
+    nen_tang: str | None = None,
+    cong=None,
+    delay_range: tuple[float, float] | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     Download each VideoRef.
@@ -243,6 +366,12 @@ def download_all(
     `truoc_moi_file(ref)` chạy ngay trước khi tải từng ref (sau bước "đã có trên đĩa"): trả chuỗi lý do
     ⇒ DỪNG cả lượt (không tải ref này và các ref sau), trả None ⇒ tải tiếp. Dùng cho cổng đĩa.
 
+    `nen_tang` (None hoặc "tiktok" ⇒ đường TikTok, dict opts y hệt cũ; tên nền tảng khác ⇒ opts yt-dlp riêng,
+    xem `_ydl_opts_nen_tang_khac`) và `cong` (bộ điều tốc IP của nền tảng đó, `web/pacer.py::CongNenTang`:
+    `truoc_goi()` trả lý do hoặc None, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn) chỉ có tác dụng
+    ở đường nền tảng khác. Cổng từ chối / tín hiệu chặn ⇒ DỪNG cả lượt (cổng tự ghi lý do vào `cong`).
+    `delay_range` = khoảng nghỉ (thấp, cao) giữa hai video thay cho `delay_seconds`.
+
     Returns (downloaded, skipped, failed_ids).
     """
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -252,8 +381,11 @@ def download_all(
             cookiefile_tmp = _write_netscape_cookies(Path(cookies_path))
         except Exception as exc:  # noqa: BLE001
             log.warning("could not load cookies for yt-dlp (%s) — continuing without", che_url(exc))
-    opts = _ydl_opts(output_dir, proxy, str(cookiefile_tmp) if cookiefile_tmp else None)
-    throttle = JitterThrottle(delay_seconds)
+    la_tiktok = nen_tang is None or nen_tang == "tiktok"
+    cookiefile_str = str(cookiefile_tmp) if cookiefile_tmp else None
+    opts = (_ydl_opts(output_dir, proxy, cookiefile_str) if la_tiktok
+            else _ydl_opts_nen_tang_khac(output_dir, proxy, cookiefile_str))
+    throttle = JitterThrottle(delay_seconds, khoang=delay_range)
 
     downloaded = 0
     skipped = 0
@@ -303,6 +435,7 @@ def download_all(
             throttle.wait()
             outcome: str | None = None
             note_info: dict | None = None
+            da_dung = False
             try:
                 # FB Ads Library refs carry a signed FBCDN MP4 URL — yt-dlp
                 # can't authenticate them, so use a direct HTTP stream.
@@ -315,8 +448,10 @@ def download_all(
                     # đi đúng đường verify → đẩy Drive → xoá local rồi mới tới file kế.
                     from tiktok_music_downloader.gdrive import download_file
                     download_file(ref.video_id[len("gd-"):], target, proxy)
-                else:
+                elif la_tiktok:
                     info = _download_one(ref.url, opts)
+                else:
+                    info = _tai_nen_tang_khac(ref, opts, output_dir, cong)
                 # Post-process: apply watermark in-place if configured. Failures
                 # are non-fatal — the un-watermarked file remains on disk.
                 if watermark is not None and not watermark.is_empty:
@@ -327,6 +462,11 @@ def download_all(
                 outcome = "downloaded"
                 note_info = info
                 log.info("✓ %s", ref.filename)
+            except DungTai as dung:
+                # Cổng từ chối TRƯỚC khi gọi nền tảng: video này chưa được thử nên không tính lỗi (không `outcome`,
+                # không vào `failed`); lý do dừng nằm ở `cong`. DỪNG thay vì ngủ chờ cửa sổ trống: ngủ sẽ giữ cả lane.
+                log.warning("dừng lượt tải trước %s: %s", ref.filename, dung.ly_do)
+                da_dung = True
             except (DownloadError, RetryError, Exception) as exc:  # noqa: BLE001
                 failed.append(ref.video_id)
                 outcome = "failed"
@@ -338,7 +478,10 @@ def download_all(
                 else:
                     log.error("✗ %s: [he_thong] %s", ref.video_id, che_url(exc))
                 note_info = {"loi": str(exc)}
-                if _looks_like_rate_limit(exc):
+                if cong is not None and cong.xu_ly_loi(exc):
+                    # Tín hiệu CHẶN của nền tảng: không tải tiếp video nào nữa (cũng không backoff-ngủ).
+                    da_dung = True
+                elif _looks_like_rate_limit(exc):
                     failure_streak += 1
                     cool = adaptive_backoff(failure_streak)
                     log.warning(
@@ -352,6 +495,8 @@ def download_all(
                     _note(outcome, note_info)
                 if progress is not None:
                     progress.update(1)
+            if da_dung:
+                break
     finally:
         if cookiefile_tmp is not None:
             try:

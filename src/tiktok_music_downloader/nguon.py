@@ -8,28 +8,47 @@ Giờ cả hai hỏi bảng này; thêm nền tảng = thêm một lớp vào `N
 thức: `download_all` chọn cách tải theo tiền tố id (`fb-` luồng HTTP trực tiếp, `gd-` từng file Drive
 theo id, còn lại yt-dlp), nên thêm nguồn cùng kiểu tải không phải sửa bảng này.
 
+`LinkLe` nhận video lẻ của nhiều nền tảng bằng chính bộ nhận dạng của yt-dlp (`ie.suitable`, không gọi mạng),
+chỉ giữ những extractor có trong bảng `BANG_LINK_LE`; nền tảng nào ĐƯỢC BẬT do cấu hình `VIDEODL_NEN_TANG_BAT`.
+
 Module này KHÔNG import `web.*` (lớp `src/` không được phụ thuộc lớp web): mọi thứ cần DB hay
 cờ môi trường do người gọi dựng sẵn rồi truyền vào qua tham số.
 """
 from __future__ import annotations
 
+import functools
 import logging
+import os
+import re
 from pathlib import Path
 from typing import Callable, Protocol
 
-from tiktok_music_downloader import gdrive
+from yt_dlp import YoutubeDL
+from yt_dlp.extractor import gen_extractor_classes
+
+from tiktok_music_downloader import downloader, gdrive
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
+from tiktok_music_downloader.phan_loai_loi import (
+    LOI_LA_PLAYLIST,
+    LOI_QUA_DAI,
+    LOI_QUA_NANG,
+    LOI_THIEU_JS,
+    LOI_TRUC_TIEP,
+    ly_do_loi_video,
+)
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_SOURCE_EMPTY,
     VideoRef,
+    che_url,
     is_fb_ads_library,
     is_gdrive_folder,
     is_tiktok_collection,
     loai_nguon,
     parse_tag_slug,
+    parse_video_url,
 )
 
 log = logging.getLogger("ttmd")
@@ -43,6 +62,9 @@ class Nguon(Protocol):
 
     def nhan(self, url: str) -> bool:
         """URL này thuộc nguồn này không (không chạm mạng)."""
+
+    def nen_tang(self, url: str) -> str:
+        """Mã nền tảng ghi vào `jobs.nen_tang` cho URL này (đã được `nhan`). Nguồn một-nền-tảng trả `ten`."""
 
     def loai_log(self, url: str) -> str:
         """Nhãn ngắn thay cho URL khi ghi log (URL/handle không được vào log)."""
@@ -59,6 +81,9 @@ class TikTokCollection:
 
     def nhan(self, url: str) -> bool:
         return is_tiktok_collection(url)
+
+    def nen_tang(self, url: str) -> str:
+        return self.ten
 
     def loai_log(self, url: str) -> str:
         return loai_nguon(url)
@@ -135,6 +160,9 @@ class FbAdsLibrary:
     def nhan(self, url: str) -> bool:
         return is_fb_ads_library(url)
 
+    def nen_tang(self, url: str) -> str:
+        return self.ten
+
     def loai_log(self, url: str) -> str:
         return "fb_ads"
 
@@ -161,6 +189,9 @@ class DriveFolder:
     def nhan(self, url: str) -> bool:
         return is_gdrive_folder(url)
 
+    def nen_tang(self, url: str) -> str:
+        return self.ten
+
     def loai_log(self, url: str) -> str:
         return "drive"
 
@@ -182,8 +213,243 @@ class DriveFolder:
                           on_skip=on_skip, on_stop=on_stop)
 
 
-# Thứ tự = thứ tự thử `nhan`; nguồn đầu tiên nhận thì thắng. Ba tập URL không giao nhau.
-NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder())
+# ===========================================================================
+# LINK LẺ ĐA NỀN TẢNG (yt-dlp)
+# ===========================================================================
+# `ie_key` của yt-dlp → (mã nền tảng ghi vào `jobs.nen_tang`, tiền tố id video). Một nơi duy nhất quyết định
+# nền tảng nào có mặt: URL mà extractor KHÔNG nằm trong bảng (kênh/playlist/tab `YoutubeTab`, `TikTokUser`,
+# `InstagramUser`, link rút gọn `TikTokVM`…) thì không nhận — kênh/playlist là việc riêng, chưa làm.
+# Tiền tố cho id không phải số (id YouTube/Instagram có thể bắt đầu bằng `-`, và id của nền tảng này không
+# được đụng id nền tảng khác); TikTok giữ id số TRẦN vì thư viện/thumbnail/tải đã quen dạng đó (⇒ lane TikTok).
+# Không có Threads: không extractor nào của bản yt-dlp cài chứa "thread".
+BANG_LINK_LE: dict[str, tuple[str, str]] = {
+    "Youtube": ("youtube", "yt-"),
+    "TikTok": ("tiktok", ""),
+    "Instagram": ("instagram", "ig-"),
+    "Facebook": ("facebook", "fbv-"),
+    "FacebookReel": ("facebook", "fbv-"),
+    "Twitter": ("x", "x-"),
+    "Pinterest": ("pinterest", "pin-"),
+    "Douyin": ("douyin", "dy-"),
+    "BiliBili": ("bilibili", "bili-"),
+    "SnapchatSpotlight": ("snapchat", "snap-"),
+}
+NEN_TANG_LINK_LE: frozenset[str] = frozenset(nt for nt, _ in BANG_LINK_LE.values())
+# Tiền tố id của nền tảng link lẻ (không gồm TikTok vốn id trần) — để mẫu kiểm đường dẫn tệp không phải chép lại.
+TIEN_TO_ID_LINK_LE: tuple[str, ...] = tuple(sorted({t.rstrip("-") for _, t in BANG_LINK_LE.values() if t}))
+
+# Cấu hình nền tảng link lẻ nào được nhận. Chưa đặt hoặc để trống ⇒ mặc định; đặt tên không có trong bảng ⇒ bỏ
+# qua tên đó (kèm một dòng cảnh báo) chứ không để một lỗi gõ làm tắt nền tảng khác.
+ENV_NEN_TANG_BAT = "VIDEODL_NEN_TANG_BAT"
+NEN_TANG_BAT_MAC_DINH = "youtube,tiktok"
+
+# Trần theo từng video, đo ở bước liệt kê (trước khi tải): video dài/nặng hơn thì bỏ, không tải.
+TRAN_THOI_LUONG_GIAY = 15 * 60
+TRAN_DUNG_LUONG_BYTE = 500 * 1024 * 1024
+# Id sau tiền tố chỉ gồm chữ-số/gạch (tên tệp, đường dẫn thumbnail và mẫu kiểm của `GET /thumbs`); độ dài tổng
+# (tiền tố + id) bằng trần của mẫu đó.
+_MAU_ID_VIDEO = re.compile(r"[A-Za-z0-9_\-]+")
+TRAN_DO_DAI_ID = 64
+_MAU_URL_HTTP = re.compile(r"https?://", re.I)
+
+
+def tach_link(van_ban: str) -> list[str]:
+    """Các link trong ô nhập: mỗi dòng một link, bỏ dòng trống, bỏ trùng giữ thứ tự."""
+    thay: set[str] = set()
+    ra: list[str] = []
+    for dong in (van_ban or "").splitlines():
+        dong = dong.strip()
+        if dong and dong not in thay:
+            thay.add(dong)
+            ra.append(dong)
+    return ra
+
+
+def nen_tang_bat() -> frozenset[str]:
+    """Nền tảng link lẻ đang được bật (đọc cấu hình MỖI LẦN gọi: đổi cấu hình rồi khởi động lại là đủ, và test
+    không phải dựng lại module)."""
+    tho = os.environ.get(ENV_NEN_TANG_BAT, "").strip() or NEN_TANG_BAT_MAC_DINH
+    ten = {t.strip().lower() for t in tho.split(",") if t.strip()}
+    la = ten - NEN_TANG_LINK_LE
+    if la:
+        log.warning("%s có tên nền tảng không biết (bỏ qua): %s", ENV_NEN_TANG_BAT, ", ".join(sorted(la)))
+    return frozenset(ten & NEN_TANG_LINK_LE)
+
+
+@functools.lru_cache(maxsize=1)
+def _extractor_nhan_dang() -> tuple:
+    """Mọi extractor của yt-dlp theo thứ tự ưu tiên của nó, trừ Generic (nhận MỌI URL nên vô nghĩa)."""
+    return tuple(ie for ie in gen_extractor_classes() if ie.ie_key() != "Generic")
+
+
+def _ie_key_cua(url: str) -> str | None:
+    """`ie_key` của extractor đầu tiên nhận URL (không gọi mạng), hoặc None. Chỉ nhận URL `http(s)://`:
+    một số extractor còn nhận id trần."""
+    if not _MAU_URL_HTTP.match(url):
+        return None
+    for ie in _extractor_nhan_dang():
+        if ie.suitable(url):
+            return ie.ie_key()
+    return None
+
+
+class _ThieuJs(RuntimeError):
+    """yt-dlp báo không thấy JS runtime trong lúc đọc link — lỗi của link đó (xem `downloader._YtdlpLog`)."""
+
+
+def _extract_info(url: str, proxy: str | None) -> dict | None:
+    """Ranh giới yt-dlp của bước liệt kê: một lời gọi `extract_info(download=False)`, KHÔNG tải. Cùng opts
+    nền tảng với bước tải (ffmpeg + Deno chỉ đường tường minh)."""
+    opts = downloader.opts_chung_nen_tang_khac(proxy)
+    opts["skip_download"] = True
+    logger = opts["logger"]
+    with YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    if logger.thieu_js:
+        raise _ThieuJs(f"{LOI_THIEU_JS}: yt-dlp không thấy JavaScript runtime (Deno) — đường Deno sai hoặc hỏng")
+    return info
+
+
+def _kich_thuoc_uoc(info: dict) -> float | None:
+    """Kích thước ước của video: `filesize`/`filesize_approx` của cả video, hoặc tổng các luồng yt-dlp đã chọn."""
+    for k in ("filesize", "filesize_approx"):
+        v = info.get(k)
+        if isinstance(v, (int, float)) and v > 0:
+            return v
+    tong = 0.0
+    for f in info.get("requested_formats") or ():
+        for k in ("filesize", "filesize_approx"):
+            v = f.get(k) if isinstance(f, dict) else None
+            if isinstance(v, (int, float)) and v > 0:
+                tong += v
+                break
+    return tong or None
+
+
+def _ref_tu_info(info: dict | None, link: str, tien_to: str) -> tuple[VideoRef | None, str | None]:
+    """`(ref, None)` nếu video tải được, hoặc `(None, mã lỗi)` — lỗi của riêng video này, không dừng job."""
+    if not isinstance(info, dict):
+        return None, "khong_doc_duoc"
+    if info.get("_type") in ("playlist", "multi_video") or info.get("entries") is not None:
+        return None, LOI_LA_PLAYLIST
+    if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+        return None, LOI_TRUC_TIEP
+    dur = info.get("duration")
+    if isinstance(dur, (int, float)) and dur > TRAN_THOI_LUONG_GIAY:
+        return None, LOI_QUA_DAI
+    size = _kich_thuoc_uoc(info)
+    if size is not None and size > TRAN_DUNG_LUONG_BYTE:
+        return None, LOI_QUA_NANG
+    vid = info.get("id")
+    if not isinstance(vid, str) or not _MAU_ID_VIDEO.fullmatch(vid) or len(tien_to + vid) > TRAN_DO_DAI_ID:
+        return None, "id_la"
+    return VideoRef(
+        video_id=tien_to + vid, url=link,
+        title=(info.get("title") or None),
+        author=(info.get("uploader") or info.get("uploader_id") or None),
+        duration=int(dur) if isinstance(dur, (int, float)) else None,
+    ), None
+
+
+class LinkLe:
+    """Video LẺ của nhiều nền tảng (xem `BANG_LINK_LE`), một hoặc nhiều link (mỗi dòng một link) trong một job.
+
+    Nhận dạng không gọi mạng. Liệt kê = một `extract_info(download=False)` mỗi link ⇒ một `VideoRef` (id có tiền
+    tố nền tảng); riêng TikTok video lẻ lấy id số thẳng từ URL như `parse_video_url` vốn làm — job TikTok chạy ở
+    lane TikTok, với cookie và opts TikTok, nên bước liệt kê không được tự gọi TikTok bằng opts khác."""
+
+    ten = "link_le"
+    mo_ta_url = "link video lẻ (YouTube, TikTok, Instagram, Facebook, X, Pinterest, Douyin, Bilibili, Snapchat)"
+
+    def phan_loai(self, url: str) -> tuple[str, str] | None:
+        """`(nen_tang, tien_to)` nếu URL là video lẻ của nền tảng trong bảng, ngược lại None."""
+        url = url.strip()
+        loai = BANG_LINK_LE.get(_ie_key_cua(url) or "")
+        if loai is None:
+            return None
+        if loai[0] == "tiktok" and parse_video_url(url) is None:
+            return None   # TikTok mà không phải `/@user/video/<số>` (embed, photo…): không có id trần để dùng
+        return loai
+
+    def nhan(self, url: str) -> bool:
+        return self.phan_loai(url) is not None
+
+    def nen_tang(self, url: str) -> str:
+        loai = self.phan_loai(url)
+        if loai is None:
+            raise ValueError("url không phải link video lẻ")
+        return loai[0]
+
+    def loai_log(self, url: str) -> str:
+        link = (tach_link(url) or [""])[0]
+        loai = self.phan_loai(link)
+        return f"{loai[0] if loai else 'khac'}:video"
+
+    def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
+                already_have: Callable[[list[str]], set[str]],
+                on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
+                cong=None, ghi_loi_video: Callable[[str, str], None] | None = None,
+                nghi: Callable[[], None] | None = None, **_chua_dung) -> list[VideoRef]:
+        """`url` là một hoặc nhiều link (mỗi dòng một). `cong` (`web/pacer.py::CongNenTang`): `truoc_goi()` ghi lượt
+        TRƯỚC mỗi lời gọi mạng và trả lý do dừng, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn.
+        `ghi_loi_video(mã, chi_tiết)` nhận lỗi RIÊNG từng link (private, quá dài, lỗi mạng…) — job vẫn chạy tiếp.
+        `nghi()` chạy giữa hai lời gọi mạng liên tiếp (nghỉ jitter)."""
+        def loi(ma: str, chi_tiet: str = "") -> None:
+            if ghi_loi_video is not None:
+                ghi_loi_video(ma, chi_tiet)
+            else:
+                log.warning("link lỗi [%s] %s", ma, chi_tiet)
+
+        ten_nt = "link_le"
+        refs: list[VideoRef] = []
+        dung: str | None = None
+        da_goi_mang = False
+        for link in tach_link(url):
+            loai_link = self.phan_loai(link)
+            if loai_link is None:
+                loi("khong_nhan", "")
+                continue
+            nen_tang, tien_to = loai_link
+            ten_nt = nen_tang
+            if nen_tang == "tiktok":
+                ref = parse_video_url(link)
+                if ref is not None:
+                    refs.append(ref)
+                continue
+            if da_goi_mang and nghi is not None:
+                nghi()
+            if cong is not None:
+                dung = cong.truoc_goi()
+                if dung:
+                    break
+            da_goi_mang = True
+            try:
+                info = _extract_info(link, proxy)
+            except Exception as exc:  # noqa: BLE001 — một link hỏng không giết cả job
+                if cong is not None:
+                    dung = cong.xu_ly_loi(exc)
+                    if dung:
+                        break
+                ma = LOI_THIEU_JS if isinstance(exc, _ThieuJs) else (ly_do_loi_video(exc) or "loi_khac")
+                loi(ma, che_url(exc))
+                continue
+            ref, ma_loi = _ref_tu_info(info, link, tien_to)
+            if ref is None:
+                loi(ma_loi or "loi_khac", "")
+            else:
+                refs.append(ref)
+        # Lọc trùng/đã có chạy trên phần ĐÃ liệt kê được; lượt rỗng không có lý do dừng riêng ⇒ `source_empty`
+        # (mọi link đều lỗi). Lý do dừng của cổng/tín hiệu chặn ghi SAU CÙNG: nó là lý do thật job dừng.
+        moi = _loc_da_co(refs, max_videos, ten_nguon=ten_nt, already_have=already_have,
+                         on_skip=on_skip, on_stop=on_stop) if (refs or not dung) else []
+        if dung:
+            on_stop(dung)
+        return moi
+
+
+# Thứ tự = thứ tự thử `nhan`; nguồn đầu tiên nhận thì thắng. Các tập URL không giao nhau (FB Ads Library nằm
+# trước `LinkLe` vì extractor `Facebook*` của yt-dlp không được cướp link thư viện quảng cáo).
+NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), LinkLe())
 
 
 # Nguồn dùng khi một URL cũ không nguồn nào nhận (xem `web/queue.py::_fetch_refs`).

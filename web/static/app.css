@@ -245,11 +245,12 @@
   .muted { color: var(--text-muted); font-size: .8rem; }
 
   #job-form { display: flex; flex-direction: column; gap: 10px; }
-  #job-form input {
+  #job-form input, #job-form textarea {
     border: 1px solid var(--border); background: var(--bg); color: var(--text);
     border-radius: 8px; padding: .55rem .7rem; font-size: .88rem; width: 100%;
   }
-  #job-form input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #job-form textarea { font-family: inherit; resize: vertical; }
+  #job-form input:focus, #job-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   #job-form button {
     background: var(--accent); color: var(--accent-ink); border: none; border-radius: 8px;
     padding: .6rem 1rem; font-weight: 600; font-size: .88rem; cursor: pointer;
