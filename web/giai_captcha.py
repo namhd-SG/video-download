@@ -113,6 +113,12 @@ CHO_XAC_MINH_QUA_HAN_GIO = 24      # `cho_xac_minh` quá hạn này ⇒ failed `
 TRAN_GIAI_NGAY = 3                 # trần "Tôi giải ngay" mỗi job (CHƯA CÓ NỀN)
 TRAN_TAI_LAI_MOI_LUOT = 2          # reload do gesture dở, mỗi lượt `dang_giai`
 TRE_PHAT_NGUONG_GIAY = 0.05        # phát muộn hơn lịch chừng này ⇒ đếm `tre_phat_worker` (CHƯA ĐO ngưỡng)
+# Lý do huỷ gesture (ngoài popup và đổi token) — mỗi lý do một bộ đếm trong dòng log cuối lượt, thứ tự cố định.
+# `lo_khong_hop_le` sinh DUY NHẤT khi `BoPhatLai.nhan_lo` báo đồng hồ popup lệch ⇒ đếm nó = đếm lô lệch đồng hồ.
+LY_DO_HUY_DEM = ("qua_nhieu_lo_cho", "lo_bi_tu_choi", "lo_khong_hop_le", "thieu_lo")
+# Nhãn lô bị 400 có huỷ gesture: 8 nhánh `kiem_su_kien` + 2 nhánh của route lô chuột.
+NHAN_TU_CHOI = ("dang_su_kien", "loai_su_kien", "so_khong_huu_han", "t_am", "buttons", "ngoai_khung",
+                "wheel_che_do", "wheel_dxdy", "so_su_kien", "khung_w")
 TRAN_MAU_TRE = 4096                # trần mẫu độ trễ phát mỗi lượt giải (reservoir; đủ cho p95 ổn định)
 LY_DO_HUY_POPUP = "popup_huy"      # lý do huỷ gesture khi popup gửi lệnh `huy_gesture` (đi kèm SSE `bi_ngat`)
 THIEU_LO_TOI_DA_GIAY = 2.0         # lô thiếu quá lâu ⇒ huỷ gesture
@@ -252,11 +258,13 @@ class SuKien:
 class LoiGiai(Exception):
     """Lỗi có mã HTTP; `huy_gesture=True` ⇒ gesture đang dở của người này phải bị huỷ."""
 
-    def __init__(self, ma: int, thong_diep: str, huy_gesture: bool = False):
+    def __init__(self, ma: int, thong_diep: str, huy_gesture: bool = False, nhan: str | None = None):
         super().__init__(thong_diep)
         self.ma = ma
         self.thong_diep = thong_diep
         self.huy_gesture = huy_gesture
+        # Nhãn CỐ ĐỊNH của nhánh từ chối (vd `ngoai_khung`) để đếm vì sao lô bị 400 — không mang dữ liệu sự kiện.
+        self.nhan = nhan
 
 
 class LoiKyCu(LoiGiai):
@@ -289,27 +297,27 @@ def kiem_su_kien(raw: object, khung_w: float, khung_h: float, device_w: float) -
     """Kiểm MỘT sự kiện từ popup. Trả `SuKien` đã đổi đơn vị; `None` = bỏ (nút phải/giữa).
     Sai ⇒ `LoiGiai(400, ..., huy_gesture=True)`."""
     if not isinstance(raw, dict):
-        raise LoiGiai(400, "Sự kiện chuột không đúng dạng.", True)
+        raise LoiGiai(400, "Sự kiện chuột không đúng dạng.", True, nhan="dang_su_kien")
     k = raw.get("k")
     if k not in _K_HOP_LE:
-        raise LoiGiai(400, "Loại sự kiện chuột không hợp lệ (down/move/up/wheel).", True)
+        raise LoiGiai(400, "Loại sự kiện chuột không hợp lệ (down/move/up/wheel).", True, nhan="loai_su_kien")
     x, y, t, buttons = raw.get("x"), raw.get("y"), raw.get("t"), raw.get("buttons")
     if not (_la_so_huu_han(x) and _la_so_huu_han(y) and _la_so_huu_han(t)):
-        raise LoiGiai(400, "Toạ độ/thời điểm phải là số hữu hạn.", True)
+        raise LoiGiai(400, "Toạ độ/thời điểm phải là số hữu hạn.", True, nhan="so_khong_huu_han")
     if t < 0:
-        raise LoiGiai(400, "Thời điểm sự kiện không được âm.", True)
+        raise LoiGiai(400, "Thời điểm sự kiện không được âm.", True, nhan="t_am")
     if not isinstance(buttons, int) or isinstance(buttons, bool) or not 0 <= buttons <= 31:
-        raise LoiGiai(400, "`buttons` phải là số nguyên 0–31 (PointerEvent.buttons).", True)
+        raise LoiGiai(400, "`buttons` phải là số nguyên 0–31 (PointerEvent.buttons).", True, nhan="buttons")
     if not (0 <= x <= khung_w and 0 <= y <= khung_h):
-        raise LoiGiai(400, "Điểm nằm ngoài khung — thao tác bị huỷ.", True)
+        raise LoiGiai(400, "Điểm nằm ngoài khung — thao tác bị huỷ.", True, nhan="ngoai_khung")
     dx = dy = 0.0
     if k == "wheel":
         dm = raw.get("delta_mode", 0)
         if not isinstance(dm, int) or isinstance(dm, bool) or dm != 0:
-            raise LoiGiai(400, "Chỉ nhận wheel theo pixel (delta_mode = 0).", True)
+            raise LoiGiai(400, "Chỉ nhận wheel theo pixel (delta_mode = 0).", True, nhan="wheel_che_do")
         dx, dy = raw.get("dx", 0), raw.get("dy")
         if not (_la_so_huu_han(dx) and _la_so_huu_han(dy)):
-            raise LoiGiai(400, "wheel cần dx, dy là số hữu hạn.", True)
+            raise LoiGiai(400, "wheel cần dx, dy là số hữu hạn.", True, nhan="wheel_dxdy")
     if buttons & ~1:
         return None  # nút phải/giữa: bỏ, không phát
     cx, cy = doi_don_vi(x, y, khung_w, device_w)
@@ -389,6 +397,12 @@ class ThongKePhat:
             j = self._rng.randrange(self.so_phat)
             if j < self.tran:
                 self.mau[j] = tre_giay
+
+
+def _dem_thanh_chuoi(dem: dict[str, int], thu_tu: tuple[str, ...]) -> str:
+    """`a:1,b:0,…,khac:n` — đủ mọi nhãn trong `thu_tu` theo đúng thứ tự (kể cả 0), dồn nhãn ngoài danh sách vào `khac`."""
+    khac = sum(n for k, n in dem.items() if k not in thu_tu)
+    return ",".join([f"{k}:{dem.get(k, 0)}" for k in thu_tu] + [f"khac:{khac}"])
 
 
 def tom_tat_tre(mau: list[float]) -> tuple[int, int] | None:
@@ -551,6 +565,8 @@ class PhienGiai:
         self.thong_ke_phat = ThongKePhat()
         # Số lần huỷ gesture theo lý do, cả lượt (đếm ở `_huy_gesture_unlocked` — chỗ duy nhất mọi lần huỷ đi qua).
         self.huy_theo_ly_do: dict[str, int] = {}
+        # Số lô bị API trả 400 (có huỷ gesture) theo nhãn cố định, cả lượt.
+        self.tu_choi_theo_nhan: dict[str, int] = {}
         self.bo_phat = BoPhatLai(self.d_ms, self.thong_ke_phat)
         self._tre_cu = 0                      # `tre_qua_D` của các token đã qua (bộ lịch bị thay khi đổi token)
         self._tre_phat_cu = 0                 # `tre_phat_worker` của các token đã qua
@@ -744,7 +760,13 @@ class PhienGiai:
         with self.khoa:
             return self._tre_cu + self.bo_phat.tre_qua_D
 
-    def so_do_luot(self) -> dict[str, int | None]:
+    def dem_tu_choi(self, nhan: str | None) -> None:
+        """Một lô bị API từ chối (400, có huỷ gesture): đếm theo nhãn cố định; nhãn lạ/thiếu ⇒ `khac`."""
+        k = nhan if nhan in NHAN_TU_CHOI else "khac"
+        with self.khoa:
+            self.tu_choi_theo_nhan[k] = self.tu_choi_theo_nhan.get(k, 0) + 1
+
+    def so_do_luot(self) -> dict[str, int | str | None]:
         """Số đo của lượt để log — chỉ số, không mang dữ liệu khách. `popup_huy` đếm mọi lệnh huỷ của popup
         (kể cả lúc không nhấn nút, khác `so_gesture_bo_do`); `huy_khac` mọi lý do khác trừ đổi token."""
         with self.khoa:
@@ -759,6 +781,13 @@ class PhienGiai:
                 "popup_huy": self.huy_theo_ly_do.get(LY_DO_HUY_POPUP, 0),
                 "huy_khac": sum(n for ld, n in self.huy_theo_ly_do.items()
                                 if ld not in (LY_DO_HUY_POPUP, "doi_token")),
+                # `huy` tách `huy_khac` theo lý do (thứ tự cố định, đủ mọi lý do kể cả 0); `khac` = lý do ngoài danh
+                # sách (luôn 0 với mã hiện tại — khác 0 nghĩa là có đường huỷ mới chưa được đặt tên).
+                "huy": _dem_thanh_chuoi(
+                    {ld: n for ld, n in self.huy_theo_ly_do.items() if ld not in (LY_DO_HUY_POPUP, "doi_token")},
+                    LY_DO_HUY_DEM),
+                # `tu_choi` = vì sao lô bị 400 (mỗi lô như vậy về sau thành một `lo_bi_tu_choi` khi xả tới mốc).
+                "tu_choi": _dem_thanh_chuoi(self.tu_choi_theo_nhan, NHAN_TU_CHOI),
             }
 
     def tre_phat_worker_tong(self) -> int:

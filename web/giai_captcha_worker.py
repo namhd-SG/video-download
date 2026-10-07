@@ -386,11 +386,11 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
     # Chỉ job_id + số + nhãn cố định. `gesture_nop` là PROXY (số lần nhả chuột), KHÔNG phải số bước captcha.
     log.info("[giai] job %s: vòng giải kết thúc (%s) — luot=%s mo_s=%.1f so_phat=%d "
              "tre_phat_p50_ms=%s tre_phat_p95_ms=%s tre_phat_max_ms=%s popup_huy=%d huy_khac=%d "
-             "gesture_nop=%d tre_qua_D=%d tre_phat_worker=%d D=%d ms "
+             "huy=%s tu_choi=%s gesture_nop=%d tre_qua_D=%d tre_phat_worker=%d D=%d ms "
              "gesture_bo_do=%d tai_lai=%d trang_moi_dong=%d chan_dieu_huong=%d", job_id, ly_do or ket,
              luot, gc.dong_ho() - bat_dau, sd["so_phat"],
              sd["tre_phat_p50_ms"], sd["tre_phat_p95_ms"], sd["tre_phat_max_ms"],
-             sd["popup_huy"], sd["huy_khac"], sd["gesture_nop"],
+             sd["popup_huy"], sd["huy_khac"], sd["huy"], sd["tu_choi"], sd["gesture_nop"],
              phien.tre_qua_d_tong(), phien.tre_phat_worker_tong(), phien.d_ms,
              phien.so_gesture_bo_do, phien.so_lan_tai_lai,
              trang_moi.so_dong, guard.so_chan)
