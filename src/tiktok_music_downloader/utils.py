@@ -129,11 +129,24 @@ _MAU_DRIVE = re.compile(
 # viện, vào log DEBUG) không bị che; che dư một chuỗi như `x-forwarded-for` chỉ làm log kém đọc, che thiếu mới là rò.
 # `fb-` (Ads Library, số tài sản quảng cáo công khai) và `fbv-` trước giờ không che: `fb-` giữ nguyên; `fbv-` che vì
 # là id video người dùng dán link.
-_MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|x|pin|dy|bili|snap)-[\w\-]{6,}")
+_MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|x|pin|dy|bili|snap)-([\w\-]{6,})")
 # Thông điệp lỗi của yt-dlp mở đầu bằng `[extractor] <id video>:` (id TRẦN, không tiền tố) — vd
 # `ERROR: [youtube] dQw4w9WgXcQ: Video unavailable`. Che id, giữ nhãn extractor và lý do.
 # TikTok KHÔNG che: id video TikTok trong thông điệp lỗi được GIỮ có chủ đích (để dò đúng video hỏng).
-_MAU_ID_YTDLP = re.compile(r"(?i)(\[(?!tiktok)[\w:\-]+\]\s+)[\w\-]{6,}(?=:)")
+_MAU_ID_YTDLP = re.compile(r"(?i)(\[(?!tiktok)[\w:\-]+\]\s+)([\w\-]{6,64})(?=:)")
+
+
+def _giong_id_nen_tang(tok: str) -> bool:
+    """Chuỗi sau tiền tố có HÌNH id thật (có chữ số, chữ HOA hoặc `_`) chứ không phải một từ thường như
+    `dlp-ejs` (trong `yt-dlp-ejs`) hay `forwarded-for` (trong `x-forwarded-for`). Dấu `-` KHÔNG tính: từ ghép
+    tiếng Anh có `-`. Id thật không có chữ số/HOA/`_` nào (11 ký tự toàn chữ thường và `-`) là khả năng cực nhỏ."""
+    return any(c.isdigit() or c.isupper() or c == "_" for c in tok)
+
+
+def _giong_id_ytdlp(tok: str) -> bool:
+    """Như trên cho id đứng sau `[extractor] `: từ thường tiếng Anh (`Destination`, `Traceback`, `Extracting`)
+    chỉ viết hoa chữ đầu nên không tính chữ hoa ĐẦU; `-` được tính (id YouTube có `-` giữa chừng)."""
+    return any(c.isdigit() or c.isupper() or c in "_-" for c in tok[1:]) or tok[0].isdigit()
 # Neo đầu token (`(?<![\w.\-])`): không có nó, `[\w.\-]*` thử lại từ MỌI vị trí trong một token dài ⇒ O(n²),
 # mà formatter chạy trên mọi dòng log.
 _MAU_FBCDN = re.compile(r"(?i)(?<![\w.\-])[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")
@@ -145,8 +158,8 @@ def che_url(text: object, toi_da: int | None = 300) -> str:
     thông điệp lỗi tải."""
     s = _MAU_URL.sub("<url>", str(text))
     s = _MAU_DRIVE.sub("<drive>", s)
-    s = _MAU_ID_NEN_TANG.sub("<id>", s)
-    s = _MAU_ID_YTDLP.sub(r"\1<id>", s)
+    s = _MAU_ID_NEN_TANG.sub(lambda m: "<id>" if _giong_id_nen_tang(m.group(1)) else m.group(0), s)
+    s = _MAU_ID_YTDLP.sub(lambda m: m.group(1) + ("<id>" if _giong_id_ytdlp(m.group(2)) else m.group(2)), s)
     s = _MAU_FBCDN.sub("<url>", s)
     s = _MAU_HANDLE.sub("/@<h>", s)
     return s if toi_da is None or len(s) <= toi_da else s[:toi_da] + "…"

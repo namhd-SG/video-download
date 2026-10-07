@@ -39,7 +39,6 @@ KHONG_NHAN = [
     "https://www.youtube.com/@mot.kenh",
     "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
     "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    f"https://www.youtube.com/watch?v={MA}&list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",   # playlist/tab, không phải video lẻ
     "https://www.instagram.com/mot.nguoi/",
     "https://vm.tiktok.com/ZMabcdef/",
     "https://www.tiktok.com/@nguoi.dung/photo/7123456789012345678",

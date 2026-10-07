@@ -21,7 +21,8 @@ from tiktok_music_downloader.phan_loai_loi import (
     LOI_CAN_DANG_NHAP, LOI_KHONG_CO_LUONG_VIDEO, LOI_LA_PLAYLIST, LOI_QUA_DAI, LOI_QUA_NANG, LOI_TRUC_TIEP,
     phan_loai_loi,
 )
-from tiktok_music_downloader.nguon import NGUON_MAC_DINH, LinkLe, chon_nguon, tach_link
+from tiktok_music_downloader.nguon import (
+    NGUON_MAC_DINH, TRAN_DUNG_LUONG_BYTE, LinkLe, chon_nguon, tach_link)
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
@@ -167,6 +168,16 @@ class LifecycleHook(Protocol):
                  db_path: Path | None = None) -> UploadResult: ...
 
 
+def la_link_le(url: str) -> bool:
+    """Job này là link video lẻ (một hoặc nhiều dòng) chứ không phải trang để quét. Nguồn của từng video link lẻ là
+    URL của CHÍNH video đó: nhãn chung theo job ("link đầu (+N)") gắn sai nghĩa cho mọi video còn lại."""
+    return isinstance(chon_nguon((tach_link(url) or [url])[0]), LinkLe)
+
+
+def nguon_cua_ref(nguon_job: str, ref: VideoRef, link_le: bool) -> str:
+    return ref.url if link_le else nguon_job
+
+
 def source_label(url: str) -> str:
     """How this job's source is named in `video_sightings`.
 
@@ -174,10 +185,6 @@ def source_label(url: str) -> str:
     data migration, not an edit. `#tag` for a hashtag, the URL otherwise —
     music, search and profile pages are already distinguished by their path.
     """
-    links = tach_link(url)
-    if len(links) > 1:
-        # Job nhiều link (link lẻ): nhãn là link đầu kèm số link còn lại, không phải cả khối nhiều dòng.
-        return f"{links[0]} (+{len(links) - 1} link)"
     tag = parse_tag_slug(url)
     return f"#{tag}" if tag is not None else url
 
@@ -225,6 +232,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     KHÔNG tải link lạc nào mà trang bị chặn còn lộ ra. Không truyền ⇒ y hệt trước.
     """
     nguon = source_label(url)
+    link_le = la_link_le(url)
     _ly_do_cuoi = {"v": None}
 
     def _already_have(ids: list[str]) -> set[str]:
@@ -244,7 +252,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
         _da_bo["so"] += 1
         try:
             models.record_sighting(db_path, video_id=ref.video_id, job_id=job_id,
-                                    nguon=nguon, da_tai=False)
+                                    nguon=nguon_cua_ref(nguon, ref, link_le), da_tai=False)
         except Exception as exc:  # noqa: BLE001 — a bookkeeping row must never kill a job
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         job_id, ref.video_id, type(exc).__name__)
@@ -473,8 +481,9 @@ class _JobProgress:
 
     def __init__(self, db_path: Path, job_id: int, refs: list[VideoRef],
                  output_dir: Path, lifecycle_hook: LifecycleHook,
-                 nguon: str = ""):
+                 nguon: str = "", link_le: bool = False):
         self._db_path = db_path
+        self._link_le = link_le
         self._job_id = job_id
         # Carried in rather than looked up per video: `on_video_verified` only
         # receives the job id, and re-reading the job row once per download to
@@ -504,7 +513,8 @@ class _JobProgress:
             return
         try:
             models.record_sighting(self._db_path, video_id=ref.video_id,
-                                    job_id=self._job_id, nguon=self._nguon, da_tai=da_tai)
+                                    job_id=self._job_id, nguon=nguon_cua_ref(self._nguon, ref, self._link_le),
+                                    da_tai=da_tai)
         except Exception as exc:  # noqa: BLE001 — bookkeeping must not fail a job
             log.warning("job %s: không ghi được sighting cho %s (%s)",
                         self._job_id, ref.video_id, type(exc).__name__)
@@ -672,7 +682,7 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
         return
     output_dir = downloads_dir / str(job_id)
     progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
-                             nguon=source_label(job["url"]))
+                             nguon=source_label(job["url"]), link_le=la_link_le(job["url"]))
     # Job nền tảng khác (file lớn, đĩa máy chạy chỉ còn vài GB và do swap của account khác kéo xuống):
     # kiểm đĩa SỐNG trước TỪNG file, cùng ngưỡng với cổng lúc tạo/nhận job. Dưới ngưỡng ⇒ dừng job có lý do
     # `het_dia`, không tải tiếp. Job TikTok giữ nguyên (không truyền hook).
@@ -686,8 +696,13 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
         het_dia["ly_do"] = dia.reason
         return dia.reason
 
-    # TikTok: lời gọi y hệt trước (không thêm kwarg nào).
-    kw_cong_dia = {"truoc_moi_file": _kiem_dia} if la_nen_tang_khac else {}
+    # TikTok COLLECTION: lời gọi y hệt trước (không thêm kwarg nào). TikTok video LẺ cũng chạy ở lane TikTok nhưng
+    # là link người dán tuỳ ý (không phải trang quét quen thuộc): kiểm đĩa SỐNG trước từng file như nền tảng
+    # khác, và trần dung lượng một file (yt-dlp bỏ file lớn hơn, không ném lỗi).
+    tiktok_le = not la_nen_tang_khac and la_link_le(job["url"])
+    kw_cong_dia = {"truoc_moi_file": _kiem_dia} if (la_nen_tang_khac or tiktok_le) else {}
+    if tiktok_le:
+        kw_cong_dia["max_filesize"] = TRAN_DUNG_LUONG_BYTE
     # Nền tảng link lẻ: opts yt-dlp riêng + cổng IP (ghi lượt TRƯỚC mỗi lần gọi, kể cả lần thử lại) + nghỉ jitter.
     nen_tang_job = job.get("nen_tang") or models.NEN_TANG_MAC_DINH
     cong = pacer.CongNenTang(db_path, job_id, nen_tang_job) if nen_tang_job in pacer.TRAN else None

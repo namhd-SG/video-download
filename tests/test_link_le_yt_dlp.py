@@ -18,7 +18,7 @@ from tiktok_music_downloader import nguon as nguon_mod
 from tiktok_music_downloader.utils import USER_AGENTS, VideoRef
 from web import models
 
-A, B, C = "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"
+A, B, C = "aAa1aAa1aAa", "bBb2bBb2bBb", "cCc3cCc3cCc"
 
 
 def _yt(vid):

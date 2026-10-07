@@ -257,10 +257,35 @@
 
   // Rút gọn URL nguồn để hiện trong hộp lọc/pill mà không mất khả năng nhận
   // ra nguồn nào là nguồn nào (URL đầy đủ vẫn nằm trong `title=`).
+  // Nhãn nền tảng cho nguồn là LINK VIDEO LẺ (mỗi video có nguồn riêng là URL của chính nó): "YouTube · <id ngắn>".
+  // Chỉ tên nền tảng thì mọi chip trùng nhau; URL đầy đủ vẫn nằm trong `title=`. `null` = không phải link lẻ.
+  const NEN_TANG_THEO_HOST = [
+    [/(^|\.)(youtube\.com|youtu\.be)$/, "YouTube"], [/(^|\.)instagram\.com$/, "Instagram"],
+    [/(^|\.)(facebook\.com|fb\.watch)$/, "Facebook"], [/(^|\.)(x\.com|twitter\.com)$/, "X"],
+    [/(^|\.)pinterest\.[a-z.]+$/, "Pinterest"], [/(^|\.)douyin\.com$/, "Douyin"],
+    [/(^|\.)bilibili\.com$/, "Bilibili"], [/(^|\.)snapchat\.com$/, "Snapchat"],
+    [/(^|\.)tiktok\.com$/, "TikTok"],
+  ];
+  function nhanLinkLe(url) {
+    const host = url.hostname.toLowerCase();
+    const ten = (NEN_TANG_THEO_HOST.find(([re]) => re.test(host)) || [])[1];
+    if (!ten) return null;
+    const path = url.pathname.replace(/\/+$/, "");
+    const id = url.searchParams.get("v") || (path.match(/\/(?:video|shorts|reel|reels|p|status|pin|spotlight)\/([^/]+)/) || [])[1]
+      || (host.endsWith("youtu.be") ? path.slice(1) : "") || url.searchParams.get("fbid") || "";
+    // TikTok: trang tag/music/profile giữ nhãn cũ; chỉ `/video/<id>` là link lẻ.
+    if (ten === "TikTok" && !/\/video\/\d+/.test(path)) return null;
+    if (ten === "Facebook" && /\/ads\/library/.test(path)) return null;
+    if (!id) return ten;
+    return `${ten} · ${id.length > 12 ? id.slice(0, 11) + "…" : id}`;
+  }
+
   function shortenSourceUrl(u) {
     try {
       const url = new URL(u);
       const path = url.pathname.replace(/\/+$/, "");
+      const le = nhanLinkLe(url);
+      if (le) return le;
       if (path.startsWith("/tag/")) return "#" + path.slice(5);
       if (path.startsWith("/music/")) return "🎵 " + decodeURIComponent(path.slice(7));
       if (path.startsWith("/@")) return path.slice(1);
@@ -2402,6 +2427,16 @@
       return { ok: false, loi: "Lỗi mạng: " + err.message };
     }
   }
+
+  // Ctrl/⌘+Enter trong ô nhập nhiều dòng ⇒ gửi form (Enter trần xuống dòng để dán nhiều link).
+  function laPhimGuiForm(ev) {
+    return !!(ev && (ev.ctrlKey || ev.metaKey) && ev.key === "Enter");
+  }
+  document.getElementById("url").addEventListener("keydown", (ev) => {
+    if (!laPhimGuiForm(ev)) return;
+    ev.preventDefault();
+    document.getElementById("job-form").requestSubmit();
+  });
 
   document.getElementById("job-form").addEventListener("submit", async (ev) => {
     ev.preventDefault();

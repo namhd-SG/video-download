@@ -16,9 +16,9 @@ from tenacity import (
     wait_exponential,
 )
 from yt_dlp import YoutubeDL
-from yt_dlp.utils import DownloadError
+from yt_dlp.utils import DownloadError, ExtractorError
 
-from tiktok_music_downloader.phan_loai_loi import LOI_THIEU_JS, ly_do_loi_video, phan_loai_loi, phat_hien_chan
+from tiktok_music_downloader.phan_loai_loi import LOI_QUA_NANG, LOI_THIEU_JS, ly_do_loi_video, phan_loai_loi, phat_hien_chan
 from tiktok_music_downloader.utils import (
     che_url,
     JitterThrottle,
@@ -128,7 +128,8 @@ def opts_chung_nen_tang_khac(proxy: str | None = None) -> dict:
         "no_warnings": True,
         "noprogress": True,
         "logger": _YtdlpLog(),
-        # Link `watch?v=…&list=…` là MỘT video; playlist thật không được nhận ở bước nhận dạng.
+        # Link đã được chuẩn hoá về MỘT video ở bước nhận dạng (`nguon.chuan_hoa_link` bỏ `list=`…); đây là lớp
+        # bảo vệ thứ hai để yt-dlp không bao giờ mở cả playlist.
         "noplaylist": True,
         "concurrent_fragment_downloads": 1,
         "retries": 2,
@@ -227,6 +228,22 @@ def _write_netscape_cookies(json_path: Path) -> Path:
     return Path(tmp)
 
 
+# Lỗi VĨNH VIỄN của một video (gỡ, không có định dạng, chặn vùng): thử lại cho cùng kết quả mà tốn lượt trần IP.
+_MAU_LOI_VINH_VIEN = ("video unavailable", "requested format is not available", "not available in your country",
+                      "geo restricted", "geo-restricted", "this video has been removed", "has been terminated")
+
+
+def _loi_vinh_vien(exc: BaseException) -> bool:
+    """`ExtractorError(expected=True)` (yt-dlp tự khai đây là lỗi dự kiến, kể cả khi bị bọc trong `DownloadError`
+    qua `exc_info`) hoặc thông điệp thuộc `_MAU_LOI_VINH_VIEN`."""
+    goc = getattr(exc, "exc_info", None)
+    for e in (exc, goc[1] if goc else None):
+        if isinstance(e, ExtractorError) and e.expected:
+            return True
+    s = str(exc).lower()
+    return any(m in s for m in _MAU_LOI_VINH_VIEN)
+
+
 def _nen_thu_lai(exc: BaseException) -> bool:
     """Thử lại mọi lỗi, TRỪ lệnh dừng của cổng nền tảng và lỗi đã đánh dấu `khong_thu_lai` (nền tảng link lẻ:
     tín hiệu chặn, video riêng tư/giới hạn tuổi). Thử lại hai loại đó vô ích, và mỗi lần thử là một lượt tính vào
@@ -262,7 +279,7 @@ def _download_one(url: str, opts: dict, truoc_goi: Callable[[], str | None] | No
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=True)
     except Exception as exc:
-        if truoc_goi is not None and (phat_hien_chan(exc) or ly_do_loi_video(exc)):
+        if truoc_goi is not None and (phat_hien_chan(exc) or ly_do_loi_video(exc) or _loi_vinh_vien(exc)):
             exc.khong_thu_lai = True
         raise
 
@@ -353,6 +370,7 @@ def download_all(
     nen_tang: str | None = None,
     cong=None,
     delay_range: tuple[float, float] | None = None,
+    max_filesize: int | None = None,
 ) -> tuple[int, int, list[str]]:
     """
     Download each VideoRef.
@@ -371,6 +389,8 @@ def download_all(
     `truoc_goi()` trả lý do hoặc None, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn) chỉ có tác dụng
     ở đường nền tảng khác. Cổng từ chối / tín hiệu chặn ⇒ DỪNG cả lượt (cổng tự ghi lý do vào `cong`).
     `delay_range` = khoảng nghỉ (thấp, cao) giữa hai video thay cho `delay_seconds`.
+    `max_filesize` (byte, tuỳ chọn; TikTok video lẻ): yt-dlp BỎ QUA file lớn hơn mà không ném lỗi, nên thiếu tệp
+    sau khi tải ⇒ lỗi `qua_nang` rõ ràng. Không truyền ⇒ dict opts y hệt cũ.
 
     Returns (downloaded, skipped, failed_ids).
     """
@@ -385,6 +405,8 @@ def download_all(
     cookiefile_str = str(cookiefile_tmp) if cookiefile_tmp else None
     opts = (_ydl_opts(output_dir, proxy, cookiefile_str) if la_tiktok
             else _ydl_opts_nen_tang_khac(output_dir, proxy, cookiefile_str))
+    if max_filesize is not None:
+        opts["max_filesize"] = max_filesize
     throttle = JitterThrottle(delay_seconds, khoang=delay_range)
 
     downloaded = 0
@@ -450,6 +472,9 @@ def download_all(
                     download_file(ref.video_id[len("gd-"):], target, proxy)
                 elif la_tiktok:
                     info = _download_one(ref.url, opts)
+                    if max_filesize is not None and not (target.exists() and target.stat().st_size > 0):
+                        raise RuntimeError(f"{LOI_QUA_NANG}: video lớn hơn trần {max_filesize // (1024 * 1024)}MB, "
+                                           "yt-dlp bỏ qua")
                 else:
                     info = _tai_nen_tang_khac(ref, opts, output_dir, cong)
                 # Post-process: apply watermark in-place if configured. Failures

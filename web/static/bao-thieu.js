@@ -138,8 +138,8 @@
       h += `<div class="lo-ht">Có thể là sự cố hàng loạt (nhiều video cùng báo ` +
         `'Requested format') — không phải lỗi từng video, báo người phát triển.</div>`;
     } else if (s.loiTiktok > 0) {
-      h += `<div class="lo-tt">${s.loiTiktok} video TikTok không cho tải ` +
-        `(bài dạng ảnh, bị gỡ hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
+      h += `<div class="lo-tt">${s.loiTiktok} video nguồn không cho tải ` +
+        `(bài dạng ảnh, bị gỡ, riêng tư, quá dài/nặng hoặc không có bản video) — đã bỏ qua, không phải lỗi hệ thống.</div>`;
     }
     if (s.loiChuaPhanLoai > 0) {
       h += `<div class="lo-tt">${s.loiChuaPhanLoai} lỗi (chưa phân loại — lượt trước bản cập nhật)</div>`;

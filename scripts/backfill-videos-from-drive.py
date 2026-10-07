@@ -107,7 +107,10 @@ def main() -> int:
             video_id = tep["name"][:-4]
             if video_id in da_co:
                 continue
-            gap.append((video_id, job_id, tep["id"], job["tao_luc"], job["url"]))
+            # Job link lẻ lưu NHIỀU dòng trong `jobs.url` (mỗi dòng một link) mà script chỉ biết tên tệp, không biết
+            # video thuộc dòng nào: lấy dòng đầu làm nguồn (xấp xỉ, ghi rõ ở đây) thay vì cả khối nhiều dòng.
+            nguon_job = (job["url"] or "").strip().splitlines()[:1]
+            gap.append((video_id, job_id, tep["id"], job["tao_luc"], nguon_job[0] if nguon_job else job["url"]))
 
     # Cùng một video có thể nằm trong NHIỀU thư mục job: chạy lại cùng hashtag
     # là chuyện thường. `videos.video_id` là PRIMARY KEY nên chỉ một hàng, và

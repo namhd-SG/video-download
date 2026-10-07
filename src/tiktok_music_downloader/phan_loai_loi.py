@@ -28,6 +28,8 @@ _MAU_TIKTOK = (
     # Nền tảng link lẻ (YouTube): giới hạn tuổi ("Sign in to confirm your age") là video này không cho tải khi
     # ẩn danh — lỗi của MỘT video, giống "private video" ở trên. "Sign in" trần KHÔNG vào đây (xem `phat_hien_chan`).
     "confirm your age",
+    # TikTok video lẻ lớn hơn trần dung lượng một file (`downloader.download_all(max_filesize=…)`).
+    "qua_nang:",
 )
 
 

@@ -24,6 +24,7 @@ class YtdlpGia:
         self.loi = loi_theo_url or {}
         # câu phát vào `opts["logger"].warning` trước khi trả về, theo loại lời gọi
         self.canh_bao = {"tai": canh_bao_khi_tai, "liet_ke": canh_bao_khi_liet_ke}
+        self.khong_ghi_tep: set[str] = set()   # url mà lời gọi tải KHÔNG ghi tệp (như yt-dlp bỏ qua vì `max_filesize`)
         self.opts_da_tao: list[dict] = []
         self.goi: list[tuple[str, str]] = []   # ("liet_ke" | "tai", url)
 
@@ -57,7 +58,7 @@ class _Ydl:
         if canh_bao:
             self._opts["logger"].warning(canh_bao)
         info = gia.thong_tin[url]
-        if download:
+        if download and url not in gia.khong_ghi_tep:
             dich = Path(self._opts["outtmpl"] % {"id": info["id"], "ext": "mp4"})
             dich.parent.mkdir(parents=True, exist_ok=True)
             dich.write_bytes(b"x")

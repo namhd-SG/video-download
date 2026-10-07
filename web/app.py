@@ -27,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.nguon import (
-    TIEN_TO_ID_LINK_LE, LinkLe, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
+    TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, LinkLe, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
@@ -509,11 +509,21 @@ def create_job(payload: CreateJobRequest,
     if len(payload.url) > MAX_KY_TU_O_LINK or len(links) > MAX_LINK_MOT_JOB:
         raise HTTPException(status_code=400, detail=f"tối đa {MAX_LINK_MOT_JOB} link mỗi lượt")
     nguon, nen_tang = _chon_nguon_cho_o_nhap(links)
+    # Nền tảng đang TẮT sau tín hiệu chặn: từ chối ngay (job nhận vào chỉ nằm im, không ai giải thích). Chạm trần
+    # giờ/ngày thì VẪN nhận — trần tự mở, job chờ trong hàng.
+    if nen_tang in pacer.TRAN and nen_tang in pacer.nen_tang_dang_tat(DB_PATH):
+        raise HTTPException(
+            status_code=503,
+            detail=f"{TEN_HIEN_THI.get(nen_tang, nen_tang)} tạm tắt do bị chặn, admin bật lại")
+    so_luong = payload.so_luong
+    if isinstance(nguon, LinkLe):
+        # Link lẻ: số video = số link dán vào; ô "số lượng" không có nghĩa ở đây.
+        so_luong = len(links)
     # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
     # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác có trần IP riêng ở `web/pacer.py`.
     if nguon is None or nen_tang == models.NEN_TANG_MAC_DINH:
         over_cap = daily_cap_rejection(db_path=DB_PATH, cookies_dir=COOKIES_DIR,
-                                       nguoi_tao=nguoi_tao, so_luong=payload.so_luong)
+                                       nguoi_tao=nguoi_tao, so_luong=so_luong)
         if over_cap is not None:
             raise HTTPException(status_code=429, detail=over_cap)
     if nguon is None:
@@ -535,7 +545,7 @@ def create_job(payload: CreateJobRequest,
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Nhiều link lưu nguyên khối, mỗi dòng một link (không thêm cột/bảng): `jobs.url` vẫn là MỘT chuỗi.
-    job_id = models.create_job(DB_PATH, "\n".join(links), payload.so_luong, nguoi_tao,
+    job_id = models.create_job(DB_PATH, "\n".join(links), so_luong, nguoi_tao,
                                usecase=usecase, insight_goc=insight_goc, nen_tang=nen_tang)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng

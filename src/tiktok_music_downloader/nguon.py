@@ -21,6 +21,7 @@ import logging
 import os
 import re
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Callable, Protocol
 
 from yt_dlp import YoutubeDL
@@ -239,7 +240,11 @@ NEN_TANG_LINK_LE: frozenset[str] = frozenset(nt for nt, _ in BANG_LINK_LE.values
 TIEN_TO_ID_LINK_LE: tuple[str, ...] = tuple(sorted({t.rstrip("-") for _, t in BANG_LINK_LE.values() if t}))
 
 # Cấu hình nền tảng link lẻ nào được nhận. Chưa đặt hoặc để trống ⇒ mặc định; đặt tên không có trong bảng ⇒ bỏ
-# qua tên đó (kèm một dòng cảnh báo) chứ không để một lỗi gõ làm tắt nền tảng khác.
+# qua tên đó (kèm MỘT dòng cảnh báo cho mỗi giá trị cấu hình) chứ không để một lỗi gõ làm tắt nền tảng khác.
+#
+# ⚠ Chỉ YouTube và TikTok video lẻ đã được dựng với bộ đo. Instagram, Facebook, X, Pinterest, Douyin, Bilibili,
+# Snapchat có trong bảng nhưng CHƯA smoke: phải chạy smoke riêng (3/3 link công khai trên máy chạy thật) rồi mới
+# thêm tên vào cấu hình này. Instagram/Facebook/X còn cần cookie cho phần lớn nội dung.
 ENV_NEN_TANG_BAT = "VIDEODL_NEN_TANG_BAT"
 NEN_TANG_BAT_MAC_DINH = "youtube,tiktok"
 
@@ -265,15 +270,49 @@ def tach_link(van_ban: str) -> list[str]:
     return ra
 
 
+_DA_CANH_BAO_CAU_HINH: set[str] = set()
+
+
 def nen_tang_bat() -> frozenset[str]:
     """Nền tảng link lẻ đang được bật (đọc cấu hình MỖI LẦN gọi: đổi cấu hình rồi khởi động lại là đủ, và test
-    không phải dựng lại module)."""
+    không phải dựng lại module). Hàm này chạy mỗi giây (vòng nhận job), nên cảnh báo tên lạ chỉ ghi MỘT lần cho
+    mỗi giá trị cấu hình."""
     tho = os.environ.get(ENV_NEN_TANG_BAT, "").strip() or NEN_TANG_BAT_MAC_DINH
     ten = {t.strip().lower() for t in tho.split(",") if t.strip()}
     la = ten - NEN_TANG_LINK_LE
-    if la:
+    if la and tho not in _DA_CANH_BAO_CAU_HINH:
+        _DA_CANH_BAO_CAU_HINH.add(tho)
         log.warning("%s có tên nền tảng không biết (bỏ qua): %s", ENV_NEN_TANG_BAT, ", ".join(sorted(la)))
     return frozenset(ten & NEN_TANG_LINK_LE)
+
+
+# Tên hiện cho người dùng (thông báo lỗi).
+TEN_HIEN_THI = {"youtube": "YouTube", "tiktok": "TikTok", "instagram": "Instagram", "facebook": "Facebook",
+                "x": "X", "pinterest": "Pinterest", "douyin": "Douyin", "bilibili": "Bilibili",
+                "snapchat": "Snapchat"}
+
+_HOST_YOUTUBE = ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be",
+                 "www.youtu.be")
+
+
+def chuan_hoa_link(url: str) -> str:
+    """Link YouTube chỉ giữ phần chỉ ra MỘT video: `watch?v=X&list=…&index=…&start_radio=…&pp=…` (link mở từ
+    Mix/playlist) ⇒ `watch?v=X`. Không làm vậy thì `YoutubeIE.suitable` trả False khi có `list` (extractor playlist
+    giành link) và cả link video thật bị 400. `shorts/ID`, `youtu.be/ID` bỏ hết query. Link khác: nguyên văn."""
+    try:
+        t = urlsplit(url.strip())
+    except ValueError:
+        return url
+    if (t.hostname or "").lower() not in _HOST_YOUTUBE:
+        return url
+    from urllib.parse import parse_qs
+    host = (t.hostname or "").lower()
+    if t.path.rstrip("/") == "/watch":
+        v = parse_qs(t.query).get("v", [""])[0]
+        return f"https://www.youtube.com/watch?v={v}" if v else url
+    if host.endswith("youtu.be") or t.path.startswith("/shorts/"):
+        return f"{t.scheme}://{t.netloc}{t.path}"
+    return url
 
 
 @functools.lru_cache(maxsize=1)
@@ -282,15 +321,31 @@ def _extractor_nhan_dang() -> tuple:
     return tuple(ie for ie in gen_extractor_classes() if ie.ie_key() != "Generic")
 
 
-def _ie_key_cua(url: str) -> str | None:
-    """`ie_key` của extractor đầu tiên nhận URL (không gọi mạng), hoặc None. Chỉ nhận URL `http(s)://`:
+def _ie_cua(url: str):
+    """Lớp extractor đầu tiên nhận URL (không gọi mạng), hoặc None. Chỉ nhận URL `http(s)://`:
     một số extractor còn nhận id trần."""
     if not _MAU_URL_HTTP.match(url):
         return None
     for ie in _extractor_nhan_dang():
         if ie.suitable(url):
-            return ie.ie_key()
+            return ie
     return None
+
+
+def _ie_key_cua(url: str) -> str | None:
+    ie = _ie_cua(url)
+    return ie.ie_key() if ie is not None else None
+
+
+def _id_tam(url: str, tien_to: str) -> str | None:
+    """Id video suy từ chính URL (`ie.get_temp_id`, KHÔNG gọi mạng) kèm tiền tố nền tảng, hoặc None. Dùng để bỏ
+    link thư viện đã có TRƯỚC khi tốn một lượt gọi nền tảng. Nếu id thật (do `extract_info` trả) khác id tạm thì
+    chỉ là một lượt liệt kê dư — bước lọc sau liệt kê vẫn chặn trùng."""
+    ie = _ie_cua(url)
+    vid = ie.get_temp_id(url) if ie is not None else None
+    if not isinstance(vid, str) or not _MAU_ID_VIDEO.fullmatch(vid) or len(tien_to + vid) > TRAN_DO_DAI_ID:
+        return None
+    return tien_to + vid
 
 
 class _ThieuJs(RuntimeError):
@@ -363,7 +418,7 @@ class LinkLe:
 
     def phan_loai(self, url: str) -> tuple[str, str] | None:
         """`(nen_tang, tien_to)` nếu URL là video lẻ của nền tảng trong bảng, ngược lại None."""
-        url = url.strip()
+        url = chuan_hoa_link(url)
         loai = BANG_LINK_LE.get(_ie_key_cua(url) or "")
         if loai is None:
             return None
@@ -401,16 +456,31 @@ class LinkLe:
                 log.warning("link lỗi [%s] %s", ma, chi_tiet)
 
         ten_nt = "link_le"
-        refs: list[VideoRef] = []
-        dung: str | None = None
-        da_goi_mang = False
+        links = []
         for link in tach_link(url):
             loai_link = self.phan_loai(link)
             if loai_link is None:
                 loi("khong_nhan", "")
-                continue
-            nen_tang, tien_to = loai_link
+            else:
+                links.append((chuan_hoa_link(link), *loai_link))
+        # Link thư viện ĐÃ có (theo id suy từ URL, không mạng) bị bỏ TRƯỚC khi gọi nền tảng: mỗi lời gọi là một
+        # lượt tính vào trần IP, nên không được đốt lượt cho video không cần. Một lần hỏi cả danh sách.
+        id_tam = {link: (parse_video_url(link).video_id if nt == "tiktok" else _id_tam(link, tt))
+                  for link, nt, tt in links}
+        da_co = already_have([i for i in id_tam.values() if i]) if id_tam else set()
+        refs: list[VideoRef] = []
+        da_bo_vi_da_co = 0
+        dung: str | None = None
+        da_goi_mang = False
+        for link, nen_tang, tien_to in links:
+            if len(refs) >= max_videos:
+                break          # đủ số video MỚI: không liệt kê phần còn lại
             ten_nt = nen_tang
+            tam = id_tam[link]
+            if tam is not None and tam in da_co:
+                on_skip(VideoRef(video_id=tam, url=link))
+                da_bo_vi_da_co += 1
+                continue
             if nen_tang == "tiktok":
                 ref = parse_video_url(link)
                 if ref is not None:
@@ -438,8 +508,12 @@ class LinkLe:
                 loi(ma_loi or "loi_khac", "")
             else:
                 refs.append(ref)
-        # Lọc trùng/đã có chạy trên phần ĐÃ liệt kê được; lượt rỗng không có lý do dừng riêng ⇒ `source_empty`
-        # (mọi link đều lỗi). Lý do dừng của cổng/tín hiệu chặn ghi SAU CÙNG: nó là lý do thật job dừng.
+        # Lọc trùng/đã có (theo id thật) chạy trên phần ĐÃ liệt kê được. Lượt rỗng: mọi link đều bị bỏ vì đã có ⇒
+        # `already_owned`; không có lý do nào ⇒ `source_empty` (mọi link đều lỗi). Lý do dừng của cổng/tín hiệu
+        # chặn ghi SAU CÙNG: nó là lý do thật job dừng.
+        if not refs and da_bo_vi_da_co and not dung:
+            on_stop(STOP_ALREADY_OWNED)
+            return []
         moi = _loc_da_co(refs, max_videos, ten_nguon=ten_nt, already_have=already_have,
                          on_skip=on_skip, on_stop=on_stop) if (refs or not dung) else []
         if dung:
