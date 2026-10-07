@@ -24,7 +24,10 @@ class YtdlpGia:
         self.loi = loi_theo_url or {}
         # câu phát vào `opts["logger"].warning` trước khi trả về, theo loại lời gọi
         self.canh_bao = {"tai": canh_bao_khi_tai, "liet_ke": canh_bao_khi_liet_ke}
-        self.khong_ghi_tep: set[str] = set()   # url mà lời gọi tải KHÔNG ghi tệp (như yt-dlp bỏ qua vì `max_filesize`)
+        self.khong_ghi_tep: set[str] = set()   # url mà lời gọi tải KHÔNG ghi tệp (không rõ lý do)
+        # url mà yt-dlp BỎ vì vượt `max_filesize`: không ghi tệp VÀ in đúng dòng yt-dlp thật in (`downloader/http.py`)
+        # qua `logger.debug` — dòng mà `_YtdlpLog` bắt thành cờ `vuot_tran`.
+        self.vuot_tran: set[str] = set()
         self.tep_phu: dict[str, list[str]] = {}   # url -> hậu tố tệp dở ghi cạnh đích (`.f137.mp4`, `.mp4.part`…)
         self.opts_da_tao: list[dict] = []
         self.goi: list[tuple[str, str]] = []   # ("liet_ke" | "tai", url)
@@ -64,7 +67,11 @@ class _Ydl:
             dich.parent.mkdir(parents=True, exist_ok=True)
             for hau_to in gia.tep_phu.get(url, ()):
                 (dich.parent / f"{info['id']}{hau_to}").write_bytes(b"x")
-            if url not in gia.khong_ghi_tep:
+            if url in gia.vuot_tran:
+                tran = self._opts.get("max_filesize") or 0
+                self._opts["logger"].debug(
+                    f"\r[download] File is larger than max-filesize ({tran + 1} bytes > {tran} bytes). Aborting.")
+            elif url not in gia.khong_ghi_tep:
                 dich.write_bytes(b"x")
         return info
 

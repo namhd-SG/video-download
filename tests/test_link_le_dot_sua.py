@@ -123,12 +123,24 @@ def test_tiktok_le_kiem_dia_tung_file_va_dat_max_filesize(monkeypatch, tmp_path)
 
 
 def test_tiktok_le_file_vuot_tran_bi_yt_dlp_bo_qua_la_loi_qua_nang_phia_nguon(monkeypatch, tmp_path):
-    gia = YtdlpGia({TT: {"id": "7123456789012345678", "filesize": 600 * 1024 * 1024}})
-    gia.khong_ghi_tep.add(TT)
+    gia = YtdlpGia({TT: {"id": "7123456789012345678"}})
+    gia.vuot_tran.add(TT)
     k = Khung(monkeypatch, tmp_path, gia)
     monkeypatch.setattr(queue_mod, "check_disk_guard", lambda p: _Dia(True))
     job = k.chay(k.tao_job([TT], nen_tang="tiktok"))
     assert job["xong"] == 0 and job["loi"] == 1 and job["loi_tiktok"] == 1
+
+
+def test_co_vuot_tran_dat_lai_moi_video_khong_lan_sang_video_sau(monkeypatch, tmp_path):
+    """Video 1 bị yt-dlp bỏ vì trần, video 2 thiếu tệp vì lý do khác ⇒ chỉ video 1 là lỗi phía nguồn."""
+    tt2 = "https://www.tiktok.com/@nguoi.dung/video/7123456789012345679"
+    gia = YtdlpGia({TT: {"id": "7123456789012345678"}, tt2: {"id": "7123456789012345679"}})
+    gia.vuot_tran.add(TT)
+    gia.khong_ghi_tep.add(tt2)
+    k = Khung(monkeypatch, tmp_path, gia)
+    monkeypatch.setattr(queue_mod, "check_disk_guard", lambda p: _Dia(True))
+    job = k.chay(k.tao_job([TT, tt2], nen_tang="tiktok"))
+    assert job["loi"] == 2 and job["loi_tiktok"] == 1
 
 
 def test_tiktok_collection_khong_doi_khong_kiem_dia_tung_file_khong_max_filesize(monkeypatch, tmp_path):
@@ -338,19 +350,28 @@ def test_thieu_tep_ma_info_khong_cho_thay_vuot_tran_thi_khong_dan_nhan_qua_nang(
     assert "qua_nang" not in log_ and "chưa phân định" in log_
 
 
-@pytest.mark.parametrize("info, qua_nang", [
-    ({"filesize": 600 * 1024 * 1024}, True),
-    ({"filesize_approx": 600 * 1024 * 1024}, True),
-    ({"requested_downloads": [{"filesize": 300 * 1024 * 1024}, {"filesize_approx": 300 * 1024 * 1024}]}, True),
-    ({"filesize": 1024}, False),
-    ({}, False),
-    (None, False),
-])
-def test_ly_do_thieu_tep_chi_qua_nang_khi_info_cho_thay(info, qua_nang):
-    ra = downloader._ly_do_thieu_tep(info, 500 * 1024 * 1024)
+@pytest.mark.parametrize("vuot_tran, qua_nang", [(True, True), (False, False)])
+def test_ly_do_thieu_tep_chi_qua_nang_khi_yt_dlp_tu_bao_vuot_tran(vuot_tran, qua_nang):
+    ra = downloader._ly_do_thieu_tep(vuot_tran, 500 * 1024 * 1024)
     assert ra.startswith("qua_nang") is qua_nang
     if not qua_nang:
         assert "chưa phân định" in ra
+
+
+def _info_sau_tai_that(hinh_mb: int, tieng_mb: int) -> dict:
+    """`info` đúng HÌNH DẠNG yt-dlp trả sau `extract_info(download=True)` cho định dạng ghép `bv*+ba` (đường TikTok):
+    chạy yt-dlp THẬT ở chế độ simulate (không mạng, không ghi tệp) thay vì tự dựng dict — dict tự dựng đã từng ghim
+    một dạng yt-dlp không bao giờ sinh ra (mục ghép duy nhất mang TỔNG, luồng nằm trong `requested_formats`)."""
+    from yt_dlp import YoutubeDL
+    mb = 1024 * 1024
+    goc = {"id": "x1", "title": "t", "extractor": "gia", "extractor_key": "Gia", "webpage_url": "http://e.invalid/v",
+           "formats": [
+               {"format_id": "v", "url": "http://e.invalid/v.mp4", "ext": "mp4", "vcodec": "h264", "acodec": "none",
+                "filesize": hinh_mb * mb, "protocol": "https"},
+               {"format_id": "a", "url": "http://e.invalid/a.m4a", "ext": "m4a", "vcodec": "none", "acodec": "aac",
+                "filesize": tieng_mb * mb, "protocol": "https"}]}
+    with YoutubeDL({"simulate": True, "quiet": True, "format": "bv*+ba"}) as ydl:
+        return ydl.process_ie_result(goc, download=True)
 
 
 def test_tiktok_le_loi_thi_don_tep_do_dang_cua_dung_video_do(monkeypatch, tmp_path):
@@ -363,8 +384,11 @@ def test_tiktok_le_loi_thi_don_tep_do_dang_cua_dung_video_do(monkeypatch, tmp_pa
     thu_muc = k.downloads / str(jid)
     thu_muc.mkdir(parents=True)
     (thu_muc / "999.f1.mp4").write_bytes(b"y")                   # của video khác: không được đụng
-    k.chay(jid)
-    assert sorted(p.name for p in thu_muc.iterdir()) == ["999.f1.mp4"]
+    (thu_muc / "71234567890123456789.mp4").write_bytes(b"z")     # id khác có CHUNG tiền tố: mẫu phải có `.` sau id
+    job = k.chay(jid)
+    assert sorted(p.name for p in thu_muc.iterdir()) == ["71234567890123456789.mp4", "999.f1.mp4"]
+    # `info` khai 600MB > trần nhưng yt-dlp KHÔNG báo bỏ vì trần ⇒ không được đổ cho nguồn (không suy từ `info`).
+    assert job["loi"] == 1 and job["loi_tiktok"] == 0
 
 
 def test_mot_link_da_co_mot_link_loi_thi_ly_do_dung_khong_phai_already_owned(monkeypatch, tmp_path):
@@ -374,6 +398,44 @@ def test_mot_link_da_co_mot_link_loi_thi_ly_do_dung_khong_phai_already_owned(mon
     job = k.chay(k.tao_job([_yt(A), _yt(B)]))
     assert job["bo_qua"] == 1 and job["loi"] == 1
     assert job["ly_do_dung"] != "already_owned" and job["trang_thai"] == "failed"
+
+
+def test_link_da_co_lot_qua_id_tam_cung_link_loi_van_khong_phai_already_owned(monkeypatch, tmp_path):
+    """Id tạm None (nền tảng không suy được id từ URL, hoặc id tạm lệch id thật) ⇒ link đã có vẫn được liệt kê và chỉ
+    bị thấy là đã có ở bước lọc theo id THẬT. Có link lỗi thì lý do dừng vẫn không được là `already_owned`."""
+    gia = YtdlpGia({_yt(A): thong_tin(A), _yt(B): thong_tin(B)}, {_yt(B): loi_tai("ERROR: [youtube] x: Video unavailable")})
+    k = Khung(monkeypatch, tmp_path, gia)
+    k.chay(k.tao_job([_yt(A)]))
+    monkeypatch.setattr(nguon_mod, "_id_tam", lambda url, tien_to: None)
+    gia.goi.clear()
+    job = k.chay(k.tao_job([_yt(A), _yt(B)]))
+    assert [u for l, u in gia.goi if l == "liet_ke"] == [_yt(A), _yt(B)]   # A đi qua đường lọc sau liệt kê
+    assert job["bo_qua"] == 1 and job["loi"] == 1
+    assert job["ly_do_dung"] == "source_empty" and job["trang_thai"] == "failed"
+
+
+def test_lot_qua_id_tam_khong_co_link_loi_van_la_already_owned(monkeypatch, tmp_path):
+    """Đối chứng: cùng đường lọc sau liệt kê, KHÔNG có link lỗi ⇒ vẫn `already_owned` như cũ."""
+    gia = YtdlpGia({_yt(A): thong_tin(A)})
+    k = Khung(monkeypatch, tmp_path, gia)
+    k.chay(k.tao_job([_yt(A)]))
+    monkeypatch.setattr(nguon_mod, "_id_tam", lambda url, tien_to: None)
+    job = k.chay(k.tao_job([_yt(A)]))
+    assert job["bo_qua"] == 1 and job["ly_do_dung"] == "already_owned"
+
+
+def test_chan_truoc_khi_tai_theo_tong_cac_luong_vi_tong_moi_la_dung_luong_chiem_dia():
+    """Nhãn sau tải dựa vào dòng log yt-dlp (từng lượt tải), nhưng cổng TRƯỚC khi tải phải so TỔNG: 300MB + 300MB vẫn
+    chiếm 600MB đĩa."""
+    mb = 1024 * 1024
+    hai_luong = {"id": A, "requested_formats": [{"filesize": 300 * mb}, {"filesize_approx": 300 * mb}]}
+    assert nguon_mod._kich_thuoc_uoc(hai_luong) == 600 * mb
+    ref, ma = nguon_mod._ref_tu_info(hai_luong, _yt(A), "yt-")
+    assert ref is None and ma == "qua_nang"
+    duoi_tran = {"id": A, "requested_formats": [{"filesize": 200 * mb}, {"filesize": 200 * mb}]}
+    assert nguon_mod._ref_tu_info(duoi_tran, _yt(A), "yt-")[0] is not None
+    # Dạng thật (yt-dlp chạy thật): cấp trên mang tổng ⇒ cổng trước tải thấy 600MB.
+    assert nguon_mod._kich_thuoc_uoc(_info_sau_tai_that(300, 300)) == 600 * mb
 
 
 def test_chuan_hoa_link_khong_chen_chuoi_da_giai_ma():

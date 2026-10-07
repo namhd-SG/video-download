@@ -520,8 +520,13 @@ class LinkLe:
         if not refs and da_bo_vi_da_co and not dung and so_loi[0] == 0:
             on_stop(STOP_ALREADY_OWNED)
             return []
+        # Cùng luật cho bước lọc theo id THẬT: link có id tạm None/lệch id thật vẫn được liệt kê rồi mới bị thấy là
+        # đã có ⇒ `_loc_da_co` tự báo `already_owned`; có link lỗi thì đổi thành `source_empty`.
+        def dung_sau_loc(ly_do: str) -> None:
+            on_stop(STOP_SOURCE_EMPTY if ly_do == STOP_ALREADY_OWNED and so_loi[0] else ly_do)
+
         moi = _loc_da_co(refs, max_videos, ten_nguon=ten_nt, already_have=already_have,
-                         on_skip=on_skip, on_stop=on_stop) if (refs or not dung) else []
+                         on_skip=on_skip, on_stop=dung_sau_loc) if (refs or not dung) else []
         if dung:
             on_stop(dung)
         return moi

@@ -47,18 +47,25 @@ BATCH_REST_SECONDS = 60.0
 # Cảnh báo yt-dlp khi KHÔNG tìm được JS runtime (đường Deno trỏ sai / Deno hỏng). yt-dlp vẫn chạy tiếp và có
 # thể ra thiếu định dạng, nên với nền tảng link lẻ cảnh báo này phải biến thành LỖI của video đó.
 _MAU_THIEU_JS = "no supported javascript runtime"
+# Dòng yt-dlp in khi BỎ một lượt tải vì vượt `max_filesize` (`downloader/http.py`, so Content-Length của TỪNG lượt
+# tải; đây là chỗ duy nhất bộ tải gốc kiểm trần). Đi qua `to_screen` ⇒ `logger.debug`.
+_MAU_VUOT_TRAN = "file is larger than max-filesize"
 
 
 class _YtdlpLog:
     """Đích log của yt-dlp: mọi mức xuống DEBUG của `ttmd`. Lỗi tải được ghi ĐÚNG MỘT lần bởi dòng `✗`
     của `download_all` (có phân loại tiktok/hệ thống, đã che URL); cảnh báo yt-dlp vốn đã tắt (`no_warnings`).
 
-    Ngoại lệ: cảnh báo "No supported JavaScript runtime" được BẮT riêng (cờ `thieu_js`) rồi vẫn xuống DEBUG —
-    người dùng object này (`download_all`, bước liệt kê) đọc cờ sau mỗi lời gọi yt-dlp."""
+    Ngoại lệ: cảnh báo "No supported JavaScript runtime" (cờ `thieu_js`) và dòng "File is larger than max-filesize"
+    (cờ `vuot_tran`) được BẮT riêng rồi vẫn xuống DEBUG — người dùng object này (`download_all`, bước liệt kê) đặt
+    lại cờ trước và đọc cờ sau mỗi lời gọi yt-dlp."""
 
     thieu_js = False
+    vuot_tran = False
 
     def debug(self, msg: str) -> None:
+        if _MAU_VUOT_TRAN in str(msg).lower():
+            self.vuot_tran = True
         log.debug("yt-dlp: %s", msg)
 
     info = error = debug
@@ -276,6 +283,11 @@ def _download_one(url: str, opts: dict, truoc_goi: Callable[[], str | None] | No
         ly_do = truoc_goi()
         if ly_do:
             raise DungTai(ly_do)
+    # Cờ "yt-dlp bỏ vì trần" chỉ thuộc về LẦN THỬ này: lần thử trước bỏ một luồng rồi lỗi mạng thì cờ không được sót
+    # sang lần thử sau (lần sau có thể tải đủ mà thiếu tệp vì lý do khác).
+    logger = opts.get("logger")
+    if isinstance(logger, _YtdlpLog):
+        logger.vuot_tran = False
     try:
         with YoutubeDL(opts) as ydl:
             return ydl.extract_info(url, download=True)
@@ -337,17 +349,15 @@ def _download_url_direct(url: str, target: Path, proxy: str | None) -> None:
             tmp.unlink(missing_ok=True)
 
 
-def _ly_do_thieu_tep(info: dict | None, max_filesize: int) -> str:
-    """Vì sao không có `<id>.mp4` sau khi yt-dlp báo xong. Nhãn `qua_nang` CHỈ khi chính `info` cho thấy vượt trần
-    (kích thước khai báo, hoặc tổng các luồng đã chọn); còn lại là "chưa phân định" — container khác mp4, yt-dlp
-    bỏ qua vì lý do khác… — xếp vào lỗi hệ thống, không đổ cho nguồn."""
-    info = info or {}
-    kich = info.get("filesize") or info.get("filesize_approx") or 0
-    if not kich:
-        kich = sum((f.get("filesize") or f.get("filesize_approx") or 0)
-                   for f in (info.get("requested_downloads") or info.get("requested_formats") or ())
-                   if isinstance(f, dict))
-    if kich > max_filesize:
+def _ly_do_thieu_tep(vuot_tran: bool, max_filesize: int) -> str:
+    """Vì sao không có `<id>.mp4` sau khi yt-dlp báo xong. Nhãn `qua_nang` CHỈ khi yt-dlp tự báo đã bỏ lượt tải vì
+    vượt trần (cờ `_YtdlpLog.vuot_tran`); còn lại là "chưa phân định" — container khác mp4, ghép luồng trượt… — xếp
+    vào lỗi hệ thống, không đổ cho nguồn.
+
+    Không suy từ kích thước trong `info`: yt-dlp so trần với TỪNG lượt tải, còn `info` của định dạng ghép chỉ mang
+    TỔNG (một mục ghép trong `requested_downloads`), và kích thước khai báo có thể thiếu hoặc lệch Content-Length
+    thật. Chặn TRƯỚC khi tải theo dung lượng chiếm đĩa vẫn dùng TỔNG (`nguon._kich_thuoc_uoc`) — việc khác."""
+    if vuot_tran:
         return f"{LOI_QUA_NANG}: video lớn hơn trần {max_filesize // (1024 * 1024)}MB, yt-dlp bỏ qua"
     return "thiếu tệp sau tải (chưa phân định)"
 
@@ -498,9 +508,9 @@ def download_all(
                     from tiktok_music_downloader.gdrive import download_file
                     download_file(ref.video_id[len("gd-"):], target, proxy)
                 elif la_tiktok:
-                    info = _download_one(ref.url, opts)
+                    info = _download_one(ref.url, opts)   # tự đặt lại cờ `vuot_tran` đầu mỗi lần thử
                     if max_filesize is not None and not (target.exists() and target.stat().st_size > 0):
-                        raise RuntimeError(_ly_do_thieu_tep(info, max_filesize))
+                        raise RuntimeError(_ly_do_thieu_tep(opts["logger"].vuot_tran, max_filesize))
                 else:
                     info = _tai_nen_tang_khac(ref, opts, output_dir, cong)
                 # Post-process: apply watermark in-place if configured. Failures
