@@ -1497,6 +1497,10 @@ def test_startup_survives_a_database_older_than_the_users_table(tmp_path, monkey
     monkeypatch.setattr(app_mod, "COOKIE_TMP_DIR", tmp_path / "tmp")
     monkeypatch.setattr(app_mod.worker, "start", lambda: None)
     monkeypatch.setattr(app_mod.worker, "stop", lambda: None)
+    # DB giả "đời cũ" ở đây thiếu cả cột lõi của `jobs` (không có `trang_thai`), nên boot sweep —
+    # vốn chạy ở lifespan, không còn ở `worker.start` — không chạy được trên nó; test này chỉ
+    # canh thứ tự di trú lược đồ → mồi admin.
+    monkeypatch.setattr(app_mod, "quet_khoi_dong", lambda _db: 0)
 
     async def _chay():
         async with app_mod._lifespan(app_mod.app):

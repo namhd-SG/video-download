@@ -25,6 +25,13 @@ from web.vi_tu_con_song import CHUA_AN, CON_SONG_CHUNG
 
 VALID_END_STATES = ("done", "failed")
 
+# Nền tảng của job (`jobs.nen_tang`) và HÀNG ĐỢI nó xếp vào. Hai hàng, hai worker: TikTok (giải
+# captcha, quét profile, đào sâu) không được chờ sau job dài của nền tảng khác, và ngược lại.
+NEN_TANG_MAC_DINH = "tiktok"
+LANE_TIKTOK = "tiktok"
+LANE_KHAC = "khac"
+
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,7 +50,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     tim_thay INTEGER NOT NULL DEFAULT 0,
     bo_qua INTEGER NOT NULL DEFAULT 0,
     loi_tiktok INTEGER,
-    nghi_su_co_hang_loat INTEGER
+    nghi_su_co_hang_loat INTEGER,
+    nen_tang TEXT NOT NULL DEFAULT 'tiktok'
 )
 """
 
@@ -369,7 +377,28 @@ def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
             raise
 
 
+def _sao_luu_truoc_cot_nen_tang(db_path: Path) -> Path | None:
+    """Sao lưu `jobs.db` MỘT lần, ngay trước migration thêm `jobs.nen_tang`.
+
+    Chỉ chạy khi DB đã có bảng `jobs` mà chưa có cột đó (tức đúng lượt khởi động đầu tiên của bản
+    có hai hàng đợi); DB mới hay DB đã migrate thì không sao lưu gì. Dùng backup API của SQLite
+    (bản nhất quán kể cả khi đang có WAL), ghi cạnh DB: `<tên>.truoc-nen-tang-<giờ UTC>`.
+    """
+    if not Path(db_path).exists():
+        return None
+    with sqlite3.connect(db_path) as nguon:
+        co_jobs = nguon.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+        if not co_jobs or any(r[1] == "nen_tang" for r in nguon.execute("PRAGMA table_info(jobs)")):
+            return None
+        dich = Path(f"{db_path}.truoc-nen-tang-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
+        with sqlite3.connect(dich) as ban_sao:
+            nguon.backup(ban_sao)
+    return dich
+
+
 def init_db(db_path: Path) -> None:
+    _sao_luu_truoc_cot_nen_tang(db_path)
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
@@ -488,6 +517,9 @@ def init_db(db_path: Path) -> None:
         # Cờ cầu dao "nghi sự cố hàng loạt" (`web/queue.py::_JobProgress`). NULL
         # = chưa từng bật (mọi job cũ); 1 = đã bật.
         _add_column_if_missing(conn, "jobs", "nghi_su_co_hang_loat", "INTEGER")
+        # Nền tảng của job. NOT NULL + DEFAULT: SQLite điền mặc định cho mọi hàng cũ ngay lúc
+        # ADD COLUMN nên không có hàng NULL nào, và chạy lần hai chỉ gặp "duplicate column".
+        _add_column_if_missing(conn, "jobs", "nen_tang", f"TEXT NOT NULL DEFAULT '{NEN_TANG_MAC_DINH}'")
         # User-Agent GHIM theo job (chỉ job profile khi bật `VIDEODL_PROFILE_CAPTCHA`).
         # Phải nằm trong DB chứ không trong RAM: context đóng giữa các lượt và tiến
         # trình có thể restart, mà profile persist + UA đổi mỗi lượt là tín hiệu bất
@@ -649,7 +681,8 @@ def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
 
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
-              usecase: str | None = None, insight_goc: str | None = None) -> int:
+              usecase: str | None = None, insight_goc: str | None = None,
+              nen_tang: str = NEN_TANG_MAC_DINH) -> int:
     """Insert a pending job. `so_luong` (what the user asked for) IS `tong`,
     and nothing overwrites it afterwards.
 
@@ -670,8 +703,8 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO jobs (url, trang_thai, tong, xong, loi, loi_tiktok, tao_luc, nguoi_tao, "
-            "usecase, insight_goc) VALUES (?, 'pending', ?, 0, 0, 0, ?, ?, ?, ?)",
-            (url, so_luong, _now(), nguoi_tao, usecase, insight_goc),
+            "usecase, insight_goc, nen_tang) VALUES (?, 'pending', ?, 0, 0, 0, ?, ?, ?, ?, ?)",
+            (url, so_luong, _now(), nguoi_tao, usecase, insight_goc, nen_tang),
         )
         job_id = cur.lastrowid
     assert job_id is not None
@@ -788,24 +821,50 @@ def list_jobs(db_path: Path, chi_cua: str | None) -> list[dict]:
     return [dict(r) for r in rows]
 
 
-def claim_next_pending_job(db_path: Path, uu_tien_cho_giai: bool = False) -> dict | None:
+def _loc_lane(lane: str | None, loai_tru: tuple[str, ...]) -> tuple[str, list[str]]:
+    """Mệnh đề `AND ...` (kèm tham số) giới hạn một câu SELECT job vào một hàng đợi.
+
+    `lane=None` ⇒ không lọc (hành vi cũ, một hàng duy nhất). `tiktok` chỉ nhận `nen_tang='tiktok'`;
+    `khac` nhận mọi nền tảng KHÁC trừ những nền tảng đang bị loại (`loai_tru`: tắt / hết trần)."""
+    if lane is None:
+        return "", []
+    if lane == LANE_TIKTOK:
+        return " AND nen_tang = ?", [NEN_TANG_MAC_DINH]
+    if lane == LANE_KHAC:
+        dk, tham_so = " AND nen_tang != ?", [NEN_TANG_MAC_DINH]
+        if loai_tru:
+            dk += " AND nen_tang NOT IN (%s)" % ", ".join("?" * len(loai_tru))
+            tham_so += list(loai_tru)
+        return dk, tham_so
+    raise ValueError(f"lane không hợp lệ: {lane!r}")
+
+
+def claim_next_pending_job(db_path: Path, uu_tien_cho_giai: bool = False,
+                           lane: str | None = None,
+                           loai_tru: tuple[str, ...] = ()) -> dict | None:
     """Atomically take the oldest pending job and flip it to 'running'.
 
     `BEGIN IMMEDIATE` takes the write lock before the SELECT, so a second
-    caller (there is only ever one worker thread today, but this stays
-    correct if that ever changes) cannot read the same pending row and claim
-    it twice.
+    caller (hai worker cùng tiến trình, mỗi lane một luồng) cannot read the same
+    pending row and claim it twice.
 
     `uu_tien_cho_giai=True` (chỉ khi bật `VIDEODL_PROFILE_CAPTCHA`): job `cho_giai` (người
     đã bấm "Tôi giải ngay") được nhặt TRƯỚC mọi `pending` và lật sang `dang_mo`, KHÔNG qua
     `running`. Cờ TẮT ⇒ đúng một câu SELECT `pending` như trước, không đụng `cho_giai`.
+
+    `lane` (xem `_loc_lane`) lọc CẢ HAI câu SELECT. Người gọi lane `khac` KHÔNG BAO GIỜ được truyền
+    `uu_tien_cho_giai=True`: giải captcha là việc của lane TikTok (cần profile/Chromium của nó),
+    nên một dòng `cho_giai` mà lane khác nhặt sẽ chạy không profile và hỏng âm thầm.
     """
+    if lane == LANE_KHAC and uu_tien_cho_giai:
+        raise ValueError("lane khac không nhặt cho_giai: giải captcha là việc của lane TikTok")
+    dk, tham_so = _loc_lane(lane, loai_tru)
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         if uu_tien_cho_giai:
             cho = conn.execute(
-                "SELECT * FROM jobs WHERE trang_thai = 'cho_giai' "
-                "ORDER BY vao_trang_thai_luc ASC, id ASC LIMIT 1"
+                "SELECT * FROM jobs WHERE trang_thai = 'cho_giai'" + dk +
+                " ORDER BY vao_trang_thai_luc ASC, id ASC LIMIT 1", tham_so
             ).fetchone()
             if cho is not None:
                 job = dict(cho)
@@ -818,8 +877,8 @@ def claim_next_pending_job(db_path: Path, uu_tien_cho_giai: bool = False) -> dic
                 job["vao_trang_thai_luc"] = luc
                 return job
         row = conn.execute(
-            "SELECT * FROM jobs WHERE trang_thai = 'pending' "
-            "ORDER BY tao_luc ASC, id ASC LIMIT 1"
+            "SELECT * FROM jobs WHERE trang_thai = 'pending'" + dk +
+            " ORDER BY tao_luc ASC, id ASC LIMIT 1", tham_so
         ).fetchone()
         if row is None:
             conn.execute("ROLLBACK")
@@ -845,7 +904,7 @@ def vi_tri_hang_doi(db_path: Path, job_ids: list[int]) -> dict[int, int]:
     job kia tải xong — một con số đúng-về-SQL và sai-về-nghĩa.
 
     Nên số trả về là: (số job đang chạy) + (số job pending vào trước mình).
-    Thứ tự tin được vì worker một luồng và `claim_next_pending_job` gọi
+    Thứ tự tin được vì mỗi hàng đợi một worker một luồng và `claim_next_pending_job` gọi
     `ORDER BY tao_luc ASC, id ASC` — cùng thứ tự đếm ở đây.
 
     KHÔNG trả ETA. Số đo duy nhất đang có là 6,6 giây/video từ ĐÚNG MỘT lượt
@@ -853,21 +912,33 @@ def vi_tri_hang_doi(db_path: Path, job_ids: list[int]) -> dict[int, int]:
     """
     if not job_ids:
         return {}
+    # Mỗi hàng đợi (lane) có worker riêng nên vị trí đếm TRONG hàng của job, không đếm chéo: job
+    # TikTok không phải đợi job YouTube đang chạy, và ngược lại.
+    lane_sql = f"CASE WHEN nen_tang = '{NEN_TANG_MAC_DINH}' THEN '{LANE_TIKTOK}' ELSE '{LANE_KHAC}' END"
     with _connect(db_path) as conn:
-        # `dang_mo`/`dang_giai` cũng là worker đang bận (một luồng, tới 5 phút/lần giải);
+        # `dang_mo`/`dang_giai` cũng là worker đang bận (tới 5 phút/lần giải);
         # `cho_giai` xếp ĐẦU hàng chờ vì `claim_next_pending_job` nhặt nó trước `pending`.
         # Cờ giải captcha TẮT ⇒ các trạng thái đó không bao giờ có ⇒ kết quả như cũ.
-        dang_chay = conn.execute(
-            "SELECT COUNT(*) FROM jobs WHERE trang_thai IN ('running', 'dang_mo', 'dang_giai')"
-        ).fetchone()[0]
+        dang_chay = {r[0]: r[1] for r in conn.execute(
+            f"SELECT {lane_sql}, COUNT(*) FROM jobs "
+            "WHERE trang_thai IN ('running', 'dang_mo', 'dang_giai') GROUP BY 1"
+        )}
+        # `cho_giai` chỉ lane TikTok nhặt; ở lane khác nó không bao giờ được nhặt nên không có vị trí.
         cho = conn.execute(
-            "SELECT id, tao_luc FROM jobs WHERE trang_thai IN ('pending', 'cho_giai') "
+            f"SELECT id, {lane_sql} AS lane FROM jobs WHERE trang_thai = 'pending' "
+            f"OR (trang_thai = 'cho_giai' AND nen_tang = '{NEN_TANG_MAC_DINH}') "
             "ORDER BY CASE trang_thai WHEN 'cho_giai' THEN 0 ELSE 1 END, "
             "CASE trang_thai WHEN 'cho_giai' THEN vao_trang_thai_luc ELSE tao_luc END ASC, id ASC"
         ).fetchall()
-    thu_tu = {int(r["id"]): i for i, r in enumerate(cho)}
-    return {jid: dang_chay + thu_tu[jid] + 1
-            for jid in job_ids if jid in thu_tu}
+    ids = set(job_ids)
+    dem_cho: dict[str, int] = {}
+    ket_qua: dict[int, int] = {}
+    for r in cho:
+        lane = r["lane"]
+        dem_cho[lane] = dem_cho.get(lane, 0) + 1
+        if int(r["id"]) in ids:
+            ket_qua[int(r["id"])] = dang_chay.get(lane, 0) + dem_cho[lane]
+    return ket_qua
 
 
 def huy_job_dang_cho(db_path: Path, job_id: int, nguoi_tao: str) -> str:

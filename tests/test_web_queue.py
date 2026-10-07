@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from tiktok_music_downloader import hashtag_enumerator as he
+from tiktok_music_downloader import nguon as nguon_mod
 from tiktok_music_downloader import scraper as scraper_mod
 
 from tiktok_music_downloader.gdrive_upload import UploadOutcome, UploadResult
@@ -192,9 +193,8 @@ def test_boot_sweep_leaves_pending_and_done_jobs_alone(tmp_path):
     assert models.get_job(db_path, done_id)["trang_thai"] == "done"
 
 
-def test_worker_start_runs_boot_sweep_before_processing(tmp_path):
-    """JobWorker.start() must call the sweep itself — a caller who forgets
-    to wire it up should not be able to skip it."""
+def test_quet_khoi_dong_danh_dau_running_la_interrupted(tmp_path):
+    """Boot sweep là hàm riêng (`quet_khoi_dong`), lifespan gọi đúng một lần trước mọi worker."""
     db_path = tmp_path / "jobs.db"
     models.init_db(db_path)
     job_id = models.create_job(db_path, "u", 1, "a")
@@ -202,18 +202,8 @@ def test_worker_start_runs_boot_sweep_before_processing(tmp_path):
         conn.execute("UPDATE jobs SET trang_thai='running' WHERE id=?", (job_id,))
         conn.commit()
 
-    worker = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck",
-                        poll_interval=0.01, process_job_fn=lambda *a: None)
-    worker.start()
-    try:
-        deadline = time.monotonic() + 2
-        job = models.get_job(db_path, job_id)
-        while job["trang_thai"] != "interrupted" and time.monotonic() < deadline:
-            time.sleep(0.02)
-            job = models.get_job(db_path, job_id)
-        assert job["trang_thai"] == "interrupted"
-    finally:
-        worker.stop()
+    assert queue_mod.quet_khoi_dong(db_path) == 1
+    assert models.get_job(db_path, job_id)["trang_thai"] == "interrupted"
 
 
 # ---------------------------------------------------------------------------
@@ -424,7 +414,7 @@ def test_hashtag_urls_never_reach_the_scraper(monkeypatch):
         raise AssertionError("scrape_music_page must not be called for a /tag/ URL")
 
     gia_lap_scraper(monkeypatch, _boom)
-    monkeypatch.setattr(queue_mod, "enumerate_hashtag",
+    monkeypatch.setattr(nguon_mod, "enumerate_hashtag",
                          lambda tag, max_videos, proxy=None, **kw: [])
     queue_mod._fetch_refs("https://www.tiktok.com/tag/anos80", max_videos=10,
                           cookies_path=None)

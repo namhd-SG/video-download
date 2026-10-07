@@ -20,8 +20,8 @@ from web import app as app_mod
 from web import giai_captcha as gc
 from web import giai_captcha_worker as worker
 from web import models, profile_theo_job
-from web import models_giai_captcha as mgc
 from web import queue as queue_mod
+from web import models_giai_captcha as mgc
 from web.queue import JobWorker, process_job
 
 URL_PROFILE = "https://www.tiktok.com/@nguoi.dung"
@@ -886,7 +886,7 @@ def test_boot_sweep_co_tat_ket_thuc_trang_thai_giai_la_interrupted(db, trang_tha
 
 @pytest.mark.parametrize("bat", [False, True], ids=["co_tat", "co_bat"])
 def test_worker_start_truyen_co_cho_boot_sweep(monkeypatch, db, tmp_path, bat):
-    """Người gọi duy nhất (`JobWorker.start`) phải truyền cờ THẬT — truyền cứng một giá trị là một
+    """Người gọi duy nhất (`quet_khoi_dong`) phải truyền cờ THẬT — truyền cứng một giá trị là một
     trong hai nhánh không bao giờ chạy trên prod."""
     if bat:
         _bat_co(monkeypatch)
@@ -894,10 +894,7 @@ def test_worker_start_truyen_co_cho_boot_sweep(monkeypatch, db, tmp_path, bat):
     that = models.mark_running_as_interrupted
     monkeypatch.setattr(models, "mark_running_as_interrupted",
                         lambda p, **kw: nhan.append(kw) or that(p, **kw))
-    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
-                  process_job_fn=lambda *a: None)
-    w.start()
-    w.stop()
+    queue_mod.quet_khoi_dong(db)
     assert [kw["co_giai"] for kw in nhan] == [bat]   # `dem_ra` là đường ra số đếm, không phải cờ
 
 
@@ -1101,11 +1098,8 @@ def test_boot_sweep_log_so_job_giai_bi_doi(monkeypatch, db, tmp_path, caplog, ba
         jid = _job_cho_xac_minh(db)
         if bat:   # cờ BẬT giữ nguyên `cho_xac_minh` ⇒ đưa sang `cho_giai` để câu thứ hai khớp
             assert mgc.yeu_cau_giai_ngay(db, jid) == "ok"
-    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
-                  process_job_fn=lambda *a: None)
     with caplog.at_level(logging.WARNING, logger="videodl.web"):
-        w.start()
-        w.stop()
+        queue_mod.quet_khoi_dong(db)
     dong = [r.getMessage() for r in caplog.records if r.getMessage().startswith("boot sweep: 2 job")]
     assert len(dong) == 1, dong
     # Câu log phải nêu ĐÚNG tập trạng thái mà câu UPDATE tương ứng đếm.
@@ -1115,11 +1109,8 @@ def test_boot_sweep_log_so_job_giai_bi_doi(monkeypatch, db, tmp_path, caplog, ba
 
 
 def test_boot_sweep_khong_co_job_giai_thi_khong_log(db, tmp_path, caplog):
-    w = JobWorker(db, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
-                  process_job_fn=lambda *a: None)
     with caplog.at_level(logging.WARNING, logger="videodl.web"):
-        w.start()
-        w.stop()
+        queue_mod.quet_khoi_dong(db)
     assert not [r for r in caplog.records if "tinh_nang_giai_tat" in r.getMessage()
                 or "-> cho_xac_minh" in r.getMessage()]
 

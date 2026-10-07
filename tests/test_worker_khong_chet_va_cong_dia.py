@@ -60,11 +60,11 @@ def test_loi_o_claim_khong_giet_vong_job_sau_van_chay(db_path, tmp_path, monkeyp
     that = models.claim_next_pending_job
     con_lai = {"n": 2}
 
-    def claim_hong(p):
+    def claim_hong(p, **kw):
         if con_lai["n"] > 0:
             con_lai["n"] -= 1
             raise sqlite3.OperationalError("disk I/O error")
-        return that(p)
+        return that(p, **kw)
 
     monkeypatch.setattr(models, "claim_next_pending_job", claim_hong)
     w = JobWorker(db_path, tmp_path / "dl", tmp_path / "ck", poll_interval=0.01,
@@ -165,7 +165,9 @@ def test_healthz_mang_ma_worker_khong_mang_chi_tiet(monkeypatch, tt, ma):
     import web.app as app_mod
     monkeypatch.setattr(app_mod.worker, "trang_thai", lambda: tt)
     ra = app_mod.healthz()
-    assert ra == {"status": "ok", "worker": ma}, "healthz không được lộ chữ lỗi/đường dẫn"
+    assert ra["status"] == "ok" and ra["worker"] == ma and ra["lanes"]["tiktok"] == ma, \
+        "healthz không được lộ chữ lỗi/đường dẫn"
+    assert set(ra) == {"status", "worker", "lanes"}
 
 
 def test_chu_badge_worker_js():
@@ -207,7 +209,7 @@ def test_song_do_bang_thread_that_truoc_start_sau_stop(db_path, tmp_path):
 def test_base_exception_lot_ra_thi_song_false(db_path, tmp_path, monkeypatch):
     """Chỉ `Exception` được bắt (cố ý: `stop`/Ctrl-C vẫn phải dừng được luồng). Một
     `BaseException` lọt ra giết luồng ⇒ `song` phải thành False, tức healthz nói "chet"."""
-    def claim_thoat(_p):
+    def claim_thoat(_p, **_kw):
         raise SystemExit("mô phỏng luồng bị giết")
 
     monkeypatch.setattr(models, "claim_next_pending_job", claim_thoat)
@@ -275,9 +277,11 @@ def test_admin_worker_qua_http_nguoi_thuong_403_admin_200(may_chu):
     assert ma == 403
     ai["email"] = "sep@astronex.ai"
     ma, than = _get(goc + "/admin/worker")
-    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia", "job_ket"}
+    assert ma == 200 and set(than) == {"song", "loi_lien_tiep", "loi_cuoi", "cho_dia", "job_ket", "lanes"}
+    assert set(than["lanes"]) == {"tiktok", "khac"}
     ma, than = _get(goc + "/healthz")
-    assert ma == 200 and set(than) == {"status", "worker"}, "healthz chỉ có mã, không chi tiết"
+    assert ma == 200 and set(than) == {"status", "worker", "lanes"}, "healthz chỉ có mã, không chi tiết"
+    assert set(than["lanes"]) == {"tiktok", "khac"}
 
 
 def test_job_dang_do_ma_danh_dau_cung_truot_thi_thu_lai_toi_khi_ghi_duoc(db_path, tmp_path, monkeypatch):

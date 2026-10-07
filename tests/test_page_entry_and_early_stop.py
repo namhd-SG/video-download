@@ -16,6 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from tiktok_music_downloader import nguon as nguon_mod
 from tiktok_music_downloader import scraper as scraper_mod
 from tiktok_music_downloader.utils import (
     STOP_FEED_RONG,
@@ -344,7 +345,7 @@ def _bat_kwargs_multi(monkeypatch):
         thay.append(kw)
         return []
 
-    monkeypatch.setattr(queue_mod, "scrape_music_page_multi", fake)
+    monkeypatch.setattr(nguon_mod, "scrape_music_page_multi", fake)
     return thay
 
 
