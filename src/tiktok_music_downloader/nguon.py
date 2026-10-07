@@ -291,6 +291,7 @@ TEN_HIEN_THI = {"youtube": "YouTube", "tiktok": "TikTok", "instagram": "Instagra
                 "x": "X", "pinterest": "Pinterest", "douyin": "Douyin", "bilibili": "Bilibili",
                 "snapchat": "Snapchat"}
 
+_MAU_ID_YOUTUBE = re.compile(r"[A-Za-z0-9_\-]{11}")
 _HOST_YOUTUBE = ("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be",
                  "www.youtu.be")
 
@@ -309,7 +310,8 @@ def chuan_hoa_link(url: str) -> str:
     host = (t.hostname or "").lower()
     if t.path.rstrip("/") == "/watch":
         v = parse_qs(t.query).get("v", [""])[0]
-        return f"https://www.youtube.com/watch?v={v}" if v else url
+        # Chỉ id đúng hình (11 ký tự chữ-số/gạch): không bao giờ chèn chuỗi đã giải mã (`v=X%26list%3D…`) vào URL.
+        return f"https://www.youtube.com/watch?v={v}" if _MAU_ID_YOUTUBE.fullmatch(v) else url
     if host.endswith("youtu.be") or t.path.startswith("/shorts/"):
         return f"{t.scheme}://{t.netloc}{t.path}"
     return url
@@ -449,7 +451,10 @@ class LinkLe:
         TRƯỚC mỗi lời gọi mạng và trả lý do dừng, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn.
         `ghi_loi_video(mã, chi_tiết)` nhận lỗi RIÊNG từng link (private, quá dài, lỗi mạng…) — job vẫn chạy tiếp.
         `nghi()` chạy giữa hai lời gọi mạng liên tiếp (nghỉ jitter)."""
+        so_loi = [0]
+
         def loi(ma: str, chi_tiet: str = "") -> None:
+            so_loi[0] += 1
             if ghi_loi_video is not None:
                 ghi_loi_video(ma, chi_tiet)
             else:
@@ -511,7 +516,8 @@ class LinkLe:
         # Lọc trùng/đã có (theo id thật) chạy trên phần ĐÃ liệt kê được. Lượt rỗng: mọi link đều bị bỏ vì đã có ⇒
         # `already_owned`; không có lý do nào ⇒ `source_empty` (mọi link đều lỗi). Lý do dừng của cổng/tín hiệu
         # chặn ghi SAU CÙNG: nó là lý do thật job dừng.
-        if not refs and da_bo_vi_da_co and not dung:
+        # `already_owned` chỉ khi KHÔNG link nào lỗi: có link lỗi thì "đã có hết" che mất lỗi đó ⇒ để `source_empty`.
+        if not refs and da_bo_vi_da_co and not dung and so_loi[0] == 0:
             on_stop(STOP_ALREADY_OWNED)
             return []
         moi = _loc_da_co(refs, max_videos, ten_nguon=ten_nt, already_have=already_have,

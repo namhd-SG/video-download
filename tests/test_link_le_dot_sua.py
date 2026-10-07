@@ -123,7 +123,7 @@ def test_tiktok_le_kiem_dia_tung_file_va_dat_max_filesize(monkeypatch, tmp_path)
 
 
 def test_tiktok_le_file_vuot_tran_bi_yt_dlp_bo_qua_la_loi_qua_nang_phia_nguon(monkeypatch, tmp_path):
-    gia = YtdlpGia({TT: {"id": "7123456789012345678"}})
+    gia = YtdlpGia({TT: {"id": "7123456789012345678", "filesize": 600 * 1024 * 1024}})
     gia.khong_ghi_tep.add(TT)
     k = Khung(monkeypatch, tmp_path, gia)
     monkeypatch.setattr(queue_mod, "check_disk_guard", lambda p: _Dia(True))
@@ -321,3 +321,96 @@ def test_link_video_mo_tu_mix_duoc_nhan_dung_video_va_khong_tai_playlist(monkeyp
 ])
 def test_che_url_che_id_that_khong_che_tu_thuong(vao, ra):
     assert che_url(vao) == ra
+
+
+# ------------------------------------------------------------------ đợt cuối: nhãn chỉ khi đã xác minh, dọn tệp dở, bucket, lý do dừng
+
+def test_thieu_tep_ma_info_khong_cho_thay_vuot_tran_thi_khong_dan_nhan_qua_nang(monkeypatch, tmp_path, caplog):
+    """Container khác mp4 (webm) ⇒ không có `<id>.mp4`; `info` không có kích thước ⇒ KHÔNG được kết luận quá nặng."""
+    gia = YtdlpGia({TT: {"id": "7123456789012345678", "ext": "webm", "filesize": 5 * 1024 * 1024}})
+    gia.khong_ghi_tep.add(TT)
+    k = Khung(monkeypatch, tmp_path, gia)
+    monkeypatch.setattr(queue_mod, "check_disk_guard", lambda p: _Dia(True))
+    with caplog.at_level("WARNING"):
+        job = k.chay(k.tao_job([TT], nen_tang="tiktok"))
+    assert job["loi"] == 1 and job["loi_tiktok"] == 0            # lỗi hệ thống, không đổ cho nguồn
+    log_ = " ".join(r.getMessage() for r in caplog.records)
+    assert "qua_nang" not in log_ and "chưa phân định" in log_
+
+
+@pytest.mark.parametrize("info, qua_nang", [
+    ({"filesize": 600 * 1024 * 1024}, True),
+    ({"filesize_approx": 600 * 1024 * 1024}, True),
+    ({"requested_downloads": [{"filesize": 300 * 1024 * 1024}, {"filesize_approx": 300 * 1024 * 1024}]}, True),
+    ({"filesize": 1024}, False),
+    ({}, False),
+    (None, False),
+])
+def test_ly_do_thieu_tep_chi_qua_nang_khi_info_cho_thay(info, qua_nang):
+    ra = downloader._ly_do_thieu_tep(info, 500 * 1024 * 1024)
+    assert ra.startswith("qua_nang") is qua_nang
+    if not qua_nang:
+        assert "chưa phân định" in ra
+
+
+def test_tiktok_le_loi_thi_don_tep_do_dang_cua_dung_video_do(monkeypatch, tmp_path):
+    gia = YtdlpGia({TT: {"id": "7123456789012345678", "filesize": 600 * 1024 * 1024}})
+    gia.khong_ghi_tep.add(TT)
+    gia.tep_phu[TT] = [".f137.mp4", ".mp4.part", ".f140.m4a.part"]
+    k = Khung(monkeypatch, tmp_path, gia)
+    monkeypatch.setattr(queue_mod, "check_disk_guard", lambda p: _Dia(True))
+    jid = k.tao_job([TT], nen_tang="tiktok")
+    thu_muc = k.downloads / str(jid)
+    thu_muc.mkdir(parents=True)
+    (thu_muc / "999.f1.mp4").write_bytes(b"y")                   # của video khác: không được đụng
+    k.chay(jid)
+    assert sorted(p.name for p in thu_muc.iterdir()) == ["999.f1.mp4"]
+
+
+def test_mot_link_da_co_mot_link_loi_thi_ly_do_dung_khong_phai_already_owned(monkeypatch, tmp_path):
+    gia = YtdlpGia({_yt(A): thong_tin(A), _yt(B): thong_tin(B)}, {_yt(B): loi_tai("ERROR: [youtube] x: Video unavailable")})
+    k = Khung(monkeypatch, tmp_path, gia)
+    k.chay(k.tao_job([_yt(A)]))
+    job = k.chay(k.tao_job([_yt(A), _yt(B)]))
+    assert job["bo_qua"] == 1 and job["loi"] == 1
+    assert job["ly_do_dung"] != "already_owned" and job["trang_thai"] == "failed"
+
+
+def test_chuan_hoa_link_khong_chen_chuoi_da_giai_ma():
+    xau = "https://www.youtube.com/watch?v=dQw4w9WgXcQ%26list%3DPLx"
+    assert chuan_hoa_link(xau) == xau
+    assert chuan_hoa_link("https://www.youtube.com/watch?v=short") == "https://www.youtube.com/watch?v=short"
+    assert chuan_hoa_link(f"https://www.youtube.com/watch?v={A}&list=X") == _yt(A)
+
+
+def test_tiktok_nam_trong_nen_tang_tat_van_nhan_job_tiktok(tmp_path, monkeypatch):
+    db = _dung_app(tmp_path, monkeypatch)
+    pacer.tat_nen_tang(db, "tiktok", "http_429")             # dòng lạ: lane TikTok không đi qua pacer
+    assert _tao("https://www.tiktok.com/tag/abc")["trang_thai"] == "pending"
+    assert _tao("https://www.tiktok.com/music/x-1")["trang_thai"] == "pending"
+    assert _tao(TT)["trang_thai"] == "pending"
+
+
+def test_bo_loc_nguon_khoa_theo_nen_tang_cho_link_le_va_giu_bucket_cu_cho_trang():
+    kich_ban = ("const UNKNOWN='__unk__';let VIDEOS=[];function videoTrongNen(){return VIDEOS;}"
+                "eval(lay('const NEN_TANG_THEO_HOST','function durationBucket'));"
+                "eval(lay('function buildBuckets','// Thanh bên'));"
+                "const yt=(v)=>({nguon:['https://www.youtube.com/watch?v='+v]});"
+                "VIDEOS=[yt('aAa1aAa1aAa'),yt('bBb2bBb2bBb'),yt('cCc3cCc3cCc'),"
+                "{nguon:['https://www.tiktok.com/@u/video/7123456789012345678']},"
+                "{nguon:['https://www.tiktok.com/tag/ai']},{nguon:['https://www.tiktok.com/@nguoi']},"
+                "{nguon:['https://www.tiktok.com/music/x-1']},{nguon:[]}];"
+                "console.log(JSON.stringify(buildBuckets({getBuckets:sourceBuckets})));")
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("không có node")
+    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / "app.js")], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    theo_khoa = {b["key"]: b for b in json.loads(r.stdout)}
+    yt = theo_khoa["nen-tang:YouTube"]
+    assert yt["count"] == 3 and yt["label"] == "YouTube" and yt["title"].startswith("https://www.youtube.com/watch?v=")
+    assert theo_khoa["nen-tang:TikTok"]["label"] == "TikTok · video lẻ" and theo_khoa["nen-tang:TikTok"]["count"] == 1
+    assert theo_khoa["https://www.tiktok.com/tag/ai"]["label"] == "#ai"
+    assert theo_khoa["https://www.tiktok.com/@nguoi"]["label"] == "@nguoi"
+    assert theo_khoa["https://www.tiktok.com/music/x-1"]["label"].startswith("🎵")
+    assert not [k for k in theo_khoa if k.startswith("https://www.youtube.com")]      # không bucket theo URL đầy đủ

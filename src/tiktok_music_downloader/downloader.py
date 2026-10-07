@@ -1,6 +1,7 @@
 """yt-dlp wrapper: watermark-free MP4 download with jitter + adaptive backoff."""
 from __future__ import annotations
 
+import glob
 import logging
 import tempfile
 import time
@@ -336,6 +337,32 @@ def _download_url_direct(url: str, target: Path, proxy: str | None) -> None:
             tmp.unlink(missing_ok=True)
 
 
+def _ly_do_thieu_tep(info: dict | None, max_filesize: int) -> str:
+    """Vì sao không có `<id>.mp4` sau khi yt-dlp báo xong. Nhãn `qua_nang` CHỈ khi chính `info` cho thấy vượt trần
+    (kích thước khai báo, hoặc tổng các luồng đã chọn); còn lại là "chưa phân định" — container khác mp4, yt-dlp
+    bỏ qua vì lý do khác… — xếp vào lỗi hệ thống, không đổ cho nguồn."""
+    info = info or {}
+    kich = info.get("filesize") or info.get("filesize_approx") or 0
+    if not kich:
+        kich = sum((f.get("filesize") or f.get("filesize_approx") or 0)
+                   for f in (info.get("requested_downloads") or info.get("requested_formats") or ())
+                   if isinstance(f, dict))
+    if kich > max_filesize:
+        return f"{LOI_QUA_NANG}: video lớn hơn trần {max_filesize // (1024 * 1024)}MB, yt-dlp bỏ qua"
+    return "thiếu tệp sau tải (chưa phân định)"
+
+
+def _don_tep_mo_coi(output_dir: Path, video_id: str, giu: Path) -> None:
+    """Xoá tệp dở của MỘT video (`<id>.f137.mp4`, `<id>.mp4.part`…) sau khi video đó lỗi/vượt trần; chỉ đúng prefix
+    `<id>.`, và không đụng `giu` (tệp đích). Không ném: dọn trượt chỉ log."""
+    for p in output_dir.glob(glob.escape(video_id) + ".*"):
+        if p != giu:
+            try:
+                p.unlink()
+            except OSError:
+                log.warning("không dọn được tệp dở của một video")
+
+
 def _tai_nen_tang_khac(ref: VideoRef, opts: dict, output_dir: Path, cong) -> dict | None:
     """Tải MỘT video của nền tảng KHÁC TikTok. Tên tệp đích = `ref.video_id` (có tiền tố nền tảng).
 
@@ -473,8 +500,7 @@ def download_all(
                 elif la_tiktok:
                     info = _download_one(ref.url, opts)
                     if max_filesize is not None and not (target.exists() and target.stat().st_size > 0):
-                        raise RuntimeError(f"{LOI_QUA_NANG}: video lớn hơn trần {max_filesize // (1024 * 1024)}MB, "
-                                           "yt-dlp bỏ qua")
+                        raise RuntimeError(_ly_do_thieu_tep(info, max_filesize))
                 else:
                     info = _tai_nen_tang_khac(ref, opts, output_dir, cong)
                 # Post-process: apply watermark in-place if configured. Failures
@@ -516,6 +542,8 @@ def download_all(
                     )
                     time.sleep(cool)
             finally:
+                if outcome == "failed" and max_filesize is not None and la_tiktok:
+                    _don_tep_mo_coi(output_dir, ref.video_id, target)
                 if outcome:
                     _note(outcome, note_info)
                 if progress is not None:

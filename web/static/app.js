@@ -266,7 +266,7 @@
     [/(^|\.)bilibili\.com$/, "Bilibili"], [/(^|\.)snapchat\.com$/, "Snapchat"],
     [/(^|\.)tiktok\.com$/, "TikTok"],
   ];
-  function nhanLinkLe(url) {
+  function thongTinLinkLe(url) {
     const host = url.hostname.toLowerCase();
     const ten = (NEN_TANG_THEO_HOST.find(([re]) => re.test(host)) || [])[1];
     if (!ten) return null;
@@ -276,8 +276,26 @@
     // TikTok: trang tag/music/profile giữ nhãn cũ; chỉ `/video/<id>` là link lẻ.
     if (ten === "TikTok" && !/\/video\/\d+/.test(path)) return null;
     if (ten === "Facebook" && /\/ads\/library/.test(path)) return null;
-    if (!id) return ten;
-    return `${ten} · ${id.length > 12 ? id.slice(0, 11) + "…" : id}`;
+    return { ten, id };
+  }
+
+  function nhanLinkLe(url) {
+    const t = thongTinLinkLe(url);
+    if (!t) return null;
+    if (!t.id) return t.ten;
+    return `${t.ten} · ${t.id.length > 12 ? t.id.slice(0, 11) + "…" : t.id}`;
+  }
+
+  // Bộ lọc nguồn cho link lẻ: khoá theo NỀN TẢNG, không theo URL đầy đủ — mỗi video link lẻ có nguồn riêng, khoá theo
+  // URL sinh ra hàng trăm hộp một-video. `null` = không phải link lẻ (giữ bucket theo URL như cũ).
+  function bucketNenTangLinkLe(u) {
+    try {
+      const t = thongTinLinkLe(new URL(u));
+      if (!t) return null;
+      return { key: `nen-tang:${t.ten}`, label: t.ten === "TikTok" ? "TikTok · video lẻ" : t.ten };
+    } catch {
+      return null;
+    }
   }
 
   function shortenSourceUrl(u) {
@@ -298,7 +316,10 @@
 
   function sourceBuckets(video) {
     if (!video.nguon || video.nguon.length === 0) return [{ key: UNKNOWN, label: "Không rõ" }];
-    return video.nguon.map((u) => ({ key: u, label: shortenSourceUrl(u) }));
+    return video.nguon.map((u) => {
+      const le = bucketNenTangLinkLe(u);
+      return le ? { ...le, title: u } : { key: u, label: shortenSourceUrl(u) };
+    });
   }
 
   function durationBucket(sec) {
@@ -336,7 +357,7 @@
       for (const b of group.getBuckets(v)) {
         if (seenThisVideo.has(b.key)) continue;
         seenThisVideo.add(b.key);
-        if (!map.has(b.key)) map.set(b.key, { key: b.key, label: b.label, count: 0 });
+        if (!map.has(b.key)) map.set(b.key, { key: b.key, label: b.label, title: b.title, count: 0 });
         map.get(b.key).count += 1;
       }
     }
@@ -603,7 +624,7 @@
     }
     const selected = state.filters[group.id];
     panel.innerHTML = buckets.map((b) => `
-      <label title="${escapeHtml(b.key === UNKNOWN ? "" : b.key)}">
+      <label title="${escapeHtml(b.key === UNKNOWN ? "" : (b.title || b.key))}">
         <input type="checkbox" data-group="${group.id}" value="${escapeHtml(b.key)}" ${selected.has(b.key) ? "checked" : ""} />
         ${escapeHtml(b.label)}
         <span class="opt-count">${b.count}</span>
