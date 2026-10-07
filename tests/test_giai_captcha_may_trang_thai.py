@@ -1203,7 +1203,9 @@ def test_log_luot_giai_co_so_do_va_kiem_sau_giai_van_chan(monkeypatch, db, caplo
     ket = [d for d in dong if "vòng giải kết thúc" in d]
     assert len(ket) == 1
     for truong in ("luot=1/3", "so_phat=3", "gesture_nop=1", "tre_phat_p50_ms=", "tre_phat_p95_ms=",
-                   "tre_phat_max_ms=", "popup_huy=0", "huy_khac=0", "mo_s="):
+                   "tre_phat_max_ms=", "popup_huy=0", "huy_khac=0", "mo_s=",
+                   "huy=qua_nhieu_lo_cho:0,lo_bi_tu_choi:0,lo_khong_hop_le:0,thieu_lo:0,khac:0",
+                   "tu_choi=dang_su_kien:0,"):
         assert truong in ket[0], (truong, ket[0])
     kiem = [d for d in dong if "kiểm sau giải" in d]
     assert kiem == [f"[giai] job {h.jid}: kiểm sau giải luot=1/3 ket_qua=van_chan so_trang=1"]

@@ -549,3 +549,77 @@ def test_chuot_thieu_ky_la_popup_cu_401(api):
     assert st == 401 and "tải lại trang" in ra["detail"], ra
     assert phien.expected_seq == 0
     s.dong_ket_noi()
+
+
+# ---------------------------------------------------------------------------
+# Vì sao lô bị 400: mỗi nhánh một nhãn CỐ ĐỊNH, đếm theo lượt (chỉ log, không đổi hành vi)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("su_kien,nhan", [
+    ([move(x=801)], "ngoai_khung"),
+    ([move(y=563)], "ngoai_khung"),
+    ([move(x=-1)], "ngoai_khung"),
+    ([{"k": "wheel", "x": 1, "y": 1, "t": 1, "buttons": 0, "dx": 0, "dy": 40, "delta_mode": 1}], "wheel_che_do"),
+    ([{"k": "wheel", "x": 1, "y": 1, "t": 1, "buttons": 0, "dx": 0}], "wheel_dxdy"),
+    ([{"k": "click", "x": 1, "y": 1, "t": 1, "buttons": 0}], "loai_su_kien"),
+    ([move(buttons=64)], "buttons"),
+    ([move(t=-1)], "t_am"),
+    ([], "so_su_kien"),
+    ([move()] * (gc.LO_TOI_DA_SU_KIEN + 1), "so_su_kien"),
+], ids=["ngoai-ngang", "ngoai-doc", "ngoai-am", "delta_mode", "wheel-thieu-dy", "loai-la", "buttons-la", "t-am",
+        "rong", "qua-lon"])
+def test_chuot_400_dem_dung_nhan_va_huy_lo_bi_tu_choi(api, su_kien, nhan):
+    """ĐỘT BIẾN: bỏ nhãn một nhánh / bỏ `dem_tu_choi` ⇒ ĐỎ."""
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    p = f"/jobs/{jid}/giai/chuot"
+    assert goi(port, "POST", p, body=lo(0, [{"k": "down", "x": 5, "y": 5, "t": 1, "buttons": 1}]))[0] == 200
+    assert goi(port, "POST", p, body=lo(1, su_kien))[0] == 400
+    sd = phien.so_do_luot()
+    assert f"{nhan}:1" in sd["tu_choi"].split(","), sd["tu_choi"]
+    assert sum(int(x.split(":")[1]) for x in sd["tu_choi"].split(",")) == 1, "đúng MỘT lô bị đếm"
+    assert "lo_bi_tu_choi:1" in sd["huy"].split(","), sd["huy"]
+    s.dong_ket_noi()
+
+
+def test_khung_w_sai_dem_nhan_khung_w(api):
+    port, db = api
+    jid, s, phien = job_dang_giai_co_khung(api)
+    assert goi(port, "POST", f"/jobs/{jid}/giai/chuot", body=lo(0, [move()], khung_w=-5.0))[0] == 400
+    assert "khung_w:1" in phien.so_do_luot()["tu_choi"].split(",")
+    s.dong_ket_noi()
+
+
+def test_so_do_luot_du_moi_nhan_theo_thu_tu_va_tach_ly_do_huy():
+    """Trường `huy`/`tu_choi` đủ MỌI nhãn (kể cả 0) theo thứ tự cố định; `huy` cộng lại = `huy_khac`.
+    ĐỘT BIẾN: gộp lại như cũ (chỉ tổng) hoặc bỏ đếm một lý do ⇒ ĐỎ."""
+    p = gc.PhienGiai(1, CHU, d_ms=0.0)
+    for ld in ("thieu_lo", "thieu_lo", "lo_bi_tu_choi", "qua_nhieu_lo_cho", "lo_khong_hop_le", gc.LY_DO_HUY_POPUP,
+               "doi_token"):
+        p.huy_gesture(ld)
+    p.dem_tu_choi("ngoai_khung")
+    p.dem_tu_choi(None)
+    sd = p.so_do_luot()
+    assert sd["huy"] == "qua_nhieu_lo_cho:1,lo_bi_tu_choi:1,lo_khong_hop_le:1,thieu_lo:2,khac:0"
+    assert sum(int(x.split(":")[1]) for x in sd["huy"].split(",")) == sd["huy_khac"] == 5
+    assert sd["popup_huy"] == 1
+    assert sd["tu_choi"] == ("dang_su_kien:0,loai_su_kien:0,so_khong_huu_han:0,t_am:0,buttons:0,ngoai_khung:1,"
+                             "wheel_che_do:0,wheel_dxdy:0,so_su_kien:0,khung_w:0,khac:1")
+
+
+@pytest.mark.parametrize("raw,nhan", [
+    ("khong-phai-dict", "dang_su_kien"),
+    ({"k": "click", "x": 1, "y": 1, "t": 1, "buttons": 0}, "loai_su_kien"),
+    ({"k": "move", "x": float("nan"), "y": 1, "t": 1, "buttons": 0}, "so_khong_huu_han"),
+    ({"k": "move", "x": 1, "y": 1, "t": -1, "buttons": 0}, "t_am"),
+    ({"k": "move", "x": 1, "y": 1, "t": 1, "buttons": 64}, "buttons"),
+    ({"k": "move", "x": 900, "y": 1, "t": 1, "buttons": 0}, "ngoai_khung"),
+    ({"k": "wheel", "x": 1, "y": 1, "t": 1, "buttons": 0, "dx": 0, "dy": 1, "delta_mode": 1}, "wheel_che_do"),
+    ({"k": "wheel", "x": 1, "y": 1, "t": 1, "buttons": 0, "dx": 0}, "wheel_dxdy"),
+])
+def test_kiem_su_kien_moi_nhanh_mot_nhan_co_dinh(raw, nhan):
+    """ĐỘT BIẾN: nhãn sai nhánh ⇒ ĐỎ. Nhãn không mang giá trị sự kiện."""
+    with pytest.raises(gc.LoiGiai) as ei:
+        gc.kiem_su_kien(raw, 800.0, 562.5, 1280.0)
+    assert ei.value.ma == 400 and ei.value.huy_gesture is True and ei.value.nhan == nhan
+    assert nhan in gc.NHAN_TU_CHOI

@@ -206,10 +206,10 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
             phien.kiem_tan_suat(gc.dong_ho())
             phien.kiem_ky(body.ky)          # lô kỳ cũ ⇒ 409 `ky_cu` trước mọi 400 về nội dung
             if not 1 <= len(body.su_kien) <= gc.LO_TOI_DA_SU_KIEN:
-                raise gc.LoiGiai(400, f"Mỗi lô cần 1–{gc.LO_TOI_DA_SU_KIEN} sự kiện.", True)
+                raise gc.LoiGiai(400, f"Mỗi lô cần 1–{gc.LO_TOI_DA_SU_KIEN} sự kiện.", True, nhan="so_su_kien")
             if not (isinstance(body.khung_w, float) and 0 < body.khung_w < 1e6
                     and body.khung_w == body.khung_w):
-                raise gc.LoiGiai(400, "`khung_w` phải là số dương hữu hạn.", True)
+                raise gc.LoiGiai(400, "`khung_w` phải là số dương hữu hạn.", True, nhan="khung_w")
             kich_thuoc = phien.kich_thuoc_thiet_bi(body.khung_seq)
             if kich_thuoc is None:
                 raise HTTPException(status_code=409, detail="Chưa có khung ảnh nào — chờ khung đầu.")
@@ -223,6 +223,7 @@ def dang_ky_route(app: FastAPI, *, lay_db: Callable[[], Path],
             ket_qua = phien.nhan_lo(body.token, nguoi_tao, body.seq, events, ky=body.ky)
         except gc.LoiGiai as loi:
             if loi.huy_gesture:
+                phien.dem_tu_choi(loi.nhan)
                 # Lô bị từ chối: `seq` của nó coi như đã dùng và thành MỐC HUỶ gesture dở — áp khi các
                 # lô trước nó đã tới (không huỷ ngay: lô `down` trước nó có thể còn đang bay).
                 phien.bo_lo(body.token, nguoi_tao, body.seq, ky=body.ky)
