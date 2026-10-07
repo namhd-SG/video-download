@@ -793,7 +793,7 @@ def test_fb_cuon_den_khi_du_video_moi_khong_dem_cai_da_co(monkeypatch):
     monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
     page = FakePage([[_url_fbcdn(i, f"k{i}") for i in (1, 2, 3)], [_url_fbcdn(4, "k4")], [_url_fbcdn(5, "k5")]])
     da_co = {"fb-1", "fb-2", "fb-3"}
-    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=10,
+    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=2,
                                    da_co=lambda ids: da_co & set(ids))
     assert {"fb-4", "fb-5"} <= {r.video_id for r in refs}
 
@@ -802,7 +802,7 @@ def test_fb_cuon_co_tran_khi_trang_toan_video_da_co(monkeypatch):
     monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
     lo = [[_url_fbcdn(i, f"k{i}") for i in range(b * 3, b * 3 + 3)] for b in range(10)]
     page = FakePage(lo)
-    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=30,
+    refs = scraper_fb._auto_scroll(page, max_videos=2, scroll_pause=0, idle_rounds=2,
                                    da_co=lambda ids: set(ids))
     assert len(refs) <= 2 * scraper_fb.HE_SO_TRAN_DA_CO + 3, "dừng ở trần, không cuộn vô hạn"
 
@@ -871,3 +871,47 @@ def test_tran_tiktok_cu_khong_doi(db, monkeypatch, tmp_path):
     with pytest.raises(HTTPException) as e:        # URL lạ: vẫn qua cổng trần trước, như cũ
         _tao("https://www.youtube.com/watch?v=a")
     assert e.value.status_code == 429
+
+
+class _TrangDemCuon(FakePage):
+    def __init__(self, lo):
+        super().__init__(lo)
+        self.so_lan_cuon = 0
+
+    def evaluate(self, js):
+        self.so_lan_cuon += 1
+        super().evaluate(js)
+
+
+def test_fb_cuon_nhieu_hon_idle_rounds_khi_van_con_video_moi(monkeypatch):
+    """Mỗi lần cuộn lộ 2 video mới; cần 9 lần cuộn (> idle_rounds=6) mới đủ 20.
+    ĐỘT BIẾN: khôi phục phép so `len(refs)` ngay sau cuộn (chưa thu) ⇒ dừng sau 6 lần cuộn ⇒ ĐỎ."""
+    monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
+    lo = [[_url_fbcdn(b * 2 + i, f"k{b}-{i}") for i in (1, 2)] for b in range(11)]
+    page = _TrangDemCuon(lo)
+    refs = scraper_fb._auto_scroll(page, max_videos=20, scroll_pause=0, idle_rounds=6)
+    assert len(refs) == 20 and page.so_lan_cuon == 9
+
+
+def test_fb_het_video_sau_3_lan_cuon_dung_sau_idle_rounds_lan_khong_moi(monkeypatch):
+    monkeypatch.setattr(scraper_fb.time, "sleep", lambda s: None)
+    lo = [[_url_fbcdn(b * 2 + i, f"k{b}-{i}") for i in (1, 2)] for b in range(4)]   # lô 0 + 3 lần cuộn có video
+    page = _TrangDemCuon(lo)
+    refs = scraper_fb._auto_scroll(page, max_videos=100, scroll_pause=0, idle_rounds=6)
+    assert len(refs) == 8 and page.so_lan_cuon == 3 + 6
+
+
+def test_moi_ma_dung_deu_duoc_phan_loai_o_bang_bao_thieu():
+    """Mỗi mã dừng phải nằm ở bảng `bao-thieu.js` (nút chạy lại / nhãn) hoặc trong danh sách "đã cân nhắc,
+    không nút" dưới đây — mã MỚI chưa ai cân nhắc ⇒ ĐỎ. ĐỘT BIẾN: xoá `het_dia` khỏi bảng ⇒ ĐỎ."""
+    from tiktok_music_downloader import utils as utils_mod
+    from web import cookies as cookies_mod
+    js = (Path(__file__).resolve().parent.parent / "web/static/bao-thieu.js").read_text(encoding="utf-8")
+    chay_lai = set(re.findall(r'"(\w+)"', re.search(r"MA_CHAY_LAI_DUOC = new Set\(\[(.*?)\]\)", js, re.S).group(1)))
+    nhan = set(re.findall(r"^\s+(?:(\w+):)", re.search(r"NHAN_THEO_LY_DO = Object.freeze\(\{(.*?)\}\)", js, re.S).group(1), re.M))
+    nhan |= set(re.findall(r"\b(\w+): \"", re.search(r"NHAN_THEO_LY_DO = Object.freeze\(\{(.*?)\}\)", js, re.S).group(1)))
+    ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
+    ma |= set(cookies_mod.MA_LOI_COOKIE)
+    da_can_nhac_khong_nut = {"index_failed", "feed_rong", "hashtag_khong_tra_duoc"} | set(cookies_mod.MA_LOI_COOKIE)
+    assert chay_lai >= {"het_vong", "het_thoi_gian", "page_cap", "het_dia"}, chay_lai
+    assert ma - chay_lai - nhan - da_can_nhac_khong_nut == set()

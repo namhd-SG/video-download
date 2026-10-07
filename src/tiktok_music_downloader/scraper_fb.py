@@ -77,6 +77,10 @@ def _auto_scroll(
     tran = max_videos * HE_SO_TRAN_DA_CO if da_co is not None else max_videos
     da_hoi = 0
     stale = 0
+    # Số ref ở vòng thu TRƯỚC (None = chưa có vòng nào). "Có video mới không" phải đo SAU khi thu ở
+    # vòng kế: DOM chỉ thêm video sau khi cuộn, và `refs` chỉ đổi ở bước thu. So `len(refs)` ngay sau
+    # lệnh cuộn (chưa thu) luôn bằng nhau ⇒ `stale` tăng mọi vòng ⇒ dừng sau đúng `idle_rounds` lần cuộn.
+    vong_truoc: int | None = None
     while True:
         for src in _collect_video_urls(page):
             key = _dedup_key(src)
@@ -97,21 +101,22 @@ def _auto_scroll(
             log.info("reached --max=%d, stopping scroll", max_videos)
             break
 
-        before = len(refs)
+        if vong_truoc is not None:
+            if len(refs) > vong_truoc:
+                stale = 0
+            else:
+                stale += 1
+                if stale >= idle_rounds:
+                    log.info("no new videos after %d idle rounds, stopping", stale)
+                    break
+        vong_truoc = len(refs)
+
         # JS scroll triggers FB's intersection observers (mouse.wheel often
         # misses the right container in obfuscated React DOM).
         page.evaluate(
             "window.scrollBy(0, Math.round(window.innerHeight * (0.7 + Math.random() * 0.3)))"
         )
         time.sleep(random.uniform(scroll_pause * 0.8, scroll_pause * 1.6))
-
-        if len(refs) == before:
-            stale += 1
-            if stale >= idle_rounds:
-                log.info("no new videos after %d idle rounds, stopping", stale)
-                break
-        else:
-            stale = 0
     return refs[:tran]
 
 
