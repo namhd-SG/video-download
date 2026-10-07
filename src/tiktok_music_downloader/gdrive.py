@@ -119,6 +119,17 @@ VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
 DRIVE_FILE_URL = "https://drive.google.com/uc?id={}"
 
 
+def mo_ta_loi(exc: BaseException) -> str:
+    """Mô tả lỗi Drive AN TOÀN cho log: chỉ loại lỗi + mã HTTP nếu có, KHÔNG kèm văn bản ngoại lệ.
+
+    Văn bản lỗi của gdown/urllib3/requests nhúng id thư mục/file ("folder ID: <id>", "url: /uc?id=<id>"),
+    mà id Drive là quyền truy cập. Che bằng regex chỉ là lưới thứ hai; lưới đầu là không bao giờ đưa
+    văn bản đó vào thông điệp.
+    """
+    ma = getattr(getattr(exc, "response", None), "status_code", None)
+    return f"{type(exc).__name__}, HTTP {ma}" if isinstance(ma, int) else type(exc).__name__
+
+
 def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, str]]:
     """Liệt kê video trong thư mục Drive công khai MÀ KHÔNG TẢI gì: `[(file_id, tên file)]`.
 
@@ -126,6 +137,8 @@ def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, st
     nguyên tắc tải-1-đẩy-1-xoá-1 của lớp web: đĩa máy chạy chỉ còn vài GB. Thư mục con được duyệt
     (gdown trả đường dẫn tương đối); chỉ giữ đuôi trong `VIDEO_EXTS`, trùng id bỏ.
     """
+    # ⚠ gdown in "Using proxy: <proxy>" THẲNG ra stderr khi có `proxy` (bỏ qua `quiet` và formatter che
+    # log). Lớp web không truyền proxy; ai thêm proxy cho đường này phải xử lý dòng đó trước.
     raw = gdown.download_folder(url=url, quiet=True, use_cookies=False, proxy=proxy,
                                 skip_download=True)
     ra: list[tuple[str, str]] = []
@@ -149,7 +162,11 @@ def download_file(file_id: str, target: Path, proxy: str | None = None) -> None:
     tam = Path(tempfile.mkdtemp(prefix=".gd-", dir=target.parent))
     try:
         ra = tam / target.name
-        gdown.download(id=file_id, output=str(ra), quiet=True, use_cookies=False, proxy=proxy)
+        try:
+            # ⚠ `proxy` ⇒ gdown in "Using proxy: <proxy>" thẳng stderr (xem `list_folder_videos`).
+            gdown.download(id=file_id, output=str(ra), quiet=True, use_cookies=False, proxy=proxy)
+        except Exception as exc:  # noqa: BLE001 — văn bản lỗi gốc mang id Drive, không được đi tiếp
+            raise RuntimeError(f"Drive không tải được file ({mo_ta_loi(exc)})") from None
         if not ra.exists() or ra.stat().st_size == 0:
             raise RuntimeError("Drive không trả nội dung file (hết quota, không công khai, hoặc đã xoá)")
         ra.replace(target)

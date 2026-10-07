@@ -25,7 +25,6 @@ from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_SOURCE_EMPTY,
     VideoRef,
-    che_url,
     is_fb_ads_library,
     is_gdrive_folder,
     is_tiktok_collection,
@@ -172,11 +171,11 @@ class DriveFolder:
         try:
             files = gdrive.list_folder_videos(url, proxy=proxy)
         except Exception as exc:  # noqa: BLE001 — đổi thành lỗi có tên nguồn
-            # `from None`: lỗi gốc của gdown mang id thư mục ("… for folder ID: <id>") và traceback của
-            # `log.exception` sẽ in cả chuỗi nguyên nhân. Giữ loại lỗi + mã trạng thái qua thông điệp đã che.
+            # Văn bản lỗi gốc (gdown/urllib3) nhúng id thư mục ("folder ID: <id>", "url: …?id=<id>") nên
+            # KHÔNG đưa vào thông điệp: chỉ loại lỗi + mã HTTP. `from None` để traceback của `log.exception`
+            # cũng không in chuỗi nguyên nhân.
             raise RuntimeError(
-                f"nguồn drive: không liệt kê được thư mục ({type(exc).__name__}: {che_url(exc)})"
-            ) from None
+                f"nguồn drive: không liệt kê được thư mục ({gdrive.mo_ta_loi(exc)})") from None
         refs = [VideoRef(video_id=f"gd-{fid}", url=gdrive.DRIVE_FILE_URL.format(fid),
                          title=Path(ten).stem or None) for fid, ten in files]
         return _loc_da_co(refs, max_videos, ten_nguon=self.ten, already_have=already_have,

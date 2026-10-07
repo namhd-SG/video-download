@@ -121,8 +121,9 @@ _MAU_HANDLE = re.compile(r"(?i)(?:/|%2F)(?:@|%40)[\w.\-]+")
 # trong query nên che cả đường dẫn lẫn query.
 _MAU_DRIVE = re.compile(
     r"(?i)(?:drive|docs)\.google\.com/[^\s\"'<>(),\[\]]*|folders/[\w\-]+|\bgd-[\w\-]+"
-    # gdown báo lỗi thư mục bằng "… for folder ID: <id> (status code …)".
-    r"|\bID:\s*[\w\-]{20,}")
+    # `id`/`ID` kèm `:` hoặc `=` rồi một chuỗi dài: gdown báo "… for folder ID: <id> (status code …)" và
+    # urllib3/requests báo "… url: /uc?id=<id>&export=download". Tuyến tính (không lồng lượng từ).
+    r"|\bid\s*[:=]\s*[\w\-]{20,}")
 # Neo đầu token (`(?<![\w.\-])`): không có nó, `[\w.\-]*` thử lại từ MỌI vị trí trong một token dài ⇒ O(n²),
 # mà formatter chạy trên mọi dòng log.
 _MAU_FBCDN = re.compile(r"(?i)(?<![\w.\-])[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")

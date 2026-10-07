@@ -623,8 +623,8 @@ def _tat_ca_duoi(goc: Path):
 
 # Câu chữ lấy từ mã gdown đã cài (`download_folder.py`, `download.py`) — không tự bịa.
 @pytest.mark.parametrize("phan_hoi,mong", [
-    (_phan_hoi(status=404, text="nope"), "status code 404"),
-    (_phan_hoi(status=200, text="<html><body>x</body></html>"), "Failed to parse folder contents"),
+    (_phan_hoi(status=404, text="nope"), "DownloadError"),
+    (_phan_hoi(status=200, text="<html><body>x</body></html>"), "DownloadError"),
 ])
 def test_drive_loi_gdown_that_khong_lo_id_thu_muc_qua_traceback(monkeypatch, phan_hoi, mong):
     """Lỗi THẬT của gdown mang "… folder ID: <id>". Qua `CheUrlFormatter` (cả traceback) không còn id.
@@ -656,6 +656,11 @@ def test_drive_loi_gdown_that_khong_lo_id_thu_muc_qua_traceback(monkeypatch, pha
     f"Failed to retrieve folder contents for folder ID: {ID_THU_MUC} (status code 404). You may need",
     f"Failed to parse folder contents for folder ID: {ID_THU_MUC}. The page structure may have changed.",
     f"folder id:{ID_THU_MUC}",
+    f"HTTPSConnectionPool(host='drive.google.com', port=443): Max retries exceeded with url: "
+    f"/embeddedfolderview?id={ID_THU_MUC} (Caused by NameResolutionError)",
+    f"HTTPSConnectionPool(host='drive.google.com', port=443): Max retries exceeded with url: "
+    f"/uc?id={VIDEO_DRIVE[0][0]}&export=download (Caused by X)",
+    f"url: /uc?id={VIDEO_DRIVE[0][0]}&export=download",
 ])
 def test_che_url_che_dang_folder_id_cua_gdown(t):
     assert ID_THU_MUC not in che_url(t)
@@ -915,3 +920,76 @@ def test_moi_ma_dung_deu_duoc_phan_loai_o_bang_bao_thieu():
     da_can_nhac_khong_nut = {"index_failed", "feed_rong", "hashtag_khong_tra_duoc"} | set(cookies_mod.MA_LOI_COOKIE)
     assert chay_lai >= {"het_vong", "het_thoi_gian", "page_cap", "het_dia"}, chay_lai
     assert ma - chay_lai - nhan - da_can_nhac_khong_nut == set()
+
+
+# ---------------------------------------------------------------- mạng hỏng THẬT: id không lọt cả hai đường
+
+def _log_qua_formatter_that():
+    from web.app import CheUrlFormatter
+    ra = io.StringIO()
+    h = logging.StreamHandler(ra)
+    h.setFormatter(CheUrlFormatter("%(levelname)s %(name)s: %(message)s"))
+    return ra, h
+
+
+def _khong_co_mang(monkeypatch):
+    import socket
+
+    def loi(*a, **k):
+        raise socket.gaierror(8, "nodename nor servname provided, or not known")
+    monkeypatch.setattr(socket, "getaddrinfo", loi)
+
+
+def test_drive_mang_hong_that_khong_lo_id_o_duong_liet_ke(monkeypatch):
+    """gdown + requests + urllib3 THẬT, chỉ DNS bị cắt. Lỗi thật mang `url: /embeddedfolderview?id=<ID>`.
+    ĐỘT BIẾN (a): đưa lại `che_url(exc)` vào thông điệp VÀ bỏ mẫu `id=` ⇒ ĐỎ. (b) chỉ bỏ mẫu `id=` mà giữ
+    việc không đưa văn bản lỗi ⇒ vẫn XANH (chứng minh lớp thứ nhất tự đủ)."""
+    monkeypatch.setattr(gdrive_mod, "gdown", __import__("gdown"))
+    _khong_co_mang(monkeypatch)
+    ra, h = _log_qua_formatter_that()
+    lg = logging.getLogger("videodl.web")
+    lg.addHandler(h)
+    try:
+        with pytest.raises(RuntimeError) as e:
+            DriveFolder().liet_ke(URL_DRIVE, max_videos=5, already_have=lambda ids: set(),
+                                  on_skip=lambda r: None, on_stop=lambda s: None)
+        assert ID_THU_MUC not in str(e.value) and e.value.__cause__ is None
+        try:
+            raise e.value
+        except RuntimeError:
+            lg.exception("job crashed")
+    finally:
+        lg.removeHandler(h)
+    text = ra.getvalue()
+    assert "nguồn drive" in text and "ConnectionError" in text, text
+    assert ID_THU_MUC not in text and "embeddedfolderview" not in text, text
+
+
+def test_drive_mang_hong_that_khong_lo_id_o_duong_tai_file(db, monkeypatch, tmp_path, nhanh):
+    """Dòng `✗ <id>: [he_thong] …` của `download_all` in văn bản lỗi: nó phải không còn id file."""
+    monkeypatch.setattr(gdrive_mod, "gdown", __import__("gdown"))
+    _khong_co_mang(monkeypatch)
+    monkeypatch.setattr(gdrive_mod, "list_folder_videos", lambda url, proxy=None: VIDEO_DRIVE[:2])
+    ra, h = _log_qua_formatter_that()
+    lg = logging.getLogger()
+    cu = lg.level
+    lg.addHandler(h)
+    lg.setLevel(logging.DEBUG)
+    try:
+        job = _chay_job(db, tmp_path, URL_DRIVE, 5, "drive", HookDayDrive(db, _dem_file(tmp_path / "dl")))
+    finally:
+        lg.removeHandler(h)
+        lg.setLevel(cu)
+    text = ra.getvalue()
+    assert job["loi"] == 2 and job["xong"] == 0
+    assert "✗" in text and "ConnectionError" in text, text
+    for fid, _ in VIDEO_DRIVE:
+        assert fid not in text, text
+    assert "uc?id" not in text and "export=download" not in text, text
+
+
+def test_che_url_mau_id_tuyen_tinh_tren_chuoi_dai():
+    for mau in ("id=" + "z" * 200_000, "id " * 60_000, "ID:" + " " * 200_000 + "a", "id=" * 70_000):
+        t0 = time.perf_counter()
+        che_url(mau, toi_da=None)
+        assert time.perf_counter() - t0 < 0.5
