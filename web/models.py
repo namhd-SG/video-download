@@ -32,10 +32,6 @@ LANE_TIKTOK = "tiktok"
 LANE_KHAC = "khac"
 
 
-def lane_cua(nen_tang: str) -> str:
-    """Hàng đợi của một nền tảng: `tiktok` một mình, mọi nền tảng khác chung hàng `khac`."""
-    return LANE_TIKTOK if nen_tang == NEN_TANG_MAC_DINH else LANE_KHAC
-
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -381,7 +377,28 @@ def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
             raise
 
 
+def _sao_luu_truoc_cot_nen_tang(db_path: Path) -> Path | None:
+    """Sao lưu `jobs.db` MỘT lần, ngay trước migration thêm `jobs.nen_tang`.
+
+    Chỉ chạy khi DB đã có bảng `jobs` mà chưa có cột đó (tức đúng lượt khởi động đầu tiên của bản
+    có hai hàng đợi); DB mới hay DB đã migrate thì không sao lưu gì. Dùng backup API của SQLite
+    (bản nhất quán kể cả khi đang có WAL), ghi cạnh DB: `<tên>.truoc-nen-tang-<giờ UTC>`.
+    """
+    if not Path(db_path).exists():
+        return None
+    with sqlite3.connect(db_path) as nguon:
+        co_jobs = nguon.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
+        if not co_jobs or any(r[1] == "nen_tang" for r in nguon.execute("PRAGMA table_info(jobs)")):
+            return None
+        dich = Path(f"{db_path}.truoc-nen-tang-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
+        with sqlite3.connect(dich) as ban_sao:
+            nguon.backup(ban_sao)
+    return dich
+
+
 def init_db(db_path: Path) -> None:
+    _sao_luu_truoc_cot_nen_tang(db_path)
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
@@ -839,6 +856,8 @@ def claim_next_pending_job(db_path: Path, uu_tien_cho_giai: bool = False,
     `uu_tien_cho_giai=True`: giải captcha là việc của lane TikTok (cần profile/Chromium của nó),
     nên một dòng `cho_giai` mà lane khác nhặt sẽ chạy không profile và hỏng âm thầm.
     """
+    if lane == LANE_KHAC and uu_tien_cho_giai:
+        raise ValueError("lane khac không nhặt cho_giai: giải captcha là việc của lane TikTok")
     dk, tham_so = _loc_lane(lane, loai_tru)
     with _connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -911,12 +930,13 @@ def vi_tri_hang_doi(db_path: Path, job_ids: list[int]) -> dict[int, int]:
             "ORDER BY CASE trang_thai WHEN 'cho_giai' THEN 0 ELSE 1 END, "
             "CASE trang_thai WHEN 'cho_giai' THEN vao_trang_thai_luc ELSE tao_luc END ASC, id ASC"
         ).fetchall()
+    ids = set(job_ids)
     dem_cho: dict[str, int] = {}
     ket_qua: dict[int, int] = {}
     for r in cho:
         lane = r["lane"]
         dem_cho[lane] = dem_cho.get(lane, 0) + 1
-        if int(r["id"]) in job_ids:
+        if int(r["id"]) in ids:
             ket_qua[int(r["id"])] = dang_chay.get(lane, 0) + dem_cho[lane]
     return ket_qua
 

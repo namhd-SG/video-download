@@ -22,7 +22,6 @@ from web import giai_captcha_worker as worker
 from web import models, profile_theo_job
 from web import queue as queue_mod
 from web import models_giai_captcha as mgc
-from web import queue as queue_mod
 from web.queue import JobWorker, process_job
 
 URL_PROFILE = "https://www.tiktok.com/@nguoi.dung"

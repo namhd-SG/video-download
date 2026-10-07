@@ -172,8 +172,9 @@ SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
 # Hai worker, hai hàng đợi (xem `JobWorker`): `worker` = lane TikTok (giữ tên cũ), `worker_khac` =
-# mọi nền tảng khác. `_lifespan` dựng lại `worker_khac` từ đường dẫn HIỆN TẠI lúc khởi động, để
-# không có luồng nào bám vào đường dẫn cũ nếu cấu hình đổi sau lúc import.
+# mọi nền tảng khác. `_lifespan` dựng lại `worker_khac` từ đường dẫn HIỆN TẠI lúc khởi động: test
+# đổi `DB_PATH` rồi chạy lifespan (chỉ stub `worker`) thì luồng lane khác bám DB tạm của test,
+# không bám DB thật đã đọc lúc import. Test thay `worker_khac` phải dùng `monkeypatch.setattr`.
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_TIKTOK)
 worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC)
 

@@ -133,6 +133,46 @@ def test_t3_worker_khac_voi_co_giai_bat_van_khong_nhat_cho_giai(db, tmp_path, mo
     finally:
         w.stop()
     assert da_goi == [] and _trang_thai(db, yt) == "cho_giai"
+    # Không chỉ "không nhặt": vòng lặp phải sạch lỗi (models chặn `lane=khac` + `uu_tien_cho_giai`
+    # bằng lỗi, nên worker truyền cờ sai sẽ hiện ra ở đây chứ không im lặng).
+    assert w.trang_thai()["loi_lien_tiep"] == 0
+
+
+def test_t3_models_tu_choi_lane_khac_kem_uu_tien_cho_giai(db):
+    with pytest.raises(ValueError):
+        models.claim_next_pending_job(db, uu_tien_cho_giai=True, lane="khac")
+
+
+def test_t1_co_giai_bat_lane_tiktok_chi_nhat_job_tiktok(db, tmp_path, monkeypatch):
+    """Nhánh prod (cờ giải captcha BẬT ⇒ `uu_tien_cho_giai=True`): đứng trước job tiktok là một
+    dòng `cho_giai` và một `pending` của nền tảng khác; lane TikTok chỉ được xử lý job tiktok."""
+    monkeypatch.setattr(profile_theo_job, "profile_captcha_dang_bat", lambda: True)
+    yt_giai = _job(db, "youtube")
+    _dat_cho_giai(db, yt_giai)
+    yt = _job(db, "youtube")
+    tt = _job(db, "tiktok")
+    da_xu_ly = []
+
+    def fn(_db, _dl, _ck, job):
+        da_xu_ly.append(job["nen_tang"])
+        with sqlite3.connect(db) as c:
+            c.execute("UPDATE jobs SET trang_thai='done' WHERE id=?", (job["id"],))
+
+    w = _worker(db, tmp_path, "tiktok", fn)
+    w.start()
+    try:
+        assert _cho(lambda: _trang_thai(db, tt) == "done")
+        time.sleep(POLL * 6)
+    finally:
+        w.stop()
+    assert da_xu_ly == ["tiktok"]
+    assert _trang_thai(db, yt_giai) == "cho_giai" and _trang_thai(db, yt) == "pending"
+
+
+def test_fetch_refs_job_nen_tang_khac_url_la_thi_loi_khong_roi_ve_tiktok():
+    with pytest.raises(ValueError):
+        queue_mod._fetch_refs("https://example.com/khong-nguon-nao", max_videos=1,
+                              cookies_path=None, nen_tang="youtube")
 
 
 # --- T1: cách ly độ trễ ----------------------------------------------------
@@ -218,6 +258,9 @@ def test_t9_lifespan_quet_dung_mot_lan_truoc_moi_worker(tmp_path, monkeypatch):
     monkeypatch.setattr(app_mod, "COOKIE_TMP_DIR", tmp_path / "tmp")
     monkeypatch.setattr(app_mod, "JobWorker", WorkerGia)
     monkeypatch.setattr(app_mod, "worker", WorkerGia(lane="tiktok"))
+    # lifespan gán lại `worker_khac`; đặt qua monkeypatch để teardown trả lại instance thật
+    # (thiếu dòng này thì test chạy sau gọi healthz sẽ gặp WorkerGia — rò trạng thái giữa test).
+    monkeypatch.setattr(app_mod, "worker_khac", app_mod.worker_khac)
     monkeypatch.setattr(app_mod, "quet_khoi_dong", lambda p: su_kien.append("quet") or 0)
     monkeypatch.setenv(app_mod.ENV_TAT_LAP_VAO_BO, "1")
 
@@ -369,3 +412,16 @@ def test_migration_chay_hai_lan_khong_mat_dong_va_khong_null(tmp_path):
         assert "nen_tang" in [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
         assert c.execute("SELECT COUNT(*) FROM jobs WHERE nen_tang IS NULL").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM jobs WHERE nen_tang = 'tiktok'").fetchone()[0] == 5
+    # Sao lưu đúng MỘT bản trước migration, bản đó là DB cũ nguyên vẹn (5 jobs, chưa có cột).
+    ban_sao = list(tmp_path.glob("jobs.db.truoc-nen-tang-*"))
+    assert len(ban_sao) == 1
+    with sqlite3.connect(ban_sao[0]) as c:
+        assert c.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 5
+        assert "nen_tang" not in [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
+
+
+def test_db_moi_khong_sinh_ban_sao_migration(tmp_path):
+    path = tmp_path / "jobs.db"
+    models.init_db(path)
+    models.init_db(path)
+    assert list(tmp_path.glob("jobs.db.truoc-nen-tang-*")) == []

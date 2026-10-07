@@ -176,7 +176,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                  proxy: str | None = None, db_path: Path | None = None,
                  job_id: int | None = None,
                  ly_do_ra: dict | None = None,
-                 xac_minh_ra: dict | None = None) -> list[VideoRef]:
+                 xac_minh_ra: dict | None = None,
+                 nen_tang: str = models.NEN_TANG_MAC_DINH) -> list[VideoRef]:
     """Enumerate (hashtag) or scrape (music/search/profile) refs for one job.
 
     Videos the library already owns are dropped here, before anything is
@@ -322,7 +323,13 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # `scrape_music_page_multi`. URL tới được đây đã qua cổng `chon_nguon` ở `POST /jobs`.
     # Job cũ trong DB / đường không qua cổng mà URL không nguồn nào nhận: giữ đúng cách trước đây
     # (mọi URL không phải hashtag đều đi trình quét music/profile) thay vì ném lỗi.
-    nguon_url = chon_nguon(url) or NGUON_MAC_DINH
+    # Chỉ job TikTok mới được rơi về nguồn mặc định: job nền tảng khác mà URL không nguồn nào nhận
+    # thì lỗi rõ, KHÔNG âm thầm chạy trình quét TikTok (Playwright, captcha) trong lane `khac`.
+    nguon_url = chon_nguon(url)
+    if nguon_url is None:
+        if nen_tang != models.NEN_TANG_MAC_DINH:
+            raise ValueError(f"không nguồn nào nhận url của job nền tảng {nen_tang!r}")
+        nguon_url = NGUON_MAC_DINH
     refs = nguon_url.liet_ke(
         url,
         max_videos=max_videos,
@@ -686,7 +693,8 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
             xac_minh: dict = {}
             refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
                                 db_path=db_path, job_id=job_id, ly_do_ra=dung,
-                                xac_minh_ra=xac_minh)
+                                xac_minh_ra=xac_minh,
+                                nen_tang=job.get("nen_tang") or models.NEN_TANG_MAC_DINH)
             if xac_minh.get("ly_do"):
                 # TikTok đòi xác minh trên trang profile: dừng, chờ NGƯỜI giải — không tải link lạc,
                 # không "Xong" giả, không tự retry. Lúc này scraper đã đóng context ⇒ worker rảnh.
