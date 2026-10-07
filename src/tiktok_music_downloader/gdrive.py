@@ -20,6 +20,8 @@ from pathlib import Path
 
 import gdown
 
+from tiktok_music_downloader.utils import che_url
+
 log = logging.getLogger("ttmd")
 
 
@@ -127,7 +129,15 @@ def mo_ta_loi(exc: BaseException) -> str:
     văn bản đó vào thông điệp.
     """
     ma = getattr(getattr(exc, "response", None), "status_code", None)
-    return f"{type(exc).__name__}, HTTP {ma}" if isinstance(ma, int) else type(exc).__name__
+    mo_ta = f"{type(exc).__name__}, HTTP {ma}" if isinstance(ma, int) else type(exc).__name__
+    # Phân loại TRÊN văn bản gốc trước khi bỏ nó: lỗi hết quota của gdown ("Too many users have
+    # viewed or downloaded this file recently") không có `response`, nên chỉ văn bản mới biết. Gắn
+    # nhãn cố định (không id) để bộ nhận rate-limit của `download_all` vẫn nghỉ lùi như trước.
+    # Che id/URL TRƯỚC khi so: id Drive ngẫu nhiên có thể chứa "429"/"quota" ⇒ khớp nhầm.
+    goc = che_url(exc, toi_da=None).lower()
+    if any(s in goc for s in ("too many", "quota", "rate limit", "429")):
+        mo_ta += ", quá tải: too many"
+    return mo_ta
 
 
 def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, str]]:

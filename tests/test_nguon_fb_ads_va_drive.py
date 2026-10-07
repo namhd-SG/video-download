@@ -993,3 +993,29 @@ def test_che_url_mau_id_tuyen_tinh_tren_chuoi_dai():
         t0 = time.perf_counter()
         che_url(mau, toi_da=None)
         assert time.perf_counter() - t0 < 0.5
+
+
+@pytest.mark.parametrize("van_ban, la_qua_tai", [
+    ("Failed to retrieve file url:\n\n\tToo many users have viewed or downloaded this file recently. "
+     "Please try accessing the file again later.\n\nYou may still be able to access the file from the "
+     "browser:\n\n\thttps://drive.google.com/uc?id={fid}", True),
+    ("Failed to retrieve file url:\n\n\tCannot retrieve the public link of the file. You may need to "
+     "change the permission to 'Anyone with the link'.\n\n\thttps://drive.google.com/uc?id={fid}", False),
+])
+def test_drive_loi_quota_van_kich_nghi_lui_ma_khong_lo_id(tmp_path, monkeypatch, van_ban, la_qua_tai):
+    """Bọc lỗi gdown để giấu id KHÔNG được làm mất tín hiệu quá tải: lỗi hết quota (không có `response`)
+    vẫn phải khớp bộ nhận rate-limit của `download_all` (để nghỉ lùi), còn lỗi quyền thì không."""
+    import gdown.exceptions as gde
+
+    # id cố ý chứa "429" và "quota": phân loại phải dựa trên CÂU CHỮ lỗi, không dựa trên id.
+    fid = "1aQuOtA429bQuOtA429cQuOtA429dQuo"
+
+    def gia_download(**_kw):
+        raise gde.FileURLRetrievalError(van_ban.format(fid=fid))
+
+    monkeypatch.setattr(gdrive_mod.gdown, "download", gia_download)
+    with pytest.raises(RuntimeError) as bat:
+        gdrive_mod.download_file(fid, tmp_path / f"gd-{fid}.mp4")
+    assert fid not in str(bat.value)
+    assert downloader_mod._looks_like_rate_limit(bat.value) is la_qua_tai
+    assert list(tmp_path.iterdir()) == []
