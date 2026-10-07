@@ -293,6 +293,11 @@ def download_all(
                 info: dict | None = None
                 if ref.video_id.startswith("fb-"):
                     _download_url_direct(ref.url, target, proxy)
+                elif ref.video_id.startswith("gd-"):
+                    # Drive: từng file theo id (nguồn đã liệt kê, không tải cả thư mục), để file
+                    # đi đúng đường verify → đẩy Drive → xoá local rồi mới tới file kế.
+                    from tiktok_music_downloader.gdrive import download_file
+                    download_file(ref.video_id[len("gd-"):], target, proxy)
                 else:
                     info = _download_one(ref.url, opts)
                 # Post-process: apply watermark in-place if configured. Failures

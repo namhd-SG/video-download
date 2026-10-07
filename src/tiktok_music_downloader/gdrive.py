@@ -109,6 +109,47 @@ def download_folder(url: str, output_dir: Path) -> list[Path]:
     return paths
 
 
+# Đuôi file được coi là video khi liệt kê thư mục Drive. Khớp những gì ffmpeg đọc được luồng video
+# (cổng `verify_video_stream` quyết cuối cùng, không dựa vào đuôi); ảnh/phụ đề/tài liệu bị loại ngay
+# từ lúc liệt kê để không tốn một lượt tải và không chiếm chỗ trong trần `max_videos`.
+VIDEO_EXTS = (".mp4", ".mov", ".m4v", ".webm", ".mkv")
+
+DRIVE_FILE_URL = "https://drive.google.com/uc?id={}"
+
+
+def list_folder_videos(url: str, proxy: str | None = None) -> list[tuple[str, str]]:
+    """Liệt kê video trong thư mục Drive công khai MÀ KHÔNG TẢI gì: `[(file_id, tên file)]`.
+
+    `skip_download=True` chỉ đọc cấu trúc thư mục. Tải cả thư mục một lượt (`download_folder`) trái
+    nguyên tắc tải-1-đẩy-1-xoá-1 của lớp web: đĩa máy chạy chỉ còn vài GB. Thư mục con được duyệt
+    (gdown trả đường dẫn tương đối); chỉ giữ đuôi trong `VIDEO_EXTS`, trùng id bỏ.
+    """
+    raw = gdown.download_folder(url=url, quiet=True, use_cookies=False, proxy=proxy,
+                                skip_download=True)
+    ra: list[tuple[str, str]] = []
+    thay: set[str] = set()
+    for f in raw or []:
+        ten = Path(f.path).name
+        if Path(ten).suffix.lower() not in VIDEO_EXTS or f.id in thay:
+            continue
+        thay.add(f.id)
+        ra.append((f.id, ten))
+    return ra
+
+
+def download_file(file_id: str, target: Path, proxy: str | None = None) -> None:
+    """Tải ĐÚNG MỘT file Drive (theo id) về `target`. Ghi vào `.part` rồi đổi tên, nên `target`
+    chỉ tồn tại khi đã trọn vẹn; trượt thì không để lại tệp dở. Ném lỗi khi gdown không trả nội dung."""
+    tam = target.with_suffix(target.suffix + ".part")
+    try:
+        gdown.download(id=file_id, output=str(tam), quiet=True, use_cookies=False, proxy=proxy)
+        if not tam.exists() or tam.stat().st_size == 0:
+            raise RuntimeError("Drive không trả nội dung file (hết quota, không công khai, hoặc đã xoá)")
+        tam.replace(target)
+    finally:
+        tam.unlink(missing_ok=True)
+
+
 def iter_mp4s_under(root: Path) -> list[Path]:
     """List mp4s under `root` (recursive) sorted by name."""
     return sorted(p for p in root.rglob("*.mp4") if p.is_file())

@@ -114,6 +114,14 @@ class VideoRef:
 _KY_DUNG = r"[^\s\"'<>(),\[\]]"
 _MAU_URL = re.compile(rf"(?i)(?:https?://|https?%3A%2F%2F){_KY_DUNG}+|www\.[^\s\"'<>(),/]+/{_KY_DUNG}*")
 _MAU_HANDLE = re.compile(r"(?i)(?:/|%2F)(?:@|%40)[\w.\-]+")
+# Google Drive: id thư mục/file là quyền truy cập (ai có link là mở được) nên không được vào log.
+# Ba dạng còn lọt qua `_MAU_URL`: đường dẫn trần không scheme (`drive.google.com/drive/folders/<id>`),
+# `folders/<id>` đứng một mình trong thông điệp thư viện, và mã `gd-<id>` của chính tool này
+# (tên file, `video_id` trong dòng "✓/✗"). Host FBCDN trần (không scheme) mang chữ ký `oh=`/`oe=`
+# trong query nên che cả đường dẫn lẫn query.
+_MAU_DRIVE = re.compile(
+    r"(?i)(?:drive|docs)\.google\.com/[^\s\"'<>(),\[\]]*|folders/[\w\-]+|\bgd-[\w\-]+")
+_MAU_FBCDN = re.compile(r"(?i)[\w.\-]*fbcdn\.net[^\s\"'<>(),\[\]]*")
 
 
 def che_url(text: object, toi_da: int | None = 300) -> str:
@@ -121,6 +129,8 @@ def che_url(text: object, toi_da: int | None = 300) -> str:
     cho formatter, nơi traceback phải còn đủ). Giữ phần chữ còn lại (mã lỗi, lý do): log là nơi duy nhất còn
     thông điệp lỗi tải."""
     s = _MAU_URL.sub("<url>", str(text))
+    s = _MAU_DRIVE.sub("<drive>", s)
+    s = _MAU_FBCDN.sub("<url>", s)
     s = _MAU_HANDLE.sub("/@<h>", s)
     return s if toi_da is None or len(s) <= toi_da else s[:toi_da] + "…"
 

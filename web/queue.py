@@ -669,7 +669,10 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     job_id = job["id"]
     la_luot_giai = job.get("trang_thai") == "dang_mo" and profile_theo_job.profile_captcha_dang_bat()
     try:
-        cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"])
+        # Cookie là của TikTok (jar riêng từng người). Job nền tảng khác không dùng nó, và một jar
+        # TikTok hỏng/hết hạn không được làm hỏng job Facebook Ads / Drive không liên quan.
+        la_tiktok = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) == models.NEN_TANG_MAC_DINH
+        cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"]) if la_tiktok else None
         # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
         # cookie. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy
         # ẩn danh — với dòng lệnh đó là tiện, với lớp web dùng chung thì job
@@ -821,6 +824,7 @@ class JobWorker:
             self._quet_profile_dinh_ky(buoc_ep=True)
             self._canh_bao_profiles_khi_co_tat()
         self._stop.clear()
+        log.info("worker lane %s: bắt đầu", self._lane)
         self._thread = threading.Thread(target=self._loop, name=f"videodl-worker-{self._lane}", daemon=True)
         self._thread.start()
 
@@ -864,7 +868,7 @@ class JobWorker:
                     # lên chính cái đĩa đang dưới ngưỡng. `_cho_dia` vẫn cập nhật số mới.
                     bay_gio = time.monotonic()
                     if self._cho_dia is None or bay_gio - self._nhac_cho_dia_luc >= NHAC_CHO_DIA_GIAY:
-                        log.warning("worker %s, chưa nhận job pending: %s",
+                        log.warning("worker lane %s: %s, chưa nhận job pending: %s", self._lane,
                                     "CHỜ" if self._cho_dia is None else "VẪN CHỜ", dia.reason)
                         self._nhac_cho_dia_luc = bay_gio
                     self._cho_dia = dia.reason
@@ -872,7 +876,7 @@ class JobWorker:
                     self._stop.wait(self._poll_interval)
                     continue
                 if self._cho_dia is not None:
-                    log.info("worker hết chờ đĩa, nhận job lại")
+                    log.info("worker lane %s: hết chờ đĩa, nhận job lại", self._lane)
                 self._cho_dia = None
                 # Cờ BẬT: job `cho_giai` (người đã bấm "Tôi giải ngay") được nhặt TRƯỚC `pending`.
                 # Cờ TẮT: lời gọi y hệt trước (một tham số, không SELECT thêm).

@@ -10,6 +10,7 @@ const grab = (n) => {
   }
 };
 eval(grab("chuBadgeWorker"));
+eval(grab("chuBadgeCacLane"));
 const tt = (o) => Object.assign({ song: true, loi_lien_tiep: 0, loi_cuoi: null, cho_dia: null }, o);
 process.stdout.write(JSON.stringify({
   null: chuBadgeWorker(null),
@@ -18,4 +19,9 @@ process.stdout.write(JSON.stringify({
   loi: chuBadgeWorker(tt({ loi_lien_tiep: 3, loi_cuoi: "OperationalError" })),
   dia: chuBadgeWorker(tt({ cho_dia: "đĩa còn 1 MB" })),
   ket: chuBadgeWorker(tt({ job_ket: [7, 9] })),
+  cacLaneKhongLanes: chuBadgeCacLane(tt({ cho_dia: "đĩa còn 1 MB" })),
+  cacLaneOk: chuBadgeCacLane(tt({ lanes: { tiktok: tt({}), khac: tt({}) } })),
+  cacLaneKhacChet: chuBadgeCacLane(tt({ lanes: { tiktok: tt({}), khac: tt({ song: false }) } })),
+  cacLaneCaHai: chuBadgeCacLane(tt({ cho_dia: "đĩa 1 MB", lanes: { khac: tt({ loi_lien_tiep: 2, loi_cuoi: "X" }) } })),
+  cacLaneNull: chuBadgeCacLane(null),
 }));

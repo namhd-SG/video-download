@@ -2107,10 +2107,20 @@
     return "";
   }
 
+  // `/admin/worker` trả các trường phẳng của lane TikTok VÀ `lanes.khac` (Facebook Ads / Drive).
+  // Thiếu `lanes` (server cũ) ⇒ chỉ chữ của lane TikTok, y như trước. Mỗi lane tự phán, lane khác
+  // chết không bị lane TikTok che.
+  function chuBadgeCacLane(res) {
+    if (!res) return "";
+    const chuTiktok = chuBadgeWorker(res);
+    const chuKhac = res.lanes && res.lanes.khac ? chuBadgeWorker(res.lanes.khac) : "";
+    return [chuTiktok, chuKhac && `Lane nền tảng khác: ${chuKhac}`].filter(Boolean).join(" · ");
+  }
+
   function veBadgeWorker(tt) {
     const el = document.getElementById("badge-worker");
     if (!el) return;
-    const chu = chuBadgeWorker(tt);
+    const chu = chuBadgeCacLane(tt);
     el.textContent = chu;
     el.hidden = !chu;
   }
