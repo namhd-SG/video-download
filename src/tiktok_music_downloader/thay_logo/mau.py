@@ -72,13 +72,16 @@ def tu_hoc_mau(nguon: NguonKhung, track: list[dict], mau_cu: np.ndarray) -> tupl
     chac = [e for e in track if e.get("state") == "detected"]
     chon = chac[:: max(1, len(chac) // TU_HOC_TOI_DA)][:TU_HOC_TOI_DA]
     crops = []
-    for e in chon:
-        g = nguon.doc(e["frame"])
-        if g is None:
-            continue
-        c = g[e["y"]:e["y"] + e["h"], e["x"]:e["x"] + e["w"]]
-        if c.size:
-            crops.append(cv2.resize(c, (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32))
+    can = {e["frame"]: e for e in chon}
+    # Một lượt đọc tuần tự thay vì mở + seek từng khung: seek giải mã lại từ keyframe, đo 09/10 ~3,5 phút/video 17s.
+    for i, g in enumerate(nguon.doc_tuan_tu() if can else ()):
+        e = can.get(i)
+        if e is not None:
+            c = g[e["y"]:e["y"] + e["h"], e["x"]:e["x"] + e["w"]]
+            if c.size:
+                crops.append(cv2.resize(c, (tw, th), interpolation=cv2.INTER_AREA).astype(np.float32))
+        if i >= max(can):
+            break
     if len(crops) < 3:
         return mau_cu, False
     moi = np.median(np.stack(crops), axis=0)
