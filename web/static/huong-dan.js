@@ -61,6 +61,9 @@
     if (!tn.nen_tang_bat.length) bat.textContent = "không có";
     const tat = tn.nen_tang_link_le.filter((nt) => !tn.nen_tang_bat.includes(nt));
     document.getElementById("nen-tang-tat").textContent = tat.length ? tat.map(ten).join(", ") : "không có";
+    const tamTat = tn.nen_tang_tam_tat || [];
+    document.getElementById("tam-tat").hidden = !tamTat.length;
+    document.getElementById("nen-tang-tam-tat").textContent = tamTat.map(ten).join(", ");
 
     const tran = Object.assign({}, tn.tran, {
       thoi_luong_video_phut: Math.round(tn.tran.thoi_luong_video_giay / 60),

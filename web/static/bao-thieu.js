@@ -24,7 +24,7 @@
   const MA_CHAY_LAI_DUOC = new Set(["het_vong", "het_thoi_gian", "page_cap", "het_dia", "tran_gio", "tran_ngay"]);
 
   // Nhãn theo LÝ DO DỪNG cho bốn mã không chạy lại được ngay — nhãn phải nói
-  // đúng việc nên làm, nên trùng ý câu ở `app.js::STOP_REASON_TEXT`:
+  // đúng việc nên làm, nên trùng ý câu ở `stop-reason-text.js::STOP_REASON_TEXT`:
   //   nghi_bi_chan  ⇒ "Nghi bị chặn"  (NGHỈ đã)
   //   stalled       ⇒ "Hết video"     (nguồn không còn gì TikTok cho xem)
   //   already_owned ⇒ "Đã có hết"     (thư viện có hết, đổi nguồn)

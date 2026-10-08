@@ -20,7 +20,7 @@ import pytest
 
 from tiktok_music_downloader import nguon
 from web import app as app_mod
-from web import lifecycle, pacer
+from web import lifecycle, models, pacer
 from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 NGUOI = "huongdan@dev.local"
@@ -29,7 +29,15 @@ STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 
 # --------------------------------------------------------------- endpoint
 
-def test_tinh_nang_tra_dung_hang_that_trong_code(monkeypatch):
+@pytest.fixture
+def db_tam(tmp_path, monkeypatch):
+    """`/tinh-nang` đọc bảng `nen_tang_tat` — DB tạm đã dựng schema, không đụng DB thật."""
+    monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs.db")
+    models.init_db(app_mod.DB_PATH)
+    return app_mod.DB_PATH
+
+
+def test_tinh_nang_tra_dung_hang_that_trong_code(db_tam, monkeypatch):
     monkeypatch.delenv(nguon.ENV_NEN_TANG_BAT, raising=False)
 
     tn = app_mod.tinh_nang(nguoi_tao=NGUOI)
@@ -48,7 +56,7 @@ def test_tinh_nang_tra_dung_hang_that_trong_code(monkeypatch):
     assert t["ip_moi_nen_tang"] == {nt: {"gio": g, "ngay": n} for nt, (g, n) in pacer.TRAN.items()}
 
 
-def test_bat_them_nen_tang_thi_trang_doi_theo_khong_ai_sua_chu(monkeypatch):
+def test_bat_them_nen_tang_thi_trang_doi_theo_khong_ai_sua_chu(db_tam, monkeypatch):
     """Lời hứa "không lạc hậu": đổi cờ đang áp ⇒ endpoint đổi theo ngay."""
     monkeypatch.setenv(nguon.ENV_NEN_TANG_BAT, "youtube,instagram")
 
@@ -67,10 +75,16 @@ def test_tinh_nang_chi_tra_hang_khong_tra_gi_cua_nguoi_dung(tmp_path, monkeypatc
     monkeypatch.setattr(app_mod, "COOKIES_DIR", tmp_path / "cookies-bi-mat")
     monkeypatch.setattr(app_mod, "DB_PATH", tmp_path / "jobs-bi-mat.db")
 
+    models.init_db(app_mod.DB_PATH)
+    # Nền tảng bị tắt kèm lý do chứa chữ lỗi của nền tảng: chỉ TÊN được ra ngoài.
+    pacer.tat_nen_tang(app_mod.DB_PATH, "youtube", "ERROR: Sign in bi-mat-ly-do")
+
     tn = app_mod.tinh_nang(nguoi_tao=NGUOI)
     tho = json.dumps(tn, ensure_ascii=False)
 
-    assert set(tn) == {"nguon", "nen_tang_link_le", "nen_tang_bat", "ten_hien_thi", "tran"}
+    assert tn["nen_tang_tam_tat"] == ["youtube"]
+
+    assert set(tn) == {"nguon", "nen_tang_link_le", "nen_tang_bat", "nen_tang_tam_tat", "ten_hien_thi", "tran"}
     assert NGUOI not in tho and "@" not in tho
     for bi_mat in ("bi-mat", str(tmp_path), str(Path.home())):
         assert bi_mat not in tho, f"lộ {bi_mat!r}"
@@ -164,6 +178,23 @@ def test_trang_hien_dung_so_tu_may_chu_va_moi_ma_dung(may_chu, trinh_duyet, monk
     ma_cookie = set(p.locator("#bang-cookie tbody td.hd-ma").all_text_contents())
     from web import cookies
     assert ma_cookie == set(cookies.MA_LOI_COOKIE)
+
+
+def test_nen_tang_tam_tat_hien_canh_bao_tren_trang(may_chu, trinh_duyet):
+    """Admin chưa bật lại sau tín hiệu chặn ⇒ tạo lượt bị 503. Trang phải nói, không chỉ ghi "đang bật"."""
+    db = app_mod.DB_PATH
+    models.init_db(db)
+    p, _ = _mo_huong_dan(trinh_duyet, may_chu)
+    assert p.locator("#tam-tat").is_hidden(), "chưa tắt gì mà đã cảnh báo"
+
+    pacer.tat_nen_tang(db, "youtube", "thu")
+    try:
+        p.reload()
+        p.wait_for_selector("#tam-tat:not([hidden])")
+        assert "YouTube" in p.locator("#nen-tang-tam-tat").text_content()
+    finally:
+        with models._connect(db) as conn:
+            conn.execute("DELETE FROM nen_tang_tat")
 
 
 def test_o_tim_loc_bang_ly_do(may_chu, trinh_duyet):

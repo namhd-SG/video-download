@@ -48,6 +48,9 @@
       </table>
       <p><strong>Nền tảng đang bật cho link video lẻ và kênh YouTube:</strong>
         <span id="nen-tang-bat" class="hd-chip-hang">…</span></p>
+      <!-- web/app.py create_job: nền tảng trong `pacer.nen_tang_dang_tat` ⇒ 503 "tạm tắt do bị chặn, admin bật lại" -->
+      <p id="tam-tat" class="hd-loi" hidden>Đang <strong>tạm tắt</strong> do bị nền tảng chặn:
+        <span id="nen-tang-tam-tat"></span>. Lượt tải mới cho nền tảng này bị từ chối cho tới khi quản trị bật lại.</p>
       <p class="muted">Có sẵn trong code nhưng <strong>chưa bật</strong>:
         <span id="nen-tang-tat">…</span>. Dán link của nền tảng chưa bật sẽ bị từ chối ngay, kèm câu nói rõ nền tảng nào đang bật.</p>
     </section>
@@ -61,10 +64,14 @@
         <li>Nhiều link trong một lượt chỉ được khi <strong>tất cả là video lẻ của cùng một nền tảng</strong>
           (tối đa <b data-tran="link_mot_luot">…</b> link). Trang TikTok, kênh YouTube, thư viện quảng cáo
           Facebook và thư mục Drive thì <strong>một link mỗi lượt</strong>.</li>
-        <!-- web/app.py::CreateJobRequest.so_luong (le=MAX_SO_LUONG); MAX_VIDEO_KENH_YOUTUBE -->
-        <li>Điền <em>số lượng</em>: số video <strong>mới</strong> muốn lấy (tối đa <b data-tran="so_luong_mot_luot">…</b>;
-          kênh/playlist YouTube tối đa <b data-tran="video_kenh_youtube">…</b>). Video đã có trong thư viện của bạn
-          được bỏ qua, không tính vào số này.</li>
+        <!-- web/app.py::CreateJobRequest.so_luong (le=MAX_SO_LUONG); create_job: LinkLe ⇒ so_luong = len(links),
+             YoutubeKenh ⇒ ≤ MAX_VIDEO_KENH_YOUTUBE. Lọc trùng: web/models.py::known_video_ids — "kho đã có file
+             này chưa", KHÔNG theo người (web/queue.py `_already_have`). -->
+        <li>Điền <em>số lượng</em>: số video <strong>mới</strong> muốn lấy — trang TikTok, thư viện quảng cáo, thư mục
+          Drive tối đa <b data-tran="so_luong_mot_luot">…</b>; kênh/playlist YouTube tối đa
+          <b data-tran="video_kenh_youtube">…</b>. Link video lẻ thì bỏ qua ô này: số video = số link.</li>
+        <li>Video <strong>đã có trong kho của hệ thống</strong> — kể cả do người khác tải trước — được bỏ qua và không
+          tính vào số lượng, nên có lúc bạn nhận ít video hơn số đã xin. Thẻ lượt tải ghi rõ đã bỏ qua bao nhiêu.</li>
         <!-- web/models_cum.py USECASE_TOI_DA / INSIGHT_CON_TOI_DA; CreateJobRequest.usecase/insight_goc tuỳ chọn -->
         <li><em>Usecase</em> và <em>Insight gốc</em> là tuỳ chọn — bỏ trống thì hỏi lại lúc chia cụm.</li>
         <li>Bấm <em>Tạo lượt tải</em> (hoặc Ctrl/⌘+Enter). Lượt tải hiện ở <em>Hàng đợi</em> với tiến độ;
@@ -77,9 +84,11 @@
       <p class="muted">Số đọc từ máy chủ. Chạm giới hạn thì lượt tải dừng và thẻ của nó nói rõ vì sao.</p>
       <table class="hd-bang">
         <tbody>
-          <!-- src/tiktok_music_downloader/nguon.py TRAN_THOI_LUONG_GIAY / TRAN_DUNG_LUONG_BYTE (link lẻ + kênh YouTube) -->
-          <tr><th>Mỗi video (nền tảng ngoài TikTok)</th>
-            <td>dài tối đa <b data-tran="thoi_luong_video_phut">…</b> phút, nặng tối đa <b data-tran="dung_luong_video_mb">…</b> MB — quá thì bỏ qua video đó</td></tr>
+          <!-- nguon.py::_ref_tu_info (link lẻ ngoài TikTok: thời lượng + dung lượng) · nguon.py YoutubeKenh (thời lượng)
+               · web/queue.py `max_filesize` cho TikTok video lẻ + kênh YouTube. Trang TikTok (music/tag/…) không có trần này. -->
+          <tr><th>Mỗi video tải từ link lẻ hoặc kênh YouTube</th>
+            <td>nặng tối đa <b data-tran="dung_luong_video_mb">…</b> MB; dài tối đa <b data-tran="thoi_luong_video_phut">…</b> phút
+              (video TikTok lẻ chỉ giới hạn dung lượng). Quá thì bỏ qua video đó, các video khác vẫn tải.</td></tr>
           <!-- web/lifecycle.py MAX_*_PER_COOKIE_PER_DAY; ngày tính theo giờ VN -->
           <tr><th>TikTok, mỗi ngày, theo tài khoản TikTok của cookie</th>
             <td><b data-tran="tiktok_moi_ngay.luot">…</b> lượt tải · <b data-tran="tiktok_moi_ngay.video">…</b> video ·
@@ -100,7 +109,7 @@
       <h2>Cookie TikTok</h2>
       <!-- web/static/settings.html (hướng dẫn xuất) + web/cookies.py ly_do_jar_khong_dung_duoc -->
       <p>Không có cookie thì lượt tải TikTok vẫn chạy nhưng <strong>ẩn danh</strong>, dùng chung một túi hạn mức
-        với mọi người chưa dán, và TikTok trả ít video hơn. Dán cookie của bạn để có hạn mức riêng.</p>
+        với mọi người chưa dán. Dán cookie của bạn để có hạn mức riêng.</p>
       <ol class="hd-buoc">
         <li>Cài tiện ích <strong>Cookie-Editor</strong> trên trình duyệt.</li>
         <li>Mở <strong>tiktok.com</strong> khi <strong>đã đăng nhập</strong>.</li>
@@ -131,7 +140,7 @@
         <!-- app.js loaiDaChon: confirm "Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày)…" -->
         <li><strong>Xoá:</strong> bỏ video khỏi thư viện <em>của bạn</em>; tệp vào Thùng rác Drive (lấy lại được trong
           30 ngày), người khác không bị ảnh hưởng, và lượt quét sau sẽ không tải lại video đó.</li>
-        <!-- app.js STOP_REASON_TEXT khong_do_duoc_feed / feed_rong: nút "Tôi giải ngay" -->
+        <!-- stop-reason-text.js khong_do_duoc_feed / feed_rong: nút "Tôi giải ngay" -->
         <li><strong>TikTok đòi xác minh (captcha):</strong> thẻ lượt tải hiện nút <em>Tôi giải ngay</em> — bấm để tự
           giải trong cửa sổ hiện ra, xong thì lượt tải chạy tiếp.</li>
       </ul>

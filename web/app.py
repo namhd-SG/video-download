@@ -677,6 +677,8 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
         "nguon": [{"ten": n.ten, "mo_ta": n.mo_ta_url} for n in NGUON],
         "nen_tang_link_le": sorted(NEN_TANG_LINK_LE),
         "nen_tang_bat": sorted(nen_tang_bat()),
+        # Đang TẮT sau tín hiệu chặn (`create_job` trả 503). Chỉ TÊN: cột `ly_do` có thể mang chữ lỗi của nền tảng.
+        "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
         "ten_hien_thi": TEN_HIEN_THI,
         "tran": {
             "so_luong_mot_luot": MAX_SO_LUONG,
