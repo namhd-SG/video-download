@@ -6,13 +6,19 @@ Các lớp, theo thứ tự một request đi qua:
   1. bind: không có địa chỉ mặc định; địa chỉ ngoài hai dải trên ⇒ KHÔNG mở (không rơi về 0.0.0.0).
   2. IP nguồn: ngoài hai dải ⇒ 403 (lớp 2, phòng bind bị nới về sau).
   3. trần sai token: ≥ SAI_TOI_DA lần 401 trong CUA_SO_GIAY từ một IP ⇒ 429 cho IP đó trong KHOA_GIAY, kể cả token đúng.
-  4. token (`web/thay_logo_routes._kiem_token`): thiếu/ngắn hơn 32 ký tự ⇒ 503; sai ⇒ 401; so bằng `hmac.compare_digest`.
-  5. lỗi bất kỳ ⇒ thân cố định `{"loi": <mã>}`, không stack trace; không /docs, /redoc, /openapi.json; không header Server.
+  4. token kiểm NGAY trong middleware, TRƯỚC khi đọc một byte thân request (kongming 09/10: kiểm ở dependency thì FastAPI đã
+     đọc + parse trọn thân — đo 50 MB thân, token sai ⇒ 472 MB RSS): thiếu/ngắn hơn 32 ký tự ⇒ 503; sai ⇒ 401; `hmac.compare_digest`.
+     Route vẫn kiểm lại (`web/thay_logo_routes._kiem_token`).
+  5. thân POST: phải có Content-Length ≤ TRAN_THAN_BYTE, không thì 413 — cũng trước khi đọc.
+  6. lỗi bất kỳ ⇒ thân cố định `{"loi": <mã>}`, không stack trace; không /docs, /redoc, /openapi.json; không header Server.
+  7. KHÔNG proxy headers (X-Forwarded-For bị bỏ qua: client.host là IP socket thật).
 """
 from __future__ import annotations
 
+import hmac
 import ipaddress
 import logging
+import os
 import threading
 import time
 from collections import OrderedDict, deque
@@ -29,6 +35,7 @@ ENV_BIND = "THAY_LOGO_RELAY_BIND"
 _TAILSCALE = ipaddress.ip_network("100.64.0.0/10")
 _LOOPBACK = ipaddress.ip_address("127.0.0.1")
 SAI_TOI_DA, CUA_SO_GIAY, KHOA_GIAY, SO_IP_THEO_DOI = 5, 60, 300, 256
+TRAN_THAN_BYTE = 64 * 1024  # kết quả relay là toạ độ của ≤ 64 ảnh × ≤ 8 box — vài KB
 
 
 def ip_duoc_phep(chuoi: str) -> bool:
@@ -80,6 +87,10 @@ class _TranSai:
                 log.warning("thay logo relay: khoá %s %ds vì sai token liên tiếp", ip, KHOA_GIAY)
             while len(self._sai) > SO_IP_THEO_DOI:
                 self._sai.popitem(last=False)
+            for k in [k for k, het in self._khoa.items() if het <= now]:  # dọn khoá hết hạn
+                del self._khoa[k]
+            while len(self._khoa) > SO_IP_THEO_DOI:  # vẫn quá trần ⇒ bỏ khoá sắp hết hạn nhất
+                del self._khoa[min(self._khoa, key=self._khoa.get)]
 
 
 def dung_app(lay_hop_thu: Callable[[], HopThu], dong_ho: Callable[[], float] = time.monotonic) -> FastAPI:
@@ -94,14 +105,22 @@ def dung_app(lay_hop_thu: Callable[[], HopThu], dong_ho: Callable[[], float] = t
             return JSONResponse({"loi": 403}, status_code=403)
         if tran.dang_khoa(ip):
             return JSONResponse({"loi": 429}, status_code=429)
+        dung = os.environ.get(thay_logo_routes.ENV_TOKEN, "")
+        if len(dung) < thay_logo_routes.TOKEN_TOI_THIEU:
+            return JSONResponse({"loi": 503}, status_code=503)
+        gui = (request.headers.get("authorization") or "").removeprefix("Bearer ").strip()
+        if not gui or not hmac.compare_digest(gui.encode(), dung.encode()):
+            tran.ghi_sai(ip)
+            return JSONResponse({"loi": 401}, status_code=401)
+        if request.method == "POST":
+            cl = request.headers.get("content-length", "")
+            if not cl.isdigit() or int(cl) > TRAN_THAN_BYTE:
+                return JSONResponse({"loi": 413}, status_code=413)
         try:
-            resp = await call_next(request)
+            return await call_next(request)
         except Exception:  # không để stack trace / đường dẫn file rò ra máy kia
             log.exception("thay logo relay: lỗi xử lý")
             return JSONResponse({"loi": 500}, status_code=500)
-        if resp.status_code == 401:
-            tran.ghi_sai(ip)
-        return resp
 
     thay_logo_routes.dang_ky_route(app, lay_hop_thu)
     return app
@@ -114,9 +133,12 @@ class RelayServer:
         import uvicorn
 
         host, cong = doc_bind(bind)
-        self.server = uvicorn.Server(uvicorn.Config(dung_app(lay_hop_thu), host=host, port=cong, log_level="warning",
-                                                    server_header=False, date_header=False, access_log=False))
-        self.server.install_signal_handlers = lambda: None  # luồng phụ: tín hiệu thuộc uvicorn chính của Video Desk
+        # log_config=None + log_level=None: KHÔNG dựng lại cấu hình log — logger `uvicorn.*` là TOÀN TIẾN TRÌNH; Config mặc định
+        # đã tắt access log + hạ level của uvicorn CHÍNH Video Desk (kongming đo 09/10). Dòng relay đi chung `uvicorn.access`
+        # (đã có bộ lọc che token của app chính) để còn vết audit. proxy_headers=False: X-Forwarded-For không đổi được IP nguồn.
+        self.server = uvicorn.Server(uvicorn.Config(dung_app(lay_hop_thu), host=host, port=cong, log_config=None, log_level=None,
+                                                    access_log=True, proxy_headers=False, server_header=False,
+                                                    date_header=False))
         self.thread = threading.Thread(target=self.server.run, name="thay-logo-relay", daemon=True)
 
     def start(self, cho_giay: float = 5.0) -> bool:
@@ -129,6 +151,7 @@ class RelayServer:
                 break
             time.sleep(0.02)
         log.warning("thay logo relay: listener không khởi động được — job sẽ đứng chờ agy")
+        self.stop()  # khởi động chậm hơn hạn ⇒ vẫn phải tắt, kẻo listener mồ côi mở cổng mà worker tưởng đã tắt
         return False
 
     def stop(self, timeout: float = 5.0) -> None:

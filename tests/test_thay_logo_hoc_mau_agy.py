@@ -90,3 +90,40 @@ def test_ghep_ket_qua_bo_ten_file_la_va_box_sai():
                     {"file": "/x/../../etc/passwd", "endcard": True, "watermarks": []}]}
     kq = relay_may_dev.ghep_ket_qua([{"job_id": 1, "anh": [u]}], ra)
     assert kq == {1: {"items": [{"anh": u, "man_ket": False, "watermarks": [{"box_2d": [1, 2, 3, 4]}]}]}}
+
+
+# ---------------------------------------------------------------- phía máy dev (kongming 09/10 lỗ 6–8)
+
+def test_agy_bo_sot_anh_thi_khong_nop_job_do():
+    """Lỗ 8: agy không mở được ảnh (trả items rỗng) KHÔNG được nộp thành 'không có watermark'."""
+    u, w = "a" * 32, "b" * 32
+    ra = {"items": [{"file": f"/x/{u}.jpg", "endcard": False, "watermarks": []}]}
+    assert relay_may_dev.ghep_ket_qua([{"job_id": 1, "anh": [u, w]}, {"job_id": 2, "anh": [u]}], ra) == \
+        {2: {"items": [{"anh": u, "man_ket": False, "watermarks": []}]}}
+
+
+def test_agy_chay_voi_cwd_la_thu_muc_tam(tmp_path, monkeypatch):
+    """Lỗ 6: không đặt cwd ⇒ agy có cả thư mục người gõ lệnh (repo) làm không gian làm việc."""
+    import subprocess
+    thay = {}
+
+    def gia(cmd, **k):
+        thay["cwd"] = k.get("cwd")
+        return subprocess.CompletedProcess(cmd, 0, '{"status": "SUCCESS", "structured_output": {"items": []}}', "")
+    monkeypatch.setattr(relay_may_dev.subprocess, "run", gia)
+    p = tmp_path / ("c" * 32 + ".jpg")
+    p.write_bytes(b"\xff\xd8\xff")
+    relay_may_dev.goi_agy([p])
+    assert thay["cwd"] == str(tmp_path)
+
+
+def test_bo_qua_job_qua_nhieu_anh_va_anh_khong_phai_jpeg(monkeypatch):
+    """Lỗ 7: mini hỏng/bị chiếm không được đổ dữ liệu vô hạn sang máy dev."""
+    class M:
+        def viec(self):
+            return [{"job_id": 1, "anh": ["d" * 32] * 65}]
+    assert relay_may_dev.mot_vong(M(), lambda anh: pytest.fail("không được gọi agy")) == 0
+    mini = relay_may_dev._Mini("http://127.0.0.1:1", "t" * 40)
+    monkeypatch.setattr(mini, "_req", lambda path, data=None, tran=0: b"<html>not jpeg</html>")
+    with pytest.raises(ValueError):
+        mini.anh("e" * 32)
