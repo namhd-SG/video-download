@@ -123,18 +123,32 @@ def test_nam_kieu_the_va_co_can_soi_ky_ro_tren_the(may_chu, trinh_duyet):
     soi = p.locator(".tl-card.co-co")
     assert soi.count() == 1 and soi.locator(".tl-co").is_visible() and "Cần soi kỹ" in soi.inner_text()
     assert p.locator("#tat").is_visible()  # worker chưa dựng ⇒ báo tính năng tắt
+    p.wait_for_function("document.getElementById('tl-tao').disabled")  # …và nút Tạo lượt không bấm được (ĐP-1519)
+    assert p.locator("#tl-link").is_disabled()
 
 
 @pytest.mark.parametrize("rong", [1100, 390])
 def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet, rong):
     p, _ = _mo(trinh_duyet, may_chu, rong)
     the = p.locator(".tl-card").filter(has=p.get_by_role("button", name="Đạt")).first
-    dat, hong = the.get_by_role("button", name="Đạt"), the.get_by_role("button", name="Hỏng…")
-    hd, hh = dat.bounding_box(), hong.bounding_box()
+    hong = the.get_by_role("button", name="Hỏng…")
+    # Đo HAI nút trong cùng một lần, sau khi ảnh soi tải xong: ảnh lazy-load làm bố cục dịch giữa hai lần đo riêng (lệch 1/3 lần).
+    p.wait_for_function("[...document.images].every(i => i.complete)")
+    hd, hh = hong.evaluate("""h => { const d = h.previousElementSibling.getBoundingClientRect(), r = h.getBoundingClientRect();
+                                     return [{x: d.x, y: d.y, width: d.width}, {x: r.x, y: r.y}]; }""")
+    assert hong.evaluate("h => h.previousElementSibling.textContent") == "Đạt"
     assert abs(hd["y"] - hh["y"]) < 4 and 0 <= hh["x"] - (hd["x"] + hd["width"]) < 24, "Đạt/Hỏng phải sát nhau"
     assert not the.locator("select").is_visible()
     hong.click()
     assert the.locator("select").is_visible() and the.locator("input[type=text]").is_visible()
+
+
+def test_o_nhap_ban_toi_dung_mau_o_nhap_cua_app(may_chu, trinh_duyet):
+    """ĐP-1519: textarea bản tối từng hiện nền xám sáng mặc định của trình duyệt."""
+    p, _ = _mo(trinh_duyet, may_chu, 1100, theme="dark")
+    nen_o, nen_trang = p.evaluate("""[getComputedStyle(document.getElementById('tl-link')).backgroundColor,
+                                      getComputedStyle(document.body).backgroundColor]""")
+    assert nen_o == nen_trang  # cùng var(--bg) như form tạo lượt tải
 
 
 def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet):

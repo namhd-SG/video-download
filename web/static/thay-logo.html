@@ -11,7 +11,10 @@
   .tl-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
   .tl-wrap > *, .tl-list > *, .tl-card > *, .tl-form > * { min-width: 0; }
   .tl-form { display: grid; gap: 10px; }
-  .tl-form textarea { width: 100%; box-sizing: border-box; }
+  /* Cùng kiểu ô nhập của form tạo lượt tải (`#job-form textarea` trong app.css) — không để mặc định trình duyệt. */
+  .tl-form textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg); color: var(--text);
+                      border-radius: 8px; padding: .55rem .7rem; font: inherit; font-size: .88rem; resize: vertical; }
+  .tl-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
   .tl-hang { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .tl-logo img { height: 28px; border-radius: 6px; background: #444; padding: 4px; vertical-align: middle; }
   .tl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
@@ -71,7 +74,7 @@
           <span class="tl-logo"><img src="/api/thay-logo/logo.png" alt="" onerror="this.remove()" /> <span class="muted">Logo mặc định</span></span>
           <label class="muted"><input type="checkbox" disabled /> agy bù đoạn trượt
             <span class="tl-i" title="Tắt trong giai đoạn thử. Bật sau khi xem kết quả pilot.">i</span></label>
-          <button type="submit" class="btn primary">Tạo lượt</button>
+          <button type="submit" id="tl-tao" class="btn primary">Tạo lượt</button>
         </div>
         <div id="tl-chon" class="tl-chon" aria-label="Video trong thư viện"></div>
       </form>

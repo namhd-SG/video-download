@@ -148,7 +148,11 @@
   async function kiemBat() {
     try {
       const r = await goi("/tinh-nang");
-      if (r.ok && !(await r.json()).thay_logo_bat) $("tat").hidden = false;
+      if (r.ok && !(await r.json()).thay_logo_bat) {  // máy chủ không nhận lượt mới (409) ⇒ đừng để nút trông bấm được
+        $("tat").hidden = false;
+        $("tl-tao").disabled = true;
+        $("tl-link").disabled = true;
+      }
     } catch (_) { /* bỏ qua */ }
   }
 
