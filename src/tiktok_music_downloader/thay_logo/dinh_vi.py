@@ -2,7 +2,7 @@
 
 Chép từ `p0b_c_locate_fast.py` với hai cờ đã bật cố định như lượt Test 02 v2: LỌC ứng viên nằm trên phụ đề và BIÊN CỤC BỘ
 (chỉ so với ứng viên gần ≤2 cạnh box — hai bản watermark giống hệt ở xa không bị coi là mơ hồ).
-Đầu ra: mỗi khung một dict `{"frame", "state", [x, y, w, h, score]}`; state ∈ detected | predicted | hidden.
+Đầu ra: mỗi khung một dict `{"frame", "state", "diem_tot", "loc_pd", [x, y, w, h, score]}`; state ∈ detected | predicted | hidden.
 CHỈ `detected` (biên ≥0,2) mới có thể được render — `predicted` là khung Viterbi nối qua, không đủ chắc.
 """
 from __future__ import annotations
@@ -77,11 +77,13 @@ def _ung_vien_khung(g, tho, tinh, ti_le_tinh):
                 best = (x0 + lx, y0 + ly, sc, tw, th)
         if best:
             uv.append(best)
+    truoc_loc = len(uv)
     uv = [c for c in uv if ti_le_phu_de(g, c[0], c[1], c[3], c[4], 2) <= NGUONG_PHU_DE_UNG_VIEN]
+    bi_loc = truoc_loc - len(uv)
     uv.sort(key=lambda c: -c[2])
     while len(uv) < K:
         uv.append(uv[-1][:2] + (-1.0,) + uv[-1][3:] if uv else (0, 0, -1.0, 1, 1))
-    return uv[:K]
+    return uv[:K], bi_loc
 
 
 def _viterbi(cands: list[list[tuple]]) -> list[int]:
@@ -116,12 +118,15 @@ def dinh_vi(nguon: NguonKhung, mau: np.ndarray) -> list[dict]:
     tho = [(s, _hp(cv2.resize(half, None, fx=s, fy=s, interpolation=cv2.INTER_LINEAR), SIGMA / 2)) for s in TI_LE_THO]
     ti_le_tinh = np.round(np.arange(0.90, 1.2001, TINH_BUOC), 2)
     tinh = {float(s): _hp(cv2.resize(med, None, fx=s, fy=s, interpolation=cv2.INTER_LINEAR), SIGMA) for s in ti_le_tinh}
-    cands = [_ung_vien_khung(g, tho, tinh, ti_le_tinh) for g in nguon.doc_tuan_tu()]
-    if not cands:
+    moi_khung = [_ung_vien_khung(g, tho, tinh, ti_le_tinh) for g in nguon.doc_tuan_tu()]
+    if not moi_khung:
         return []
+    cands = [c for c, _ in moi_khung]
     track = []
     for i, s in enumerate(_viterbi(cands)):
-        e: dict = {"frame": i}
+        # Cho nhật ký tune: điểm ứng viên tốt nhất (phân định "C mù" với "C thấy nhưng mơ hồ") và số ứng viên bị bộ lọc
+        # phụ đề loại (đếm tần suất thật của watermark trắng-trên-nền-đen bị coi là phụ đề).
+        e: dict = {"frame": i, "diem_tot": round(float(cands[i][0][2]), 3), "loc_pd": moi_khung[i][1]}
         if s < K:
             x, y, sc, cw, ch = cands[i][s]
             gan = [c[2] for j, c in enumerate(cands[i]) if j != s and abs(c[0] - x) <= 2 * cw and abs(c[1] - y) <= 2 * ch]
