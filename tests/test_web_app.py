@@ -635,6 +635,14 @@ def test_visiting_the_page_puts_you_in_the_directory(tmp_path, monkeypatch):
 # route, không canh quyền.
 KHONG_CAN_KIEM_CHU = {
     "GET /healthz": "thăm dò, không đọc dữ liệu của ai",
+    "POST /api/thay-logo/jobs": "tạo cho chính người đang gọi (`tl_job.nguoi_tao` = email `require_user`)",
+    "GET /api/thay-logo/videos": "trả danh sách, tự lọc `j.nguoi_tao = email` trong SQL (admin thấy hết) "
+                                 "(tests/test_thay_logo_routes_member.py)",
+    "POST /api/thay-logo/videos/{vid}/danh-gia": "`_video_cua` (web/thay_logo_routes.py): chủ lượt hoặc admin, 403 cho người "
+                                                 "khác (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/videos/{vid}/sheet.jpg": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/admin/worker": "chỉ admin (`la_admin`), 403 cho người thường (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/logo.png": "logo công ty đóng gói sẵn trong mã, không đọc dữ liệu của ai",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
@@ -708,6 +716,15 @@ def test_every_route_that_takes_an_id_checks_who_is_asking():
     assert not chua_khai, (
         f"route chưa khai: {sorted(chua_khai)} — hoặc cho nó qua "
         f"`_job_cua_toi_hoac_404`, hoặc thêm vào KHONG_CAN_KIEM_CHU kèm lý do")
+
+
+def test_app_chinh_khong_co_route_relay_thay_logo():
+    """Route relay agy dùng token riêng (không `require_user`) ⇒ chỉ được sống trên listener riêng bind IP Tailscale, KHÔNG BAO GIỜ
+    trên app chính đứng sau Cloudflare Access (ĐP-1513)."""
+    from fastapi.routing import APIRoute
+
+    relay = [r.path for r in app_mod.app.routes if isinstance(r, APIRoute) and "/relay" in r.path]
+    assert relay == []
 
 
 def test_every_route_demands_a_verified_user():

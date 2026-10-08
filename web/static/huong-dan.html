@@ -156,6 +156,24 @@
       </table>
     </section>
 
+    <section class="panel" id="thay-logo">
+      <h2>Thay logo</h2>
+      <ul class="hd-buoc">
+        <!-- web/static/thay-logo.html; web/thay_logo_routes.py TRAN_VIDEO_MOT_JOB -->
+        <li><strong>Làm gì:</strong> trang <a href="/thay-logo.html">Thay logo</a> tự tìm watermark trôi trên video rồi đè logo công
+          ty lên. Mỗi lượt tối đa <b data-tran="thay_logo_video_mot_luot">…</b> video (link file Drive hoặc chọn từ thư viện).</li>
+        <!-- web/thay_logo_worker.py: file gốc chỉ được đọc, bản thay ghi ra file mới lên Drive -->
+        <li><strong>Video gốc giữ nguyên:</strong> bản đã thay là một file mới trên Drive. Khung nào máy chưa chắc vị trí, hoặc có
+          phụ đề/chữ chồng lên, thì giữ nguyên watermark gốc ở khung đó — không đè bừa.</li>
+        <!-- thay-logo.js: nút Đạt / Hỏng… ; web/thay_logo_routes.py danh-gia; thay_logo/nhat_ky.py tl_danh_gia -->
+        <li><strong>Duyệt trước khi dùng:</strong> xem bản thay, rồi bấm <em>Đạt</em> hoặc <em>Hỏng…</em> (chọn lý do, ghi giây
+          thứ mấy). Đánh giá này là dữ liệu để máy làm tốt hơn ở bản sau. Thẻ viền vàng <em>⚠ Cần soi kỹ</em> = có chữ/hình lạ
+          trong vùng logo ở phần lớn video — xem kỹ cả video.</li>
+        <!-- thay_logo/hang_doi.py trạng thái cho_nguoi; thay-logo.js "Không thay được" -->
+        <li><strong>Không thay được:</strong> máy không tìm ra watermark đủ chắc ⇒ không tạo bản thay. Kéo khung tay sẽ có ở bản sau.</li>
+      </ul>
+    </section>
+
     <section class="panel" id="chua-co">
       <h2>Chưa hỗ trợ</h2>
       <ul class="hd-buoc">

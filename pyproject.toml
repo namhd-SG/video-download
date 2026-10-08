@@ -39,6 +39,9 @@ dev = ["pytest>=8.0"]
 # Thin web layer (Phase 2): FastAPI + uvicorn serve the job queue since
 # Tkinter cannot be served over HTTP; sse-starlette pushes per-job progress.
 web = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "sse-starlette>=2.1"]
+# Job "Thay logo" (src/tiktok_music_downloader/thay_logo/). Tách extra: thiếu OpenCV thì Video Desk vẫn chạy, chỉ tính năng
+# không dựng được (web/thay_logo_worker.py:dung_tu_env) — deploy không phụ thuộc wheel cp314 chưa cài thử trên mini.
+thay-logo = ["opencv-python-headless>=4.8", "numpy>=1.24"]
 
 [project.scripts]
 tiktok-music-dl = "tiktok_music_downloader.cli:app"
@@ -46,3 +49,6 @@ tiktok-music-dl-gui = "tiktok_music_downloader.gui:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"tiktok_music_downloader.thay_logo" = ["tai_nguyen/*.png"]  # logo A2 mặc định, render + /api/thay-logo/logo.png đọc
