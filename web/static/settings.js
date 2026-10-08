@@ -230,7 +230,7 @@
       } finally {
         // Xoá ô ở MỌI nhánh, không chỉ nhánh thành công: bản trước chỉ xoá khi
         // lưu được, nên cookie bị TỪ CHỐI — đúng lúc nó là cookie thật đầy đủ
-        // phiên đăng nhập — nằm nguyên trên màn hình. Cả bốn mã từ chối đều bảo
+        // phiên đăng nhập — nằm nguyên trên màn hình. Mọi mã từ chối đều bảo
         // người dùng xuất lại, nên giữ bản dán hỏng không giúp gì cho họ.
         o.value = "";
         tenTep.textContent = "";

@@ -1299,6 +1299,31 @@ def test_a_jar_without_any_login_cookie_fails_the_job(tmp_path, monkeypatch):
     assert da_tai is False
 
 
+def test_a_jar_from_another_site_fails_the_job(tmp_path, monkeypatch):
+    """Jar Instagram có `sessionid` nằm sẵn trên đĩa (dán trước khi có kiểm tên miền).
+    Không chặn thì job chạy với phiên của nền tảng khác = phiên khách TikTok."""
+    db_path = tmp_path / "jobs.db"
+    models.init_db(db_path)
+    jar = json.dumps([{"name": "sessionid", "value": "gia", "domain": ".instagram.com",
+                       "path": "/", "expires": 4102444800}])
+    job, da_tai = _chay_job_voi_jar(tmp_path, monkeypatch, db_path, jar)
+
+    assert job["trang_thai"] == "failed"
+    assert job["ly_do_dung"] == cookies_mod.COOKIE_KHONG_PHAI_TIKTOK
+    assert da_tai is False
+
+
+def test_the_stop_sentence_for_a_non_tiktok_jar_says_what_to_do():
+    """Câu dừng phải nói ĐÚNG nguyên nhân và việc tự chữa: không phải cookie TikTok,
+    vào Cài đặt dán lại — không bảo "đăng nhập lại" (jar có thể đang đăng nhập IG)."""
+    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    dau = js.index("cookie_khong_phai_tiktok:")
+    cau = js[dau:js.index('.",', dau)]
+
+    assert "không phải cookie TikTok" in cau
+    assert "Cài đặt" in cau and "dán lại" in cau
+
+
 def test_no_jar_at_all_is_not_an_error(tmp_path, monkeypatch):
     """CA ÂM bắt buộc: không có jar là chạy ẩn danh CÓ CHỦ ĐÍCH, không phải
     lỗi. Thiếu ca này thì một tiền-kiểm "chặn tất" vẫn xanh cả ba test trên."""

@@ -125,6 +125,9 @@ const STOP_REASON_TEXT = {
                            "(không phải Header String hay Netscape), rồi dán lại.",
     cookie_rong: "Dừng: tệp cookie của bạn không có cookie nào. Hãy xuất lại " +
                  "khi đang mở tiktok.com và đã đăng nhập.",
+    cookie_khong_phai_tiktok: "Dừng: cookie bạn đã dán không phải cookie TikTok " +
+                              "(không có cookie nào của tiktok.com). Vào Cài đặt, " +
+                              "dán lại cookie xuất khi đang mở tiktok.com.",
     cookie_chua_dang_nhap: "Dừng: cookie của bạn không có phiên đăng nhập — " +
                            "có vẻ được xuất lúc chưa đăng nhập TikTok. Đăng " +
                            "nhập tiktok.com rồi xuất lại cookie.",
