@@ -100,6 +100,9 @@ class VideoRef:
     description: str | None = None
     track: str | None = None
     artist: str | None = None
+    # Video lấy từ tab `/shorts` của kênh YouTube: mục của tab đó KHÔNG BAO GIỜ mang `duration`, nên trần thời
+    # lượng phải kiểm SAU khi tải (xem `web/queue.py::_JobProgress`). Chỉ `nguon.YoutubeKenh` đặt cờ này.
+    la_short: bool = False
 
     @property
     def filename(self) -> str:
@@ -133,7 +136,10 @@ _MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|x|pin|dy|bili|snap)-([\w\-]{6
 # Thông điệp lỗi của yt-dlp mở đầu bằng `[extractor] <id video>:` (id TRẦN, không tiền tố) — vd
 # `ERROR: [youtube] dQw4w9WgXcQ: Video unavailable`. Che id, giữ nhãn extractor và lý do.
 # TikTok KHÔNG che: id video TikTok trong thông điệp lỗi được GIỮ có chủ đích (để dò đúng video hỏng).
-_MAU_ID_YTDLP = re.compile(r"(?i)(\[(?!tiktok)[\w:\-]+\]\s+)([\w\-]{6,64})(?=:)")
+# Trang tab YouTube (`[youtube:tab]`) dùng chính handle kênh làm "id" (`@kenh.rieng: This channel does not have a
+# shorts tab`) và gắn đuôi ` page N` cho lỗi trang tiếp (`UC… page 1: HTTP Error 429`) ⇒ nhận cả hai dạng; handle
+# LUÔN che.
+_MAU_ID_YTDLP = re.compile(r"(?i)(\[(?!tiktok)[\w:\-]+\]\s+)(@[\w.\-]+|[\w\-]{6,64})(?=(?:\s+page\s+\d+)?:)")
 
 
 def _giong_id_nen_tang(tok: str) -> bool:
@@ -159,7 +165,8 @@ def che_url(text: object, toi_da: int | None = 300) -> str:
     s = _MAU_URL.sub("<url>", str(text))
     s = _MAU_DRIVE.sub("<drive>", s)
     s = _MAU_ID_NEN_TANG.sub(lambda m: "<id>" if _giong_id_nen_tang(m.group(1)) else m.group(0), s)
-    s = _MAU_ID_YTDLP.sub(lambda m: m.group(1) + ("<id>" if _giong_id_ytdlp(m.group(2)) else m.group(2)), s)
+    s = _MAU_ID_YTDLP.sub(lambda m: m.group(1) + (
+        "@<h>" if m.group(2).startswith("@") else "<id>" if _giong_id_ytdlp(m.group(2)) else m.group(2)), s)
     s = _MAU_FBCDN.sub("<url>", s)
     s = _MAU_HANDLE.sub("/@<h>", s)
     return s if toi_da is None or len(s) <= toi_da else s[:toi_da] + "…"

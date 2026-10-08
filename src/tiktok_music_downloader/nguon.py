@@ -8,6 +8,8 @@ Giờ cả hai hỏi bảng này; thêm nền tảng = thêm một lớp vào `N
 thức: `download_all` chọn cách tải theo tiền tố id (`fb-` luồng HTTP trực tiếp, `gd-` từng file Drive
 theo id, còn lại yt-dlp), nên thêm nguồn cùng kiểu tải không phải sửa bảng này.
 
+`YoutubeKenh` nhận kênh / tab Videos-Shorts / playlist YouTube (liệt kê N video MỚI, đứng trước `LinkLe`).
+
 `LinkLe` nhận video lẻ của nhiều nền tảng bằng chính bộ nhận dạng của yt-dlp (`ie.suitable`, không gọi mạng),
 chỉ giữ những extractor có trong bảng `BANG_LINK_LE`; nền tảng nào ĐƯỢC BẬT do cấu hình `VIDEODL_NEN_TANG_BAT`.
 
@@ -26,6 +28,7 @@ from typing import Callable, Protocol
 
 from yt_dlp import YoutubeDL
 from yt_dlp.extractor import gen_extractor_classes
+from yt_dlp.extractor.youtube import YoutubeTabIE
 
 from tiktok_music_downloader import downloader, gdrive
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
@@ -383,6 +386,26 @@ def _kich_thuoc_uoc(info: dict) -> float | None:
     return tong or None
 
 
+def _ma_loi_video(exc: BaseException) -> str:
+    """Mã lỗi RIÊNG của một video khi yt-dlp ném `exc` (không phải tín hiệu chặn cả nền tảng)."""
+    return LOI_THIEU_JS if isinstance(exc, _ThieuJs) else (ly_do_loi_video(exc) or "loi_khac")
+
+
+def _bo_dem_loi_video(ghi_loi_video: Callable[[str, str], None] | None) -> tuple[Callable[..., None], list[int]]:
+    """`(loi, so_loi)`: `loi(mã, chi_tiết)` đếm vào `so_loi[0]` rồi chuyển cho `ghi_loi_video` (không có thì ghi
+    log, chỉ mã). Số lỗi để người liệt kê phân biệt "đã có hết" với "lỗi hết" khi không còn video mới."""
+    so_loi = [0]
+
+    def loi(ma: str, chi_tiet: str = "") -> None:
+        so_loi[0] += 1
+        if ghi_loi_video is not None:
+            ghi_loi_video(ma, chi_tiet)
+        else:
+            log.warning("link lỗi [%s] %s", ma, chi_tiet)
+
+    return loi, so_loi
+
+
 def _ref_tu_info(info: dict | None, link: str, tien_to: str) -> tuple[VideoRef | None, str | None]:
     """`(ref, None)` nếu video tải được, hoặc `(None, mã lỗi)` — lỗi của riêng video này, không dừng job."""
     if not isinstance(info, dict):
@@ -451,14 +474,7 @@ class LinkLe:
         TRƯỚC mỗi lời gọi mạng và trả lý do dừng, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn.
         `ghi_loi_video(mã, chi_tiết)` nhận lỗi RIÊNG từng link (private, quá dài, lỗi mạng…) — job vẫn chạy tiếp.
         `nghi()` chạy giữa hai lời gọi mạng liên tiếp (nghỉ jitter)."""
-        so_loi = [0]
-
-        def loi(ma: str, chi_tiet: str = "") -> None:
-            so_loi[0] += 1
-            if ghi_loi_video is not None:
-                ghi_loi_video(ma, chi_tiet)
-            else:
-                log.warning("link lỗi [%s] %s", ma, chi_tiet)
+        loi, so_loi = _bo_dem_loi_video(ghi_loi_video)
 
         ten_nt = "link_le"
         links = []
@@ -505,8 +521,7 @@ class LinkLe:
                     dung = cong.xu_ly_loi(exc)
                     if dung:
                         break
-                ma = LOI_THIEU_JS if isinstance(exc, _ThieuJs) else (ly_do_loi_video(exc) or "loi_khac")
-                loi(ma, che_url(exc))
+                loi(_ma_loi_video(exc), che_url(exc))
                 continue
             ref, ma_loi = _ref_tu_info(info, link, tien_to)
             if ref is None:
@@ -532,9 +547,255 @@ class LinkLe:
         return moi
 
 
+# ===========================================================================
+# KÊNH / TAB / PLAYLIST YOUTUBE (yt-dlp, không cookie)
+# ===========================================================================
+TIEN_TO_ID_YOUTUBE = BANG_LINK_LE["Youtube"][1]
+
+# Số mục kéo giữa hai lượt ghi vào bộ điều tốc IP. Một lời gọi `extract_info(process=False)` trả generator thô: mỗi
+# trang tiếp theo là MỘT request HTTP tới YouTube mà không ai báo cho bộ đếm. Một trang continuation chứa tới
+# ~30 mục, nên K phải ≤ ~30 để MỖI trang được đếm ≥ 1 lượt; 20 < 30 ⇒ đếm dư ~1,5×, đúng chiều an toàn của pacer
+# (đếm thiếu mới nguy hiểm: IP bị gọi mà sổ không biết).
+SO_MUC_MOI_LUOT_PACER = 20
+# Trần số lời gọi để mở một danh sách: lời gọi đầu + các bước theo `_type: url` (kênh không tab ⇒ tab `/videos`...).
+# Mỗi bước là một lời gọi thật tới YouTube = một lượt pacer; quá trần thì từ chối, không lặp vô hạn.
+TRAN_BUOC_MO_DANH_SACH = 3
+LOI_KHONG_DOC_DUOC = "khong_doc_duoc"
+
+_HOST_KENH_YOUTUBE = ("youtube.com", "www.youtube.com", "m.youtube.com")
+# Kênh (`/@handle`, `/channel/<id>`) kèm tab Videos/Shorts tuỳ chọn. Tab live/streams/community/playlists/search...
+# không khớp ⇒ không nhận.
+_MAU_DUONG_KENH = re.compile(r"/(?:@[^/]+|channel/[A-Za-z0-9_\-]+)(?:/(?:videos|shorts))?/?", re.I)
+_MAU_DUONG_TAB_SHORTS = re.compile(r"/(?:@[^/]+|channel/[A-Za-z0-9_\-]+)/shorts/?", re.I)
+
+
+def _la_url_kenh_youtube(url: str) -> bool:
+    """Kênh (có thể kèm tab Videos/Shorts) hoặc playlist YouTube. Chỉ đọc URL, KHÔNG gọi mạng; `YoutubeTabIE.suitable`
+    xác nhận thêm rằng yt-dlp cũng coi đây là trang tab (đường dẫn kênh tự nó chưa đủ: `/@x/search` cũng có dạng `/@x/…`)."""
+    from urllib.parse import parse_qs
+    if not _MAU_URL_HTTP.match(url):
+        return False
+    try:
+        t = urlsplit(url)
+    except ValueError:
+        return False
+    if (t.hostname or "").lower() not in _HOST_KENH_YOUTUBE:
+        return False
+    duong = t.path or "/"
+    if duong.rstrip("/") == "/playlist":
+        dung_dang = bool(parse_qs(t.query).get("list", [""])[0])
+    else:
+        dung_dang = _MAU_DUONG_KENH.fullmatch(duong) is not None
+    return dung_dang and YoutubeTabIE.suitable(url)
+
+
+_MAU_DUONG_KENH_KHONG_TAB = re.compile(r"/(?:@[^/]+|channel/[A-Za-z0-9_\-]+)/?", re.I)
+
+
+def _ep_tab_videos(url: str) -> str:
+    """Kênh KHÔNG có tab (`/@x`, `/channel/<id>`) ⇒ cùng URL với `/videos`, giữ query. Không ép thì yt-dlp coi đây là
+    "mọi video tải lên của kênh": tự thêm tab `/streams` và `/shorts`, TẢI NGAY các tab đó trong cùng lời gọi (ngoài
+    bộ đếm lượt) và trả về playlist LỒNG nhiều tab (`extractor/youtube/_tab.py` nhánh `extra_tabs`) — mục lồng không
+    phải video nên danh sách rỗng."""
+    try:
+        t = urlsplit(url)
+    except ValueError:
+        return url
+    if _MAU_DUONG_KENH_KHONG_TAB.fullmatch(t.path or "") is None:
+        return url
+    return t._replace(path=t.path.rstrip("/") + "/videos").geturl()
+
+
+def _la_tab_shorts(url: str) -> bool:
+    """URL là tab `/shorts` của một kênh: mọi mục của tab đó là Short (và không có `duration`)."""
+    try:
+        return _MAU_DUONG_TAB_SHORTS.fullmatch(urlsplit(url).path or "") is not None
+    except ValueError:
+        return False
+
+
+def _mo_den_danh_sach(ydl, link: str, logger, cho_phep: Callable[[], str | None],
+                      xu_ly_loi: Callable[[BaseException], str | None],
+                      loi: Callable[..., None]) -> tuple[dict | None, str | None]:
+    """Mở `link` tới khi ra một playlist có `entries`: `(ie_result, None)`; hoặc `(None, lý do dừng của cổng/tín hiệu
+    chặn)`; hoặc `(None, None)` khi link không đọc được (lỗi đã ghi qua `loi`). Trần `TRAN_BUOC_MO_DANH_SACH` lời gọi,
+    kiểm TRƯỚC khi gọi: lời gọi thứ 4 không bao giờ xảy ra."""
+    muc_tieu = link
+    for _ in range(TRAN_BUOC_MO_DANH_SACH):
+        dung = cho_phep()
+        if dung:
+            return None, dung
+        logger.thieu_js = False
+        try:
+            ie = ydl.extract_info(muc_tieu, download=False, process=False)
+            if logger.thieu_js:
+                raise _ThieuJs(f"{LOI_THIEU_JS}: yt-dlp không thấy JavaScript runtime (Deno) — đường Deno sai hoặc hỏng")
+        except Exception as exc:  # noqa: BLE001 — lỗi yt-dlp: tín hiệu chặn thì dừng, còn lại là lỗi của link
+            dung = xu_ly_loi(exc)
+            if not dung:
+                loi(_ma_loi_video(exc), che_url(exc))
+            return None, dung
+        loai = ie.get("_type") if isinstance(ie, dict) else None
+        if loai in ("url", "url_transparent"):
+            muc_tieu = ie.get("url")
+            # Chỉ theo tới một trang TAB khác (danh sách). Đích là một VIDEO (tab `/live` trả `watch?v=`, hoặc yt-dlp
+            # "không nhận ra playlist") thì dừng: theo tiếp là một lượt trích xuất video đầy đủ cho kết quả chắc bỏ.
+            if isinstance(muc_tieu, str) and _MAU_URL_HTTP.match(muc_tieu) and YoutubeTabIE.suitable(muc_tieu):
+                continue
+        elif loai in ("playlist", "multi_video") and ie.get("entries") is not None:
+            return ie, None
+        break      # kết quả không phải playlist, hoặc URL đích hỏng
+    loi(LOI_KHONG_DOC_DUOC, "")     # hết trần bước, hoặc không ra playlist
+    return None, None
+
+
+class YoutubeKenh:
+    """Kênh YouTube (`/@handle`, `/channel/<id>`, kèm tab `/videos` hoặc `/shorts`) và playlist: liệt kê N video MỚI.
+
+    Một job = MỘT URL; số video lấy từ ô số lượng như TikTok collection (không phải số link như `LinkLe`). Nền tảng
+    "youtube" ⇒ đi lane nền tảng khác, qua bộ điều tốc IP và cổng bật/tắt như link lẻ YouTube; tải từng video bằng
+    `downloader._tai_nen_tang_khac`.
+
+    Liệt kê là MỘT `extract_info(process=False)` rồi tự duyệt `entries` (generator thô) — không cắt lát bằng nhiều
+    lời gọi, vì mỗi lời gọi dựng lại generator từ trang 1 (tải lại k trang mà bộ đếm chỉ thấy một lượt). Mỗi mục mang
+    id YouTube thật nên lọc trùng chạy NGAY, trước mọi lời gọi tải/đường lui; dừng kéo ngay khi đủ N mới."""
+
+    ten = "youtube_kenh"
+    mo_ta_url = "kênh / tab Shorts / playlist YouTube"
+
+    def nhan(self, url: str) -> bool:
+        return _la_url_kenh_youtube(url.strip())
+
+    def nen_tang(self, url: str) -> str:
+        return "youtube"
+
+    def loai_log(self, url: str) -> str:
+        return "youtube:kenh"
+
+    def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
+                already_have: Callable[[list[str]], set[str]],
+                on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
+                cong=None, ghi_loi_video: Callable[[str, str], None] | None = None,
+                nghi: Callable[[], None] | None = None, **_chua_dung) -> list[VideoRef]:
+        """`cong`, `ghi_loi_video`, `nghi`: như `LinkLe.liet_ke`. Mọi lời gọi tới YouTube (mở danh sách, mỗi bước theo
+        `url`, mỗi `SO_MUC_MOI_LUOT_PACER` mục kéo tiếp, đường lui `duration` của từng mục) đi qua `cong.truoc_goi()`."""
+        link = _ep_tab_videos((tach_link(url) or [""])[0])
+        la_short = _la_tab_shorts(link)
+        loi, so_loi = _bo_dem_loi_video(ghi_loi_video)
+        opts = downloader.opts_chung_nen_tang_khac(proxy)
+        opts["skip_download"] = True
+        opts["extract_flat"] = "in_playlist"
+        da_goi = [False]
+
+        def cho_phep() -> str | None:
+            """Nghỉ jitter giữa hai lời gọi liên tiếp, rồi ghi lượt TRƯỚC khi gọi. Trả lý do dừng hoặc None."""
+            if da_goi[0] and nghi is not None:
+                nghi()
+            da_goi[0] = True
+            return cong.truoc_goi() if cong is not None else None
+
+        def xu_ly_loi(exc: BaseException) -> str | None:
+            return cong.xu_ly_loi(exc) if cong is not None else None
+
+        moi: list[VideoRef] = []
+        thay: set[str] = set()
+        da_bo_vi_da_co = 0
+        dung: str | None = None
+        # Generator `entries` gọi mạng LƯỜI, qua đúng phiên `ydl` đã mở: ra khỏi `with` là phiên đóng và trang kế
+        # không kéo được nữa ⇒ toàn bộ việc duyệt phải nằm trong khối này.
+        with YoutubeDL(opts) as ydl:
+            ie, dung = _mo_den_danh_sach(ydl, link, opts["logger"], cho_phep, xu_ly_loi, loi)
+            it = iter(ie["entries"]) if ie is not None else iter(())
+            da_keo = 0
+            while ie is not None and len(moi) < max_videos:
+                if da_keo and da_keo % SO_MUC_MOI_LUOT_PACER == 0:
+                    dung = cho_phep()       # trang kế: lượt mới TRƯỚC khi kéo K mục tiếp theo
+                    if dung:
+                        break
+                try:
+                    muc = next(it)
+                except StopIteration:
+                    break
+                except Exception as exc:  # noqa: BLE001 — trang kế hỏng giữa chừng: generator đã chết
+                    dung = xu_ly_loi(exc)
+                    if not dung:
+                        loi(_ma_loi_video(exc), che_url(exc))
+                    break
+                da_keo += 1
+                if not isinstance(muc, dict) or muc.get("ie_key") != "Youtube":
+                    continue            # playlist/kênh lồng bên trong: không phải video, không tính là mới
+                vid = muc.get("id")
+                if not isinstance(vid, str) or not _MAU_ID_VIDEO.fullmatch(vid) \
+                        or len(TIEN_TO_ID_YOUTUBE + vid) > TRAN_DO_DAI_ID:
+                    loi("id_la", "")
+                    continue
+                if muc.get("live_status") in ("is_live", "is_upcoming"):
+                    continue            # đang/sắp phát trực tiếp: chưa có video để tải
+                if muc.get("availability") in ("subscriber_only", "premium_only", "needs_auth"):
+                    continue            # cần đăng nhập/hội viên: tải chắc hỏng, không đốt lượt
+                video_id = TIEN_TO_ID_YOUTUBE + vid
+                if video_id in thay:
+                    continue
+                thay.add(video_id)
+                link_muc = muc["url"] if isinstance(muc.get("url"), str) and _MAU_URL_HTTP.match(muc["url"]) \
+                    else f"https://www.youtube.com/watch?v={vid}"
+                # Lọc trùng TRƯỚC mọi thứ tốn lượt (đường lui duration, tải): id phẳng là id thật của YouTube.
+                if video_id in already_have([video_id]):
+                    on_skip(VideoRef(video_id=video_id, url=link_muc))
+                    da_bo_vi_da_co += 1
+                    continue
+                dur = muc.get("duration")
+                if la_short:
+                    # Mục tab /shorts không bao giờ có `duration`: trần 15 phút kiểm SAU tải (`web/queue.py`).
+                    moi.append(VideoRef(video_id=video_id, url=link_muc, title=muc.get("title") or None,
+                                        author=muc.get("uploader") or muc.get("channel") or None, la_short=True))
+                elif isinstance(dur, (int, float)) and dur > 0:
+                    if dur > TRAN_THOI_LUONG_GIAY:
+                        loi(LOI_QUA_DAI, "")
+                        continue
+                    moi.append(VideoRef(video_id=video_id, url=link_muc, title=muc.get("title") or None,
+                                        author=muc.get("uploader") or muc.get("channel") or None,
+                                        duration=int(dur)))
+                else:
+                    # Mục tab Videos/playlist thiếu `duration`: đường lui MỘT `extract_info` riêng mục này.
+                    dung = cho_phep()
+                    if dung:
+                        break
+                    try:
+                        info = _extract_info(link_muc, proxy)
+                    except Exception as exc:  # noqa: BLE001 — một video hỏng không giết cả job
+                        dung = xu_ly_loi(exc)
+                        if dung:
+                            break
+                        loi(_ma_loi_video(exc), che_url(exc))
+                        continue
+                    ref, ma_loi = _ref_tu_info(info, link_muc, TIEN_TO_ID_YOUTUBE)
+                    if ref is None:
+                        loi(ma_loi or "loi_khac", "")
+                    else:
+                        moi.append(ref)
+        if not moi and not dung:
+            # Giống `_loc_da_co`: nguồn không đưa video mới nào ⇒ `already_owned` nếu CHỈ vì thư viện đã có hết,
+            # còn lại (rỗng, hoặc có lỗi che mất) ⇒ `source_empty`.
+            if da_bo_vi_da_co and so_loi[0] == 0:
+                on_stop(STOP_ALREADY_OWNED)
+            else:
+                log.warning("nguồn youtube_kenh: không lấy được video mới nào (link sai, không công khai, hoặc đổi cấu trúc)")
+                on_stop(STOP_SOURCE_EMPTY)
+        if dung:
+            on_stop(dung)
+        return moi
+
+
+# Hai nguồn liệt kê/tải qua yt-dlp trên lane nền tảng khác: cùng cổng IP (`cong`), cùng cổng bật/tắt nền tảng
+# (`nen_tang_bat`), cùng đường báo lỗi riêng từng video. Chỗ nào cần "nguồn này đi qua pacer" thì hỏi tập này,
+# đừng liệt kê từng lớp (thêm nguồn yt-dlp mới = thêm vào đây).
+NGUON_YT_DLP_NEN_TANG_KHAC: tuple[type, ...] = (LinkLe, YoutubeKenh)
+
 # Thứ tự = thứ tự thử `nhan`; nguồn đầu tiên nhận thì thắng. Các tập URL không giao nhau (FB Ads Library nằm
-# trước `LinkLe` vì extractor `Facebook*` của yt-dlp không được cướp link thư viện quảng cáo).
-NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), LinkLe())
+# trước `LinkLe` vì extractor `Facebook*` của yt-dlp không được cướp link thư viện quảng cáo; `YoutubeKenh` đứng
+# trước `LinkLe` cho cùng lý do: URL tab của kênh/playlist không phải video lẻ).
+NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), YoutubeKenh(), LinkLe())
 
 
 # Nguồn dùng khi một URL cũ không nguồn nào nhận (xem `web/queue.py::_fetch_refs`).

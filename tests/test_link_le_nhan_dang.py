@@ -35,10 +35,13 @@ BANG_NHAN = [
     ("https://www.bilibili.com/video/BV1xx411c7mD", "bilibili", "bili-"),
     ("https://www.snapchat.com/spotlight/W7_EDlXWTBiXAEEniNoMPwAAYYWlkdXhheXRiAZDL", "snapchat", "snap-"),
 ]
-KHONG_NHAN = [
+# Kênh/playlist không phải video lẻ: `LinkLe` từ chối, nguồn `YoutubeKenh` nhận (xem `test_youtube_kenh.py`).
+KENH_PLAYLIST = [
     "https://www.youtube.com/@mot.kenh",
     "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
     "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+]
+KHONG_NHAN = [
     "https://www.instagram.com/mot.nguoi/",
     "https://vm.tiktok.com/ZMabcdef/",
     "https://www.tiktok.com/@nguoi.dung/photo/7123456789012345678",
@@ -69,9 +72,16 @@ def test_nhan_dang_dung_nen_tang_va_tien_to_khong_mang(khong_mang, url, nen_tang
 
 
 @pytest.mark.parametrize("url", KHONG_NHAN)
-def test_kenh_playlist_tab_va_url_la_khong_nhan(khong_mang, url):
+def test_url_la_khong_nhan(khong_mang, url):
     assert LinkLe().phan_loai(url) is None
     assert chon_nguon(url) is None
+
+
+@pytest.mark.parametrize("url", KENH_PLAYLIST)
+def test_kenh_playlist_khong_phai_link_le(khong_mang, url):
+    assert LinkLe().phan_loai(url) is None
+    n = chon_nguon(url)
+    assert n is not None and n.ten == "youtube_kenh" and not isinstance(n, LinkLe)
 
 
 def test_tiktok_collection_van_thuoc_nguon_tiktok_khong_bi_link_le_cuop(khong_mang):

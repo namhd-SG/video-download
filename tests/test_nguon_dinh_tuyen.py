@@ -10,7 +10,7 @@ from fastapi import HTTPException
 
 from tiktok_music_downloader import nguon as nguon_mod
 from tiktok_music_downloader.nguon import (
-    NGUON, DriveFolder, FbAdsLibrary, LinkLe, TikTokCollection, chon_nguon, mo_ta_cac_nguon)
+    NGUON, DriveFolder, FbAdsLibrary, LinkLe, TikTokCollection, YoutubeKenh, chon_nguon, mo_ta_cac_nguon)
 from web import app as app_mod
 from web import models
 from web import queue as queue_mod
@@ -23,17 +23,17 @@ CAC_URL_TIKTOK = [
 ]
 CAC_URL_LA = [
     "https://example.com/tag/x",
-    "https://www.youtube.com/@mot.kenh",              # kênh/playlist/tab: chưa nhận
+    "https://www.youtube.com/@mot.kenh/live",         # tab live: không nhận
     "https://www.tiktok.com/@nguoi.dung/photo/123",   # không có id video để dùng
     "khong-phai-url",
 ]
 THONG_BAO_400 = ("url không được nhận. Link hỗ trợ: trang TikTok music/tag/search/profile, "
-                 "trang Facebook Ads Library, thư mục Google Drive công khai, "
+                 "trang Facebook Ads Library, thư mục Google Drive công khai, kênh / tab Shorts / playlist YouTube, "
                  "link video lẻ (YouTube, TikTok, Instagram, Facebook, X, Pinterest, Douyin, Bilibili, Snapchat)")
 
 
-def test_bang_nguon_gom_tiktok_fb_ads_drive_va_link_le():
-    assert [type(n) for n in NGUON] == [TikTokCollection, FbAdsLibrary, DriveFolder, LinkLe]
+def test_bang_nguon_gom_tiktok_fb_ads_drive_kenh_youtube_va_link_le():
+    assert [type(n) for n in NGUON] == [TikTokCollection, FbAdsLibrary, DriveFolder, YoutubeKenh, LinkLe]
     assert mo_ta_cac_nguon() == THONG_BAO_400.split("Link hỗ trợ: ")[1]
 
 

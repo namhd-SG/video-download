@@ -22,7 +22,8 @@ from tiktok_music_downloader.phan_loai_loi import (
     phan_loai_loi,
 )
 from tiktok_music_downloader.nguon import (
-    NGUON_MAC_DINH, TRAN_DUNG_LUONG_BYTE, LinkLe, chon_nguon, tach_link)
+    NGUON_MAC_DINH, NGUON_YT_DLP_NEN_TANG_KHAC, TRAN_DUNG_LUONG_BYTE, TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh,
+    chon_nguon, tach_link)
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
@@ -38,7 +39,7 @@ from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, 
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
 from web.cookies import cookies_path_for_user  # noqa: F401
 from web.cookies import ly_do_jar_khong_dung_duoc
-from web.lifecycle import check_disk_guard, on_video_verified
+from web.lifecycle import _do_thoi_luong_quietly, check_disk_guard, on_video_verified
 
 log = logging.getLogger("videodl.web")
 
@@ -172,6 +173,11 @@ def la_link_le(url: str) -> bool:
     """Job này là link video lẻ (một hoặc nhiều dòng) chứ không phải trang để quét. Nguồn của từng video link lẻ là
     URL của CHÍNH video đó: nhãn chung theo job ("link đầu (+N)") gắn sai nghĩa cho mọi video còn lại."""
     return isinstance(chon_nguon((tach_link(url) or [url])[0]), LinkLe)
+
+
+def la_kenh_youtube(url: str) -> bool:
+    """Job này là kênh / tab / playlist YouTube (một URL, số video theo ô số lượng)."""
+    return isinstance(chon_nguon((tach_link(url) or [url])[0]), YoutubeKenh)
 
 
 def nguon_cua_ref(nguon_job: str, ref: VideoRef, link_le: bool) -> str:
@@ -366,8 +372,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             raise ValueError(f"không nguồn nào nhận url của job nền tảng {nen_tang!r}")
         nguon_url = NGUON_MAC_DINH
     kw_link_le: dict = {}
-    if isinstance(nguon_url, LinkLe):
-        # Link lẻ: mọi lời gọi nền tảng ở bước liệt kê đi qua cổng IP (ghi lượt TRƯỚC khi gọi, nghỉ jitter giữa
+    if isinstance(nguon_url, NGUON_YT_DLP_NEN_TANG_KHAC):
+        # Link lẻ và kênh YouTube: mọi lời gọi nền tảng ở bước liệt kê đi qua cổng IP (ghi lượt TRƯỚC khi gọi, nghỉ jitter giữa
         # hai lời gọi); lỗi riêng từng link đếm vào job mà không dừng job. TikTok video lẻ không gọi mạng ở bước
         # này nên không có cổng. Nguồn khác không nhận các tham số này: kwargs của chúng y hệt trước.
         cong = (pacer.CongNenTang(db_path, job_id, nen_tang)
@@ -572,6 +578,23 @@ class _JobProgress:
                 log.warning("job %s: không ghi được cờ sự cố hàng loạt (%s)",
                             self._job_id, type(exc).__name__)
 
+    def _short_trong_tran(self, ref: VideoRef) -> bool:
+        """Trần thời lượng của một Short (mục tab `/shorts` không có `duration` lúc liệt kê ⇒ kiểm SAU tải, TRƯỚC
+        khi lên Drive). `ref.duration` đã được điền từ `info` của lượt tải; thiếu thì đo trên tệp; vẫn không ra
+        thì COI LÀ VƯỢT TRẦN, không cho qua. Vượt ⇒ xoá tệp, ghi lỗi `qua_dai` rõ ràng, trả False."""
+        path = self._output_dir / ref.filename
+        giay = ref.duration or _do_thoi_luong_quietly(path)
+        if giay and giay <= TRAN_THOI_LUONG_GIAY:
+            return True
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            log.error("job %s: không xoá được tệp Short vượt trần (%s)", self._job_id, type(exc).__name__)
+        ly_do = (f"{LOI_QUA_DAI}: Short dài {giay}s, trần {TRAN_THOI_LUONG_GIAY}s" if giay
+                 else f"{LOI_QUA_DAI}: không đo được thời lượng Short, coi là vượt trần {TRAN_THOI_LUONG_GIAY}s")
+        self._ghi_loi(ref, ly_do, loai="tiktok")     # lỗi do phía nguồn (video quá dài), như `qua_dai` của link lẻ
+        return False
+
     def note(self, kind: str, info: dict | None = None) -> None:
         ref = self._refs[self._idx]
         self._idx += 1
@@ -585,6 +608,8 @@ class _JobProgress:
             self._ghi_loi(ref, (info or {}).get("loi", ""), da_log=True)
             return
         ref = _bo_sung_metadata(ref, info)
+        if kind == "downloaded" and ref.la_short and not self._short_trong_tran(ref):
+            return
         if kind == "downloaded":
             path = self._output_dir / ref.filename
             # Constraint (a): the "xong" (done) mark is written ONLY after
@@ -701,7 +726,8 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     # khác, và trần dung lượng một file (yt-dlp bỏ file lớn hơn, không ném lỗi).
     tiktok_le = not la_nen_tang_khac and la_link_le(job["url"])
     kw_cong_dia = {"truoc_moi_file": _kiem_dia} if (la_nen_tang_khac or tiktok_le) else {}
-    if tiktok_le:
+    # Kênh YouTube cũng chịu trần dung lượng lúc tải: mục liệt kê phẳng không mang kích thước để chặn trước.
+    if tiktok_le or la_kenh_youtube(job["url"]):
         kw_cong_dia["max_filesize"] = TRAN_DUNG_LUONG_BYTE
     # Nền tảng link lẻ: opts yt-dlp riêng + cổng IP (ghi lượt TRƯỚC mỗi lần gọi, kể cả lần thử lại) + nghỉ jitter.
     nen_tang_job = job.get("nen_tang") or models.NEN_TANG_MAC_DINH

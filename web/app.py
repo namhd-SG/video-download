@@ -27,7 +27,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.nguon import (
-    TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, LinkLe, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
+    NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon,
+    nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
@@ -362,6 +363,10 @@ class CreateJobRequest(BaseModel):
 # Ô nhập nhận NHIỀU link video lẻ (mỗi dòng một link, cùng nền tảng). Trần số link một lượt, và trần độ dài cả
 # khối để một thân yêu cầu khổng lồ không bị tách dòng/nhận dạng từng link rồi mới bị từ chối.
 MAX_LINK_MOT_JOB = 50
+# Trần ô số lượng cho job kênh/tab/playlist YouTube (08/10/2026; chưa đo nhu cầu thật). Chạm trần giờ GIỮA job thì job
+# DỪNG (không chờ): 30 video ≈ 2 lượt liệt kê + 30 lượt tải ≈ nửa trần IP YouTube 60 lượt/giờ toàn hệ thống
+# (`web/pacer.py`), chừa nửa còn lại cho người khác; 50 video ≈ 53 lượt thì chỉ cần ai đó đã dùng ≥ 8 lượt là job hỏng.
+MAX_VIDEO_KENH_YOUTUBE = 30
 MAX_KY_TU_O_LINK = MAX_LINK_MOT_JOB * 2048
 
 
@@ -370,7 +375,8 @@ def _chon_nguon_cho_o_nhap(links: list[str]):
 
     Một link: đúng như trước (nguồn nhận hoặc None). Nhiều link: TẤT CẢ phải là link video lẻ (`LinkLe`) CÙNG
     một nền tảng — trang TikTok music/tag/profile, Ads Library, thư mục Drive vẫn MỘT URL mỗi lượt. Link lẻ
-    mà nền tảng chưa bật ⇒ 400 nói rõ (nền tảng nằm trong bảng nhưng cấu hình chưa bật)."""
+    mà nền tảng chưa bật ⇒ 400 nói rõ (nền tảng nằm trong bảng nhưng cấu hình chưa bật); kênh/playlist YouTube
+    (`YoutubeKenh`) chịu cùng cổng đó."""
     if not links:
         return None, None
     nguon = chon_nguon(links[0])
@@ -390,7 +396,7 @@ def _chon_nguon_cho_o_nhap(links: list[str]):
     if nguon is None:
         return None, None
     nen_tang_job = nguon.nen_tang(links[0])
-    if isinstance(nguon, LinkLe) and nen_tang_job not in nen_tang_bat():
+    if isinstance(nguon, NGUON_YT_DLP_NEN_TANG_KHAC) and nen_tang_job not in nen_tang_bat():
         raise HTTPException(
             status_code=400,
             detail=f"nền tảng {nen_tang_job} chưa bật (đang bật: {', '.join(sorted(nen_tang_bat())) or 'không có'})")
@@ -519,6 +525,13 @@ def create_job(payload: CreateJobRequest,
     if isinstance(nguon, LinkLe):
         # Link lẻ: số video = số link dán vào; ô "số lượng" không có nghĩa ở đây.
         so_luong = len(links)
+    elif isinstance(nguon, YoutubeKenh) and so_luong > MAX_VIDEO_KENH_YOUTUBE:
+        # Liệt kê kênh tốn 1 lượt / 20 mục, tải tốn 1 lượt / video, trên trần IP YouTube CẢ HỆ THỐNG 60 lượt/giờ:
+        # N lớn ăn hết trần của mọi người (N ≳ 1180 thì riêng liệt kê đã chạm trần ⇒ 0 video).
+        raise HTTPException(
+            status_code=400,
+            detail=(f"kênh/playlist YouTube tối đa {MAX_VIDEO_KENH_YOUTUBE} video mỗi lượt (giới hạn chung cả "
+                    f"công ty ≈30 video YouTube/giờ); hãy giảm ô số lượng"))
     # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
     # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác có trần IP riêng ở `web/pacer.py`.
     if nguon is None or nen_tang == models.NEN_TANG_MAC_DINH:
