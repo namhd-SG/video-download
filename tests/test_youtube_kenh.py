@@ -704,7 +704,8 @@ def test_cau_dung_tran_gio_noi_da_tai_bao_nhieu_va_chay_lai_tai_tiep():
     lại sau sẽ tải tiếp phần còn lại — không phải lỗi chung chung. Mã khác giữ nguyên câu."""
     ra = _node(
         "const ham=lay('function cauDungTranIp','const STOP_REASON_TEXT');"
-        "const bang=lay('const STOP_REASON_TEXT','};')+'};';"
+        "const s2=fs.readFileSync(process.argv[1].replace('app.js','stop-reason-text.js'),'utf8');"
+        "const i2=s2.indexOf('const STOP_REASON_TEXT');const bang=s2.slice(i2,s2.indexOf('};',i2))+'};';"
         "eval(ham+bang.replace('const STOP_REASON_TEXT','globalThis.STOP_REASON_TEXT'));"
         "const j=(ma,xong,tong)=>({ly_do_dung:ma,xong:xong,tong:tong});"
         "console.log(JSON.stringify(["

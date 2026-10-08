@@ -993,3 +993,38 @@ body.cc-lock-scroll .session-expired {
 .gc-foot b { font-family: var(--mono); font-weight: 500; color: var(--text); }
 /* Popup mở ⇒ khoá cuộn thân trang (cùng mẫu body.cc-lock-scroll). */
 body.gc-lock-scroll { overflow: hidden; }
+
+/* ===== Trang Hướng dẫn (huong-dan.html) — chỉ dùng token sẵn có, sáng/tối đi theo bảng màu chung. */
+.hd { display: flex; flex-direction: column; gap: 18px; }
+.hd .panel { background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+.hd .panel h2 { font-family: var(--display); font-size: 1.05rem; }
+.hd p, .hd li { font-size: .9rem; line-height: 1.55; }
+.hd-muc-luc { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: baseline; }
+.hd-muc-luc strong { font-size: .8rem; color: var(--text-muted); margin-right: 4px; }
+.hd-muc-luc a { color: var(--accent); text-decoration: none; font-size: .88rem; }
+.hd-muc-luc a:hover { text-decoration: underline; }
+.hd-buoc { margin: 8px 0 0; padding-left: 22px; }
+.hd-buoc li { margin: 4px 0; }
+.hd-bang { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: .86rem; }
+.hd-bang th, .hd-bang td { text-align: left; vertical-align: top; padding: 8px 10px;
+  border-top: 1px solid var(--border); }
+.hd-bang thead th { font-size: .76rem; color: var(--text-muted); font-weight: 600; border-top: 0; }
+.hd-bang tbody th { width: 34%; font-weight: 600; }
+.hd-bang code, .hd-ma { font-family: var(--mono); font-size: .78rem; color: var(--text-muted);
+  overflow-wrap: anywhere; }
+.hd-ma { white-space: nowrap; }
+.hd-chip { display: inline-block; margin: 0 4px 2px 0; padding: 2px 9px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent); font-size: .8rem; font-weight: 600; }
+.hd-tim { width: 100%; max-width: 360px; box-sizing: border-box; padding: 7px 10px; margin-top: 6px;
+  border: 1px solid var(--border-strong); border-radius: var(--radius);
+  background: var(--surface); color: var(--text); font: inherit; font-size: .88rem; }
+.hd-loi { color: var(--danger); background: var(--danger-bg); padding: 8px 10px; border-radius: var(--radius); }
+/* Màn hẹp: bảng hai cột bóp cột mã/ví dụ còn vài ký tự một dòng ⇒ xếp chồng mỗi ô một dòng. */
+@media (max-width: 640px) {
+  .hd-bang thead { display: none; }
+  .hd-bang tr, .hd-bang th, .hd-bang td { display: block; width: auto; }
+  .hd-bang tr { border-top: 1px solid var(--border); padding: 6px 0; }
+  .hd-bang th, .hd-bang td { border-top: 0; padding: 3px 2px; }
+  .hd-bang tbody th { width: auto; }
+}

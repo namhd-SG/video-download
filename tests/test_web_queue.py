@@ -651,7 +651,7 @@ def test_moi_ma_dung_deu_co_cau_tren_giao_dien():
     import re
     from tiktok_music_downloader import utils as utils_mod
     from web import giai_captcha as gc_mod
-    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    js = Path("web/static/stop-reason-text.js").read_text(encoding="utf-8")
     dau = js.index("const STOP_REASON_TEXT")
     khoa = set(re.findall(r"^\s{4}(\w+):", js[dau:js.index("};", dau)], re.M))
     ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
@@ -1316,7 +1316,7 @@ def test_a_jar_from_another_site_fails_the_job(tmp_path, monkeypatch):
 def test_the_stop_sentence_for_a_non_tiktok_jar_says_what_to_do():
     """Câu dừng phải nói ĐÚNG nguyên nhân và việc tự chữa: không phải cookie TikTok,
     vào Cài đặt dán lại — không bảo "đăng nhập lại" (jar có thể đang đăng nhập IG)."""
-    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    js = Path("web/static/stop-reason-text.js").read_text(encoding="utf-8")
     dau = js.index("cookie_khong_phai_tiktok:")
     cau = js[dau:js.index('.",', dau)]
 
@@ -1382,7 +1382,7 @@ def test_every_cookie_code_has_a_sentence_in_the_ui(tmp_path):
     "mã chưa dịch — báo cho người phát triển", tức bảo người dùng đi báo dev
     cho một việc họ tự chữa được. Thêm mã mà quên câu thì test này ĐỎ."""
     import re
-    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    js = Path("web/static/stop-reason-text.js").read_text(encoding="utf-8")
     dau = js.index("const STOP_REASON_TEXT")
     khoi = js[dau:js.index("};", dau)]
     khoa = set(re.findall(r"^\s{4}(\w+):", khoi, re.M))
@@ -1397,7 +1397,7 @@ def test_cau_feed_rong_noi_dung_nguyen_nhan_khong_khuyen_dan_lai_cookie():
     ⇒ câu cũ ("dán lại cookie TikTok mới rồi chạy lại") chỉ sai hướng, người dùng
     đi dán cookie vô ích. Trả câu cũ về ⇒ test này ĐỎ."""
     import re
-    js = Path("web/static/app.js").read_text(encoding="utf-8")
+    js = Path("web/static/stop-reason-text.js").read_text(encoding="utf-8")
     dau = js.index("const STOP_REASON_TEXT")
     khoi = js[dau:js.index("};", dau)]
     m = re.search(r"^\s{4}feed_rong:((?:\s*\"[^\"]*\"\s*\+?)+),", khoi, re.M)

@@ -643,6 +643,7 @@ KHONG_CAN_KIEM_CHU = {
     "PUT /me/cookie": "chính người đang gọi",
     "DELETE /me/cookie": "chính người đang gọi",
     "GET /me/quota": "chính người đang gọi",
+    "GET /tinh-nang": "chỉ hằng và cờ cấu hình, không đọc dữ liệu của ai",
     "GET /admin/nguoi-dung": "require_admin — 403 cho người thường",
     "GET /admin/don-vao-bo-loi": "require_admin — 403 cho người thường",
     "GET /admin/worker": "require_admin — 403 cho người thường",
