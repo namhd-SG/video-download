@@ -426,7 +426,7 @@ def download_all(
     `truoc_goi()` trả lý do hoặc None, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn) chỉ có tác dụng
     ở đường nền tảng khác. Cổng từ chối / tín hiệu chặn ⇒ DỪNG cả lượt (cổng tự ghi lý do vào `cong`).
     `delay_range` = khoảng nghỉ (thấp, cao) giữa hai video thay cho `delay_seconds`.
-    `max_filesize` (byte, tuỳ chọn; TikTok video lẻ): yt-dlp BỎ QUA file lớn hơn mà không ném lỗi, nên thiếu tệp
+    `max_filesize` (byte, tuỳ chọn; TikTok video lẻ và kênh YouTube): yt-dlp BỎ QUA file lớn hơn mà không ném lỗi, nên thiếu tệp
     sau khi tải ⇒ lỗi `qua_nang` rõ ràng. Không truyền ⇒ dict opts y hệt cũ.
 
     Returns (downloaded, skipped, failed_ids).
@@ -513,6 +513,8 @@ def download_all(
                         raise RuntimeError(_ly_do_thieu_tep(opts["logger"].vuot_tran, max_filesize))
                 else:
                     info = _tai_nen_tang_khac(ref, opts, output_dir, cong)
+                    if max_filesize is not None and not (target.exists() and target.stat().st_size > 0):
+                        raise RuntimeError(_ly_do_thieu_tep(opts["logger"].vuot_tran, max_filesize))
                 # Post-process: apply watermark in-place if configured. Failures
                 # are non-fatal — the un-watermarked file remains on disk.
                 if watermark is not None and not watermark.is_empty:
@@ -552,7 +554,7 @@ def download_all(
                     )
                     time.sleep(cool)
             finally:
-                if outcome == "failed" and max_filesize is not None and la_tiktok:
+                if outcome == "failed" and max_filesize is not None:
                     _don_tep_mo_coi(output_dir, ref.video_id, target)
                 if outcome:
                     _note(outcome, note_info)

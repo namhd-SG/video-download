@@ -18,7 +18,8 @@ def thong_tin(vid: str, **them) -> dict:
 
 class YtdlpGia:
     def __init__(self, thong_tin_theo_url: dict | None = None, loi_theo_url: dict | None = None,
-                 canh_bao_khi_tai: str | None = None, canh_bao_khi_liet_ke: str | None = None):
+                 canh_bao_khi_tai: str | None = None, canh_bao_khi_liet_ke: str | None = None,
+                 ie_tho_theo_url: dict | None = None):
         # url -> info dict; url -> exception (hoặc list exception: mỗi lời gọi lấy một cái, hết thì chạy bình thường)
         self.thong_tin = thong_tin_theo_url or {}
         self.loi = loi_theo_url or {}
@@ -29,8 +30,12 @@ class YtdlpGia:
         # qua `logger.debug` — dòng mà `_YtdlpLog` bắt thành cờ `vuot_tran`.
         self.vuot_tran: set[str] = set()
         self.tep_phu: dict[str, list[str]] = {}   # url -> hậu tố tệp dở ghi cạnh đích (`.f137.mp4`, `.mp4.part`…)
+        # url -> ie_result thô cho `extract_info(process=False)` (kênh/playlist: playlist mang generator `entries`
+        # lười, hoặc `_type: url`). Giá trị là hàm không đối số thì được gọi MỖI lời gọi (generator mới mỗi lần).
+        self.ie_tho = ie_tho_theo_url or {}
+        self.so_phien_mo = 0   # số phiên `with YoutubeDL(...)` đang mở: generator lười đọc sau khi phiên đóng là lỗi thật
         self.opts_da_tao: list[dict] = []
-        self.goi: list[tuple[str, str]] = []   # ("liet_ke" | "tai", url)
+        self.goi: list[tuple[str, str]] = []   # ("liet_ke" | "liet_ke_tho" | "tai", url)
 
     def __call__(self, opts: dict):
         self.opts_da_tao.append(opts)
@@ -45,14 +50,16 @@ class _Ydl:
         self._gia, self._opts = gia, opts
 
     def __enter__(self):
+        self._gia.so_phien_mo += 1
         return self
 
     def __exit__(self, *_a):
+        self._gia.so_phien_mo -= 1
         return False
 
-    def extract_info(self, url: str, download: bool = True):
+    def extract_info(self, url: str, download: bool = True, process: bool = True):
         gia = self._gia
-        gia.goi.append(("tai" if download else "liet_ke", url))
+        gia.goi.append(("tai" if download else "liet_ke" if process else "liet_ke_tho", url))
         loi = gia.loi.get(url)
         if isinstance(loi, list):
             loi = loi.pop(0) if loi else None
@@ -61,6 +68,9 @@ class _Ydl:
         canh_bao = gia.canh_bao["tai" if download else "liet_ke"]
         if canh_bao:
             self._opts["logger"].warning(canh_bao)
+        if not process:
+            tho = gia.ie_tho[url]
+            return tho() if callable(tho) else tho
         info = gia.thong_tin[url]
         if download:
             dich = Path(self._opts["outtmpl"] % {"id": info["id"], "ext": "mp4"})

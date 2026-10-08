@@ -41,7 +41,14 @@
   // Ba lý do dừng sớm KHÁC NHAU (hashtag_enumerator.py) trông giống hệt nhau
   // từ ngoài nhìn vào nếu không dịch riêng — xem `guard-marker` và spec: đừng
   // gộp thành "không lấy được video".
-  const STOP_REASON_TEXT = {
+  // Trần IP giờ/ngày: job DỪNG giữa chừng (không chờ), nên người đọc cần biết ĐÃ được bao nhiêu và chạy lại thì tải
+// tiếp phần còn lại. Mã khác giữ nguyên câu.
+function cauDungTranIp(job, cau) {
+  if (!cau || (job.ly_do_dung !== "tran_gio" && job.ly_do_dung !== "tran_ngay")) return cau;
+  return `Đã tải ${Number(job.xong) || 0}/${Number(job.tong) || 0} video. ` + cau;
+}
+
+const STOP_REASON_TEXT = {
     stalled: "Dừng sớm: nhiều trang liên tiếp không thấy video mới — có thể " +
              "nguồn này đã hết video TikTok đang cho xem, không phải lỗi.",
     page_cap: "Dừng sớm: đã quét hết số trang cho phép mà chưa đủ số lượng " +
@@ -276,6 +283,9 @@
     // TikTok: trang tag/music/profile giữ nhãn cũ; chỉ `/video/<id>` là link lẻ.
     if (ten === "TikTok" && !/\/video\/\d+/.test(path)) return null;
     if (ten === "Facebook" && /\/ads\/library/.test(path)) return null;
+    // Kênh / tab / playlist YouTube là NGUỒN của cả loạt video (một job), không phải link video lẻ: giữ nhãn theo
+    // đường dẫn (`@kênh/shorts`) để bộ lọc nguồn không gộp mọi kênh vào một hộp "YouTube".
+    if (ten === "YouTube" && /^\/(@|channel\/|playlist$)/.test(path)) return null;
     return { ten, id };
   }
 
@@ -307,6 +317,8 @@
       if (path.startsWith("/tag/")) return "#" + path.slice(5);
       if (path.startsWith("/music/")) return "🎵 " + decodeURIComponent(path.slice(7));
       if (path.startsWith("/@")) return path.slice(1);
+      if (path === "/playlist") return "Playlist YouTube";
+      if (path.startsWith("/channel/")) return path.slice(1);
       if (path.startsWith("/search")) return "Tìm kiếm: " + (url.searchParams.get("q") || "");
       return path || u;
     } catch {
@@ -527,7 +539,7 @@
     const buocGiai = GT.laBuocGiai(job.trang_thai);
     const stopText = GT.anCauDungCu(job) ? ""
       : GT.cauDung(job) || (job.ly_do_dung && !window.BaoThieu.anCauDung(job)
-        ? (STOP_REASON_TEXT[job.ly_do_dung] ||
+        ? (cauDungTranIp(job, STOP_REASON_TEXT[job.ly_do_dung]) ||
            `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
         : "");
     // Vì sao con số này phải hiện: lọc trùng chạy trên TOÀN kho, nên người tìm
