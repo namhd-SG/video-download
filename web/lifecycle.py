@@ -757,8 +757,8 @@ def on_video_verified(*, job_id: int, ref: VideoRef, path: Path,
             log.error("job %s: upload %s xong nhưng xoá local trượt: %s",
                       job_id, ref.video_id, che_url(exc))
         else:
-            log.info("job %s: %s lên Drive xong (driveId=%s), đã xoá local",
-                      job_id, ref.video_id, result.drive_id)
+            # Không in id shared drive: log chỉ mang số đếm/nhãn, không mang id hay URL.
+            log.info("job %s: %s lên Drive xong, đã xoá local", job_id, ref.video_id)
         return result
 
     log.warning(
