@@ -58,6 +58,7 @@ def worker(tmp_path, clip_file, monkeypatch):
     w = tw.ThayLogoWorker(tmp_path / "log.db", _jobs_db(tmp_path, 0), tmp_path / "data", tai_ve=tai_ve, tai_len=tai_len,
                           ffmpeg=FFMPEG, nghi_giay=0.05)
     w.da_len = da_len
+    monkeypatch.setattr(w, "ram_du", lambda: True)  # cổng RAM có test riêng; máy chạy test không phải mini
     return w
 
 
@@ -157,13 +158,48 @@ def test_quet_khoi_dong_lam_lai_roi_het_luot(worker):
     assert _trang_thai(worker, vid)["trang_thai"] == "loi"
 
 
-def test_tat_co_tran_ke_ca_khi_tien_trinh_con_treo(worker):
+def test_thieu_ram_thi_khong_chay_pha_nang(worker, clip_file, monkeypatch):
+    clip, _ = clip_file
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+    monkeypatch.setattr(worker, "ram_du", lambda: False)
+    assert worker.mot_luot() == "cho_ram" and _trang_thai(worker, vid)["trang_thai"] == "cho_agy"
+
+
+@pytest.mark.parametrize("mp,sw,ky_vong", [
+    ("System-wide memory free percentage: 63%", "total = 5120.00M  used = 3516.75M  free = 1603.25M", True),
+    ("System-wide memory free percentage: 29%", "total = 5120.00M  used = 3516.75M  free = 1603.25M", False),
+    ("System-wide memory free percentage: 63%", "total = 5120.00M  used = 4200.00M  free = 920.00M", False),
+    ("rác không đọc được", "free = 2000.00M", False),
+])
+def test_cong_ram_doc_dung_so_mini(monkeypatch, mp, sw, ky_vong):
+    import subprocess
+    out = {"memory_pressure": mp, "sysctl": sw}
+    monkeypatch.setattr(tw.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, out[cmd[0]], ""))
+    assert tw.ram_du() is ky_vong
+
+
+def test_tat_co_tran_ke_ca_khi_tien_trinh_con_LO_SIGTERM_va_co_chau(worker, tmp_path):
+    """Tiến trình con bỏ qua SIGTERM và sinh một tiến trình cháu (như ffmpeg): stop() phải giết CẢ NHÓM, có trần thời gian."""
     import subprocess
     worker.start()
-    con = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    pid_chau = tmp_path / "chau.pid"
+    ma = ("import signal, subprocess, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+          f"c = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); open({str(pid_chau)!r}, 'w').write(str(c.pid)); "
+          "time.sleep(60)")
+    con = subprocess.Popen([sys.executable, "-c", ma], start_new_session=True)
+    for _ in range(50):
+        if pid_chau.exists() and pid_chau.read_text():
+            break
+        time.sleep(0.05)
     worker._con = con
     t = time.time()
     worker.stop(timeout=5)
     assert time.time() - t < 12
-    assert con.poll() is not None  # tiến trình con đã chết, không mồ côi
+    assert con.poll() is not None  # tiến trình con đã chết dù lờ SIGTERM
+    chau = int(pid_chau.read_text())
+    time.sleep(0.2)
+    with pytest.raises(ProcessLookupError):
+        os.kill(chau, 0)  # cháu cũng chết, không mồ côi
     assert not worker._thread.is_alive()

@@ -3,7 +3,8 @@
 Một luồng nền; mỗi lượt:
   1. Cổng đĩa: ổ chứa dữ liệu trống < TRAN_DIA_GB ⇒ không nhặt gì.
   2. Pha 1 (nhẹ): một video `cho` ⇒ tải nguồn về scratch, trích 7 khung vào hộp thư relay ⇒ `cho_agy` (bắt đầu đếm tuổi chờ).
-  3. NHƯỜNG lane tải: `jobs.db` (mở CHỈ ĐỌC) có job `running` ⇒ không chạy pha nặng lượt này.
+  3. NHƯỜNG lane tải: `jobs.db` (mở CHỈ ĐỌC) có job `running` ⇒ không chạy pha nặng lượt này. RAM free < 30% hoặc swap trống
+     < 1 GiB ⇒ cũng không.
   4. Pha 2 (nặng): video `cho_agy` đã có toạ độ ⇒ tiến trình con `nice -n 10` (`chay_mot_video`) có trần thời gian ⇒ tải file ra
      lên Drive ⇒ `xong` | `cho_nguoi` | `loi`. Video gốc không bao giờ bị sửa.
 Tải về / tải lên được TIÊM (`tai_ve`, `tai_len`) để test không cần Drive.
@@ -12,7 +13,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -27,6 +31,8 @@ from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungVideo
 
 log = logging.getLogger("videodl.thay_logo")
 TRAN_DIA_GB = 5.0
+# Cổng RAM (agy tach-worker-R1b Q1): mini swap đã 3,5/5 GiB khi chưa có worker này (đo 09/10 00:24). Dưới ngưỡng ⇒ không chạy pha nặng.
+RAM_FREE_TOI_THIEU_PCT, SWAP_TRONG_TOI_THIEU_MB = 30, 1024
 NICE = 10
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
@@ -39,6 +45,26 @@ def co_job_tai_dang_chay(jobs_db: Path) -> bool:
     except sqlite3.Error as e:
         log.warning("thay logo: không đọc được jobs.db (%s) — nhường lượt này", type(e).__name__)
         return True
+
+
+def ram_du() -> bool:
+    """`memory_pressure` free ≥ 30% VÀ swap trống ≥ 1 GiB. Không đo được ⇒ coi như THIẾU (không chạy pha nặng)."""
+    try:
+        mp = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=10).stdout
+        free = int(re.search(r"free percentage:\s*(\d+)", mp).group(1))
+        sw = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=10).stdout
+        swap_trong = float(re.search(r"free = ([\d.]+)M", sw).group(1))
+    except (OSError, subprocess.SubprocessError, AttributeError, ValueError):
+        log.warning("thay logo: không đo được RAM/swap — không chạy pha nặng lượt này")
+        return False
+    return free >= RAM_FREE_TOI_THIEU_PCT and swap_trong >= SWAP_TRONG_TOI_THIEU_MB
+
+
+def _gui_nhom(con: subprocess.Popen, sig) -> None:
+    try:
+        os.killpg(con.pid, sig)
+    except ProcessLookupError:
+        pass
 
 
 class ThayLogoWorker:
@@ -74,11 +100,13 @@ class ThayLogoWorker:
         self._dung.set()
         con = self._con
         if con is not None and con.poll() is None:
-            con.terminate()
+            # Cả NHÓM tiến trình (tiến trình con + ffmpeg cháu nó sinh): giết riêng tiến trình con thì ffmpeg thành mồ côi.
+            _gui_nhom(con, signal.SIGTERM)
             try:
                 con.wait(timeout=5)
             except subprocess.TimeoutExpired:
-                con.kill()
+                _gui_nhom(con, signal.SIGKILL)
+                con.wait(timeout=5)
         if self._thread is not None:
             self._thread.join(timeout=timeout)
 
@@ -100,6 +128,9 @@ class ThayLogoWorker:
             self._dung.wait(self.nghi)
 
     # ---------------------------------------------------------------- một lượt
+    def ram_du(self) -> bool:
+        return ram_du()
+
     def dia_trong_gb(self) -> float:
         return shutil.disk_usage(self.data).free / 1e9
 
@@ -111,6 +142,8 @@ class ThayLogoWorker:
             self._pha_1(conn)
             if co_job_tai_dang_chay(self.jobs_db):
                 return "nhuong_lane_tai"
+            if not self.ram_du():
+                return "cho_ram"
             return self._pha_2(conn)
         finally:
             conn.close()
@@ -156,7 +189,7 @@ class ThayLogoWorker:
                "--files", str(self.data / "thay_logo"), "--nguon-video", r["nguon"], "--ffmpeg", self.ffmpeg,
                "--job-id", str(r["job_id"])] + ([] if man_ket is None else ["--man-ket", "1" if man_ket else "0"])
         tran = max(TRAN_GIAY_MIN, HE_SO_TRAN_GIAY * nguon.so_khung() / (nguon.fps or 30.0))
-        self._con = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self._con = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         try:
             self._ket_thuc_con(conn, r, d, ra, tran)
         finally:
@@ -169,7 +202,7 @@ class ThayLogoWorker:
         try:
             out, err = self._con.communicate(timeout=tran)
         except subprocess.TimeoutExpired:
-            self._con.kill()
+            _gui_nhom(self._con, signal.SIGKILL)
             self._con.communicate()
             hang_doi.dat(conn, r["id"], "loi", loi_text=f"quá trần thời gian {int(tran)}s")
             return
