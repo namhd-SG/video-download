@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hướng dẫn — Video Desk</title>
+<link rel="stylesheet" href="/app.css" />
+</head>
+<body>
+<div class="app">
+
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk <span class="topbar-here">/ Hướng dẫn</span></div>
+    <nav class="topbar-nav">
+      <a href="/">← Về trang tải video</a>
+      <a href="/settings.html">⚙ Cài đặt</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
+  </header>
+
+  <p id="session-expired" class="session-expired" role="alert" hidden>
+    Phiên đăng nhập đã hết hạn — tải lại trang để đăng nhập lại.
+  </p>
+
+  <!-- Quy ước của trang này: số và danh sách nền tảng KHÔNG viết tay — `huong-dan.js`
+       điền từ GET /tinh-nang (hằng thật trong code). Đoạn chữ tả HÀNH VI thì ghi nguồn
+       file:dòng ngay trong comment cạnh nó; đổi hành vi ở đó thì sửa câu ở đây. -->
+  <main class="hd">
+
+    <nav class="panel hd-muc-luc" aria-label="Mục lục">
+      <strong>Trên trang này</strong>
+      <a href="#nguon">Tải được từ đâu</a>
+      <a href="#tao-luot">Tạo một lượt tải</a>
+      <a href="#gioi-han">Giới hạn</a>
+      <a href="#cookie">Cookie TikTok</a>
+      <a href="#thu-vien">Thư viện, cụm và bộ</a>
+      <a href="#ly-do-dung">Vì sao lượt tải dừng</a>
+      <a href="#chua-co">Chưa hỗ trợ</a>
+    </nav>
+
+    <section class="panel" id="nguon">
+      <h2>Tải được từ đâu</h2>
+      <p class="muted">Danh sách dưới đây đọc trực tiếp từ máy chủ lúc bạn mở trang — đúng với bản đang chạy.</p>
+      <p id="tn-loi" class="hd-loi" hidden>Không đọc được danh sách tính năng từ máy chủ. Tải lại trang; vẫn lỗi thì báo người phát triển.</p>
+      <table class="hd-bang" id="bang-nguon">
+        <thead><tr><th>Loại link</th><th>Dán vào ô link</th></tr></thead>
+        <tbody><tr><td colspan="2" class="muted">Đang tải…</td></tr></tbody>
+      </table>
+      <p><strong>Nền tảng đang bật cho link video lẻ và kênh YouTube:</strong>
+        <span id="nen-tang-bat" class="hd-chip-hang">…</span></p>
+      <!-- web/app.py create_job: nền tảng trong `pacer.nen_tang_dang_tat` ⇒ 503 "tạm tắt do bị chặn, admin bật lại" -->
+      <p id="tam-tat" class="hd-loi" hidden>Đang <strong>tạm tắt</strong> do bị nền tảng chặn:
+        <span id="nen-tang-tam-tat"></span>. Lượt tải mới cho nền tảng này bị từ chối cho tới khi quản trị bật lại.</p>
+      <p class="muted">Có sẵn trong code nhưng <strong>chưa bật</strong>:
+        <span id="nen-tang-tat">…</span>. Dán link của nền tảng chưa bật sẽ bị từ chối ngay, kèm câu nói rõ nền tảng nào đang bật.</p>
+    </section>
+
+    <section class="panel" id="tao-luot">
+      <h2>Tạo một lượt tải</h2>
+      <ol class="hd-buoc">
+        <!-- web/static/index.html: ô link "Mỗi dòng một link · Ctrl/⌘+Enter để tạo" -->
+        <li>Dán link vào ô <em>Tạo lượt tải mới</em>. Nhiều link thì <strong>mỗi dòng một link</strong>.</li>
+        <!-- web/app.py::_chon_nguon_cho_o_nhap — nhiều link chỉ nhận LinkLe, cùng một nền tảng -->
+        <li>Nhiều link trong một lượt chỉ được khi <strong>tất cả là video lẻ của cùng một nền tảng</strong>
+          (tối đa <b data-tran="link_mot_luot">…</b> link). Trang TikTok, kênh YouTube, thư viện quảng cáo
+          Facebook và thư mục Drive thì <strong>một link mỗi lượt</strong>.</li>
+        <!-- web/app.py::CreateJobRequest.so_luong (le=MAX_SO_LUONG); create_job: LinkLe ⇒ so_luong = len(links),
+             YoutubeKenh ⇒ ≤ MAX_VIDEO_KENH_YOUTUBE. Lọc trùng: web/models.py::known_video_ids — "kho đã có file
+             này chưa", KHÔNG theo người (web/queue.py `_already_have`). -->
+        <li>Điền <em>số lượng</em>: số video <strong>mới</strong> muốn lấy — trang TikTok, thư viện quảng cáo, thư mục
+          Drive tối đa <b data-tran="so_luong_mot_luot">…</b>; kênh/playlist YouTube tối đa
+          <b data-tran="video_kenh_youtube">…</b>. Link video lẻ thì bỏ qua ô này: số video = số link.</li>
+        <li>Video <strong>đã có trong kho của hệ thống</strong> — kể cả do người khác tải trước — được bỏ qua và không
+          tính vào số lượng, nên có lúc bạn nhận ít video hơn số đã xin. Thẻ lượt tải ghi rõ đã bỏ qua bao nhiêu.</li>
+        <!-- web/models_cum.py USECASE_TOI_DA / INSIGHT_CON_TOI_DA; CreateJobRequest.usecase/insight_goc tuỳ chọn -->
+        <li><em>Usecase</em> và <em>Insight gốc</em> là tuỳ chọn — bỏ trống thì hỏi lại lúc chia cụm.</li>
+        <li>Bấm <em>Tạo lượt tải</em> (hoặc Ctrl/⌘+Enter). Lượt tải hiện ở <em>Hàng đợi</em> với tiến độ;
+          video xong và lên Drive sẽ tự xuất hiện trong <em>Thư viện creative</em>.</li>
+      </ol>
+    </section>
+
+    <section class="panel" id="gioi-han">
+      <h2>Giới hạn</h2>
+      <p class="muted">Số đọc từ máy chủ. Chạm giới hạn thì lượt tải dừng và thẻ của nó nói rõ vì sao.</p>
+      <table class="hd-bang">
+        <tbody>
+          <!-- nguon.py::_ref_tu_info (link lẻ ngoài TikTok: thời lượng + dung lượng) · nguon.py YoutubeKenh (thời lượng)
+               · web/queue.py `max_filesize` cho TikTok video lẻ + kênh YouTube. Trang TikTok (music/tag/…) không có trần này. -->
+          <tr><th>Mỗi video tải từ link lẻ hoặc kênh YouTube</th>
+            <td>nặng tối đa <b data-tran="dung_luong_video_mb">…</b> MB; dài tối đa <b data-tran="thoi_luong_video_phut">…</b> phút
+              (video TikTok lẻ chỉ giới hạn dung lượng). Quá thì bỏ qua video đó, các video khác vẫn tải.</td></tr>
+          <!-- web/lifecycle.py MAX_*_PER_COOKIE_PER_DAY; ngày tính theo giờ VN -->
+          <tr><th>TikTok, mỗi ngày, theo tài khoản TikTok của cookie</th>
+            <td><b data-tran="tiktok_moi_ngay.luot">…</b> lượt tải · <b data-tran="tiktok_moi_ngay.video">…</b> video ·
+              <b data-tran="tiktok_moi_ngay.trang_index">…</b> trang quét. Quản trị có thể đặt mức riêng cho từng người.
+              Số đã dùng hôm nay: <a href="/settings.html">Cài đặt › Hạn mức của tôi</a>.</td></tr>
+          <!-- web/pacer.py TRAN — chung CẢ hệ thống (một IP văn phòng), không phải mỗi người -->
+          <tr><th>Nền tảng ngoài TikTok, chung cả hệ thống</th>
+            <td id="tran-ip">…</td></tr>
+        </tbody>
+      </table>
+      <!-- web/app.py MAX_VIDEO_KENH_YOUTUBE comment: chạm trần giờ giữa job ⇒ job DỪNG, không chờ -->
+      <p>Giới hạn "chung cả hệ thống" là số lượt gọi tới nền tảng đó của <strong>mọi người cộng lại</strong>
+        (một video tốn ít nhất 2 lượt: liệt kê + tải). Chạm giới hạn giữa chừng thì lượt tải dừng và báo
+        "Đã tải X/Y video" — chạy lại sau sẽ tải tiếp phần còn lại.</p>
+    </section>
+
+    <section class="panel" id="cookie">
+      <h2>Cookie TikTok</h2>
+      <!-- web/static/settings.html (hướng dẫn xuất) + web/cookies.py ly_do_jar_khong_dung_duoc -->
+      <p>Không có cookie thì lượt tải TikTok vẫn chạy nhưng <strong>ẩn danh</strong>, dùng chung một túi hạn mức
+        với mọi người chưa dán. Dán cookie của bạn để có hạn mức riêng.</p>
+      <ol class="hd-buoc">
+        <li>Cài tiện ích <strong>Cookie-Editor</strong> trên trình duyệt.</li>
+        <li>Mở <strong>tiktok.com</strong> khi <strong>đã đăng nhập</strong>.</li>
+        <li>Cookie-Editor → <em>Export</em> → <em>Export as JSON</em>.</li>
+        <li>Vào <a href="/settings.html">Cài đặt</a>, dán chuỗi (hoặc chọn tệp .json) → <em>Lưu cookie</em>.</li>
+      </ol>
+      <p class="muted">Máy chủ kiểm cookie trước khi nhận: phải là cookie của tiktok.com, có phiên đăng nhập và
+        còn hạn. Cookie bị từ chối thì cookie cũ (nếu có) vẫn giữ nguyên.</p>
+      <table class="hd-bang" id="bang-cookie">
+        <thead><tr><th>Trang Cài đặt báo</th><th>Nghĩa là</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel" id="thu-vien">
+      <h2>Thư viện, cụm và bộ</h2>
+      <ul class="hd-buoc">
+        <li><strong>Lọc:</strong> các hộp lọc phía trên lưới; <em>Xoá hết bộ lọc</em> để về toàn bộ.</li>
+        <!-- web/static/index.html cum-rail; app.js confirm "Xoá cụm": video về "Chưa vào cụm" -->
+        <li><strong>Cụm:</strong> chọn video → <em>Đưa vào cụm ▾</em>. Thanh <em>Cụm của tôi</em> bên trái là một bộ lọc.
+          Xoá một cụm không xoá video nào — chúng về "Chưa vào cụm".</li>
+        <!-- index.html: nút "Chia cụm" trên thẻ lượt tải mở màn chia-view (chia-cum.js) -->
+        <li><strong>Chia cụm sau một lượt tải:</strong> nút <em>Chia cụm</em> trên thẻ lượt tải mở màn duyệt nháp.</li>
+        <!-- index.html comment: "Tạo bộ tự tìm" mở Creative Desk trong tab mới, dùng phiên của chính bạn -->
+        <li><strong>Tạo bộ tự tìm:</strong> chọn video → <em>Tạo bộ tự tìm</em>, Creative Desk mở trong tab mới và bộ
+          được tạo bằng tài khoản của bạn ở đó. Video đã vào bộ được ẩn khỏi lưới 7 ngày (xem lại bằng chip
+          <em>Đã vào bộ</em>).</li>
+        <!-- app.js loaiDaChon: confirm "Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày)…" -->
+        <li><strong>Xoá:</strong> bỏ video khỏi thư viện <em>của bạn</em>; tệp vào Thùng rác Drive (lấy lại được trong
+          30 ngày), người khác không bị ảnh hưởng, và lượt quét sau sẽ không tải lại video đó.</li>
+        <!-- stop-reason-text.js khong_do_duoc_feed / feed_rong: nút "Tôi giải ngay" -->
+        <li><strong>TikTok đòi xác minh (captcha):</strong> thẻ lượt tải hiện nút <em>Tôi giải ngay</em> — bấm để tự
+          giải trong cửa sổ hiện ra, xong thì lượt tải chạy tiếp.</li>
+      </ul>
+    </section>
+
+    <section class="panel" id="ly-do-dung">
+      <h2>Vì sao lượt tải dừng</h2>
+      <p class="muted">Đây đúng là câu hiện trên thẻ lượt tải (cùng một bảng trong code). Gõ vài chữ để tìm.</p>
+      <input type="search" id="tim-ly-do" class="hd-tim" placeholder="Tìm, ví dụ: cookie, giờ, captcha…" />
+      <table class="hd-bang" id="bang-ly-do">
+        <thead><tr><th>Mã</th><th>Câu trên thẻ lượt tải</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <section class="panel" id="chua-co">
+      <h2>Chưa hỗ trợ</h2>
+      <ul class="hd-buoc">
+        <!-- nguon.py:228 "Không có Threads: không extractor nào của bản yt-dlp cài chứa thread" -->
+        <li>Threads.</li>
+        <!-- nguon.py:224-225: kênh/playlist ngoài YouTube (TikTokUser qua yt-dlp, InstagramUser…) không nhận -->
+        <li>Kênh / trang cá nhân / playlist của nền tảng ngoài YouTube và TikTok — chỉ nhận link video lẻ.</li>
+        <!-- docs pha 4 (PR #65 Known limits): /c/<tên>, /user/<tên>, music.youtube.com playlist bị từ chối -->
+        <li>Link YouTube dạng <code>/c/&lt;tên&gt;</code>, <code>/user/&lt;tên&gt;</code> và playlist YouTube Music.</li>
+        <li>Video riêng tư, chỉ thành viên, hoặc cần đăng nhập ở nền tảng ngoài TikTok.</li>
+      </ul>
+      <p class="muted">Cần thêm nguồn nào thì báo người phát triển — nhiều nền tảng đã có sẵn trong code, chỉ cần bật.</p>
+    </section>
+
+  </main>
+</div>
+
+<script src="/cookie-status-text.js"></script>
+<script src="/stop-reason-text.js"></script>
+<script src="/huong-dan.js"></script>
+</body>
+</html>

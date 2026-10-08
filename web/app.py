@@ -27,8 +27,8 @@ from sse_starlette.sse import EventSourceResponse
 
 from tiktok_music_downloader import downloader
 from tiktok_music_downloader.nguon import (
-    NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon,
-    nen_tang_bat, tach_link)
+    NEN_TANG_LINK_LE, NGUON, NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, TRAN_DUNG_LUONG_BYTE,
+    TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
 from web import giai_captcha
 from web import giai_captcha_api
@@ -663,6 +663,38 @@ def me(nguoi_tao: str = Depends(require_user)) -> dict:
     except Exception as exc:  # noqa: BLE001 — sổ danh bạ hỏng không được chặn đăng nhập
         log.warning("không ghi được người dùng %s (%s)", nguoi_tao, type(exc).__name__)
     return {"email": nguoi_tao, "la_admin": _la_admin(nguoi_tao)}
+
+
+@app.get("/tinh-nang")
+def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
+    """Tool đang làm được gì, đọc thẳng từ code và cấu hình đang chạy — cho trang Hướng dẫn.
+
+    Trang Hướng dẫn KHÔNG chép số: mọi trần và mọi nền tảng ở đây là hằng thật (hoặc cờ
+    `VIDEODL_NEN_TANG_BAT` đang áp), nên đổi trần hay bật nền tảng thì trang đổi theo, không
+    ai phải nhớ sửa chữ. Chỉ trả hằng và cờ: không đường dẫn, không email, không gì của cookie.
+    """
+    return {
+        "nguon": [{"ten": n.ten, "mo_ta": n.mo_ta_url} for n in NGUON],
+        "nen_tang_link_le": sorted(NEN_TANG_LINK_LE),
+        "nen_tang_bat": sorted(nen_tang_bat()),
+        # Đang TẮT sau tín hiệu chặn (`create_job` trả 503). Chỉ TÊN: cột `ly_do` có thể mang chữ lỗi của nền tảng.
+        "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
+        "ten_hien_thi": TEN_HIEN_THI,
+        "tran": {
+            "so_luong_mot_luot": MAX_SO_LUONG,
+            "link_mot_luot": MAX_LINK_MOT_JOB,
+            "video_kenh_youtube": MAX_VIDEO_KENH_YOUTUBE,
+            "thoi_luong_video_giay": TRAN_THOI_LUONG_GIAY,
+            "dung_luong_video_mb": TRAN_DUNG_LUONG_BYTE // (1024 * 1024),
+            "tiktok_moi_ngay": {
+                "luot": MAX_JOBS_PER_COOKIE_PER_DAY,
+                "video": MAX_VIDEOS_PER_COOKIE_PER_DAY,
+                "trang_index": MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
+            },
+            # Bộ điều tốc IP chung cả hệ thống (`web/pacer.py::TRAN`), theo từng nền tảng.
+            "ip_moi_nen_tang": {nt: {"gio": g, "ngay": n} for nt, (g, n) in pacer.TRAN.items()},
+        },
+    }
 
 
 @app.get("/me/cookie")

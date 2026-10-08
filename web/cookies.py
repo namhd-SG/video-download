@@ -96,7 +96,7 @@ def cookie_identity(cookies_dir: Path, nguoi_tao: str) -> str:
 COOKIE_DANG_NHAP = ("sessionid", "sessionid_ss", "sid_tt")
 
 # Tập mã ĐÓNG cho cột `ly_do_dung`. Câu chữ cho người dùng nằm ở
-# `web/static/app.js::STOP_REASON_TEXT` — thêm mã ở đây thì phải thêm câu ở đó.
+# `web/static/stop-reason-text.js::STOP_REASON_TEXT` — thêm mã ở đây thì phải thêm câu ở đó.
 COOKIE_KHONG_DOC_DUOC = "cookie_khong_doc_duoc"
 COOKIE_RONG = "cookie_rong"
 COOKIE_CHUA_DANG_NHAP = "cookie_chua_dang_nhap"

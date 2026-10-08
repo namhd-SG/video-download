@@ -1,7 +1,7 @@
 // Câu chữ cho TRẠNG THÁI cookie đang có — dùng ở trang Cài đặt và ở dải nhắc
 // trên trang chính.
 //
-// Cố ý tách khỏi `app.js::STOP_REASON_TEXT`: bảng kia nói về một LƯỢT TẢI đã
+// Cố ý tách khỏi `stop-reason-text.js::STOP_REASON_TEXT`: bảng kia nói về một LƯỢT TẢI đã
 // dừng ("Dừng: tệp cookie của bạn…"), bảng này nói về cookie ĐANG nằm đó. Cùng
 // một bộ mã (`web/cookies.py::MA_LOI_COOKIE`), hai ngữ cảnh, nên hai câu — cùng
 // một câu cho cả hai chỗ sẽ sai giọng ở một trong hai.

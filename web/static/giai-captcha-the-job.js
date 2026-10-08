@@ -23,7 +23,7 @@
   const laBuocGiai = (tt) => Object.prototype.hasOwnProperty.call(NHAN, tt);
 
   // Câu cho thẻ `cho_xac_minh` khi mã lý do là "TikTok đòi xác minh" (cả hai mã vào trạng thái
-  // này). Câu chung ở `STOP_REASON_TEXT` (app.js) nói cho ca job `failed`, còn ở đây người đọc
+  // này). Câu chung ở `STOP_REASON_TEXT` (stop-reason-text.js) nói cho ca job `failed`, còn ở đây người đọc
   // đang nhìn nút "Tôi giải ngay" nên câu phải trỏ tới nút đó.
   const CAU_DOI_XAC_MINH =
     "TikTok đòi xác minh trước khi cho xem danh sách video của trang này. " +

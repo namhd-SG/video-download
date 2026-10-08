@@ -326,7 +326,7 @@ def adaptive_backoff(failure_streak: int, max_seconds: float = 300.0) -> float:
 # ===========================================================================
 # Cố ý là hằng ngắn chứ không phải câu văn: caller phải SO SÁNH được, và chuỗi
 # tiếng Anh dài sẽ bị ai đó sửa cho "dễ đọc" rồi làm hỏng so sánh. Câu chữ cho
-# người dùng nằm ở `web/static/app.js::STOP_REASON_TEXT`.
+# người dùng nằm ở `web/static/stop-reason-text.js::STOP_REASON_TEXT`.
 #
 # Bộ này nằm ở `utils` vì từ 21/09 có HAI nơi sinh ra nó: `hashtag_enumerator`
 # (nhánh hashtag) và `scraper` (music/search/profile, khi biết đào sâu). Hai
@@ -356,7 +356,7 @@ STOP_NGHI_BI_CHAN = "nghi_bi_chan"
 # `already_owned` (nguồn còn đưa, mình có hết) và `source_empty` (không gom được
 # gì): ở đây có thể gom được một video lẻ không đến từ feed. Đo 01–02/10: trang
 # hiện captcha với trình duyệt tự động, và không cookie / cookie khác rỗng y hệt
-# ⇒ KHÔNG phải do cookie; câu chữ ở `app.js::STOP_REASON_TEXT.feed_rong`.
+# ⇒ KHÔNG phải do cookie; câu chữ ở `stop-reason-text.js::STOP_REASON_TEXT.feed_rong`.
 STOP_FEED_RONG = "feed_rong"
 # Không tra được mã (challenge id) của hashtag nên chưa đọc được trang nào:
 # trang hashtag không tải được (mạng, TikTok chặn/giới hạn tần suất), hashtag
