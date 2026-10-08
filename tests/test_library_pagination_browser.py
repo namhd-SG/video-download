@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 
 import pytest
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 pw_api = pytest.importorskip("playwright.sync_api")
 
@@ -66,12 +67,13 @@ def base_url():
 def page(base_url):
     with pw_api.sync_playwright() as pw:
         try:
-            br = pw.chromium.launch()
+            br = pw.chromium.launch(args=ARGS_CHAN_MANG)
         except Exception as exc:  # noqa: BLE001 — không có Chromium thì không đo được
             pytest.skip(f"không mở được Chromium: {exc}")
         p = br.new_page(viewport={"width": 1200, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", lambda r: r.fulfill(json={"tong": TONG, "videos": VIDEOS}))
-        p.goto(base_url)
+        mo_trang(p, base_url, chan)
         p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
         yield p
         br.close()

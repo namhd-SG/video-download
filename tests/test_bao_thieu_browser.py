@@ -19,6 +19,7 @@ import pytest
 
 from web import app as app_mod
 from web import models
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 NGUOI = "baothieu@dev.local"
 URL_TAG = "https://www.tiktok.com/tag/vidu-bao-thieu"
@@ -98,17 +99,18 @@ def _mo_trang(may_chu):
     pw_api = pytest.importorskip("playwright.sync_api")
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001 — không có Chromium thì không đo được
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
     ctx = br.new_context(viewport={"width": 1000, "height": 1100},
                          permissions=["clipboard-read", "clipboard-write"])
+    chan = dem_mang_ngoai(ctx)
     p = ctx.new_page()
     posts: list[dict] = []
     p.on("request", lambda r: posts.append(r.post_data_json)
          if r.method == "POST" and r.url.rstrip("/").endswith("/jobs") else None)
-    p.goto(may_chu[0])
+    mo_trang(p, may_chu[0], chan)
     p.wait_for_selector("#queue-list li")
     return p, posts, (br, pw)
 

@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 if os.environ.get("VIDEODL_DO_HIEU_NANG") != "1":
     pytest.skip("phép đo hiệu năng — bật bằng VIDEODL_DO_HIEU_NANG=1", allow_module_level=True)
@@ -93,13 +94,14 @@ def test_do_luoi_o_muc_tran(base_url):
     with pw_api.sync_playwright() as pw:
         try:
             # Cờ này cho `performance.memory` số thật thay vì số làm tròn theo bậc.
-            br = pw.chromium.launch(args=["--enable-precise-memory-info"])
+            br = pw.chromium.launch(args=["--enable-precise-memory-info", *ARGS_CHAN_MANG])
         except Exception as exc:  # noqa: BLE001
             pytest.skip(f"không mở được Chromium: {exc}")
         p = br.new_page(viewport={"width": 1280, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", tra)
         t0 = time.perf_counter()
-        p.goto(base_url)
+        mo_trang(p, base_url, chan)
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached", timeout=60_000)
         t_ve = time.perf_counter() - t0
         so_the = p.locator("#card-grid .card").count()

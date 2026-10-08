@@ -20,6 +20,7 @@ import pytest
 
 from web import app as app_mod
 from web import models, models_chia, models_cum
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 NGUOI = "chiacum@dev.local"
 
@@ -109,12 +110,13 @@ def page(dulieu):
     pw_api = pytest.importorskip("playwright.sync_api")
     with pw_api.sync_playwright() as pw:
         try:
-            br = pw.chromium.launch()
+            br = pw.chromium.launch(args=ARGS_CHAN_MANG)
         except Exception as exc:  # noqa: BLE001 — không có Chromium thì không đo được
             pytest.skip(f"không mở được Chromium: {exc}")
         ctx = br.new_context(viewport={"width": 1300, "height": 900})
+        chan = dem_mang_ngoai(ctx)
         p = ctx.new_page()
-        p.goto(dulieu["url"])
+        mo_trang(p, dulieu["url"], chan)
         p.wait_for_selector("#queue-list li")
         yield p
         br.close()

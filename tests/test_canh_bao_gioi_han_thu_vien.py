@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 pw_api = pytest.importorskip("playwright.sync_api")
 
@@ -84,7 +85,7 @@ def _mo_trang(base_url, tong: int):
                             "da_don_trong_cum": []})
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
@@ -92,8 +93,9 @@ def _mo_trang(base_url, tong: int):
     # trình duyệt chạy sau đó đỏ dây chuyền ("Sync API inside the asyncio loop").
     try:
         p = br.new_page(viewport={"width": 1200, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", tra)
-        p.goto(base_url)
+        mo_trang(p, base_url, chan)
         p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
     except Exception:
         br.close()
@@ -198,14 +200,15 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng(base_url):
                             "videos": kho[phia][offset:offset + limit], "da_don_trong_cum": []})
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
     try:
         p = br.new_page(viewport={"width": 1280, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", tra)
-        p.goto(base_url)
+        mo_trang(p, base_url, chan)
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
         thu_muc = os.environ.get("VIDEODL_SHOT_DIR")
 
@@ -279,17 +282,18 @@ def _mo_hai_phia(base_url, so: dict, giu_phia1: list | None = None, loi_phia1: b
         route.continue_()
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
     try:
         p = br.new_page(viewport={"width": 1280, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", tra)
         p.route("**/cum", tra_cum)
         # Request bị trang HUỶ (AbortController của lượt nạp bị thay) — bất biến pha 1.
         p.on("requestfailed", lambda r: giu_cum["huy"].append(r.url))
-        p.goto(base_url)
+        mo_trang(p, base_url, chan)
         p.wait_for_selector("#card-grid[data-nap-phia='0']", state="attached")
     except Exception:
         br.close()
@@ -455,15 +459,16 @@ def test_lan_nap_dau_loi_khong_noi_thu_vien_trong(base_url):
     có video nào" (thư viện chưa nạp được, không phải trống)."""
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
     try:
         p = br.new_page(viewport={"width": 1280, "height": 900})
+        chan = dem_mang_ngoai(p)
         with p.expect_response(lambda r: "/videos?" in r.url):
             p.route("**/videos?*", lambda route: route.fulfill(status=500, body="loi"))
-            p.goto(base_url)
+            mo_trang(p, base_url, chan)
         _cho_vong_su_kien(p)
         assert not p.locator("#empty-state").is_visible()
         # Lần đầu hỏng: toast 2,6 s rồi trang trống là im lặng ⇒ ô lỗi thường trực.
@@ -486,15 +491,16 @@ def test_lan_dau_loi_roi_bam_chip_cung_loi_chip_ve_tat_het_dang_nap(base_url):
     `aria-busy` (không kẹt "đang nạp" mãi)."""
     pw = pw_api.sync_playwright().start()
     try:
-        br = pw.chromium.launch()
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
     try:
         p = br.new_page(viewport={"width": 1280, "height": 900})
+        chan = dem_mang_ngoai(p)
         p.route("**/videos?*", lambda route: route.fulfill(status=500, body="loi"))
         with p.expect_response(lambda r: "/videos?" in r.url):
-            p.goto(base_url)
+            mo_trang(p, base_url, chan)
         with p.expect_response(lambda r: "vao_bo=1" in r.url):
             p.click("#chip-vao-bo")
         _cho_vong_su_kien(p)

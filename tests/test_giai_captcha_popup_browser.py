@@ -31,6 +31,9 @@ from giai_captcha_http import Sse
 from web import giai_captcha as gc
 from web import models, profile_theo_job
 from web import models_giai_captcha as mgc
+# `mo_trang` là tên một fixture của tệp này ⇒ đặt tên khác cho helper.
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai
+from trinh_duyet_khong_mang import mo_trang as mo_trang_khong_mang
 
 NGUOI = "chu.popup@dev.local"
 URL = "https://www.tiktok.com/@vi-du.kenh"
@@ -116,7 +119,7 @@ def trinh_duyet():
         # Chặn mọi host ngoài 127.0.0.1 ngay ở tầng DNS của trình duyệt (font Google…): không dùng
         # `route` phía Python vì nó bắt MỌI request chờ vòng lặp Playwright — mà vòng đó đứng yên khi
         # test chờ bằng vòng `sleep`.
-        br = pw.chromium.launch(args=["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"])
+        br = pw.chromium.launch(args=ARGS_CHAN_MANG)
     except Exception as exc:  # noqa: BLE001 — không có Chromium thì không đo được
         pw.stop()
         pytest.skip(f"không mở được Chromium: {exc}")
@@ -165,6 +168,7 @@ class Ghi:
 def _mo(trinh_duyet, may_chu, *, rong=1001, cao=1000):
     """Trả (page, ctx). Chỉ 127.0.0.1 (chặn ở cấp trình duyệt, xem `trinh_duyet`)."""
     ctx = trinh_duyet.new_context(viewport={"width": rong, "height": cao})
+    ctx.mang_chan = dem_mang_ngoai(ctx)
     page = ctx.new_page()
     return page, ctx
 
@@ -180,7 +184,7 @@ def mo_trang(trinh_duyet, may_chu):
         ghi = Ghi(page)
         if truoc:
             truoc(page)
-        page.goto(f"http://127.0.0.1:{may_chu[0]}/")
+        mo_trang_khong_mang(page, f"http://127.0.0.1:{may_chu[0]}/", ctx.mang_chan)
         page.wait_for_selector("#queue-list li")
         return page, ghi
 
