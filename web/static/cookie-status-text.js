@@ -14,6 +14,7 @@
 window.MA_COOKIE_TRANG_THAI = Object.freeze({
   cookie_khong_doc_duoc: "Tệp không đọc được — xuất lại dạng JSON (không phải RTF).",
   cookie_rong: "Tệp không có cookie nào — xuất lại khi đang mở tiktok.com.",
+  cookie_khong_phai_tiktok: "Đây không phải cookie TikTok — mở tiktok.com, đăng nhập rồi xuất lại.",
   cookie_chua_dang_nhap: "Cookie không có phiên đăng nhập — đăng nhập TikTok rồi xuất lại.",
   cookie_het_han: "Cookie đăng nhập đã hết hạn — đăng nhập lại rồi xuất lại.",
 });

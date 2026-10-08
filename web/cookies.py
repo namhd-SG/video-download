@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import logging
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
@@ -100,8 +101,22 @@ COOKIE_KHONG_DOC_DUOC = "cookie_khong_doc_duoc"
 COOKIE_RONG = "cookie_rong"
 COOKIE_CHUA_DANG_NHAP = "cookie_chua_dang_nhap"
 COOKIE_HET_HAN = "cookie_het_han"
-MA_LOI_COOKIE = (COOKIE_KHONG_DOC_DUOC, COOKIE_RONG,
+COOKIE_KHONG_PHAI_TIKTOK = "cookie_khong_phai_tiktok"
+MA_LOI_COOKIE = (COOKIE_KHONG_DOC_DUOC, COOKIE_RONG, COOKIE_KHONG_PHAI_TIKTOK,
                  COOKIE_CHUA_DANG_NHAP, COOKIE_HET_HAN)
+
+
+def _la_cookie_tiktok(c: dict) -> bool:
+    """Cookie này thuộc tên miền tiktok.com (hoặc tên miền con của nó).
+
+    So ĐÚNG tên miền sau khi bỏ dấu chấm đầu: `== "tiktok.com"` hoặc đuôi
+    `".tiktok.com"`. So chuỗi con (`"tiktok.com" in d`) sẽ nhận cả
+    `nottiktok.com` lẫn `tiktok.com.evil.io`. Bản xuất không có `domain` thì
+    Playwright dùng `url` (`_normalize_cookie`), nên lấy host từ đó.
+    """
+    host = str(c.get("domain") or urlsplit(str(c.get("url") or "")).hostname or "")
+    host = host.lstrip(".").lower()
+    return host == "tiktok.com" or host.endswith(".tiktok.com")
 
 
 def _hinh_dang_hong(path: Path) -> str:
@@ -141,7 +156,9 @@ def han_dung_nhat(path: str) -> str | None:
 
     han = []
     for c in cookies:
-        if str(c.get("name") or "") not in COOKIE_DANG_NHAP:
+        # Cùng bộ lọc với `ly_do_jar_khong_dung_duoc`: `sessionid` của nền tảng
+        # khác không nói gì về hạn của phiên TikTok.
+        if str(c.get("name") or "") not in COOKIE_DANG_NHAP or not _la_cookie_tiktok(c):
             continue
         try:
             h = int(c.get("expires") or 0)
@@ -181,6 +198,14 @@ def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | 
 
     if not cookies:
         return COOKIE_RONG
+
+    # Chỉ xét cookie của tiktok.com. Trang này nhận MỘT jar TikTok mỗi người,
+    # và tên cookie đăng nhập không riêng của TikTok: jar Instagram cũng có
+    # `sessionid`. Xét tên trên cả jar thì jar IG qua cửa, ghi đè jar TikTok
+    # đang chạy được, và job chạy với phiên của nền tảng khác.
+    cookies = [c for c in cookies if _la_cookie_tiktok(c)]
+    if not cookies:
+        return COOKIE_KHONG_PHAI_TIKTOK
 
     ten = {str(c.get("name") or "") for c in cookies}
     if not (ten & set(COOKIE_DANG_NHAP)):

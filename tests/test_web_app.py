@@ -447,6 +447,77 @@ def test_a_broken_paste_does_not_replace_a_working_jar(tmp_path, monkeypatch):
     assert list(tmp_dir.iterdir()) == [], "còn sót jar tạm đọc được trên đĩa"
 
 
+def _jar_mot_cookie(domain: str, ten: str = "sessionid") -> str:
+    return json.dumps([{"name": ten, "value": "gia", "domain": domain,
+                        "path": "/", "expires": 4102444800}])
+
+
+@pytest.mark.parametrize("jar, ma", [
+    # Jar Instagram có `sessionid` — đúng tên cookie đăng nhập TikTok. Xét tên trên cả
+    # jar thì nó qua cửa và ghi đè jar TikTok đang chạy được.
+    (_jar_mot_cookie(".instagram.com"), cookies.COOKIE_KHONG_PHAI_TIKTOK),
+    # Jar trộn: cookie đăng nhập là của IG, phần tiktok.com chỉ có cookie khách.
+    (json.dumps([json.loads(_jar_mot_cookie(".instagram.com"))[0],
+                 json.loads(_jar_mot_cookie(".tiktok.com", "tt_csrf_token"))[0]]),
+     cookies.COOKIE_CHUA_DANG_NHAP),
+])
+def test_a_jar_from_another_site_does_not_replace_the_tiktok_jar(
+        tmp_path, monkeypatch, jar, ma):
+    cookies_dir, tmp_dir = _san_cookie(tmp_path, monkeypatch)
+    app_mod.put_my_cookie(app_mod.CookieBody(json=_jar_hop_le()), nguoi_tao=TEST_USER)
+    dich = cookies.cookie_jar_path(cookies_dir, TEST_USER)
+    truoc = dich.read_bytes()
+
+    with pytest.raises(HTTPException) as bat:
+        app_mod.put_my_cookie(app_mod.CookieBody(json=jar), nguoi_tao=TEST_USER)
+
+    assert bat.value.status_code == 400
+    assert bat.value.detail == ma
+    assert dich.read_bytes() == truoc, "jar TikTok đang dùng bị ghi đè"
+    assert list(tmp_dir.iterdir()) == [], "còn sót jar tạm đọc được trên đĩa"
+
+
+@pytest.mark.parametrize("domain, nhan", [
+    (".tiktok.com", True),
+    ("tiktok.com", True),
+    ("www.tiktok.com", True),
+    ("WWW.TikTok.com", True),
+    # So chuỗi con sẽ nhận hai ca dưới — tên miền khác, không phải TikTok.
+    ("nottiktok.com", False),
+    ("tiktok.com.evil.io", False),
+    (".instagram.com", False),
+])
+def test_only_tiktok_com_and_its_subdomains_count_as_tiktok(tmp_path, domain, nhan):
+    p = tmp_path / "jar.json"
+    p.write_text(_jar_mot_cookie(domain), encoding="utf-8")
+
+    ma = cookies.ly_do_jar_khong_dung_duoc(str(p))
+
+    assert ma == (None if nhan else cookies.COOKIE_KHONG_PHAI_TIKTOK), domain
+
+
+def test_a_cookie_exported_with_url_instead_of_domain_is_judged_by_its_host(tmp_path):
+    """`_normalize_cookie` nhận `url` thay cho `domain` — host lấy từ url."""
+    p = tmp_path / "jar.json"
+    for url, ma in (("https://www.tiktok.com/", None),
+                    ("https://tiktok.com.evil.io/", cookies.COOKIE_KHONG_PHAI_TIKTOK)):
+        p.write_text(json.dumps([{"name": "sessionid", "value": "gia", "url": url,
+                                  "expires": 4102444800}]), encoding="utf-8")
+        assert cookies.ly_do_jar_khong_dung_duoc(str(p)) == ma, url
+
+
+def test_every_cookie_code_has_a_sentence_on_the_settings_page():
+    """Trang Cài đặt tra mã qua `MA_COOKIE_TRANG_THAI`; mã không có câu thì cú dán bị
+    từ chối chỉ hiện "Không lưu được cookie" kèm mã thô."""
+    import re
+    js = Path("web/static/cookie-status-text.js").read_text(encoding="utf-8")
+    dau = js.index("MA_COOKIE_TRANG_THAI")
+    khoa = set(re.findall(r"^\s{2}(\w+):", js[dau:js.index("});", dau)], re.M))
+
+    thieu = [m for m in cookies.MA_LOI_COOKIE if m not in khoa]
+    assert thieu == [], f"mã không có câu trên trang Cài đặt: {thieu}"
+
+
 def test_no_byte_of_the_jar_comes_back_out(tmp_path, monkeypatch, caplog):
     """Không một ký tự nào của tệp được ra ngoài — kể cả khi jar hỏng."""
     cookies_dir, _ = _san_cookie(tmp_path, monkeypatch)
