@@ -158,6 +158,22 @@ class DriveUploader:
         metadata = {"name": path.name, "parents": [parent_folder_id or self._folder_id]}
         return self._create_drive_object(metadata, media_path=path, label=path.name)
 
+    def download_file(self, file_id: str, dest: Path) -> Path:
+        """Tải một file (kể cả file riêng tư mà service account được chia sẻ) về `dest` — `gdrive.download_file` chỉ tải được
+        file CÔNG KHAI (gdown). Ghi ra `.part` rồi đổi tên: file dở không bao giờ trông như file xong. Lỗi ⇒ ném lên."""
+        if not self.is_configured():
+            raise RuntimeError("Google Drive chưa được cấu hình")
+        from googleapiclient.http import MediaIoBaseDownload
+
+        req = self._build_service().files().get_media(fileId=file_id, supportsAllDrives=True)
+        part = dest.with_name(dest.name + ".part")
+        with open(part, "wb") as fh:
+            dl, xong = MediaIoBaseDownload(fh, req, chunksize=8 << 20), False
+            while not xong:
+                _, xong = dl.next_chunk()
+        part.replace(dest)
+        return dest
+
     def trash_file(self, file_id: str) -> UploadResult:
         """Move one file to the Shared Drive's trash. Recoverable for 30 days.
 

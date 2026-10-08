@@ -39,6 +39,7 @@ from web import models_giai_captcha
 from web import models_vao_bo
 from web import pacer
 from web import profile_theo_job
+from web import thay_logo_routes, thay_logo_worker
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
@@ -190,6 +191,7 @@ def _loai_tru_lane_khac() -> tuple[str, ...]:
 
 
 worker = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_TIKTOK)
+worker_thay_logo = None
 worker_khac = JobWorker(DB_PATH, DOWNLOADS_DIR, COOKIES_DIR, lane=models.LANE_KHAC,
                         loai_tru_fn=_loai_tru_lane_khac)
 
@@ -283,6 +285,10 @@ async def _lifespan(app: FastAPI):
                             loai_tru_fn=_loai_tru_lane_khac)
     worker.start()
     worker_khac.start()
+    global worker_thay_logo  # TẮT trừ khi THAY_LOGO_BAT=1 + đủ cấu hình (web/thay_logo_worker.py:dung_tu_env)
+    worker_thay_logo = thay_logo_worker.dung_tu_env(DATA_DIR, DB_PATH)
+    if worker_thay_logo is not None:
+        worker_thay_logo.start()
     # Bộ kiểm "đã vào bộ": ẩn video đã được copy vào bộ tự tìm, dọn tệp nguồn sau 7
     # ngày. Tắt nhanh bằng env nếu cần lùi mà không deploy lại.
     lap = None if os.environ.get(ENV_TAT_LAP_VAO_BO) else LapVaoBo(DB_PATH)
@@ -291,6 +297,8 @@ async def _lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if worker_thay_logo is not None:  # dừng ĐẦU TIÊN, có trần thời gian, giết cả nhóm tiến trình con
+            worker_thay_logo.stop()
         if lap is not None:
             lap.stop()
         worker_khac.stop()
@@ -1411,6 +1419,10 @@ async def job_events(job_id: int,
 # Giải captcha ngay trong popup (4 route, sau cờ `VIDEODL_PROFILE_CAPTCHA`; cờ TẮT ⇒ 409).
 giai_captcha_api.dang_ky_route(app, lay_db=lambda: DB_PATH, la_admin=_la_admin,
                                require_user=require_user)
+# Thay logo: hộp thư relay agy (token riêng, thiếu ⇒ 503) + route member (người tạo / admin).
+thay_logo_routes.dang_ky_route(app, lambda: thay_logo_routes.HopThu(DATA_DIR / "thay_logo_hop_thu"))
+thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db", require_user, _la_admin,
+                                      lambda: worker_thay_logo)
 
 
 # Mounted last so it only catches paths none of the routes above matched —

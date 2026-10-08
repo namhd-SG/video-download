@@ -25,9 +25,17 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import hang_doi, hoc_mau_agy, nhat_ky
+from tiktok_music_downloader.thay_logo import hang_doi, nhat_ky
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
-from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungVideo
+
+# `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
+# (`_cv`): máy chưa cài opencv vẫn chạy Video Desk bình thường — tính năng đơn giản là không dựng được (log lý do).
+
+
+def _cv():
+    from tiktok_music_downloader.thay_logo import hoc_mau_agy
+    from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungVideo
+    return hoc_mau_agy, NguonKhungVideo
 
 log = logging.getLogger("videodl.thay_logo")
 TRAN_DIA_GB = 5.0
@@ -72,7 +80,7 @@ class ThayLogoWorker:
                  tai_len: Callable[[Path], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
                  tran_dia_gb: float = TRAN_DIA_GB):
         self.log_db, self.jobs_db, self.data = Path(log_db), Path(jobs_db), Path(data_dir)
-        self.hop = HopThu(self.data / "hop_thu")
+        self.hop = HopThu(self.data / "thay_logo_hop_thu")
         self.tai_ve, self.tai_len, self.ffmpeg, self.python = tai_ve, tai_len, ffmpeg, python
         self.nghi, self.tran_dia_gb = nghi_giay, tran_dia_gb
         self._dung = threading.Event()
@@ -158,6 +166,7 @@ class ThayLogoWorker:
         if r is None:
             return
         try:
+            hoc_mau_agy, NguonKhungVideo = _cv()
             goc = self.tai_ve(json.loads(r["nguon"]), self._scratch(r["id"]))
             n = hoc_mau_agy.dat_viec(NguonKhungVideo(str(goc)), self.hop, r["id"])
         except Exception as e:
@@ -169,6 +178,7 @@ class ThayLogoWorker:
             hang_doi.dat(conn, r["id"], "cho_agy", cho_agy_tu=time.time(), duong_dan_goc=str(goc))
 
     def _pha_2(self, conn) -> str:
+        hoc_mau_agy, NguonKhungVideo = _cv()
         for r in hang_doi.danh_sach(conn, "cho_agy"):
             nguon = NguonKhungVideo(r["duong_dan_goc"])
             kq_agy = hoc_mau_agy.doc_ket_qua(nguon, self.hop, r["id"])
@@ -183,7 +193,7 @@ class ThayLogoWorker:
     def _chay_con(self, conn, r, nguon, boxes, man_ket) -> None:
         d = self._scratch(r["id"])
         (d / "boxes.json").write_text(json.dumps([b.__dict__ for b in boxes]))
-        ra = d / "ra.mp4"
+        ra = d / f"thay-logo-{r['id']}.mp4"  # tên này lên Drive
         cmd = ["nice", "-n", str(NICE), self.python, "-m", "tiktok_music_downloader.thay_logo.chay_mot_video",
                "--video", r["duong_dan_goc"], "--boxes", str(d / "boxes.json"), "--out", str(ra), "--db", str(self.log_db),
                "--files", str(self.data / "thay_logo"), "--nguon-video", r["nguon"], "--ffmpeg", self.ffmpeg,
@@ -229,3 +239,38 @@ class ThayLogoWorker:
             hang_doi.dat(conn, r["id"], "cho_nguoi", video_log_id=kq.get("video_log_id"))
         else:
             hang_doi.dat(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"), loi_text=str(kq.get("loi", ""))[:500])
+
+
+# ---------------------------------------------------------------- dựng từ cấu hình máy (app.py gọi)
+ENV_BAT, ENV_THU_MUC_RA = "THAY_LOGO_BAT", "THAY_LOGO_DRIVE_THU_MUC_RA"
+
+
+def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
+    """Công tắc tính năng: TẮT mặc định. Chỉ dựng worker khi `THAY_LOGO_BAT=1` VÀ có thư mục Drive đầu ra VÀ Drive (service
+    account) đã cấu hình VÀ tìm thấy ffmpeg; thiếu gì thì ghi log lý do và trả None (Video Desk chạy như chưa có tính năng)."""
+    if os.environ.get(ENV_BAT) != "1":
+        return None
+    try:
+        _cv()
+    except ImportError as e:
+        log.warning("thay logo: BẬT nhưng thiếu thư viện (%s) — không chạy worker", e.name)
+        return None
+    from tiktok_music_downloader.gdrive_upload import DriveUploader
+    from tiktok_music_downloader.watermark import find_ffmpeg
+
+    thu_muc, drive, ffmpeg = os.environ.get(ENV_THU_MUC_RA, ""), DriveUploader(), find_ffmpeg()
+    if not thu_muc or not drive.is_configured() or not ffmpeg:
+        log.warning("thay logo: BẬT nhưng thiếu cấu hình (thư mục ra=%s, drive=%s, ffmpeg=%s) — không chạy worker",
+                    bool(thu_muc), drive.is_configured(), bool(ffmpeg))
+        return None
+
+    def tai_ve(nguon: dict, d: Path) -> Path:
+        return drive.download_file(nguon["file_id"], d / "goc.mp4")
+
+    def tai_len(p: Path) -> str:
+        kq = drive.upload_file(p, parent_folder_id=thu_muc)
+        if not kq.ok:
+            raise RuntimeError(kq.reason or kq.outcome)
+        return kq.file_id
+
+    return ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg)

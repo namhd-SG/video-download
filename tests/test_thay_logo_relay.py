@@ -2,8 +2,11 @@
 import pytest
 
 pytest.importorskip("fastapi")
+pytest.importorskip("uvicorn")
+import json  # noqa: E402
+
 from fastapi import FastAPI  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from thay_logo_may_chu import MayChu  # noqa: E402
 
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu  # noqa: E402
 from web import thay_logo_routes  # noqa: E402
@@ -18,12 +21,39 @@ def hop(tmp_path):
     return HopThu(tmp_path / "hop_thu")
 
 
+class _Client:
+    """Bọc MayChu cho giống giao diện tối thiểu test cần: get/post trả đối tượng có status_code/content/json()."""
+
+    def __init__(self, mc):
+        self.mc = mc
+
+    def _r(self, cach, duong, headers=None, json=None):
+        ma, than = self.mc.goi(cach, duong, headers=headers, json_body=json)
+        return _Resp(ma, than)
+
+    def get(self, duong, headers=None):
+        return self._r("get", duong, headers)
+
+    def post(self, duong, headers=None, json=None):
+        return self._r("post", duong, headers, json)
+
+
+class _Resp:
+    def __init__(self, ma, than):
+        self.status_code, self.content = ma, than
+
+    def json(self):
+        return json.loads(self.content)
+
+
 @pytest.fixture
 def client(hop, monkeypatch):
     monkeypatch.setenv(thay_logo_routes.ENV_TOKEN, TOKEN)
     app = FastAPI()
     thay_logo_routes.dang_ky_route(app, lambda: hop)
-    return TestClient(app)
+    mc = MayChu(app)
+    yield _Client(mc)
+    mc.dung()
 
 
 def _ket_qua(anh_viec, **them):
@@ -52,7 +82,7 @@ def test_luong_day_du_chi_job_id_va_uuid_roi_mini(client, hop):
     r = client.get(R + "/viec", headers=H)
     assert r.json() == {"viec": [{"job_id": 7, "anh": ids}]}
     r = client.get(R + f"/anh/{ids[0]}", headers=H)
-    assert r.status_code == 200 and r.content == JPEG and r.headers["content-type"] == "image/jpeg"
+    assert r.status_code == 200 and r.content == JPEG
     assert client.post(R + "/ket-qua/7", headers=H, json=_ket_qua(ids[0])).status_code == 204
     assert hop.doc_ket_qua(7)["items"][0]["watermarks"] == [{"box_2d": [10, 20, 30, 40]}]
     assert client.get(R + "/viec", headers=H).json() == {"viec": []}

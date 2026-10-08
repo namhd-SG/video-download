@@ -2,8 +2,10 @@
 import pytest
 
 pytest.importorskip("fastapi")
+pytest.importorskip("uvicorn")
 from fastapi import FastAPI, Request  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
+from test_thay_logo_relay import _Client  # noqa: E402
+from thay_logo_may_chu import MayChu  # noqa: E402
 
 from tiktok_music_downloader.thay_logo import hang_doi, nhat_ky  # noqa: E402
 from web import thay_logo_routes  # noqa: E402
@@ -19,9 +21,13 @@ def ctx(tmp_path):
         return request.headers["x-user"]
 
     app = FastAPI()
-    thay_logo_routes.dang_ky_route_member(app, lambda: nhat_ky.mo(db), require_user, lambda e: e == ADMIN,
-                                          lay_worker=lambda: None)
-    return TestClient(app), db
+    worker = {"w": object()}
+    thay_logo_routes.dang_ky_route_member(app, lambda: db, require_user, lambda e: e == ADMIN, lambda: worker["w"])
+    mc = MayChu(app)
+    c = _Client(mc)
+    c.worker = worker
+    yield c, db
+    mc.dung()
 
 
 def _h(u):
@@ -79,7 +85,9 @@ def test_chua_xong_thi_khong_danh_gia(ctx):
     assert c.post(f"/api/thay-logo/videos/{vid}/danh-gia", headers=_h("a@x"), json={"ket_qua": "dat"}).status_code == 409
 
 
-def test_trang_thai_worker_chi_admin(ctx):
+def test_trang_thai_worker_chi_admin_va_tinh_nang_tat_thi_khong_nhan_luot_moi(ctx):
     c, _ = ctx
+    c.worker["w"] = None
     assert c.get("/api/thay-logo/admin/worker", headers=_h("a@x")).status_code == 403
-    assert c.get("/api/thay-logo/admin/worker", headers=_h(ADMIN)).json()["song"] is False
+    assert c.get("/api/thay-logo/admin/worker", headers=_h(ADMIN)).json() == {"song": False, "luot_cuoi": "tinh_nang_tat"}
+    assert c.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["A" * 20]}).status_code == 409

@@ -91,12 +91,13 @@ FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.i
 """
 
 
-def dang_ky_route_member(app: FastAPI, lay_conn: Callable[[], _sqlite3.Connection], require_user, la_admin,
-                         lay_worker: Callable[[], object] | None = None) -> None:
-    """`lay_conn` mở kết nối MỚI tới `thay_logo_log.db` (đã có schema nhật ký + hàng đợi); route tự đóng."""
+def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require_user, la_admin,
+                         lay_worker: Callable[[], object | None]) -> None:
+    """`lay_log_db` trả đường dẫn `thay_logo_log.db` LÚC GỌI; mỗi request mở kết nối mới và tự đóng. `lay_worker` trả None khi
+    tính năng TẮT ⇒ không nhận lượt mới (409), vẫn xem/đánh giá được kết quả cũ."""
 
-    def _mo():
-        conn = lay_conn()
+    def _mo() -> _sqlite3.Connection:
+        conn = nhat_ky.mo(lay_log_db())
         hang_doi.khoi_tao(conn)
         return conn
 
@@ -110,6 +111,8 @@ def dang_ky_route_member(app: FastAPI, lay_conn: Callable[[], _sqlite3.Connectio
 
     @app.post("/api/thay-logo/jobs", status_code=201)
     def tao_job(body: TaoJobThayLogo, email: str = Depends(require_user)) -> dict:
+        if lay_worker() is None:
+            raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
         if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids):
             raise HTTPException(400, "mã file Drive sai khuôn")
         conn = _mo()
@@ -165,5 +168,5 @@ def dang_ky_route_member(app: FastAPI, lay_conn: Callable[[], _sqlite3.Connectio
     def trang_thai_worker(email: str = Depends(require_user)) -> dict:
         if not la_admin(email):
             raise HTTPException(403, "chỉ quản trị")
-        w = lay_worker() if lay_worker else None
-        return w.trang_thai() if w is not None else {"song": False, "luot_cuoi": "chua_dung"}
+        w = lay_worker()
+        return w.trang_thai() if w is not None else {"song": False, "luot_cuoi": "tinh_nang_tat"}
