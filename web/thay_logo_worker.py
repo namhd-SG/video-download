@@ -78,7 +78,7 @@ def _gui_nhom(con: subprocess.Popen, sig) -> None:
 class ThayLogoWorker:
     def __init__(self, log_db: Path, jobs_db: Path, data_dir: Path, *, tai_ve: Callable[[dict, Path], Path],
                  tai_len: Callable[[Path], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
-                 tran_dia_gb: float = TRAN_DIA_GB):
+                 tran_dia_gb: float = TRAN_DIA_GB, relay_bind: str | None = None):
         self.log_db, self.jobs_db, self.data = Path(log_db), Path(jobs_db), Path(data_dir)
         self.hop = HopThu(self.data / "thay_logo_hop_thu")
         self.tai_ve, self.tai_len, self.ffmpeg, self.python = tai_ve, tai_len, ffmpeg, python
@@ -87,6 +87,8 @@ class ThayLogoWorker:
         self._thread: threading.Thread | None = None
         self._con: subprocess.Popen | None = None
         self._lan_cuoi = "chua_chay"
+        self.relay_bind = relay_bind
+        self.relay = None
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -102,10 +104,21 @@ class ThayLogoWorker:
             conn.close()
         self._thread = threading.Thread(target=self._chay, name="thay-logo-worker", daemon=True)
         self._thread.start()
+        if self.relay_bind:  # không có địa chỉ ⇒ không mở listener (không mặc định)
+            from web.thay_logo_relay_server import RelayServer
+            try:
+                self.relay = RelayServer(self.relay_bind, lambda: self.hop)
+            except ValueError as e:
+                log.warning("thay logo relay: KHÔNG mở listener — %s", e)
+            else:
+                if not self.relay.start():
+                    self.relay = None
 
     def stop(self, timeout: float = 15.0) -> None:
-        """Không bao giờ chờ vô hạn: TERM tiến trình con, KILL nếu cần, join có trần."""
+        """Không bao giờ chờ vô hạn: tắt listener relay, TERM tiến trình con, KILL nếu cần, join có trần."""
         self._dung.set()
+        if self.relay is not None:
+            self.relay.stop()
         con = self._con
         if con is not None and con.poll() is None:
             # Cả NHÓM tiến trình (tiến trình con + ffmpeg cháu nó sinh): giết riêng tiến trình con thì ffmpeg thành mồ côi.
@@ -122,6 +135,7 @@ class ThayLogoWorker:
         conn = self._mo()
         try:
             return {"song": bool(self._thread and self._thread.is_alive()), "luot_cuoi": self._lan_cuoi,
+                    "relay_mo": self.relay is not None,
                     "cho_agy_cu_nhat_giay": hang_doi.tuoi_cho_agy_cu_nhat(conn)}
         finally:
             conn.close()
@@ -273,4 +287,6 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
             raise RuntimeError(kq.reason or kq.outcome)
         return kq.file_id
 
-    return ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg)
+    from web.thay_logo_relay_server import ENV_BIND
+    return ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg,
+                          relay_bind=os.environ.get(ENV_BIND) or None)

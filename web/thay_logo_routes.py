@@ -22,9 +22,12 @@ ENV_TOKEN = "THAY_LOGO_RELAY_TOKEN"
 TIEN_TO = "/api/thay-logo/relay"
 
 
+TOKEN_TOI_THIEU = 32
+
+
 def _kiem_token(authorization: str | None = Header(default=None)) -> None:
     dung = os.environ.get(ENV_TOKEN, "")  # đọc LÚC GỌI: đổi/xoá token có hiệu lực không cần khởi động lại
-    if not dung:
+    if len(dung) < TOKEN_TOI_THIEU:  # thiếu HOẶC quá ngắn ⇒ coi như chưa cấu hình: đóng, không mở với token yếu
         raise HTTPException(503, "relay chưa cấu hình token")
     gui = (authorization or "").removeprefix("Bearer ").strip()
     if not gui or not hmac.compare_digest(gui.encode(), dung.encode()):

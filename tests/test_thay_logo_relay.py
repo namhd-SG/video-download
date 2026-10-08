@@ -12,7 +12,7 @@ from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu  # noqa:
 from web import thay_logo_routes  # noqa: E402
 
 JPEG = b"\xff\xd8\xff\xe0" + b"0" * 100
-TOKEN = "t-relay-test"
+TOKEN = "t-relay-test-" + "x" * 32
 H = {"Authorization": f"Bearer {TOKEN}"}
 
 
@@ -70,6 +70,11 @@ def test_thieu_token_moi_route_tra_503(client, monkeypatch, cach, duong):
     monkeypatch.delenv(thay_logo_routes.ENV_TOKEN)
     r = getattr(client, cach)(R + duong, headers=H, **({"json": {"items": []}} if cach == "post" else {}))
     assert r.status_code == 503
+
+
+def test_token_ngan_hon_32_ky_tu_coi_nhu_chua_cau_hinh(client, monkeypatch):
+    monkeypatch.setenv(thay_logo_routes.ENV_TOKEN, "ngan-qua")
+    assert client.get(R + "/viec", headers={"Authorization": "Bearer ngan-qua"}).status_code == 503
 
 
 @pytest.mark.parametrize("hdr", [{}, {"Authorization": "Bearer sai"}, {"Authorization": "Bearer "}])
