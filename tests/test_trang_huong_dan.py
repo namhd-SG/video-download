@@ -223,6 +223,11 @@ def test_trang_tai_va_cai_dat_deu_co_loi_vao_huong_dan(may_chu, trinh_duyet, ron
         assert "Hướng dẫn" in link.text_content()
         assert link.is_visible(), duong
         assert p.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"cuộn ngang {duong}"
+        # Không mục nào của thanh trên gãy thành hai dòng (ĐP bắt ở ảnh 390 px bản đầu): mỗi mục cao ≤ 1 dòng chữ.
+        cao = p.evaluate("""[...document.querySelectorAll('.brand, .topbar-nav a')].map(e => {
+            const cs = getComputedStyle(e); return e.getBoundingClientRect().height / parseFloat(cs.lineHeight === 'normal'
+            ? parseFloat(cs.fontSize) * 1.3 : cs.lineHeight); })""")
+        assert max(cao) < 1.6, f"mục thanh trên gãy dòng ở {rong}px {duong}: {cao}"
         if thu_muc:
             Path(thu_muc).mkdir(parents=True, exist_ok=True)
             ten = "trang-tai" if duong == "/" else "cai-dat"

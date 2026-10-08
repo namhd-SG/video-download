@@ -1028,3 +1028,12 @@ body.gc-lock-scroll { overflow: hidden; }
   .hd-bang th, .hd-bang td { border-top: 0; padding: 3px 2px; }
   .hd-bang tbody th { width: auto; }
 }
+
+/* Thanh trên ở màn hẹp: brand một hàng, nhóm link xuống hàng dưới, mỗi mục KHÔNG gãy chữ. Trước đây cả
+   "Video Desk", "⚙ Cài đặt", "Giao diện" đều gãy hai dòng ở 390 px — chỉ CSS, không đổi markup. */
+@media (max-width: 480px) {
+  .topbar { flex-wrap: wrap; row-gap: 8px; }
+  .brand, .topbar-nav a, #theme-toggle { white-space: nowrap; }
+  .topbar-nav { flex-wrap: wrap; gap: 6px 14px; margin-left: 0; width: 100%; }
+  .topbar-nav #theme-toggle { margin-left: auto; }
+}
