@@ -1419,8 +1419,8 @@ async def job_events(job_id: int,
 # Giải captcha ngay trong popup (4 route, sau cờ `VIDEODL_PROFILE_CAPTCHA`; cờ TẮT ⇒ 409).
 giai_captcha_api.dang_ky_route(app, lay_db=lambda: DB_PATH, la_admin=_la_admin,
                                require_user=require_user)
-# Thay logo: hộp thư relay agy (token riêng, thiếu ⇒ 503) + route member (người tạo / admin).
-thay_logo_routes.dang_ky_route(app, lambda: thay_logo_routes.HopThu(DATA_DIR / "thay_logo_hop_thu"))
+# Thay logo: route member (người tạo / admin). Route relay agy KHÔNG nằm ở app này — chúng chạy trên listener riêng chỉ bind IP
+# Tailscale (web/thay_logo_worker.py), để không route nào ở đây thoát lưới `require_user`.
 thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db", require_user, _la_admin,
                                       lambda: worker_thay_logo)
 
