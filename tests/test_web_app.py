@@ -642,6 +642,7 @@ KHONG_CAN_KIEM_CHU = {
                                                  "khác (tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/videos/{vid}/sheet.jpg": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/admin/worker": "chỉ admin (`la_admin`), 403 cho người thường (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/logo.png": "logo công ty đóng gói sẵn trong mã, không đọc dữ liệu của ai",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",

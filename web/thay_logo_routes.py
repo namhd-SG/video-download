@@ -167,6 +167,12 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         with open(p[0], "rb") as f:
             return Response(f.read(), media_type="image/jpeg")
 
+    @app.get("/api/thay-logo/logo.png")
+    def logo_mac_dinh(email: str = Depends(require_user)) -> Response:
+        p = os.path.join(os.path.dirname(hang_doi.__file__), "tai_nguyen", "logo_A2_tam_nen.png")
+        with open(p, "rb") as f:
+            return Response(f.read(), media_type="image/png")
+
     @app.get("/api/thay-logo/admin/worker")
     def trang_thai_worker(email: str = Depends(require_user)) -> dict:
         if not la_admin(email):

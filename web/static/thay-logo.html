@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video Desk — Thay logo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="app.css" />
+<style>
+  /* Riêng trang Thay logo (mock M1 đã duyệt ĐP-1507: ~/plans/261007-2254-video-desk-thay-logo/mock-m1/). Màu chỉ dùng token app.css. */
+  .tl-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
+  .tl-wrap > *, .tl-list > *, .tl-card > *, .tl-form > * { min-width: 0; }
+  .tl-form { display: grid; gap: 10px; }
+  .tl-form textarea { width: 100%; box-sizing: border-box; }
+  .tl-hang { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .tl-logo img { height: 28px; border-radius: 6px; background: #444; padding: 4px; vertical-align: middle; }
+  .tl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
+             background: var(--pending-bg); color: var(--pending-text); white-space: nowrap; border: 0; cursor: default; }
+  button.tl-chip { cursor: pointer; }
+  button.tl-chip.on { outline: 2px solid var(--accent); }
+  .tl-chip.ok { background: var(--success-bg); color: var(--success); }
+  .tl-chip.warn { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
+  .tl-chip.bad { background: var(--danger-bg); color: var(--danger); }
+  .tl-list { display: grid; gap: 12px; }
+  .tl-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px;
+             display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
+  .tl-card.co-co { border-color: var(--warn); box-shadow: inset 4px 0 0 var(--warn); }
+  .tl-card img { width: 200px; max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); }
+  .tl-o-trong { width: 200px; max-width: 100%; min-height: 90px; border-radius: 6px; background: var(--surface-alt); display: grid;
+                place-items: center; color: var(--text-faint); font-size: 12px; text-align: center; padding: 8px; box-sizing: border-box; }
+  .tl-card h3 { margin: 0 0 4px; font-size: 14px; font-family: var(--mono, "IBM Plex Mono", monospace); font-weight: 500;
+                overflow-wrap: anywhere; }
+  .tl-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tl-co { margin: 6px 0; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-size: 13px; }
+  .tl-cap { display: inline-flex; gap: 6px; white-space: nowrap; }
+  .tl-hong { display: none; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+  .tl-hong.mo { display: flex; }
+  .tl-hong select, .tl-hong input { font: inherit; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: 8px;
+                                     background: var(--surface); color: var(--text); max-width: 100%; }
+  .tl-i { cursor: help; color: var(--text-faint); border: 1px solid var(--border-strong); border-radius: 50%; width: 16px; height: 16px;
+          display: inline-grid; place-items: center; font-size: 11px; }
+  .tl-chon { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: none; }
+  .tl-chon.mo { display: grid; gap: 4px; }
+  .tl-chon label { font-size: 13px; overflow-wrap: anywhere; }
+  @media (max-width: 640px) { .tl-card { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk</div>
+    <nav class="topbar-nav">
+      <a href="/">⬇ Tải video</a>
+      <a href="/settings.html">⚙ Cài đặt</a>
+      <a href="/huong-dan.html#thay-logo">ⓘ Hướng dẫn</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
+  </header>
+  <p id="session-expired" class="session-expired" role="alert" hidden>
+    Phiên đăng nhập đã hết hạn — <a href="">tải lại trang</a> để đăng nhập lại.
+  </p>
+
+  <div class="tl-wrap">
+    <section class="panel">
+      <h2>Tạo lượt thay logo</h2>
+      <p id="tat" class="error-text" hidden>Tính năng thay logo đang tắt trên máy chủ.</p>
+      <form id="tl-form" class="tl-form">
+        <textarea id="tl-link" rows="3" placeholder="Link file Google Drive (mỗi dòng một link) — hoặc chọn từ thư viện bên dưới"></textarea>
+        <div class="tl-hang">
+          <button type="button" id="tl-mo-thu-vien" class="btn ghost">Chọn từ Thư viện tải</button>
+          <span class="tl-logo"><img src="/api/thay-logo/logo.png" alt="" onerror="this.remove()" /> <span class="muted">Logo mặc định</span></span>
+          <label class="muted"><input type="checkbox" disabled /> agy bù đoạn trượt
+            <span class="tl-i" title="Tắt trong giai đoạn thử. Bật sau khi xem kết quả pilot.">i</span></label>
+          <button type="submit" class="btn primary">Tạo lượt</button>
+        </div>
+        <div id="tl-chon" class="tl-chon" aria-label="Video trong thư viện"></div>
+      </form>
+      <p id="tl-loi" class="error-text" role="alert"></p>
+    </section>
+
+    <section>
+      <div id="tl-loc" class="tl-hang" style="margin-bottom:10px"></div>
+      <div id="tl-list" class="tl-list"></div>
+    </section>
+  </div>
+</div>
+<script src="thay-logo.js"></script>
+</body>
+</html>

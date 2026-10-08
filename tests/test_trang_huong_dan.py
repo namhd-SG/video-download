@@ -54,6 +54,8 @@ def test_tinh_nang_tra_dung_hang_that_trong_code(db_tam, monkeypatch):
                                     "video": lifecycle.MAX_VIDEOS_PER_COOKIE_PER_DAY,
                                     "trang_index": lifecycle.MAX_INDEX_PAGES_PER_COOKIE_PER_DAY}
     assert t["ip_moi_nen_tang"] == {nt: {"gio": g, "ngay": n} for nt, (g, n) in pacer.TRAN.items()}
+    assert t["thay_logo_video_mot_luot"] == app_mod.thay_logo_routes.TRAN_VIDEO_MOT_JOB
+    assert tn["thay_logo_bat"] is (app_mod.worker_thay_logo is not None)
 
 
 def test_bat_them_nen_tang_thi_trang_doi_theo_khong_ai_sua_chu(db_tam, monkeypatch):
@@ -84,7 +86,8 @@ def test_tinh_nang_chi_tra_hang_khong_tra_gi_cua_nguoi_dung(tmp_path, monkeypatc
 
     assert tn["nen_tang_tam_tat"] == ["youtube"]
 
-    assert set(tn) == {"nguon", "nen_tang_link_le", "nen_tang_bat", "nen_tang_tam_tat", "ten_hien_thi", "tran"}
+    # `thay_logo_bat`: một cờ bool (tính năng có dựng worker không) — không mang dữ liệu của ai.
+    assert set(tn) == {"nguon", "nen_tang_link_le", "nen_tang_bat", "nen_tang_tam_tat", "ten_hien_thi", "thay_logo_bat", "tran"}
     assert NGUOI not in tho and "@" not in tho
     for bi_mat in ("bi-mat", str(tmp_path), str(Path.home())):
         assert bi_mat not in tho, f"lộ {bi_mat!r}"

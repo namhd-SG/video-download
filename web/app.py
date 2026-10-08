@@ -688,7 +688,9 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
         # Đang TẮT sau tín hiệu chặn (`create_job` trả 503). Chỉ TÊN: cột `ly_do` có thể mang chữ lỗi của nền tảng.
         "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
         "ten_hien_thi": TEN_HIEN_THI,
+        "thay_logo_bat": worker_thay_logo is not None,
         "tran": {
+            "thay_logo_video_mot_luot": thay_logo_routes.TRAN_VIDEO_MOT_JOB,
             "so_luong_mot_luot": MAX_SO_LUONG,
             "link_mot_luot": MAX_LINK_MOT_JOB,
             "video_kenh_youtube": MAX_VIDEO_KENH_YOUTUBE,
