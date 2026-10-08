@@ -8,10 +8,14 @@ from __future__ import annotations
 
 import hmac
 import os
+import re as _re
+import sqlite3 as _sqlite3
 from typing import Callable
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Response
+from pydantic import BaseModel, Field
 
+from tiktok_music_downloader.thay_logo import hang_doi, nhat_ky
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 
 ENV_TOKEN = "THAY_LOGO_RELAY_TOKEN"
@@ -54,3 +58,112 @@ def dang_ky_route(app: FastAPI, lay_hop_thu: Callable[[], HopThu]) -> None:
             lay_hop_thu().nop_ket_qua(job_id, du_lieu)
         except LoiHopThu as e:
             raise _http(e) from None
+
+
+# ============================================================================ route cho MEMBER (trang Thay logo)
+# Xác thực bằng `require_user` có sẵn (JWT Cloudflare Access, cùng nguồn với `jobs.nguoi_tao`). Mỗi video chỉ NGƯỜI TẠO job hoặc admin
+# được xem / đánh giá (USER §0: "người tạo job tự duyệt").
+
+TRAN_VIDEO_MOT_JOB = 50
+_DRIVE_ID = _re.compile(r"^[A-Za-z0-9_-]{10,120}$")
+
+
+class TaoJobThayLogo(BaseModel):
+    drive_file_ids: list[str] = Field(min_length=1, max_length=TRAN_VIDEO_MOT_JOB)
+    ghi_chu: str = Field(default="", max_length=500)
+
+
+class DanhGia(BaseModel):
+    ket_qua: str
+    loai_loi: str | None = None
+    ghi_chu: str = Field(default="", max_length=2000)
+
+
+_SQL_DANH_SACH = """
+SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.loi_text, v.drive_file_id_ra, j.nguoi_tao,
+       t.giay_xu_ly, t.man_ket_agy,
+       (SELECT max(net_la_pho_bien) FROM tl_vet x WHERE x.video_id = v.video_log_id) AS can_soi_ky,
+       (SELECT max(pct_render) FROM tl_vet x WHERE x.video_id = v.video_log_id) AS pct_render,
+       (SELECT count(*) FROM tl_box_moi b WHERE b.video_id = v.video_log_id) AS so_box,
+       (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.video_log_id ORDER BY luc DESC LIMIT 1) AS danh_gia,
+       t.duong_dan_sheet IS NOT NULL AS co_sheet
+FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.id = v.video_log_id
+"""
+
+
+def dang_ky_route_member(app: FastAPI, lay_conn: Callable[[], _sqlite3.Connection], require_user, la_admin,
+                         lay_worker: Callable[[], object] | None = None) -> None:
+    """`lay_conn` mở kết nối MỚI tới `thay_logo_log.db` (đã có schema nhật ký + hàng đợi); route tự đóng."""
+
+    def _mo():
+        conn = lay_conn()
+        hang_doi.khoi_tao(conn)
+        return conn
+
+    def _video_cua(conn, vid: int, email: str):
+        r = conn.execute(_SQL_DANH_SACH + " WHERE v.id = ?", (vid,)).fetchone()
+        if r is None:
+            raise HTTPException(404, "không có video này")
+        if r["nguoi_tao"] != email and not la_admin(email):
+            raise HTTPException(403, "chỉ người tạo lượt hoặc quản trị")
+        return r
+
+    @app.post("/api/thay-logo/jobs", status_code=201)
+    def tao_job(body: TaoJobThayLogo, email: str = Depends(require_user)) -> dict:
+        if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids):
+            raise HTTPException(400, "mã file Drive sai khuôn")
+        conn = _mo()
+        try:
+            jid = hang_doi.tao_job(conn, email, [{"kieu": "drive", "file_id": f} for f in dict.fromkeys(body.drive_file_ids)],
+                                   body.ghi_chu)
+        finally:
+            conn.close()
+        return {"job_id": jid}
+
+    @app.get("/api/thay-logo/videos")
+    def danh_sach(email: str = Depends(require_user)) -> dict:
+        conn = _mo()
+        try:
+            if la_admin(email):
+                rows = conn.execute(_SQL_DANH_SACH + " ORDER BY v.id DESC LIMIT 300").fetchall()
+            else:
+                rows = conn.execute(_SQL_DANH_SACH + " WHERE j.nguoi_tao = ? ORDER BY v.id DESC LIMIT 300", (email,)).fetchall()
+        finally:
+            conn.close()
+        return {"videos": [{k: r[k] for k in r.keys()} for r in rows]}
+
+    @app.post("/api/thay-logo/videos/{vid}/danh-gia", status_code=204, response_model=None)
+    def danh_gia(vid: int, body: DanhGia, email: str = Depends(require_user)) -> None:
+        conn = _mo()
+        try:
+            r = _video_cua(conn, vid, email)
+            if r["trang_thai"] != "xong":
+                raise HTTPException(409, "chỉ đánh giá video đã thay xong")
+            log_id = conn.execute("SELECT video_log_id FROM tl_job_video WHERE id=?", (vid,)).fetchone()[0]
+            try:
+                nhat_ky.ghi_danh_gia(conn, log_id, email, body.ket_qua, body.loai_loi, body.ghi_chu)
+            except ValueError as e:
+                raise HTTPException(400, str(e)) from None
+        finally:
+            conn.close()
+
+    @app.get("/api/thay-logo/videos/{vid}/sheet.jpg")
+    def anh_soi(vid: int, email: str = Depends(require_user)) -> Response:
+        conn = _mo()
+        try:
+            _video_cua(conn, vid, email)
+            p = conn.execute("SELECT t.duong_dan_sheet FROM tl_job_video v JOIN tl_video t ON t.id = v.video_log_id "
+                             "WHERE v.id=?", (vid,)).fetchone()
+        finally:
+            conn.close()
+        if not p or not p[0] or not os.path.isfile(p[0]):
+            raise HTTPException(404, "chưa có ảnh soi")
+        with open(p[0], "rb") as f:
+            return Response(f.read(), media_type="image/jpeg")
+
+    @app.get("/api/thay-logo/admin/worker")
+    def trang_thai_worker(email: str = Depends(require_user)) -> dict:
+        if not la_admin(email):
+            raise HTTPException(403, "chỉ quản trị")
+        w = lay_worker() if lay_worker else None
+        return w.trang_thai() if w is not None else {"song": False, "luot_cuoi": "chua_dung"}
