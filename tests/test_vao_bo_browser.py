@@ -23,6 +23,7 @@ import pytest
 
 from web import app as app_mod
 from web import models, models_cum, models_vao_bo
+from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 NGUOI = "vaobo@dev.local"
 TONG = 70
@@ -121,12 +122,13 @@ def page(may_chu):
     pw_api = pytest.importorskip("playwright.sync_api")
     with pw_api.sync_playwright() as pw:
         try:
-            br = pw.chromium.launch()
+            br = pw.chromium.launch(args=ARGS_CHAN_MANG)
         except Exception as exc:  # noqa: BLE001
             pytest.skip(f"không mở được Chromium: {exc}")
         ctx = br.new_context(viewport={"width": 1300, "height": 950})
+        chan = dem_mang_ngoai(ctx)
         p = ctx.new_page()
-        p.goto(url)
+        mo_trang(p, url, chan)
         p.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
         p.click('#so-moi-trang [data-so="100"]')      # cả 66 thẻ trên một trang
         yield p
