@@ -1424,7 +1424,8 @@ giai_captcha_api.dang_ky_route(app, lay_db=lambda: DB_PATH, la_admin=_la_admin,
 # Thay logo: route member (người tạo / admin). Route relay agy KHÔNG nằm ở app này — chúng chạy trên listener riêng chỉ bind IP
 # Tailscale (web/thay_logo_worker.py), để không route nào ở đây thoát lưới `require_user`.
 thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db", require_user, _la_admin,
-                                      lambda: worker_thay_logo)
+                                      lambda: worker_thay_logo,
+                                      lambda email, ids: thay_logo_routes.drive_ids_cua(DB_PATH, email, ids))
 
 
 # Mounted last so it only catches paths none of the routes above matched —

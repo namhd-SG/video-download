@@ -22,7 +22,9 @@ def ctx(tmp_path):
 
     app = FastAPI()
     worker = {"w": object()}
-    thay_logo_routes.dang_ky_route_member(app, lambda: db, require_user, lambda e: e == ADMIN, lambda: worker["w"])
+    thu_vien = {"a@x": {"A" * 20, "B" * 20, "F" * 20}}
+    thay_logo_routes.dang_ky_route_member(app, lambda: db, require_user, lambda e: e == ADMIN, lambda: worker["w"],
+                                          lambda email, ids: thu_vien.get(email, set()) & set(ids))
     mc = MayChu(app)
     c = _Client(mc)
     c.worker = worker
@@ -91,3 +93,36 @@ def test_trang_thai_worker_chi_admin_va_tinh_nang_tat_thi_khong_nhan_luot_moi(ct
     assert c.get("/api/thay-logo/admin/worker", headers=_h("a@x")).status_code == 403
     assert c.get("/api/thay-logo/admin/worker", headers=_h(ADMIN)).json() == {"song": False, "luot_cuoi": "tinh_nang_tat"}
     assert c.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["A" * 20]}).status_code == 409
+
+
+def test_member_chi_chon_duoc_video_trong_thu_vien_cua_minh(ctx):
+    c, _ = ctx
+    assert c.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["A" * 20, "Z" * 20]}).status_code == 403
+    assert c.post("/api/thay-logo/jobs", headers=_h("b@x"), json={"drive_file_ids": ["A" * 20]}).status_code == 403
+    assert c.post("/api/thay-logo/jobs", headers=_h(ADMIN), json={"drive_file_ids": ["Z" * 20]}).status_code == 201
+
+
+def test_tran_video_cho_moi_nguoi(ctx, monkeypatch):
+    c, _ = ctx
+    monkeypatch.setattr(thay_logo_routes, "TRAN_CHO_MOI_NGUOI", 2)
+    assert c.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["A" * 20, "B" * 20]}).status_code == 201
+    assert c.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["F" * 20]}).status_code == 429
+
+
+def test_mo_danh_sach_khi_chua_co_db_khong_tao_db(ctx):
+    c, db = ctx
+    assert not db.exists()
+    assert c.get("/api/thay-logo/videos", headers=_h("a@x")).json() == {"videos": []}
+    assert not db.exists()
+
+
+def test_drive_ids_cua_dung_dinh_nghia_so_huu_cua_thu_vien(tmp_path):
+    import sqlite3
+    db = tmp_path / "jobs.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT)")
+        c.execute("CREATE TABLE videos (id INTEGER PRIMARY KEY, job_id INTEGER, drive_file_id TEXT)")
+        c.executemany("INSERT INTO jobs VALUES (?,?)", [(1, "a@x"), (2, "b@x")])
+        c.executemany("INSERT INTO videos (job_id, drive_file_id) VALUES (?,?)", [(1, "A" * 20), (2, "B" * 20)])
+    assert thay_logo_routes.drive_ids_cua(db, "a@x", ["A" * 20, "B" * 20]) == {"A" * 20}
+    assert thay_logo_routes.drive_ids_cua(tmp_path / "khong-co.db", "a@x", ["A" * 20]) == set()

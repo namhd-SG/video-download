@@ -68,6 +68,21 @@ def dang_ky_route(app: FastAPI, lay_hop_thu: Callable[[], HopThu]) -> None:
 # được xem / đánh giá (USER §0: "người tạo job tự duyệt").
 
 TRAN_VIDEO_MOT_JOB = 50
+TRAN_CHO_MOI_NGUOI = 100  # video chưa xong của một người — chặn làm ngập hàng đợi / đĩa (code-reviewer 09/10)
+
+
+def drive_ids_cua(jobs_db, email: str, ids: list[str]) -> set[str]:
+    """Trong `ids`, những `drive_file_id` thuộc thư viện CỦA `email` — cùng định nghĩa sở hữu với `web/models.py:list_videos`
+    (video thuộc người tạo job đã tải nó). Mở `jobs.db` CHỈ ĐỌC; không đọc được ⇒ tập rỗng (từ chối là hướng an toàn)."""
+    if not ids:
+        return set()
+    try:
+        with _sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5) as c:
+            rows = c.execute("SELECT v.drive_file_id FROM videos v JOIN jobs j ON j.id = v.job_id WHERE j.nguoi_tao = ? "
+                             f"AND v.drive_file_id IN ({','.join('?' * len(ids))})", [email, *ids]).fetchall()
+    except _sqlite3.Error:
+        return set()
+    return {r[0] for r in rows}
 _DRIVE_ID = _re.compile(r"^[A-Za-z0-9_-]{10,120}$")
 
 
@@ -95,7 +110,8 @@ FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.i
 
 
 def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require_user, la_admin,
-                         lay_worker: Callable[[], object | None]) -> None:
+                         lay_worker: Callable[[], object | None],
+                         thu_vien_cua: Callable[[str, list[str]], set[str]]) -> None:
     """`lay_log_db` trả đường dẫn `thay_logo_log.db` LÚC GỌI; mỗi request mở kết nối mới và tự đóng. `lay_worker` trả None khi
     tính năng TẮT ⇒ không nhận lượt mới (409), vẫn xem/đánh giá được kết quả cũ."""
 
@@ -118,16 +134,24 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
         if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids):
             raise HTTPException(400, "mã file Drive sai khuôn")
+        ids = list(dict.fromkeys(body.drive_file_ids))
+        # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
+        # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
+        if not la_admin(email) and thu_vien_cua(email, ids) != set(ids):
+            raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn.")
         conn = _mo()
         try:
-            jid = hang_doi.tao_job(conn, email, [{"kieu": "drive", "file_id": f} for f in dict.fromkeys(body.drive_file_ids)],
-                                   body.ghi_chu)
+            if hang_doi.dem_dang_cho_cua(conn, email) + len(ids) > TRAN_CHO_MOI_NGUOI:
+                raise HTTPException(429, f"Bạn đang có quá nhiều video chờ (tối đa {TRAN_CHO_MOI_NGUOI}).")
+            jid = hang_doi.tao_job(conn, email, [{"kieu": "drive", "file_id": f} for f in ids], body.ghi_chu)
         finally:
             conn.close()
         return {"job_id": jid}
 
     @app.get("/api/thay-logo/videos")
     def danh_sach(email: str = Depends(require_user)) -> dict:
+        if not os.path.exists(lay_log_db()):  # tính năng chưa từng chạy ⇒ đừng tạo DB chỉ vì có người mở trang
+            return {"videos": []}
         conn = _mo()
         try:
             if la_admin(email):

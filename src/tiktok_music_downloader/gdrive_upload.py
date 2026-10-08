@@ -158,13 +158,18 @@ class DriveUploader:
         metadata = {"name": path.name, "parents": [parent_folder_id or self._folder_id]}
         return self._create_drive_object(metadata, media_path=path, label=path.name)
 
-    def download_file(self, file_id: str, dest: Path) -> Path:
+    def download_file(self, file_id: str, dest: Path, max_bytes: int | None = None) -> Path:
         """Tải một file (kể cả file riêng tư mà service account được chia sẻ) về `dest` — `gdrive.download_file` chỉ tải được
-        file CÔNG KHAI (gdown). Ghi ra `.part` rồi đổi tên: file dở không bao giờ trông như file xong. Lỗi ⇒ ném lên."""
+        file CÔNG KHAI (gdown). `max_bytes`: hỏi cỡ TRƯỚC, quá trần ⇒ ValueError, không tải byte nào. Ghi ra `.part` rồi đổi
+        tên: file dở không bao giờ trông như file xong. Lỗi ⇒ ném lên."""
         if not self.is_configured():
             raise RuntimeError("Google Drive chưa được cấu hình")
         from googleapiclient.http import MediaIoBaseDownload
 
+        if max_bytes is not None:
+            meta = self._build_service().files().get(fileId=file_id, fields="size", supportsAllDrives=True).execute()
+            if int(meta.get("size") or 0) > max_bytes or not meta.get("size"):
+                raise ValueError("file Drive quá trần dung lượng hoặc không rõ cỡ")
         req = self._build_service().files().get_media(fileId=file_id, supportsAllDrives=True)
         part = dest.with_name(dest.name + ".part")
         with open(part, "wb") as fh:

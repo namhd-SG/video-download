@@ -62,8 +62,10 @@ def worker(tmp_path, clip_file, monkeypatch):
     return w
 
 
-def _agy_tu_ground_truth(clip, hop, job_vid):
-    bang = json.loads((hop.goc / str(job_vid) / "khung.json").read_text())
+def _agy_tu_ground_truth(clip, hop, *job_vids):
+    bang = {}
+    for v in job_vids:  # relay gộp nhiều job vào một lô agy ⇒ cần bảng khung của mọi job trong lô
+        bang.update(json.loads((hop.goc / str(v) / "khung.json").read_text()))
 
     def agy(anh):
         items = []
@@ -120,6 +122,7 @@ def test_di_tron_hai_pha_qua_tien_trinh_con(worker, clip_file):
     v = conn.execute("SELECT trang_thai, drive_file_id_ra FROM tl_video WHERE id=?", (r["video_log_id"],)).fetchone()
     assert tuple(v) == ("render", "drive-ra-1")
     assert not (worker.data / "thay_logo_scratch" / str(vid)).exists()  # scratch dọn sau trạng thái cuối
+    assert not (worker.hop.goc / str(vid)).exists()  # hộp thư cũng dọn
 
 
 def test_nhuong_lane_tai_khi_co_job_running(worker, tmp_path, clip_file):
@@ -203,3 +206,49 @@ def test_tat_co_tran_ke_ca_khi_tien_trinh_con_LO_SIGTERM_va_co_chau(worker, tmp_
     with pytest.raises(ProcessLookupError):
         os.kill(chau, 0)  # cháu cũng chết, không mồ côi
     assert not worker._thread.is_alive()
+
+
+# ---------------------------------------------------------------- các ca code-reviewer 09/10
+
+def test_video_hong_khong_sap_tien_trinh_chinh_chi_dong_do_loi(worker, monkeypatch):
+    """Giải mã video chạy trong TIẾN TRÌNH CON: file rác ⇒ dòng đó `loi` với chữ ngắn, worker vẫn sống."""
+    def tai_rac(nguon, d):
+        p = d / "goc.mp4"
+        p.write_bytes(b"\x00" * 4096)
+        return p
+    monkeypatch.setattr(worker, "tai_ve", tai_rac)
+    vid = _tao(worker)
+    worker.mot_luot()
+    r = _trang_thai(worker, vid)
+    assert r["trang_thai"] == "loi" and "Traceback" not in r["loi_text"] and "/" not in r["loi_text"]
+    assert not (worker.data / "thay_logo_scratch" / str(vid)).exists()
+
+
+def test_mot_dong_hong_khong_chan_ca_hang_doi_pha_2(worker, clip_file):
+    clip, _ = clip_file
+    v1, v2 = _tao(worker), _tao(worker)
+    worker.mot_luot()
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, v1, v2))
+    os.unlink(_trang_thai(worker, v1)["duong_dan_goc"])  # file gốc của dòng đầu biến mất
+    assert worker.mot_luot() == "da_xu_ly"
+    assert _trang_thai(worker, v1)["trang_thai"] == "loi"
+    assert _trang_thai(worker, v2)["trang_thai"] == "xong"
+
+
+def test_relay_tat_thi_khong_tai_truoc_qua_tran_cho_agy(worker, monkeypatch):
+    monkeypatch.setattr(tw, "TRAN_CHO_AGY", 2)
+    ids = [_tao(worker) for _ in range(4)]
+    for _ in range(4):
+        worker.mot_luot()
+    tt = [_trang_thai(worker, v)["trang_thai"] for v in ids]
+    assert tt.count("cho_agy") == 2 and tt.count("cho") == 2
+
+
+@pytest.mark.parametrize("trang_thai", ["running", "dang_mo", "dang_giai"])
+def test_nhuong_moi_trang_thai_ban_cua_lane_tai(tmp_path, trang_thai):
+    p = tmp_path / "jobs.db"
+    with sqlite3.connect(p) as c:
+        c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, trang_thai TEXT)")
+        c.execute("INSERT INTO jobs (trang_thai) VALUES (?)", (trang_thai,))
+    assert tw.co_job_tai_dang_chay(p) is True

@@ -37,6 +37,8 @@ CREATE TABLE IF NOT EXISTS tl_danh_gia (
   loai_loi TEXT, ghi_chu TEXT, luc REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS ix_tl_video_bat_dau ON tl_video(bat_dau);
 CREATE INDEX IF NOT EXISTS ix_tl_danh_gia_video ON tl_danh_gia(video_id);
+CREATE INDEX IF NOT EXISTS ix_tl_vet_video ON tl_vet(video_id);
+CREATE INDEX IF NOT EXISTS ix_tl_box_moi_video ON tl_box_moi(video_id);
 """
 
 

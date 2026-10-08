@@ -92,6 +92,11 @@ class HopThu:
         items = kiem_ket_qua(du_lieu, anh_cua_viec)
         _ghi_nguyen_tu(d / "ket_qua.json", json.dumps({"items": items, "nop_luc": time.time()}).encode())
 
+    def xoa_viec(self, job_id: int) -> None:
+        """Video đã tới trạng thái cuối ⇒ bỏ ảnh + kết quả khỏi hộp thư (không để `viec_cho` quét một thư mục phình mãi)."""
+        import shutil
+        shutil.rmtree(self._dir(job_id), ignore_errors=True)
+
     def doc_ket_qua(self, job_id: int) -> dict | None:
         p = self._dir(job_id) / "ket_qua.json"
         return json.loads(p.read_text()) if p.exists() else None

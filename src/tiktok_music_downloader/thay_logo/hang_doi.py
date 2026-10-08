@@ -19,8 +19,9 @@ CREATE TABLE IF NOT EXISTS tl_job_video (
   trang_thai TEXT NOT NULL DEFAULT 'cho'
     CHECK (trang_thai IN ('cho', 'cho_agy', 'dang_chay', 'xong', 'cho_nguoi', 'loi')),
   so_lan_thu INTEGER NOT NULL DEFAULT 0, cho_agy_tu REAL, cap_nhat_luc REAL NOT NULL, video_log_id INTEGER,
-  duong_dan_goc TEXT, drive_file_id_ra TEXT, loi_text TEXT);
+  duong_dan_goc TEXT, thong_so TEXT, drive_file_id_ra TEXT, loi_text TEXT);
 CREATE INDEX IF NOT EXISTS ix_tl_job_video_tt ON tl_job_video(trang_thai, id);
+CREATE INDEX IF NOT EXISTS ix_tl_job_nguoi_tao ON tl_job(nguoi_tao);
 """
 
 
@@ -70,3 +71,9 @@ def quet_khoi_dong(conn) -> dict:
 def tuoi_cho_agy_cu_nhat(conn, bay_gio: float | None = None) -> float | None:
     r = conn.execute("SELECT min(cho_agy_tu) FROM tl_job_video WHERE trang_thai='cho_agy'").fetchone()[0]
     return None if r is None else round((bay_gio or time.time()) - r, 1)
+
+
+def dem_dang_cho_cua(conn, nguoi_tao: str) -> int:
+    """Số video chưa xong (`cho`/`cho_agy`/`dang_chay`) của một người — trần lượt chờ mỗi người."""
+    return conn.execute("SELECT count(*) FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id "
+                        "WHERE j.nguoi_tao = ? AND v.trang_thai IN ('cho', 'cho_agy', 'dang_chay')", (nguoi_tao,)).fetchone()[0]

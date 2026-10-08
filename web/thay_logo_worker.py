@@ -42,14 +42,19 @@ TRAN_DIA_GB = 5.0
 # Cổng RAM (agy tach-worker-R1b Q1): mini swap đã 3,5/5 GiB khi chưa có worker này (đo 09/10 00:24). Dưới ngưỡng ⇒ không chạy pha nặng.
 RAM_FREE_TOI_THIEU_PCT, SWAP_TRONG_TOI_THIEU_MB = 30, 1024
 NICE = 10
+TRAN_CHO_AGY = 5  # pha 1 chỉ tải trước khi số video đang chờ agy < trần này — relay tắt thì không dồn file gốc vào đĩa
+TRAN_GIAY_PHA_1 = 180
+CHU_KY_DON_GIAY = 600
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
 
 def co_job_tai_dang_chay(jobs_db: Path) -> bool:
-    """CHỈ ĐỌC `jobs.db`. Không đọc được (khoá, thiếu file) ⇒ coi như ĐANG BẬN: nhường là hướng an toàn."""
+    """CHỈ ĐỌC `jobs.db`. Bận = cùng tập trạng thái `web/models.py` coi là worker đang bận (`running`, `dang_mo`, `dang_giai`).
+    Không đọc được (khoá, thiếu file) ⇒ coi như ĐANG BẬN: nhường là hướng an toàn."""
     try:
         with sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=2) as c:
-            return c.execute("SELECT count(*) FROM jobs WHERE trang_thai='running'").fetchone()[0] > 0
+            return c.execute("SELECT count(*) FROM jobs WHERE trang_thai IN ('running', 'dang_mo', 'dang_giai')"
+                             ).fetchone()[0] > 0
     except sqlite3.Error as e:
         log.warning("thay logo: không đọc được jobs.db (%s) — nhường lượt này", type(e).__name__)
         return True
@@ -89,6 +94,7 @@ class ThayLogoWorker:
         self._lan_cuoi = "chua_chay"
         self.relay_bind = relay_bind
         self.relay = None
+        self._don_luc = 0.0
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -159,48 +165,78 @@ class ThayLogoWorker:
     def mot_luot(self) -> str:
         if self.dia_trong_gb() < self.tran_dia_gb:
             return "cho_dia"
+        if co_job_tai_dang_chay(self.jobs_db):  # nhường cả pha 1 (tải về + giải mã) lẫn pha 2
+            return "nhuong_lane_tai"
         conn = self._mo()
         try:
+            self._don_dinh_ky(conn)
             self._pha_1(conn)
-            if co_job_tai_dang_chay(self.jobs_db):
-                return "nhuong_lane_tai"
             if not self.ram_du():
                 return "cho_ram"
             return self._pha_2(conn)
         finally:
             conn.close()
 
+    def _don_dinh_ky(self, conn) -> None:
+        if time.time() - self._don_luc >= CHU_KY_DON_GIAY:
+            self._don_luc = time.time()
+            log.info("thay logo: dọn file nhật ký %s", nhat_ky.don_dep(conn, self.data / "thay_logo"))
+
     def _scratch(self, vid: int) -> Path:
         d = self.data / "thay_logo_scratch" / str(vid)
         d.mkdir(parents=True, exist_ok=True)
         return d
 
+    def _ket_thuc(self, conn, vid: int, trang_thai: str, **truong) -> None:
+        """Trạng thái cuối ⇒ dọn scratch + hộp thư của video đó."""
+        hang_doi.dat(conn, vid, trang_thai, **truong)
+        shutil.rmtree(self.data / "thay_logo_scratch" / str(vid), ignore_errors=True)
+        self.hop.xoa_viec(vid)
+
     def _pha_1(self, conn) -> None:
+        if len(hang_doi.danh_sach(conn, "cho_agy")) >= TRAN_CHO_AGY:
+            return
         r = hang_doi.lay_mot(conn, "cho")
         if r is None:
             return
         try:
-            hoc_mau_agy, NguonKhungVideo = _cv()
             goc = self.tai_ve(json.loads(r["nguon"]), self._scratch(r["id"]))
-            n = hoc_mau_agy.dat_viec(NguonKhungVideo(str(goc)), self.hop, r["id"])
         except Exception as e:
-            hang_doi.dat(conn, r["id"], "loi", loi_text=f"tải/trích khung: {type(e).__name__}: {e}"[:500])
+            log.warning("thay logo: tải video %s lỗi: %s", r["id"], e)
+            self._ket_thuc(conn, r["id"], "loi", loi_text=f"Không tải được video nguồn ({type(e).__name__}).")
             return
-        if n == 0:
-            hang_doi.dat(conn, r["id"], "loi", loi_text="không đọc được khung nào")
+        cmd = ["nice", "-n", str(NICE), self.python, "-m", "tiktok_music_downloader.thay_logo.dat_viec_cli",
+               "--video", str(goc), "--hop", str(self.hop.goc), "--job-id", str(r["id"])]
+        try:
+            p = subprocess.run(cmd, capture_output=True, text=True, timeout=TRAN_GIAY_PHA_1, start_new_session=True)
+            ts = json.loads((p.stdout or "").strip().splitlines()[-1])
+        except (subprocess.TimeoutExpired, IndexError, json.JSONDecodeError) as e:
+            log.warning("thay logo: trích khung video %s hỏng (%s): %s", r["id"], type(e).__name__,
+                        getattr(e, "stderr", "") or "")
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được video (file hỏng hoặc định dạng lạ).")
+            return
+        if not ts.get("n"):
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được khung nào.")
         else:
-            hang_doi.dat(conn, r["id"], "cho_agy", cho_agy_tu=time.time(), duong_dan_goc=str(goc))
+            hang_doi.dat(conn, r["id"], "cho_agy", cho_agy_tu=time.time(), duong_dan_goc=str(goc), thong_so=json.dumps(ts))
 
     def _pha_2(self, conn) -> str:
-        hoc_mau_agy, NguonKhungVideo = _cv()
+        hoc_mau_agy, _ = _cv()
+        from types import SimpleNamespace
         for r in hang_doi.danh_sach(conn, "cho_agy"):
-            nguon = NguonKhungVideo(r["duong_dan_goc"])
-            kq_agy = hoc_mau_agy.doc_ket_qua(nguon, self.hop, r["id"])
-            if kq_agy is None:
+            try:  # một dòng hỏng (file gốc mất, khung.json thiếu…) không được chặn cả hàng đợi
+                if self.hop.doc_ket_qua(r["id"]) is None:
+                    continue
+                ts = SimpleNamespace(**json.loads(r["thong_so"]))
+                boxes, man_ket = hoc_mau_agy.doc_ket_qua(ts, self.hop, r["id"])
+                if not Path(r["duong_dan_goc"]).is_file():
+                    raise FileNotFoundError("mất file gốc trong scratch")
+            except Exception as e:
+                log.warning("thay logo: video %s không chạy pha 2 được: %s", r["id"], e)
+                self._ket_thuc(conn, r["id"], "loi", loi_text=f"Không chạy tiếp được ({type(e).__name__}).")
                 continue
-            boxes, man_ket = kq_agy
             hang_doi.dat(conn, r["id"], "dang_chay")
-            self._chay_con(conn, r, nguon, boxes, man_ket)
+            self._chay_con(conn, r, ts, boxes, man_ket)
             return "da_xu_ly"
         return "ranh"
 
@@ -212,15 +248,9 @@ class ThayLogoWorker:
                "--video", r["duong_dan_goc"], "--boxes", str(d / "boxes.json"), "--out", str(ra), "--db", str(self.log_db),
                "--files", str(self.data / "thay_logo"), "--nguon-video", r["nguon"], "--ffmpeg", self.ffmpeg,
                "--job-id", str(r["job_id"])] + ([] if man_ket is None else ["--man-ket", "1" if man_ket else "0"])
-        tran = max(TRAN_GIAY_MIN, HE_SO_TRAN_GIAY * nguon.so_khung() / (nguon.fps or 30.0))
+        tran = max(TRAN_GIAY_MIN, HE_SO_TRAN_GIAY * nguon.so_khung / (nguon.fps or 30.0))
         self._con = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
-        try:
-            self._ket_thuc_con(conn, r, d, ra, tran)
-        finally:
-            if not self._dung.is_set():
-                cur = conn.execute("SELECT trang_thai FROM tl_job_video WHERE id=?", (r["id"],)).fetchone()
-                if cur and cur["trang_thai"] in ("xong", "cho_nguoi", "loi"):
-                    shutil.rmtree(d, ignore_errors=True)  # gốc đã có trên Drive; scratch không giữ quá một video
+        self._ket_thuc_con(conn, r, d, ra, tran)
 
     def _ket_thuc_con(self, conn, r, d, ra, tran) -> None:
         try:
@@ -228,7 +258,7 @@ class ThayLogoWorker:
         except subprocess.TimeoutExpired:
             _gui_nhom(self._con, signal.SIGKILL)
             self._con.communicate()
-            hang_doi.dat(conn, r["id"], "loi", loi_text=f"quá trần thời gian {int(tran)}s")
+            self._ket_thuc(conn, r["id"], "loi", loi_text=f"Quá trần thời gian xử lý ({int(tran)}s).")
             return
         finally:
             self._con = None
@@ -237,22 +267,24 @@ class ThayLogoWorker:
         try:
             kq = json.loads((out or "").strip().splitlines()[-1])
         except (IndexError, json.JSONDecodeError):
-            hang_doi.dat(conn, r["id"], "loi", loi_text=f"tiến trình con không trả kết quả: {(err or '')[-300:]}")
+            log.warning("thay logo: tiến trình con video %s không trả kết quả: %s", r["id"], (err or "")[-2000:])
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Xử lý video bị lỗi.")  # chi tiết chỉ ở log máy chủ
             return
         if kq.get("trang_thai") == "render" and kq.get("dau_ra"):
             try:
                 file_id = self.tai_len(Path(kq["dau_ra"]))
             except Exception as e:
-                hang_doi.dat(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"),
-                             loi_text=f"tải lên Drive: {type(e).__name__}: {e}"[:500])
+                log.warning("thay logo: tải lên Drive video %s lỗi: %s", r["id"], e)
+                self._ket_thuc(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"),
+                               loi_text=f"Không tải được bản thay lên Drive ({type(e).__name__}).")
                 return
             nhat_ky.cap_nhat_video(conn, kq["video_log_id"], drive_file_id_ra=file_id)
-            hang_doi.dat(conn, r["id"], "xong", video_log_id=kq["video_log_id"], drive_file_id_ra=file_id)
-            ra.unlink(missing_ok=True)
+            self._ket_thuc(conn, r["id"], "xong", video_log_id=kq["video_log_id"], drive_file_id_ra=file_id)
         elif kq.get("trang_thai") == "cho_nguoi":
-            hang_doi.dat(conn, r["id"], "cho_nguoi", video_log_id=kq.get("video_log_id"))
+            self._ket_thuc(conn, r["id"], "cho_nguoi", video_log_id=kq.get("video_log_id"))
         else:
-            hang_doi.dat(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"), loi_text=str(kq.get("loi", ""))[:500])
+            log.warning("thay logo: video %s lỗi xử lý: %s", r["id"], kq.get("loi"))
+            self._ket_thuc(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"), loi_text="Xử lý video bị lỗi.")
 
 
 # ---------------------------------------------------------------- dựng từ cấu hình máy (app.py gọi)
@@ -278,8 +310,10 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
                     bool(thu_muc), drive.is_configured(), bool(ffmpeg))
         return None
 
-    def tai_ve(nguon: dict, d: Path) -> Path:
-        return drive.download_file(nguon["file_id"], d / "goc.mp4")
+    from tiktok_music_downloader.nguon import TRAN_DUNG_LUONG_BYTE
+
+    def tai_ve(nguon: dict, d: Path) -> Path:  # cùng trần dung lượng video của lane tải
+        return drive.download_file(nguon["file_id"], d / "goc.mp4", max_bytes=TRAN_DUNG_LUONG_BYTE)
 
     def tai_len(p: Path) -> str:
         kq = drive.upload_file(p, parent_folder_id=thu_muc)
