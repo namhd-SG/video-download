@@ -158,3 +158,24 @@ def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet):
     p.wait_for_function("document.body.innerText.includes('Đã đánh giá: Đạt')")
     conn = nhat_ky.mo(app_mod.DATA_DIR / "thay_logo_log.db")
     assert [tuple(r) for r in conn.execute("SELECT member, ket_qua FROM tl_danh_gia")] == [(NGUOI, "dat")]
+
+
+# ---------------------------------------------------------------- link trên thanh trên trang Tải video
+
+@pytest.mark.parametrize("bat", [False, True])
+@pytest.mark.parametrize("rong", [1100, 390])
+def test_link_thay_logo_chi_hien_khi_tinh_nang_bat(may_chu, trinh_duyet, monkeypatch, bat, rong):
+    """Tính năng TẮT ⇒ member không thấy link (nợ code-reviewer PR #69). BẬT ⇒ link hiện và thanh trên vẫn không gãy dòng/cuộn ngang."""
+    monkeypatch.setattr(app_mod, "worker_thay_logo", object() if bat else None)
+    ctx = trinh_duyet.new_context(viewport={"width": rong, "height": 800})
+    chan = dem_mang_ngoai(ctx)
+    p = ctx.new_page()
+    mo_trang(p, f"{may_chu}/", chan)
+    p.wait_for_load_state("networkidle")
+    link = p.locator("#link-thay-logo")
+    assert link.is_visible() is bat
+    assert p.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
+    cao = p.evaluate("""[...document.querySelectorAll('.brand, .topbar-nav a')].filter(e => e.offsetParent).map(e => {
+        const cs = getComputedStyle(e); return e.getBoundingClientRect().height / parseFloat(cs.lineHeight === 'normal'
+        ? parseFloat(cs.fontSize) * 1.3 : cs.lineHeight); })""")
+    assert max(cao) < 1.6, f"thanh trên gãy dòng ở {rong}px khi link {'hiện' if bat else 'ẩn'}: {cao}"
