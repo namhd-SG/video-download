@@ -1,6 +1,6 @@
 """Các cổng chặn khung trước khi render. Mỗi cổng chỉ được HẠ khung `detected` xuống trạng thái bị chặn, không bao giờ nâng.
 
-Thứ tự trong đường ống: phụ đề cũ → tương phản học → vành ngang (theo video) → khớp box mồi (theo vết) → cổng cứng.
+Thứ tự trong đường ống: phụ đề cũ → tương phản học → vành ngang + nét lạ (theo video) → khớp box mồi (theo vết) → cổng cứng.
 Nguồn: `p0b_subtitle_rule.py`, phép tương phản trong `p1a_t2_pipeline_v2.py`, `p1a_subtitle_ring_probe.py`,
 `p1a_agreement_gate_v2.py`. Hằng số giữ nguyên số đã đo (plan p1 §2g–§2i).
 """
@@ -20,8 +20,17 @@ TUONG_PHAN_SAN, TUONG_PHAN_HE_SO = 65.0, 1.5
 VANH_RONG, VANH_SANG, VANH_THONG_CAO, VANH_SAN, VANH_K_MAD = 0.8, 180, 35, 0.01, 4.0
 # Cổng khớp v2: chỉ xét box mồi mà track đang chắc (±1 khung); qua ⟺ khớp ≥ CAN_KHOP VÀ lệch = 0.
 CAN_KHOP = 3
+# Cổng NÉT LẠ (plan p1 §5c.2): nội dung lạ (khối chữ, phụ đề màu) nằm GỌN trong tấm nền (box ±PAD_TAM_NEN) mà C vẫn "chắc".
+# Đo = PHẦN DƯ sau khi trừ mẫu: thông cao σ3 của khung − a × thông cao của mẫu (a khớp bình phương tối thiểu); điểm "nét lạ" =
+# |dư| > NET_LA_THONG_CAO VÀ lệch trung vị vùng > NET_LA_LECH. Không dùng "loại trừ mặt nạ mẫu" (đề xuất kongming): đo trên clip
+# tổng hợp, mặt nạ chữ watermark phủ 74% box, giãn 3px phủ 99,7% ⇒ r ≡ 0, cổng mù.
+# Ngưỡng khung theo VIDEO = max(NET_LA_SAN, trung vị + K × MAD). Hằng ĐỀ XUẤT, CHƯA hiệu chỉnh trên video thật.
+NET_LA_LECH, NET_LA_THONG_CAO, NET_LA_SAN, NET_LA_K_MAD = 65, 35, 0.03, 4.0
+# Trung vị r > ngưỡng này ⇒ gắn cờ vết cho member soi. KHÔNG chặn cả vết: icon đặc sạch đã có r trung vị ~0,10 (clip tổng hợp)
+# ⇒ chặn sẽ giết mọi icon. Hệ quả đã biết: nội dung lạ nằm trong box ở PHẦN LỚN video thì ngưỡng theo video bị kéo lên và mù.
+NET_LA_PHO_BIEN = 0.10
 
-CHAN_PHU_DE, CHAN_TUONG_PHAN, CHAN_VANH = "hidden_sub", "hidden_contrast", "hidden_ring"
+CHAN_PHU_DE, CHAN_TUONG_PHAN, CHAN_VANH, CHAN_NET = "hidden_sub", "hidden_contrast", "hidden_ring", "hidden_net"
 
 
 def cong_phu_de(g: np.ndarray, e: dict) -> None:
@@ -62,17 +71,47 @@ def ti_le_vanh(g: np.ndarray, e: dict) -> float:
     return float(np.concatenate(parts).mean()) if parts else 0.0
 
 
-def cong_vanh_ngang(track: list[dict], ti_le: dict[int, float]) -> None:
-    """Ngưỡng theo VIDEO = max(sàn, trung vị + K × MAD) trên các khung chắc; vượt ⇒ chặn.
-    Đo Test 02: bắt 50/58 khung phụ đề bóng mờ của _3, nhưng precision cờ ~40% (cờ oan trên giày/tóc/vạch sáng)."""
+def _chan_theo_video(track: list[dict], ti_le: dict[int, float], san: float, k_mad: float, trang_thai: str) -> float | None:
+    """Ngưỡng theo VIDEO = max(sàn, trung vị + K × MAD) trên các khung chắc; vượt ⇒ chặn. Trả trung vị (None nếu không có)."""
     v = np.array([ti_le[e["frame"]] for e in track if e.get("state") == "detected" and e["frame"] in ti_le])
     if not v.size:
-        return
+        return None
     med = float(np.median(v))
-    nguong = max(VANH_SAN, med + VANH_K_MAD * (float(np.median(np.abs(v - med))) + 1e-4))
+    nguong = max(san, med + k_mad * (float(np.median(np.abs(v - med))) + 1e-4))
     for e in track:
         if e.get("state") == "detected" and ti_le.get(e["frame"], 0.0) > nguong:
-            e["state"] = CHAN_VANH
+            e["state"] = trang_thai
+    return med
+
+
+def cong_vanh_ngang(track: list[dict], ti_le: dict[int, float]) -> None:
+    """Đo Test 02: bắt 50/58 khung phụ đề bóng mờ của _3, nhưng precision cờ ~40% (cờ oan trên giày/tóc/vạch sáng)."""
+    _chan_theo_video(track, ti_le, VANH_SAN, VANH_K_MAD, CHAN_VANH)
+
+
+def ti_le_net_la(g: np.ndarray, e: dict, mau: np.ndarray) -> float:
+    """Tỉ lệ điểm 'nét lạ' trong tấm nền: phần dư sau khi trừ mẫu watermark (đã co về cỡ box) khỏi thông cao của khung."""
+    H, W = g.shape
+    p = PAD_TAM_NEN
+    x0, y0, x1, y1 = max(0, e["x"] - p), max(0, e["y"] - p), min(W, e["x"] + e["w"] + p), min(H, e["y"] + e["h"] + p)
+    if x1 - x0 < 3 or y1 - y0 < 3:
+        return 0.0
+    vung = g[y0:y1, x0:x1].astype(np.float32)
+    tt = np.zeros_like(vung)
+    bx, by = e["x"] - x0, e["y"] - y0
+    tr = cv2.resize(mau.astype(np.float32), (e["w"], e["h"]))
+    tt[by:by + e["h"], bx:bx + e["w"]] = tr[:tt.shape[0] - by, :tt.shape[1] - bx]
+    hc = vung - cv2.GaussianBlur(vung, (0, 0), 3)
+    ht = tt - cv2.GaussianBlur(tt, (0, 0), 3)
+    a = float((hc * ht).sum() / max(float((ht * ht).sum()), 1e-6))
+    du = np.abs(hc - a * ht)
+    return float(((du > NET_LA_THONG_CAO) & (np.abs(vung - np.median(vung)) > NET_LA_LECH)).mean())
+
+
+def cong_net_la(track: list[dict], ti_le: dict[int, float]) -> bool:
+    """Chặn khung có nét lạ vượt ngưỡng theo video. Trả True nếu nét lạ PHỔ BIẾN (trung vị > NET_LA_PHO_BIEN) ⇒ cờ cho member."""
+    med = _chan_theo_video(track, ti_le, NET_LA_SAN, NET_LA_K_MAD, CHAN_NET)
+    return med is not None and med > NET_LA_PHO_BIEN
 
 
 def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> dict:

@@ -89,3 +89,14 @@ def tao_clip(n: int = 60, *, phu_de_vien_den: range | None = None, phu_de_bong_m
 def tam_lech(e: dict, hop: tuple[int, int, int, int]) -> float:
     x, y, w, h = hop
     return float(np.hypot(e["x"] + e["w"] / 2 - (x + w / 2), e["y"] + e["h"] / 2 - (y + h / 2)))
+
+
+def dan_khoi_trong_box(clip: ClipTongHop, khung, ti_le: float = 0.25) -> None:
+    """Khối chữ đặc NHỎ (nền 20, vạch 250) chiếm `ti_le` bề ngang box, nằm GỌN trong box; watermark phần còn lại vẫn thấy."""
+    for i in khung:
+        x, y, w, h = clip.hop_that[i]
+        g = clip.nguon.doc(i)
+        bw = int(w * ti_le)
+        g[y + 2:y + h - 2, x + w - bw:x + w] = 20
+        g[y + h // 3:y + 2 * h // 3, x + w - bw + 3:x + w - 3] = 250
+        clip.khung_phu_de.add(i)

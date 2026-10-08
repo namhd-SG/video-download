@@ -30,6 +30,7 @@ class KetQuaVet:
     tu_hoc_bi_tu_choi: int = 0  # số vòng tự học mà mẫu mới lệch mẫu cũ ⇒ giữ mẫu cũ (cờ cho người duyệt)
     tuong_phan_mau: float = 0.0
     dem_chan: dict = field(default_factory=dict)
+    net_la_pho_bien: bool = False  # nội dung lạ trong box ở phần lớn video ⇒ cổng nét lạ mù ⇒ cờ cho member soi kỹ
 
     @property
     def pct_chac(self) -> float:
@@ -48,10 +49,14 @@ class KetQuaVideo:
         return "render" if any(v.trang_thai == "render" for v in self.vet) else "cho_nguoi"
 
 
-def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mask: np.ndarray, nguong: float,
-                   ti_le_vanh: dict[int, float] | None) -> None:
-    """Một lượt đọc tuần tự: cổng phụ đề + tương phản trên mỗi khung chắc; đo vành ngang nếu được yêu cầu."""
+def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -> bool:
+    """Mọi cổng theo khung + theo video trên `track` (sửa tại chỗ). Một lượt đọc tuần tự: phụ đề + tương phản từng khung, đo
+    vành ngang + nét lạ (ghi vào khung để tune offline), rồi áp ngưỡng theo video. Trả True nếu nét lạ phổ biến (cờ)."""
+    mask, tcon = mat_na_va_tuong_phan(mau)
+    nguong = cong.nguong_tuong_phan(tcon)
     by = {e["frame"]: e for e in track if e.get("state") == "detected"}
+    vanh: dict[int, float] = {}
+    net: dict[int, float] = {}
     for i, g in enumerate(nguon.doc_tuan_tu()):
         e = by.get(i)
         if e is None:
@@ -59,8 +64,11 @@ def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mask: np.ndarray, nguon
         cong.cong_phu_de(g, e)
         if e["state"] == "detected":
             cong.cong_tuong_phan(g, e, mask, nguong)
-        if ti_le_vanh is not None and e["state"] == "detected":
-            ti_le_vanh[i] = cong.ti_le_vanh(g, e)
+        if e["state"] == "detected":
+            vanh[i] = e["vanh"] = round(cong.ti_le_vanh(g, e), 4)
+            net[i] = e["net_la"] = round(cong.ti_le_net_la(g, e, mau), 4)
+    cong.cong_vanh_ngang(track, vanh)
+    return cong.cong_net_la(track, net)
 
 
 def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
@@ -71,9 +79,8 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
     tu_choi = 0
     for _ in range(SO_VONG_TU_HOC):
         track = dinh_vi(nguon, mau)
-        mask, tcon = mat_na_va_tuong_phan(mau)
-        # Plan §5c.1: crop tự học chỉ lấy khung đã qua cổng, kẻo mẫu trôi sang chữ nội dung.
-        _ap_cong_khung(nguon, track, mask, cong.nguong_tuong_phan(tcon), None)
+        # Plan §5c.1: crop tự học chỉ lấy khung đã qua MỌI cổng khung (kể cả vành + nét lạ), kẻo mẫu trôi sang chữ nội dung.
+        _ap_cong_khung(nguon, track, mau)
         mau, nhan = tu_hoc_mau(nguon, track, mau)
         tu_choi += 0 if nhan else 1
     kq = ap_moi_cong(nguon, dinh_vi(nguon, mau), mau, cum)
@@ -83,16 +90,14 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
 
 def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi]) -> KetQuaVet:
     """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ)."""
-    mask, tcon = mat_na_va_tuong_phan(mau)
-    vanh: dict[int, float] = {}
-    _ap_cong_khung(nguon, track, mask, cong.nguong_tuong_phan(tcon), vanh)
-    cong.cong_vanh_ngang(track, vanh)
+    _, tcon = mat_na_va_tuong_phan(mau)
+    net_pho_bien = _ap_cong_khung(nguon, track, mau)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
-           for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH)}
+           for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET)}
     return KetQuaVet("render" if render else "cho_nguoi", len(cum), track=track, khung_render=render, khop=khop,
-                     tuong_phan_mau=round(tcon, 1), dem_chan=dem)
+                     tuong_phan_mau=round(tcon, 1), dem_chan=dem, net_la_pho_bien=net_pho_bien)
 
 
 def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi]) -> KetQuaVideo:

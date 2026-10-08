@@ -53,25 +53,28 @@ def test_phu_de_vien_den_khong_bao_gio_duoc_render():
 
 
 def test_dot_bien_bo_ca_ba_lop_phu_de_thi_phu_de_vien_den_lot(monkeypatch):
-    """Phụ đề viền đen bị BA lớp chồng nhau chặn: bộ lọc ứng viên của C, cổng phụ đề cũ (cùng hàm/pad/ngưỡng với bộ lọc ⇒
-    nhánh 'bỏ khung' của nó chỉ kích hoạt khi bộ lọc đã mất), và cổng vành ngang (chữ tràn ngang). Gỡ cả ba mới lọt."""
+    """Phụ đề viền đen bị BỐN lớp chồng nhau chặn: bộ lọc ứng viên của C, cổng phụ đề cũ (cùng hàm/pad/ngưỡng với bộ lọc ⇒
+    nhánh 'bỏ khung' của nó chỉ kích hoạt khi bộ lọc đã mất), cổng vành ngang (chữ tràn ngang) và cổng nét lạ. Gỡ cả bốn mới lọt."""
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     monkeypatch.setattr(dinh_vi_mod, "NGUONG_PHU_DE_UNG_VIEN", 2.0)
     monkeypatch.setattr(cong, "PHU_DE_TI_LE", 2.0)
     monkeypatch.setattr(cong, "cong_vanh_ngang", lambda track, ti_le: None)
+    monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     v = _vet(clip)
     assert {e["frame"] for e in v.khung_render} & clip.khung_phu_de
 
 
-@pytest.mark.parametrize("go_lop", ["loc_ung_vien", "cong_cu", "vanh"])
+@pytest.mark.parametrize("go_lop", ["loc_ung_vien", "cong_cu", "vanh", "net_la"])
 def test_dot_bien_bo_mot_lop_phu_de_vien_den_van_bi_chan(monkeypatch, go_lop):
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     if go_lop == "loc_ung_vien":
         monkeypatch.setattr(dinh_vi_mod, "NGUONG_PHU_DE_UNG_VIEN", 2.0)
     elif go_lop == "cong_cu":
         monkeypatch.setattr(cong, "PHU_DE_TI_LE", 2.0)
-    else:
+    elif go_lop == "vanh":
         monkeypatch.setattr(cong, "cong_vanh_ngang", lambda track, ti_le: None)
+    else:
+        monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     v = _vet(clip)
     assert not {e["frame"] for e in v.khung_render} & clip.khung_phu_de
 
@@ -85,9 +88,10 @@ def test_phu_de_bong_mo_bi_cong_vanh_ngang_chan():
     assert not {e["frame"] for e in v.khung_render} & clip.khung_phu_de
 
 
-def test_dot_bien_bo_cong_vanh_ngang_thi_phu_de_bong_mo_lot(monkeypatch):
+def test_dot_bien_bo_cong_vanh_ngang_va_net_la_thi_phu_de_bong_mo_lot(monkeypatch):
     clip = tao_clip(phu_de_bong_mo=range(20, 30))
     monkeypatch.setattr(cong, "cong_vanh_ngang", lambda track, ti_le: None)
+    monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     v = _vet(clip)
     assert {e["frame"] for e in v.khung_render} & clip.khung_phu_de
 
@@ -134,6 +138,7 @@ def test_cong_tuong_phan_chan_noi_dung_dam_trong_box(monkeypatch):
     assert not {e["frame"] for e in kq.khung_render} & khung_dam
     monkeypatch.setattr(cong, "cong_tuong_phan", lambda g, e, mask, nguong: None)
     monkeypatch.setattr(cong, "cong_phu_de", lambda g, e: None)
+    monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     kq = duong_ong.ap_moi_cong(clip.nguon, [dict(e) for e in track], mau, clip.box_moi())
     assert {e["frame"] for e in kq.khung_render} & khung_dam
 
@@ -186,3 +191,37 @@ def test_tu_hoc_tu_choi_mau_moi_lech_mau_cu(monkeypatch):
     monkeypatch.setattr(mau_mod, "NCC_TU_HOC_TOI_THIEU", -1.0)
     moi, nhan = mau_mod.tu_hoc_mau(clip.nguon, track_nen, mau)
     assert nhan and moi is not mau
+
+
+# --- Lớp: cổng NÉT LẠ (§5c.2) — khối chữ nằm GỌN trong box mà C vẫn "chắc" ---
+
+def test_khoi_chu_trong_box_bi_cong_net_la_chan():
+    from thay_logo_tong_hop import dan_khoi_trong_box
+    clip = tao_clip()
+    dan_khoi_trong_box(clip, range(30, 37))
+    v = _vet(clip)
+    assert v.trang_thai == "render" and v.dem_chan[cong.CHAN_NET] > 0
+    assert not {e["frame"] for e in v.khung_render} & clip.khung_phu_de
+
+
+def test_dot_bien_bo_cong_net_la_thi_khoi_chu_lot(monkeypatch):
+    """Cũng là bằng chứng fixture có sức phân định: không có cổng, C vẫn 'chắc' trên các khung có khối chữ."""
+    from thay_logo_tong_hop import dan_khoi_trong_box
+    clip = tao_clip()
+    dan_khoi_trong_box(clip, range(30, 37))
+    monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
+    v = _vet(clip)
+    assert {e["frame"] for e in v.khung_render} & clip.khung_phu_de
+
+
+@pytest.mark.parametrize("kw", [{}, {"icon_dac": True}])
+def test_cong_net_la_khong_chan_watermark_sach(kw):
+    v = _vet(tao_clip(**kw))
+    assert v.dem_chan[cong.CHAN_NET] == 0 and not v.net_la_pho_bien
+
+
+def test_net_la_pho_bien_chi_gan_co_khong_tu_nang_trang_thai():
+    track = [{"frame": i, "state": "detected"} for i in range(10)] + [{"frame": 10, "state": "hidden_ring"}]
+    ti_le = {i: 0.2 for i in range(11)}
+    assert cong.cong_net_la(track, ti_le) is True
+    assert track[10]["state"] == "hidden_ring"  # cổng chỉ HẠ khung detected, không bao giờ nâng

@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS tl_vet (
   video_id INTEGER NOT NULL REFERENCES tl_video(id), vet INTEGER, trang_thai TEXT, box_cum INTEGER, ncc_moi REAL,
   tuong_phan_mau REAL, tu_hoc_tu_choi INTEGER, khop INTEGER, lech INTEGER, track_vang INTEGER, so_khung INTEGER,
   so_chac INTEGER, so_render INTEGER, so_predicted INTEGER, so_hidden INTEGER, chan_phu_de INTEGER, chan_tuong_phan INTEGER,
-  chan_vanh INTEGER, chan_net_bat_ky INTEGER, pct_render REAL, diem_c_p50 REAL, diem_c_p90 REAL, khung_loc_phu_de INTEGER);
+  chan_vanh INTEGER, chan_net_la INTEGER, net_la_pho_bien INTEGER, pct_render REAL, diem_c_p50 REAL, diem_c_p90 REAL, khung_loc_phu_de INTEGER);
 CREATE TABLE IF NOT EXISTS tl_danh_gia (
   video_id INTEGER NOT NULL REFERENCES tl_video(id), member TEXT NOT NULL, ket_qua TEXT NOT NULL CHECK (ket_qua IN ('dat', 'hong')),
   loai_loi TEXT, ghi_chu TEXT, luc REAL NOT NULL);
@@ -103,7 +103,8 @@ def ghi_vet(conn, video_id: int, vet_so: int, v) -> None:
         "lech": v.khop.get("lech"), "track_vang": v.khop.get("track_vang"), "so_khung": len(tr),
         "so_chac": dem("detected"), "so_render": len(v.khung_render), "so_predicted": dem("predicted"),
         "so_hidden": dem("hidden"), "chan_phu_de": dem("hidden_sub"), "chan_tuong_phan": dem("hidden_contrast"),
-        "chan_vanh": dem("hidden_ring"), "chan_net_bat_ky": dem("hidden_net"), "pct_render": v.pct_chac,
+        "chan_vanh": dem("hidden_ring"), "chan_net_la": dem("hidden_net"),
+        "net_la_pho_bien": int(getattr(v, "net_la_pho_bien", False)), "pct_render": v.pct_chac,
         "diem_c_p50": _phan_vi(diem, 0.5), "diem_c_p90": _phan_vi(diem, 0.9),
         "khung_loc_phu_de": sum(1 for e in tr if e.get("loc_pd")),
     }
