@@ -351,6 +351,9 @@ def test_hai_post_that_cung_ban_cung_luc_chi_mot_luot_duoc_tao(ctx):
     khi CẢ HAI đã qua kiểm tra sơ bộ (chưa ai ghi) ⇒ chỉ lần kiểm LẠI trong khoá ghi phân định được: đúng một 201, một 409, một dòng.
     ĐỘT BIẾN: bỏ `_chan_ban_da_trong_luot` trong khoá ⇒ hai 201, hai dòng ⇒ ĐỎ."""
     import threading
+    c0 = nhat_ky.mo(ctx.log_db)  # DB có sẵn (đã WAL) như trên máy thật; lần mở ĐẦU đồng thời (đổi journal_mode) là cuộc đua khác, có từ trước
+    hang_doi.khoi_tao(c0)
+    c0.close()
     rao = threading.Barrier(2, timeout=10)
 
     class _ChoNhau(DriveGiaTL):
@@ -366,3 +369,17 @@ def test_hai_post_that_cung_ban_cung_luc_chi_mot_luot_duoc_tao(ctx):
     [t.join(30) for t in ts]
     assert sorted(kq) == [201, 409]
     assert _so_dong(ctx) == 1
+
+
+def test_ban_trong_bo_da_vao_luot_qua_duong_link_thi_bao_trong_luot_va_409(ctx):
+    """Bản trong bộ có thể vào một lượt qua đường link (kiểu `link`, file_id = ban_copy_id). Tab phải báo `da_trong_luot` và lượt
+    `vao_bo` cùng bản phải 409. ĐỘT BIẾN: chỉ so với tập kiểu `vao_bo` (ở `_chan_ban_da_trong_luot` hoặc ở `da_trong_luot`) ⇒ ĐỎ."""
+    conn = nhat_ky.mo(ctx.log_db)
+    hang_doi.khoi_tao(conn)
+    hang_doi.tao_job(conn, "a@x", [{"kieu": "link", "file_id": BAN1}])
+    conn.close()
+    j = ctx.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()
+    co = {v["ban_copy_id"]: v["da_trong_luot"] for b in j["bo"] for v in b["videos"]}
+    assert co == {BAN1: True, BAN2: False}
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 409
+    assert _tao(ctx, "a@x", [_vb("V2", BAN2)]).status_code == 201

@@ -554,7 +554,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             b["videos"].append({
                 "video_id": r["video_id"], "ban_copy_id": r["ban_copy_id"], "ten_video": r["title"] or "Video không tên",
                 "anh_bia": f"/thumbs/{r['video_id']}", "nen_tang": r["nen_tang"], "vao_bo_luc": r["thay_luc"],
-                "da_trong_luot": r["ban_copy_id"] in trong_ban or (r["drive_file_id"] in trong_nguon if r["drive_file_id"] else False)})
+                "da_trong_luot": r["ban_copy_id"] in trong_ban | trong_nguon or (r["drive_file_id"] in trong_nguon if r["drive_file_id"] else False)})
         return {"bo": sorted(nhom.values(), key=lambda b: b["vao_bo_luc"], reverse=True), "bi_cat": bi_cat}
 
 
@@ -653,8 +653,9 @@ HAN_CHUP_GIAY = 50.0      # hạn CHUNG cho cả đợt chụp (< 60 s: dưới 
 
 
 def _chan_ban_da_trong_luot(conn, ban: dict[str, dict]) -> None:
-    """Một bản trong bộ chỉ được nằm trong MỘT lượt chưa lỗi (của bất kỳ ai): lượt thứ hai cùng bản ⇒ 409."""
-    if ban and set(ban) & _nguon_dang_trong_luot(conn, None)[0]:
+    """Một bản trong bộ chỉ được nằm trong MỘT lượt chưa lỗi (của bất kỳ ai): lượt thứ hai cùng bản ⇒ 409. So với CẢ hai tập: bản trong bộ
+    có thể đã vào lượt khác qua đường link (kiểu `link`, file_id = ban_copy_id) — chiều ngược (dán link một bản đang giữ) KHÔNG chặn ở đây."""
+    if ban and set(ban) & set().union(*_nguon_dang_trong_luot(conn, None)):
         raise HTTPException(409, "Một số video đã nằm trong một lượt thay logo khác — chọn video khác hoặc đợi lượt đó xong.")
 
 
