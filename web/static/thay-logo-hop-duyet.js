@@ -5,6 +5,14 @@
   const LOAI_LOI = [["sot_watermark", "Sót watermark"], ["sai_cho", "Đè sai chỗ"], ["che_phu_de", "Che phụ đề"], ["pha_noi_dung", "Phá nội dung"], ["khac", "Khác"]];
   let vi = 0, moHong = false;
 
+  // Chip tên bộ + ảnh bìa nhỏ; ảnh không tải được thì tự gỡ (không để ô vỡ).
+  const chipBo = (v) => el("span", "tl-chip-bo", v.ten_bo || `Lượt #${v.job_id}`);
+  function anhBia(v, cls) {
+    const img = el("img", cls); img.alt = ""; img.loading = "lazy"; img.src = v.anh_bia;
+    img.addEventListener("error", () => img.remove(), { once: true });
+    return img;
+  }
+
   const hangDuyet = () => T.locDuoc().filter((v) => T.nhomCua(v) === "cho_duyet");
 
   async function danhGia(v, body) {
@@ -30,18 +38,20 @@
     const trai = el("div", "tl-so-sanh");
     if (v.co_sheet) { const img = el("img"); img.alt = "Ảnh soi trước / sau"; img.src = `/api/thay-logo/videos/${v.id}/sheet.jpg`; trai.append(img); }
     else trai.append(el("div", "tl-o-trong", "Chưa có ảnh soi"));
-    trai.append(el("p", "tl-goi-y", "Kéo vạch so trước/sau từng khung: sắp có — máy chủ mới trả một ảnh soi."));
+    trai.append(el("p", "tl-goi-y", "Ảnh soi ghép trước/sau của máy. Kéo vạch so từng cảnh: sắp có."));
     const ct = el("div", "tl-chi-tiet");
-    ct.append(el("h3", "", T.goc(v)));
+    const tieu = el("div", "tl-duyet-tieu"), chu = el("div", "tl-duyet-tieu-chu");
+    chu.append(chipBo(v), el("h3", "", T.tenVideo(v)));
+    if (v.anh_bia) tieu.append(anhBia(v, "tl-bia-nho"));
+    tieu.append(chu); ct.append(tieu);
     const meta = el("div", "tl-meta");
-    meta.append(el("span", "", `Lượt #${v.job_id}`));
     if (v.giay_xu_ly != null) meta.append(el("span", "", `máy làm ${T.phut(v.giay_xu_ly)} phút`));
     ct.append(meta);
     if (v.pct_render != null) {
-      const pct = Math.round(v.pct_render);
+      const pct = Math.max(0, Math.min(100, Math.round(v.pct_render)));
       const bar = el("div", "tl-phu-bar"); const i = el("i"); i.style.width = pct + "%"; bar.append(i);
-      const p = el("p", "tl-phu"); const b = el("b", "", `${pct}% khung`);
-      p.append("Logo mới có ở ", b, `. ${100 - pct}% giữ nguyên hình gốc vì máy không chắc vị trí hoặc có phụ đề/chữ chồng lên.`);
+      const p = el("p", "tl-phu"); const b = el("b", "", T.phanSo(pct));
+      p.append("Logo mới có ở ", b, ". Đoạn còn lại giữ hình gốc vì máy không thấy logo cũ ở đó hoặc có phụ đề/chữ chồng lên.");
       ct.append(bar, p);
     }
     if (T.soiKy(v)) { const c = el("div", "tl-canh-bao"); c.append(el("b", "", "⚠ Nên xem kỹ cả video trước khi dùng"), "Gần chỗ logo có chữ hoặc hình lạ, máy có thể đã che nhầm hoặc sót. Bấm “Xem cả video”."); ct.append(c); }
@@ -76,7 +86,10 @@
     k.append(h, el("p", "giai", giai));
     if (!ds.length) { k.append(el("p", "tl-rong", "Không có video nào.")); return; }
     for (const v of ds) {
-      const m = el("div", "tl-muc"); m.append(el("div", "ten", T.goc(v)), el("div", "tt", dong(v)));
+      const m = el("div", "tl-muc");
+      if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
+      const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
+      m.append(than);
       k.append(m);
     }
   }
@@ -84,9 +97,9 @@
   T.ve.duyet = () => {
     veDuyet();
     khoiPhai("tl-dang-lam", "Máy đang làm", "Bạn không cần làm gì. Xong sẽ tự sang “Chờ bạn duyệt”.", "dang_xu_ly", (v) =>
-      v.trang_thai === "cho_agy" && v.cho_agy_tu ? `Chờ agy · ${T.phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : v.trang_thai === "dang_chay" ? "Đang xử lý" : "Đang chuẩn bị");
+      v.trang_thai === "cho_agy" && v.cho_agy_tu ? `Máy đang tìm chỗ logo cũ · đã ${T.phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : v.trang_thai === "dang_chay" ? "Đang thay logo" : "Đang xếp hàng");
     khoiPhai("tl-khong-chac", "Máy không chắc", "Máy không tìm ra logo cũ đủ chắc nên giữ nguyên video.", "khong_chac", (v) =>
-      "Chưa thay gì — video gốc vẫn dùng được." + (v.so_box != null ? ` agy thấy ${v.so_box} box.` : ""), "warn");
+      (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
     khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => `${v.loi_text || "Lỗi không rõ"} — video gốc không bị ảnh hưởng.`, "bad");
   };
 

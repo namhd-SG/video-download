@@ -1,6 +1,9 @@
 """Trang Thay logo (khung theo bộ, mock v4a) trên trình duyệt THẬT (Chromium, chặn mạng ngoài): bốn vùng dựng đủ, thu gọn/mở khối nhập,
 tính năng tắt, lọc trạng thái, Đạt/Hỏng sát nhau + lý do chỉ hiện sau khi bấm Hỏng, không cuộn ngang, link trên thanh trên.
 
+Đợt nối API: tên bộ gửi lên khi tạo lượt, thẻ bộ đọc /bo và bấm lọc, lọc nền tảng/ngày, tên video + ảnh bìa, lời lỗi thường, và
+KHÔNG còn chữ kỹ sư (agy / khung / box) trong văn bản member thấy. Các test TẠO lượt đặt CUỐI file (chúng thêm một bộ vào DB dùng chung).
+
 Ảnh chụp sáng/tối ghi vào `$VIDEODL_ANH_THAY_LOGO` nếu có đặt (để người duyệt tự mở).
 """
 from __future__ import annotations
@@ -19,12 +22,33 @@ from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 from web import app as app_mod
 
 NGUOI = "thaylogo@dev.local"
+TEN_BO_A, TEN_BO_B = "Quay T10 - đồ bếp", "Bộ cũ 3 ngày"
+TIEU_DE = ["Máy hút bụi cầm tay", "Chảo chống dính 28cm", "Kệ để giày gấp gọn", "Nồi chiên không dầu"]
+FILE_THU_VIEN = [f"FILE{i:02d}" + "x" * 12 for i in range(20, 28)]  # video trong thư viện chưa vào lượt nào (để test tạo lượt)
+
+
+def _seed_thu_vien(data: Path) -> None:
+    """jobs.db: thư viện của NGƯỜI (tiktok: FILE00-03 + FILE20-27, douyin: FILE10-11) kèm ảnh bìa; FILE04 CỐ Ý không có (video đã mất)."""
+    from PIL import Image
+
+    from web import models
+
+    db = data / "jobs.db"
+    models.init_db(db)
+    (data / "thumbs").mkdir(exist_ok=True)
+    tiktok, douyin = models.create_job(db, "https://x/a", 20, NGUOI, nen_tang="tiktok"), models.create_job(db, "https://x/b", 2, NGUOI, nen_tang="douyin")
+    muc = [(tiktok, f"FILE{i:02d}" + "x" * 12, TIEU_DE[i]) for i in range(4)] + [(douyin, f"FILE{i:02d}" + "x" * 12, f"Son kem lì {i}") for i in (10, 11)]
+    muc += [(tiktok, f, f"Video thư viện {k}") for k, f in enumerate(FILE_THU_VIEN)]
+    for k, (job, fid, tieu_de) in enumerate(muc):
+        vid = f"70000000000000{k:05d}"
+        models.record_video(db, job, vid, f"https://x/{vid}", title=tieu_de, drive_file_id=fid)
+        Image.new("RGB", (90, 160), (60 + 12 * k % 190, 120, 200 - 9 * k % 150)).save(data / "thumbs" / f"{vid}.webp", "WEBP")
 
 
 def _seed(data: Path) -> None:
     conn = nhat_ky.mo(data / "thay_logo_log.db")
     hang_doi.khoi_tao(conn)
-    j = hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": f"FILE{i:02d}" + "x" * 12} for i in range(5)])
+    j = hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": f"FILE{i:02d}" + "x" * 12} for i in range(5)], ten_bo=TEN_BO_A)
     ids = [r[0] for r in conn.execute("SELECT id FROM tl_job_video WHERE job_id=? ORDER BY id", (j,))]
     sheet = data / "sheet.jpg"
     from PIL import Image
@@ -38,7 +62,12 @@ def _seed(data: Path) -> None:
         hang_doi.dat(conn, vid, tt, video_log_id=log_id, drive_file_id_ra="OUT" + "y" * 15 if tt == "xong" else None,
                      cho_agy_tu=time.time() - 14 * 60 if tt == "cho_agy" else None,
                      loi_text="Hết chỗ đĩa khi ghi video ra." if tt == "loi" else None)
+    # Bộ thứ hai: tạo cách đây 3 ngày, nền tảng douyin, 2 video máy đang xếp hàng, đã có thư mục đầu ra.
+    j2 = hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": f"FILE{i:02d}" + "x" * 12} for i in (10, 11)], ten_bo=TEN_BO_B)
+    conn.execute("UPDATE tl_job SET tao_luc = ?, thu_muc_ra_id = ? WHERE id = ?", (time.time() - 3 * 86400, "THUMUC" + "z" * 14, j2))
+    conn.commit()
     conn.close()
+    _seed_thu_vien(data)
 
 
 @pytest.fixture(scope="module")
@@ -92,8 +121,8 @@ def _mo(br, goc, rong, theme="light"):
     loi_js: list[str] = []
     p.on("pageerror", lambda e: loi_js.append(str(e)))
     mo_trang(p, f"{goc}/thay-logo.html", chan)
-    # 2 video xong chưa đánh giá ⇒ hộp duyệt; 1 máy đang làm; 1 không chắc; 1 lỗi
-    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 1 && document.querySelector('#tl-duyet .tl-chi-tiet')")
+    # bộ A: 2 video xong chưa đánh giá ⇒ hộp duyệt; 1 máy đang làm; 1 không chắc; 1 lỗi. Bộ B: 2 video xếp hàng (+2 máy đang làm)
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 3 && document.querySelector('#tl-duyet .tl-chi-tiet') && document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
     return p, loi_js
 
 
@@ -121,14 +150,14 @@ def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     assert p.locator("#tl-nhap").is_visible() and p.locator("#tl-tabs [role=tab]").count() == 4
     assert p.locator("#tl-nhap").inner_text().count("Tên bộ") == 1 and p.locator("#tl-tao").is_visible()
-    assert p.locator("#tl-bo-list").is_visible() and "sắp có" in p.locator("#tl-bo-list").inner_text()  # chưa có API bộ ⇒ báo trung thực
+    assert p.locator("#tl-bo-list .tl-bo-the").count() == 2 and TEN_BO_A in p.locator("#tl-bo-list").inner_text()
     assert p.locator("#tl-loc").is_visible() and p.locator("#tl-loc [data-tt]").count() == 6
     assert p.locator("#tl-duyet").is_visible() and "Chờ bạn duyệt" in p.locator("#tl-duyet").inner_text()
     chu = p.locator("aside.tl-cot").inner_text()
     assert "Máy đang làm" in chu and "Máy không chắc" in chu and "Không làm được" in chu and "Hết chỗ đĩa" in chu
     # 5 video: 2 xong chờ duyệt (1 cờ soi kỹ), 1 chờ agy, 1 không chắc, 1 lỗi
     assert "2 video chờ duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần bạn xem kỹ" in p.locator("#tl-tom-tat").inner_text()
-    assert "Chờ agy · 14 phút" in p.locator("#tl-dang-lam").inner_text()
+    assert "Máy đang tìm chỗ logo cũ · đã 14 phút" in p.locator("#tl-dang-lam").inner_text()
     _anh(p, "khung-1280.png")
     p.locator("#tl-tabs [role=tab]").nth(2).click()  # tab chưa có API ⇒ "sắp có", không dữ liệu giả
     assert "Sắp có" in p.locator("#tl-vung").inner_text()
@@ -147,14 +176,15 @@ def test_thu_gon_va_mo_khoi_nhap(may_chu, trinh_duyet):
 def test_tinh_nang_tat_bao_tat_va_khoa_nut_tao(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     assert p.locator("#tat").is_visible()  # worker chưa dựng ⇒ báo tính năng tắt
-    p.wait_for_function("document.getElementById('tl-tao').disabled")
-    assert p.locator("#tl-ten-bo").is_disabled()
+    p.wait_for_function("document.getElementById('tl-ten-bo').disabled")
+    assert p.locator("#tl-tao").is_disabled()
 
 
 def test_loc_trang_thai_thu_hep_cot_phai(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     p.locator("#tl-loc [data-tt=loi]").click()
     assert p.locator("#tl-khong-lam .tl-muc").count() == 1 and p.locator("#tl-dang-lam .tl-muc").count() == 0
+    assert "Video không còn trong thư viện" in p.locator("#tl-khong-lam").inner_text()  # FILE04 cố ý không có trong thư viện
     assert "Không có video nào chờ" in p.locator("#tl-duyet").inner_text()
 
 
@@ -177,6 +207,239 @@ def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet):
     p.wait_for_function("document.querySelector('#tl-loc [data-tt=da_dat]').innerText.includes('1')")
     conn = nhat_ky.mo(app_mod.DATA_DIR / "thay_logo_log.db")
     assert [tuple(r) for r in conn.execute("SELECT member, ket_qua FROM tl_danh_gia")] == [(NGUOI, "dat")]
+
+
+# ---------------------------------------------------------------- nối API bộ / lọc / tên video
+
+def _chu_trang(p) -> str:
+    return p.evaluate("document.body.innerText + ' ' + [...document.querySelectorAll('[title],[aria-label],[placeholder]')].map(e => (e.title||'') + ' ' + (e.getAttribute('aria-label')||'') + ' ' + (e.placeholder||'')).join(' ')")
+
+
+def test_the_bo_doc_bo_va_bam_loc_theo_bo(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    the_a = p.locator(".tl-bo-the", has_text=TEN_BO_A)
+    chu = the_a.inner_text()
+    assert "Thư viện" in chu and "5 video" in chu and "2/5 xong" in chu and __import__("re").search(r"\d cần bạn xem", chu) and "1 máy không chắc" in chu and "1 lỗi" in chu
+    assert "Đang xử lý" in chu
+    the_b = p.locator(".tl-bo-the", has_text=TEN_BO_B)
+    assert "0/2 xong" in the_b.inner_text()
+    link = the_b.locator("a.tl-bo-thumuc")  # bộ A chưa có thư mục đầu ra ⇒ không có link; bộ B có
+    assert link.get_attribute("href") == "https://drive.google.com/drive/folders/THUMUC" + "z" * 14 and the_a.locator("a").count() == 0
+    with p.expect_request(lambda r: "/api/thay-logo/videos" in r.url and "job_id=" in r.url):
+        the_b.locator("button.tl-bo-chon").click()
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 2 && document.querySelectorAll('#tl-khong-lam .tl-muc').length === 0")
+    assert "Không có video nào chờ" in p.locator("#tl-duyet").inner_text()
+    assert p.locator("#tl-loc-bo").input_value() != ""  # ô chọn bộ đi theo thẻ
+    p.locator(".tl-bo-the", has_text=TEN_BO_B).locator("button.tl-bo-chon").click()  # bấm lại = bỏ lọc
+    p.wait_for_function("document.querySelectorAll('#tl-khong-lam .tl-muc').length === 1")
+
+
+def test_thu_muc_dau_ra_va_trang_thai_bo_theo_du_lieu_bo(may_chu, trinh_duyet):
+    """Ba trạng thái bộ + tiến độ + link thư mục, dựng từ JSON /bo cố định (bộ thật chỉ có ca Đang xử lý)."""
+    import json
+
+    def bo(job_id, ten, tong, xong, cho_duyet, thu_muc=None, cho_nguoi=0):
+        return {"job_id": job_id, "ten_bo": ten, "nguon_kieu": "drive", "tao_luc": time.time(), "tong": tong, "xong": xong, "cho_duyet": cho_duyet,
+                "cho_nguoi": cho_nguoi, "loi": 0, "dat": xong - cho_duyet, "hong": 0, "thu_muc_ra_id": thu_muc}
+
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    tra = json.dumps({"bo": [bo(3, "Bộ ba", 6, 6, 0, "ABCDEFGHIJK"), bo(2, "Bộ hai", 6, 6, 5), bo(1, "Bộ một", 30, 12, 2)]})
+    p.route("**/api/thay-logo/bo", lambda r: r.fulfill(status=200, content_type="application/json", body=tra))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 3")
+    t = {n: p.locator(".tl-bo-the", has_text=n).inner_text() for n in ("Bộ một", "Bộ hai", "Bộ ba")}
+    assert "Đang xử lý" in t["Bộ một"] and "12/30 xong" in t["Bộ một"] and "2 cần bạn xem" in t["Bộ một"]
+    assert "Chờ bạn duyệt" in t["Bộ hai"] and "5 cần bạn xem" in t["Bộ hai"]
+    assert "Xong" in t["Bộ ba"] and "6/6 xong" in t["Bộ ba"] and "cần bạn xem" not in t["Bộ ba"]
+    assert p.locator(".tl-bo-the", has_text="Bộ ba").locator("a").get_attribute("href") == "https://drive.google.com/drive/folders/ABCDEFGHIJK"
+    assert p.locator(".tl-bo-the a").count() == 1
+    assert not p.locator("text=/Áp vào bộ|Đẩy lên bộ/").count()  # nút của đợt sau: không hiện
+
+
+def test_loc_nen_tang_va_ngay_goi_api_that(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    with p.expect_request(lambda r: "nen_tang=douyin" in r.url):
+        p.locator("#tl-loc [data-nen=douyin]").click()
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 2 && document.querySelectorAll('#tl-khong-lam .tl-muc').length === 0")
+    assert "Son kem lì 10" in p.locator("#tl-dang-lam").inner_text()
+    p.locator("#tl-loc [data-nen=tiktok]").click()
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 1")
+    assert "Son kem lì" not in p.locator("#tl-dang-lam").inner_text()
+    p.locator("#tl-loc [data-nen='']").click()
+    with p.expect_request(lambda r: "tu=" in r.url):
+        p.locator("#tl-loc [data-ngay=hom_nay]").click()  # bộ B tạo cách đây 3 ngày ⇒ rơi khỏi "Hôm nay"
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 1")
+    p.locator("#tl-loc [data-ngay='']").click()
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 3")
+
+
+def test_hien_ten_video_chip_bo_va_anh_bia(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.wait_for_function("[...document.images].every(i => i.complete)")
+    duyet = p.locator("#tl-duyet").inner_text()
+    assert any(t in duyet for t in TIEU_DE[:2]) and TEN_BO_A in duyet  # chip bộ trong hộp duyệt
+    assert not __import__("re").search(r"FILE0\d", _chu_trang(p)), "không còn mã file thô"
+    cot = p.locator("#tl-dang-lam").inner_text()
+    assert TIEU_DE[2] in cot and TEN_BO_A in cot and TEN_BO_B in cot
+    assert p.locator("#tl-duyet img.tl-bia-nho").evaluate("i => i.naturalWidth > 0")  # ảnh bìa tải được từ /thumbs
+    assert p.locator("#tl-dang-lam img.tl-bia-nho").first.evaluate("i => i.naturalWidth > 0")
+    assert "Video không còn trong thư viện" in p.locator("#tl-khong-lam").inner_text()
+
+
+def test_thu_vien_loi_bao_mot_dong_va_an_ten(may_chu, trinh_duyet):
+    import json
+
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    dong = {"id": 9, "job_id": 1, "nguon": json.dumps({"kieu": "drive", "file_id": "F" * 20}), "trang_thai": "cho_nguoi", "ten_bo": "Bộ lỗi", "ten_video": None,
+            "anh_bia": None, "nen_tang": None, "so_box": 0, "danh_gia": None, "co_sheet": 0}
+    body = json.dumps({"videos": [dong], "con_nua": False, "truoc_tiep": None, "thu_vien_loi": True})
+    p.route("**/api/thay-logo/videos*", lambda r: r.fulfill(status=200, content_type="application/json", body=body))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
+    assert "Không đọc được thư viện — tên video tạm ẩn." in p.locator("#tl-loc").inner_text()
+    chu = p.locator("#tl-khong-chac").inner_text()
+    assert "Tên video tạm ẩn" in chu and "Video không còn trong thư viện" not in chu  # đừng nói dối "đã mất" khi chỉ là không đọc được
+    assert "Máy không thấy logo" in chu
+
+
+def test_con_nua_dung_truoc_tiep(may_chu, trinh_duyet):
+    import json
+
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    goi: list[str] = []
+
+    def dong(i):
+        return {"id": i, "job_id": 1, "nguon": json.dumps({"kieu": "drive", "file_id": "F" * 20}), "trang_thai": "cho", "ten_bo": "Bộ phân trang", "ten_video": f"Video số {i}",
+                "anh_bia": None, "nen_tang": "tiktok", "so_box": 0, "danh_gia": None, "co_sheet": 0}
+
+    def tra(r):
+        goi.append(r.request.url)
+        trang1 = "truoc_id" not in r.request.url
+        r.fulfill(status=200, content_type="application/json", body=json.dumps(
+            {"videos": [dong(80)] if trang1 else [dong(70)], "con_nua": trang1, "truoc_tiep": 80 if trang1 else None, "thu_vien_loi": False}))
+
+    p.route("**/api/thay-logo/videos*", tra)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 1")
+    p.locator(".tl-xem-them").click()
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 2")
+    assert any("truoc_id=80" in u for u in goi) and p.locator(".tl-xem-them").count() == 0
+
+
+def test_khong_con_chu_ky_su_trong_van_ban_member_thay(may_chu, trinh_duyet):
+    import re
+
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-phu')")
+    p.locator(".tl-hong-nut").click()
+    for tab in range(4):
+        p.locator("#tl-tabs [role=tab]").nth(tab).click()
+        bat = re.findall(r"agy|khung|box|%\s*khung", _chu_trang(p).lower())
+        assert bat == [], f"chữ kỹ sư còn trên trang (tab {tab}): {bat}"
+    phu = p.locator("#tl-duyet .tl-phu").inner_text()  # video nào còn trong hàng tuỳ thứ tự test trước: 97% ⇒ "gần như cả video", 66% ⇒ "khoảng 2/3"
+    assert "Logo mới có ở" in phu and ("khoảng" in phu or "gần như cả video" in phu) and "%" not in phu
+    assert "Máy không thấy logo" in p.locator("#tl-khong-chac").inner_text()
+
+
+@pytest.mark.parametrize("pct,mong", [(97, "gần như cả video"), (66, "khoảng 2/3 video"), (50, "khoảng 1/2 video"), (25, "khoảng 1/4 video"), (40, "khoảng 2/5 video"), (3, "rất ít video")])
+def test_pct_render_doi_ra_phan_so(may_chu, trinh_duyet, pct, mong):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    assert p.evaluate(f"window.TL.phanSo({pct})") == mong
+
+
+def test_cho_gan_nguon_nhap_cua_dot_sau(may_chu, trinh_duyet):
+    """Module đăng ký vào TL_TAB_NGUON được vẽ vào container riêng của tab; tab chưa có module vẫn 'Sắp có'."""
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    p.add_init_script("window.TL_TAB_NGUON = [{ id: 'link', giai: 'Giải thích của module', ve(hop, T) { hop.append(T.el('p', 'x', 'MODULE-LINK-DA-VE')); } }];")
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-tabs [role=tab]').length === 4")
+    p.locator("#tl-tabs [role=tab]").nth(3).click()
+    assert "MODULE-LINK-DA-VE" in p.locator("#tl-tab-link").inner_text() and p.locator("#tl-tab-thu-vien").is_hidden()
+    assert "Giải thích của module" in p.locator("#tl-tab-giai").inner_text()
+    p.locator("#tl-tabs [role=tab]").nth(2).click()
+    assert "Sắp có" in p.locator("#tl-tab-may").inner_text() and p.locator("#tl-tab-link").is_hidden()
+
+
+# ---------------------------------------------------------------- tạo lượt (CUỐI file: thêm một bộ vào DB dùng chung)
+
+def _chon_mot_video(p):
+    p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
+    p.locator(f"#tl-tab-thu-vien input[value={FILE_THU_VIEN[0]}]").check()
+
+
+def _mo_bat(br, goc, monkeypatch):
+    monkeypatch.setattr(app_mod, "worker_thay_logo", object())  # tính năng BẬT ⇒ trang mở khoá ô nhập và nút tạo
+    ctx = br.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    mo_trang(p, f"{goc}/thay-logo.html", dem_mang_ngoai(ctx))
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length >= 2")
+    return p
+
+
+def test_anh_nghiem_thu_tinh_nang_bat_da_chon_3_video(may_chu, trinh_duyet, monkeypatch):
+    """Trang ở trạng thái dùng thật (tính năng bật, đã tick 3 video): ảnh cho người duyệt đặt cạnh mock; ảnh bìa thư viện phải tải được."""
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
+    for f in FILE_THU_VIEN[:3]:
+        p.locator(f"#tl-tab-thu-vien input[value={f}]").check()
+    p.wait_for_function("[...document.querySelectorAll('#tl-tab-thu-vien img')].length >= 8 && [...document.images].every(i => i.complete)")
+    assert p.locator("#tat").is_hidden() and "Đã chọn 3 video" in p.locator("#tl-dem").inner_text()
+    assert p.locator("#tl-tab-thu-vien img").first.evaluate("i => i.naturalWidth > 0")
+    _anh(p, "1a-1280.png")
+
+
+def test_ten_bo_tu_dien_theo_ngay_va_so_bo_hom_nay(may_chu, trinh_duyet, monkeypatch):
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    hn = time.localtime()
+    # hôm nay đã có đúng 1 bộ (bộ B tạo cách đây 3 ngày không tính) ⇒ n = 2
+    assert p.locator("#tl-ten-bo").input_value() == f"{hn.tm_mday:02d}/{hn.tm_mon:02d}-2" and p.locator("#tl-ten-bo").is_enabled()
+    _chon_mot_video(p)
+    assert f"bộ {hn.tm_mday:02d}/{hn.tm_mon:02d}-2" in p.locator("#tl-tao").inner_text()
+
+
+def test_loi_400_429_hien_cau_loi_thuong(may_chu, trinh_duyet, monkeypatch):
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    _chon_mot_video(p)
+    for ma, mong in ((400, "Tên bộ cần 1–80 ký tự"), (429, "quá nhiều video chờ")):
+        p.route("**/api/thay-logo/jobs", (lambda ma: lambda r: r.fulfill(status=ma, content_type="application/json", body='{"detail": "raw detail"}'))(ma))
+        p.locator("#tl-tao").click()
+        p.wait_for_function(f"document.getElementById('tl-loi').textContent.includes({mong!r})")
+        assert "raw detail" not in p.locator("#tl-loi").inner_text()
+        p.unroute("**/api/thay-logo/jobs")
+
+
+def test_409_cong_cam_hien_cau_loi_thuong(may_chu, trinh_duyet, monkeypatch):
+    class Cam:
+        ly_do_khong_nhan = "thư mục ra nằm trong Creative"
+
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    _chon_mot_video(p)
+    monkeypatch.setattr(app_mod, "worker_thay_logo", Cam())  # sau khi trang đã mở: cổng cấu hình cấm ⇒ máy chủ trả 409 THẬT
+    p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-loi').textContent.includes('tạm tắt')")
+    chu = p.locator("#tl-loi").inner_text()
+    assert "Creative" not in chu and "Traceback" not in chu
+    assert p.locator("#tl-tab-thu-vien input:checked").count() == 1  # lượt không tạo được ⇒ giữ nguyên lựa chọn
+
+
+def test_tao_luot_gui_ten_bo_va_bo_moi_hien_ra(may_chu, trinh_duyet, monkeypatch):
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    _chon_mot_video(p)
+    p.locator("#tl-ten-bo").fill("  Bộ thử nghiệm 1  ")
+    with p.expect_request(lambda r: r.url.endswith("/api/thay-logo/jobs") and r.method == "POST") as rq:
+        p.locator("#tl-tao").click()
+    body = rq.value.post_data_json
+    assert body["ten_bo"] == "Bộ thử nghiệm 1" and body["drive_file_ids"] == [FILE_THU_VIEN[0]]
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 3")
+    assert "Bộ thử nghiệm 1" in p.locator("#tl-bo-list").inner_text()
+    assert p.locator("#tl-loi").inner_text() == "" and p.locator("#tl-tab-thu-vien input:checked").count() == 0
+    conn = nhat_ky.mo(app_mod.DATA_DIR / "thay_logo_log.db")
+    assert conn.execute("SELECT ten_bo FROM tl_job ORDER BY id DESC LIMIT 1").fetchone()[0] == "Bộ thử nghiệm 1"  # máy chủ đã lưu đúng tên gửi lên
+    assert p.locator("#tl-ten-bo").input_value().endswith("-3")  # số bộ hôm nay tăng ⇒ tên mặc định lượt kế tiếp
 
 
 # ---------------------------------------------------------------- link trên thanh trên trang Tải video

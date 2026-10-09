@@ -48,12 +48,17 @@
         <span id="tl-tab-giai" class="muted"></span>
         <span id="tl-tim-hop" class="tl-tim"><input id="tl-tim" type="search" placeholder="Tìm theo tên video…" aria-label="Tìm theo tên video" /></span>
       </div>
-      <div id="tl-vung" class="tl-vung" tabindex="0"></div>
+      <div id="tl-vung" class="tl-vung" tabindex="0">
+        <div id="tl-tab-thu-vien" class="tl-tab-vung"></div>
+        <div id="tl-tab-bo" class="tl-tab-vung" hidden></div>
+        <div id="tl-tab-may" class="tl-tab-vung" hidden></div>
+        <div id="tl-tab-link" class="tl-tab-vung" hidden></div>
+      </div>
       <div class="tl-chan">
         <div class="tl-ten-bo">
           <label for="tl-ten-bo">Tên bộ</label>
-          <input id="tl-ten-bo" type="text" placeholder="Sắp có" disabled />
-          <span class="muted">Đặt tên bộ cần máy chủ lưu tên — sắp có.</span>
+          <input id="tl-ten-bo" type="text" maxlength="80" autocomplete="off" />
+          <span class="muted">Đặt theo ngày · sửa được. Mọi video của lượt này mang tên bộ này để lọc.</span>
         </div>
         <div id="tl-dem" class="tl-dem-chan"></div>
         <button type="submit" id="tl-tao" class="btn primary tl-btn-tao">Thay logo</button>
@@ -82,6 +87,7 @@
   </div>
 </div>
 <script src="thay-logo-chung.js"></script>
+<!-- Nguồn nhập của đợt sau (Đã vào bộ / Tải từ máy / Dán link): thêm MỘT dòng <script> ở đây, file đó đẩy module vào window.TL_TAB_NGUON. -->
 <script src="thay-logo-khoi-nhap.js"></script>
 <script src="thay-logo-the-bo.js"></script>
 <script src="thay-logo-hop-duyet.js"></script>
