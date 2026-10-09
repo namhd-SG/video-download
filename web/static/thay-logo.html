@@ -6,47 +6,7 @@
 <title>Video Desk — Thay logo</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
 <link rel="stylesheet" href="app.css" />
-<style>
-  /* Riêng trang Thay logo (mock M1 đã duyệt ĐP-1507: ~/plans/261007-2254-video-desk-thay-logo/mock-m1/). Màu chỉ dùng token app.css. */
-  .tl-wrap { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; }
-  .tl-wrap > *, .tl-list > *, .tl-card > *, .tl-form > * { min-width: 0; }
-  .tl-form { display: grid; gap: 10px; }
-  /* Cùng kiểu ô nhập của form tạo lượt tải (`#job-form textarea` trong app.css) — không để mặc định trình duyệt. */
-  .tl-form textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--border); background: var(--bg); color: var(--text);
-                      border-radius: 8px; padding: .55rem .7rem; font: inherit; font-size: .88rem; resize: vertical; }
-  .tl-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .tl-hang { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .tl-logo img { height: 28px; border-radius: 6px; background: #444; padding: 4px; vertical-align: middle; }
-  .tl-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px;
-             background: var(--pending-bg); color: var(--pending-text); white-space: nowrap; border: 0; cursor: default; }
-  button.tl-chip { cursor: pointer; }
-  button.tl-chip.on { outline: 2px solid var(--accent); }
-  .tl-chip.ok { background: var(--success-bg); color: var(--success); }
-  .tl-chip.warn { background: var(--warn-bg); color: var(--warn); font-weight: 600; }
-  .tl-chip.bad { background: var(--danger-bg); color: var(--danger); }
-  .tl-list { display: grid; gap: 12px; }
-  .tl-card { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); padding: 12px;
-             display: grid; grid-template-columns: 200px 1fr; gap: 14px; }
-  .tl-card.co-co { border-color: var(--warn); box-shadow: inset 4px 0 0 var(--warn); }
-  .tl-card img { width: 200px; max-width: 100%; height: auto; border-radius: 6px; border: 1px solid var(--border); }
-  .tl-o-trong { width: 200px; max-width: 100%; min-height: 90px; border-radius: 6px; background: var(--surface-alt); display: grid;
-                place-items: center; color: var(--text-faint); font-size: 12px; text-align: center; padding: 8px; box-sizing: border-box; }
-  .tl-card h3 { margin: 0 0 4px; font-size: 14px; font-family: var(--mono, "IBM Plex Mono", monospace); font-weight: 500;
-                overflow-wrap: anywhere; }
-  .tl-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-  .tl-co { margin: 6px 0; padding: 6px 10px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); font-size: 13px; }
-  .tl-cap { display: inline-flex; gap: 6px; white-space: nowrap; }
-  .tl-hong { display: none; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  .tl-hong.mo { display: flex; }
-  .tl-hong select, .tl-hong input { font: inherit; padding: .35rem .5rem; border: 1px solid var(--border); border-radius: 8px;
-                                     background: var(--surface); color: var(--text); max-width: 100%; }
-  .tl-i { cursor: help; color: var(--text-faint); border: 1px solid var(--border-strong); border-radius: 50%; width: 16px; height: 16px;
-          display: inline-grid; place-items: center; font-size: 11px; }
-  .tl-chon { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px; display: none; }
-  .tl-chon.mo { display: grid; gap: 4px; }
-  .tl-chon label { font-size: 13px; overflow-wrap: anywhere; }
-  @media (max-width: 640px) { .tl-card { grid-template-columns: 1fr; } }
-</style>
+<link rel="stylesheet" href="thay-logo.css" />
 </head>
 <body>
 <div class="app">
@@ -54,6 +14,7 @@
     <div class="brand"><span class="dot"></span>Video Desk</div>
     <nav class="topbar-nav">
       <a href="/">⬇ Tải video</a>
+      <a href="/thay-logo.html" class="here" aria-current="page">◐ Thay logo</a>
       <a href="/settings.html">⚙ Cài đặt</a>
       <a href="/huong-dan.html#thay-logo">ⓘ Hướng dẫn</a>
       <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
@@ -63,30 +24,67 @@
     Phiên đăng nhập đã hết hạn — <a href="">tải lại trang</a> để đăng nhập lại.
   </p>
 
-  <div class="tl-wrap">
-    <section class="panel">
-      <h2>Tạo lượt thay logo</h2>
-      <p id="tat" class="error-text" hidden>Tính năng thay logo đang tắt trên máy chủ.</p>
-      <form id="tl-form" class="tl-form">
-        <textarea id="tl-link" rows="3" placeholder="Link file Google Drive (mỗi dòng một link) — hoặc chọn từ thư viện bên dưới"></textarea>
-        <div class="tl-hang">
-          <button type="button" id="tl-mo-thu-vien" class="btn ghost">Chọn từ Thư viện tải</button>
-          <span class="tl-logo"><img src="/api/thay-logo/logo.png" alt="" onerror="this.remove()" /> <span class="muted">Logo mặc định</span></span>
-          <label class="muted"><input type="checkbox" disabled /> agy bù đoạn trượt
-            <span class="tl-i" title="Tắt trong giai đoạn thử. Bật sau khi xem kết quả pilot.">i</span></label>
-          <button type="submit" id="tl-tao" class="btn primary">Tạo lượt</button>
-        </div>
-        <div id="tl-chon" class="tl-chon" aria-label="Video trong thư viện"></div>
-      </form>
-      <p id="tl-loi" class="error-text" role="alert"></p>
-    </section>
+  <section class="tl-head">
+    <div>
+      <h1>Thay logo</h1>
+      <p id="tl-tom-tat" class="tl-tom-tat"></p>
+    </div>
+    <div class="tl-logo"><img src="/api/thay-logo/logo.png" alt="" onerror="this.remove()" /> <span>Logo đang dùng</span></div>
+  </section>
+  <p id="tat" class="error-text" hidden>Tính năng thay logo đang tắt trên máy chủ.</p>
 
-    <section>
-      <div id="tl-loc" class="tl-hang" style="margin-bottom:10px"></div>
-      <div id="tl-list" class="tl-list"></div>
-    </section>
+  <!-- Vùng 1: Đưa video vào -->
+  <section class="panel tl-nhap" id="tl-nhap" aria-label="Đưa video vào">
+    <button type="button" id="tl-nhap-gon" class="tl-nhap-gon" hidden><span class="ic">⇪</span> <b>Đưa video vào</b> <span class="muted">· 4 nguồn</span><span class="grow"></span><span class="mo">Mở ▾</span></button>
+    <form id="tl-form" class="tl-nhap-day" aria-labelledby="tl-nhap-h">
+      <div class="tl-nhap-head">
+        <h2 id="tl-nhap-h">Đưa video vào</h2>
+        <span class="muted">Chọn từ một hay nhiều nguồn — cả lượt thành một bộ</span>
+        <span class="grow"></span>
+        <button type="button" id="tl-thu-gon" class="btn ghost" aria-expanded="true">Thu gọn ▴</button>
+      </div>
+      <div id="tl-tabs" class="tl-tabs" role="tablist"></div>
+      <div class="tl-tab-tools">
+        <span id="tl-tab-giai" class="muted"></span>
+        <span id="tl-tim-hop" class="tl-tim"><input id="tl-tim" type="search" placeholder="Tìm theo tên video…" aria-label="Tìm theo tên video" /></span>
+      </div>
+      <div id="tl-vung" class="tl-vung" tabindex="0"></div>
+      <div class="tl-chan">
+        <div class="tl-ten-bo">
+          <label for="tl-ten-bo">Tên bộ</label>
+          <input id="tl-ten-bo" type="text" placeholder="Sắp có" disabled />
+          <span class="muted">Đặt tên bộ cần máy chủ lưu tên — sắp có.</span>
+        </div>
+        <div id="tl-dem" class="tl-dem-chan"></div>
+        <button type="submit" id="tl-tao" class="btn primary tl-btn-tao">Thay logo</button>
+        <p id="tl-loi" class="error-text" role="alert"></p>
+      </div>
+    </form>
+  </section>
+
+  <!-- Vùng 2: Bộ của bạn -->
+  <section class="tl-bo-strip" aria-labelledby="tl-bo-h">
+    <h2 id="tl-bo-h">Bộ của bạn <span class="muted">Bấm một bộ để chỉ xem video của bộ đó</span></h2>
+    <div id="tl-bo-list" class="tl-bo-list"></div>
+  </section>
+
+  <!-- Vùng 3: Bộ lọc -->
+  <section id="tl-loc" class="panel tl-loc" aria-label="Bộ lọc"></section>
+
+  <!-- Vùng 4: Hộp duyệt + cột phải -->
+  <div class="tl-layout">
+    <section id="tl-duyet" class="panel tl-duyet" aria-label="Chờ bạn duyệt"></section>
+    <aside class="tl-cot">
+      <section id="tl-dang-lam"></section>
+      <section id="tl-khong-chac"></section>
+      <section id="tl-khong-lam"></section>
+    </aside>
   </div>
 </div>
+<script src="thay-logo-chung.js"></script>
+<script src="thay-logo-khoi-nhap.js"></script>
+<script src="thay-logo-the-bo.js"></script>
+<script src="thay-logo-hop-duyet.js"></script>
 <script src="thay-logo.js"></script>
 </body>
 </html>

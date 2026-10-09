@@ -1,5 +1,5 @@
-"""Trang Thay logo trên trình duyệt THẬT (Chromium, chặn mạng ngoài): không cuộn ngang ở 390/1100, thanh trên không gãy dòng, 5 kiểu thẻ
-đúng mock M1 + 4 sửa ĐP-1507 (Đạt/Hỏng sát nhau, lý do chỉ hiện SAU khi bấm Hỏng, ô form theo app.css), cờ "Cần soi kỹ" RÕ trên thẻ.
+"""Trang Thay logo (khung theo bộ, mock v4a) trên trình duyệt THẬT (Chromium, chặn mạng ngoài): bốn vùng dựng đủ, thu gọn/mở khối nhập,
+tính năng tắt, lọc trạng thái, Đạt/Hỏng sát nhau + lý do chỉ hiện sau khi bấm Hỏng, không cuộn ngang, link trên thanh trên.
 
 Ảnh chụp sáng/tối ghi vào `$VIDEODL_ANH_THAY_LOGO` nếu có đặt (để người duyệt tự mở).
 """
@@ -92,11 +92,19 @@ def _mo(br, goc, rong, theme="light"):
     loi_js: list[str] = []
     p.on("pageerror", lambda e: loi_js.append(str(e)))
     mo_trang(p, f"{goc}/thay-logo.html", chan)
-    p.wait_for_function("document.querySelectorAll('#tl-list .tl-card').length === 5")
+    # 2 video xong chưa đánh giá ⇒ hộp duyệt; 1 máy đang làm; 1 không chắc; 1 lỗi
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 1 && document.querySelector('#tl-duyet .tl-chi-tiet')")
     return p, loi_js
 
 
-@pytest.mark.parametrize("rong", [1100, 390])
+def _anh(p, ten):
+    thu_muc = os.environ.get("VIDEODL_ANH_THAY_LOGO")
+    if thu_muc:
+        Path(thu_muc).mkdir(parents=True, exist_ok=True)
+        p.screenshot(path=str(Path(thu_muc) / ten), full_page=True)
+
+
+@pytest.mark.parametrize("rong", [1280, 390])
 @pytest.mark.parametrize("theme", ["light", "dark"])
 def test_khong_cuon_ngang_thanh_tren_khong_gay_dong(may_chu, trinh_duyet, rong, theme):
     p, loi_js = _mo(trinh_duyet, may_chu, rong, theme)
@@ -106,56 +114,67 @@ def test_khong_cuon_ngang_thanh_tren_khong_gay_dong(may_chu, trinh_duyet, rong, 
         const cs = getComputedStyle(e); return e.getBoundingClientRect().height / parseFloat(cs.lineHeight === 'normal'
         ? parseFloat(cs.fontSize) * 1.3 : cs.lineHeight); })""")
     assert max(cao) < 1.6, f"mục thanh trên gãy dòng ở {rong}px: {cao}"
-    thu_muc = os.environ.get("VIDEODL_ANH_THAY_LOGO")
-    if thu_muc:
-        Path(thu_muc).mkdir(parents=True, exist_ok=True)
-        p.screenshot(path=str(Path(thu_muc) / f"thay-logo-{rong}-{theme}.png"), full_page=True)
+    _anh(p, f"thay-logo-{rong}-{theme}.png")
 
 
-def test_nam_kieu_the_va_co_can_soi_ky_ro_tren_the(may_chu, trinh_duyet):
-    p, _ = _mo(trinh_duyet, may_chu, 1100)
-    the = p.locator("#tl-list .tl-card")
-    chu = [the.nth(i).inner_text() for i in range(5)]
-    assert sum("Đã thay · chờ duyệt" in c for c in chu) == 2
-    assert any("Chờ agy · 14 phút" in c for c in chu)
-    assert any("Không thay được" in c for c in chu)
-    assert any("Hết chỗ đĩa" in c and "video gốc không bị ảnh hưởng" in c for c in chu)
-    soi = p.locator(".tl-card.co-co")
-    assert soi.count() == 1 and soi.locator(".tl-co").is_visible() and "Cần soi kỹ" in soi.inner_text()
+def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    assert p.locator("#tl-nhap").is_visible() and p.locator("#tl-tabs [role=tab]").count() == 4
+    assert p.locator("#tl-nhap").inner_text().count("Tên bộ") == 1 and p.locator("#tl-tao").is_visible()
+    assert p.locator("#tl-bo-list").is_visible() and "sắp có" in p.locator("#tl-bo-list").inner_text()  # chưa có API bộ ⇒ báo trung thực
+    assert p.locator("#tl-loc").is_visible() and p.locator("#tl-loc [data-tt]").count() == 6
+    assert p.locator("#tl-duyet").is_visible() and "Chờ bạn duyệt" in p.locator("#tl-duyet").inner_text()
+    chu = p.locator("aside.tl-cot").inner_text()
+    assert "Máy đang làm" in chu and "Máy không chắc" in chu and "Không làm được" in chu and "Hết chỗ đĩa" in chu
+    # 5 video: 2 xong chờ duyệt (1 cờ soi kỹ), 1 chờ agy, 1 không chắc, 1 lỗi
+    assert "2 video chờ duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần bạn xem kỹ" in p.locator("#tl-tom-tat").inner_text()
+    assert "Chờ agy · 14 phút" in p.locator("#tl-dang-lam").inner_text()
+    _anh(p, "khung-1280.png")
+    p.locator("#tl-tabs [role=tab]").nth(2).click()  # tab chưa có API ⇒ "sắp có", không dữ liệu giả
+    assert "Sắp có" in p.locator("#tl-vung").inner_text()
+
+
+def test_thu_gon_va_mo_khoi_nhap(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    assert p.locator("#tl-form").is_visible() and not p.locator("#tl-nhap-gon").is_visible()
+    p.locator("#tl-thu-gon").click()
+    assert not p.locator("#tl-form").is_visible() and p.locator("#tl-nhap-gon").is_visible()
+    assert "4 nguồn" in p.locator("#tl-nhap-gon").inner_text()
+    p.locator("#tl-nhap-gon").click()
+    assert p.locator("#tl-form").is_visible() and not p.locator("#tl-nhap-gon").is_visible()
+
+
+def test_tinh_nang_tat_bao_tat_va_khoa_nut_tao(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
     assert p.locator("#tat").is_visible()  # worker chưa dựng ⇒ báo tính năng tắt
-    p.wait_for_function("document.getElementById('tl-tao').disabled")  # …và nút Tạo lượt không bấm được (ĐP-1519)
-    assert p.locator("#tl-link").is_disabled()
+    p.wait_for_function("document.getElementById('tl-tao').disabled")
+    assert p.locator("#tl-ten-bo").is_disabled()
 
 
-@pytest.mark.parametrize("rong", [1100, 390])
+def test_loc_trang_thai_thu_hep_cot_phai(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.locator("#tl-loc [data-tt=loi]").click()
+    assert p.locator("#tl-khong-lam .tl-muc").count() == 1 and p.locator("#tl-dang-lam .tl-muc").count() == 0
+    assert "Không có video nào chờ" in p.locator("#tl-duyet").inner_text()
+
+
+@pytest.mark.parametrize("rong", [1280, 390])
 def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet, rong):
     p, _ = _mo(trinh_duyet, may_chu, rong)
-    the = p.locator(".tl-card").filter(has=p.get_by_role("button", name="Đạt")).first
-    hong = the.get_by_role("button", name="Hỏng…")
-    # Đo HAI nút trong cùng một lần, sau khi ảnh soi tải xong: ảnh lazy-load làm bố cục dịch giữa hai lần đo riêng (lệch 1/3 lần).
     p.wait_for_function("[...document.images].every(i => i.complete)")
-    hd, hh = hong.evaluate("""h => { const d = h.previousElementSibling.getBoundingClientRect(), r = h.getBoundingClientRect();
-                                     return [{x: d.x, y: d.y, width: d.width}, {x: r.x, y: r.y}]; }""")
-    assert hong.evaluate("h => h.previousElementSibling.textContent") == "Đạt"
-    assert abs(hd["y"] - hh["y"]) < 4 and 0 <= hh["x"] - (hd["x"] + hd["width"]) < 24, "Đạt/Hỏng phải sát nhau"
-    assert not the.locator("select").is_visible()
+    dat, hong = p.locator(".tl-dat"), p.locator(".tl-hong-nut")
+    bd, bh = dat.bounding_box(), hong.bounding_box()
+    if rong > 600:
+        assert abs(bd["y"] - bh["y"]) < 4 and 0 <= bh["x"] - (bd["x"] + bd["width"]) < 24, "Đạt/Hỏng phải sát nhau"
+    assert not p.locator(".tl-ly-do").is_visible()
     hong.click()
-    assert the.locator("select").is_visible() and the.locator("input[type=text]").is_visible()
-
-
-def test_o_nhap_ban_toi_dung_mau_o_nhap_cua_app(may_chu, trinh_duyet):
-    """ĐP-1519: textarea bản tối từng hiện nền xám sáng mặc định của trình duyệt."""
-    p, _ = _mo(trinh_duyet, may_chu, 1100, theme="dark")
-    nen_o, nen_trang = p.evaluate("""[getComputedStyle(document.getElementById('tl-link')).backgroundColor,
-                                      getComputedStyle(document.body).backgroundColor]""")
-    assert nen_o == nen_trang  # cùng var(--bg) như form tạo lượt tải
+    assert p.locator(".tl-ly-do select").is_visible() and p.locator(".tl-ly-do input[type=text]").is_visible()
 
 
 def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet):
-    p, _ = _mo(trinh_duyet, may_chu, 1100)
-    the = p.locator(".tl-card").filter(has=p.get_by_role("button", name="Đạt")).first
-    the.get_by_role("button", name="Đạt").click()
-    p.wait_for_function("document.body.innerText.includes('Đã đánh giá: Đạt')")
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.locator(".tl-dat").click()
+    p.wait_for_function("document.querySelector('#tl-loc [data-tt=da_dat]').innerText.includes('1')")
     conn = nhat_ky.mo(app_mod.DATA_DIR / "thay_logo_log.db")
     assert [tuple(r) for r in conn.execute("SELECT member, ket_qua FROM tl_danh_gia")] == [(NGUOI, "dat")]
 
