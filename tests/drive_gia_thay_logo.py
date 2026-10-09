@@ -6,6 +6,7 @@ Test KHÔNG BAO GIỜ gọi Drive thật. Giữ một kho mục (thư mục + fi
 from __future__ import annotations
 
 import copy
+import time
 from pathlib import Path
 
 from tiktok_music_downloader.thay_logo.drive_tl import MIME_THU_MUC, DriveTLKhongQuyen, DriveTLKhongThay
@@ -20,6 +21,7 @@ class DriveGiaTL:
         self.da_tai_len: list[tuple[str, str]] = []  # (tên file, id thư mục cha)
         self.khong_quyen: set[str] = set()  # id mà tài khoản máy KHÔNG được chia sẻ ⇒ 403 như Drive thật
         self.email = "may@du-an.iam.gserviceaccount.com"
+        self.cham: dict[str, float] = {}  # id ⇒ số giây `lay_muc_day_du` ngủ trước khi trả (giả Drive chậm)
         self._so = 0
 
     # --- dựng kho ---
@@ -79,6 +81,8 @@ class DriveGiaTL:
 
     def lay_muc_day_du(self, file_id):
         self.goi.append(("lay_muc_day_du", file_id))
+        if file_id in self.cham:
+            time.sleep(self.cham[file_id])
         self._loi("lay_muc_day_du", file_id)
         if file_id in self.khong_quyen:
             raise DriveTLKhongQuyen(file_id)

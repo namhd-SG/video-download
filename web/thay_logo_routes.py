@@ -212,10 +212,14 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
         if not la_admin(email) and not _ids_duoc_phep(email, ids):
-            raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua.")
+            raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.")
         conn = _mo()
         try:
+            # Khoá ghi TRƯỚC khi đếm: hai POST cùng lúc của một người không cùng đọc "chưa có chờ" rồi cùng tạo (vượt trần).
+            # `tao_job` tự commit ⇒ khoá nhả ngay sau khi lượt được ghi; nhánh 429 phải rollback để nhả.
+            conn.execute("BEGIN IMMEDIATE")
             if hang_doi.dem_dang_cho_cua(conn, email) + len(ids) > TRAN_CHO_MOI_NGUOI:
+                conn.rollback()
                 raise HTTPException(429, f"Bạn đang có quá nhiều video chờ (tối đa {TRAN_CHO_MOI_NGUOI}).")
             jid = hang_doi.tao_job(conn, email, [{"kieu": "drive", "file_id": f} for f in ids], body.ghi_chu, ten_bo)
         finally:
@@ -234,7 +238,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             rows = conn.execute(
-                "SELECT j.id AS job_id, j.ten_bo, j.tao_luc, j.thu_muc_ra_id, count(v.id) AS tong, "
+                "SELECT j.id AS job_id, j.ten_bo, j.tao_luc, j.thu_muc_ra_id, j.nguoi_tao, count(v.id) AS tong, "
                 "coalesce(sum(v.trang_thai = 'xong'), 0) AS xong, coalesce(sum(v.trang_thai = 'cho_nguoi'), 0) AS cho_nguoi, "
                 "coalesce(sum(v.trang_thai = 'loi'), 0) AS loi, "
                 "coalesce(sum(v.trang_thai = 'xong' AND v.dg IS NULL), 0) AS cho_duyet, "
@@ -256,7 +260,22 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         return {"bo": [{"job_id": r["job_id"], "ten_bo": hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"]),
                         "nguon_kieu": kieu.get(r["job_id"]), "tao_luc": r["tao_luc"], "tong": r["tong"], "xong": r["xong"],
                         "cho_duyet": r["cho_duyet"], "cho_nguoi": r["cho_nguoi"], "loi": r["loi"], "dat": r["dat"],
-                        "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"]} for r in rows]}
+                        "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"]} for r in rows]}
+
+    def _ten_tu_link(lo: list[dict], tv: dict) -> dict[tuple[str, str], str | None]:
+        """{(email người tạo lượt, file_id): tên} cho dòng KHÔNG có trong thư viện nhưng CHÍNH người tạo đã kiểm qua `kiem-link`."""
+        theo_nguoi: dict[str, list[str]] = {}
+        for d in lo:
+            if d["_fid"] and d["_fid"] not in tv:
+                theo_nguoi.setdefault(d["nguoi_tao"], []).append(d["_fid"])
+        if not theo_nguoi:
+            return {}
+        conn = _mo()
+        try:
+            link_da_kiem.khoi_tao(conn)
+            return {(e, f): t for e, ids in theo_nguoi.items() for f, t in link_da_kiem.ten_da_kiem(conn, e, ids).items()}
+        finally:
+            conn.close()
 
     @app.get("/api/thay-logo/videos")
     def danh_sach(email: str = Depends(require_user), job_id: int | None = Query(default=None, ge=1, le=2**63 - 1),
@@ -311,9 +330,13 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 if nen_tang:  # lọc theo nền tảng mà không có thư viện ⇒ trả rỗng sẽ NÓI DỐI "không có video nào"
                     raise HTTPException(503, "Không đọc được thư viện video để lọc theo nền tảng.")
                 thu_vien_loi, tv = True, {}
+            ten_link = _ten_tu_link(lo, tv)
             for d in lo:
-                t = tv.get(d.pop("_fid")) or {}
+                fid = d.pop("_fid")
+                t = tv.get(fid) or {}
                 d["ten_video"] = (t.get("title") or "Video không tên") if t else None  # có hàng mà title NULL ⇒ vẫn có tên để hiện
+                if not t and (d["nguoi_tao"], fid) in ten_link:  # video nhập từ link Drive: không ở thư viện, tên lấy từ sổ lúc kiểm
+                    d["ten_video"] = ten_link[(d["nguoi_tao"], fid)] or "Video từ link Drive"
                 d["anh_bia"] = f"/thumbs/{t['video_id']}" if t.get("video_id") else None
                 d["nen_tang"] = t.get("nen_tang")
                 if not nen_tang or d["nen_tang"] == nen_tang:
@@ -399,8 +422,11 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
     def kiem_link(body: KiemLink, email: str = Depends(require_user)) -> dict:
         """Mỗi dòng link ⇒ một kết quả (`nhan` | `khong_mo_duoc` | `khong_hop_le` | `loi_tam`); xem `thay_logo/nguon_drive.py`.
         Chỉ ĐỌC Drive. Id file nhận được ghi vào sổ của CHÍNH người gọi để `POST /jobs` chấp nhận trong 24 h."""
-        if lay_worker() is None:
+        w = lay_worker()
+        if w is None:
             raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
+        if getattr(w, "ly_do_khong_nhan", None):  # cùng cổng với POST /jobs: cấu hình đang CẤM thì đừng nhận link để rồi không dùng được
+            raise HTTPException(409, "Tính năng thay logo tạm tắt do cấu hình máy chủ — báo quản trị.")
         if sum(len(x) for x in body.links) > 40_000:
             raise HTTPException(400, "Nội dung dán quá dài.")
         dong = nguon_drive.tach_dong(body.links)
@@ -412,11 +438,11 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         if not drive.dang_cau_hinh():
             raise HTTPException(409, "Máy chủ chưa nối được Google Drive — báo quản trị.")
         kq = nguon_drive.kiem_cac_link(drive, dong)
-        ids = nguon_drive.ids_duoc_nhan(kq["ket_qua"])
+        muc = nguon_drive.muc_duoc_nhan(kq["ket_qua"])
         conn = _mo()
         try:
             link_da_kiem.khoi_tao(conn)
-            link_da_kiem.ghi_da_kiem(conn, email, ids)
+            link_da_kiem.ghi_da_kiem(conn, email, muc)
         finally:
             conn.close()
-        return {**kq, "da_ghi_nhan": len(ids)}
+        return {**kq, "da_ghi_nhan": len(muc)}

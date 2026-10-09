@@ -9,11 +9,10 @@ from __future__ import annotations
 import time
 
 CUA_SO_GIAY = 24 * 3600
-_GIU_DONG_GIAY = 7 * 24 * 3600  # dọn dòng cũ hơn mức này mỗi lần ghi — bảng không phình mãi
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tl_link_kiem (
-  email TEXT NOT NULL, file_id TEXT NOT NULL, luc REAL NOT NULL, PRIMARY KEY (email, file_id));
+  email TEXT NOT NULL, file_id TEXT NOT NULL, luc REAL NOT NULL, ten TEXT, size INTEGER, PRIMARY KEY (email, file_id));
 CREATE INDEX IF NOT EXISTS ix_tl_link_kiem_luc ON tl_link_kiem(luc);
 """
 
@@ -23,14 +22,26 @@ def khoi_tao(conn) -> None:
     conn.commit()
 
 
-def ghi_da_kiem(conn, email: str, file_ids: list[str], luc: float | None = None) -> None:
-    """Ghi/làm mới mốc `luc` cho từng id (kiểm lại ⇒ cửa sổ 24 h tính lại)."""
-    if not file_ids:
+def ghi_da_kiem(conn, email: str, muc: list[tuple[str, str, int | None]], luc: float | None = None) -> None:
+    """Ghi/làm mới mốc `luc` cho từng (id, tên, size) — kiểm lại ⇒ cửa sổ 24 h tính lại. Tên/size do máy chủ đo với Drive; sổ giữ
+    lâu dài (mỗi dòng nhỏ) để `/videos` còn hiện được tên video nhập từ link sau khi cửa sổ 24 h đã hết."""
+    if not muc:
         return
     luc = time.time() if luc is None else luc
-    conn.executemany("INSERT OR REPLACE INTO tl_link_kiem (email, file_id, luc) VALUES (?,?,?)", [(email, f, luc) for f in dict.fromkeys(file_ids)])
-    conn.execute("DELETE FROM tl_link_kiem WHERE luc < ?", (luc - _GIU_DONG_GIAY,))
+    gon = {i: (i, t or None, s) for i, t, s in muc}
+    conn.executemany("INSERT OR REPLACE INTO tl_link_kiem (email, file_id, luc, ten, size) VALUES (?,?,?,?,?)",
+                     [(email, i, luc, t, s) for i, t, s in gon.values()])
     conn.commit()
+
+
+def ten_da_kiem(conn, email: str, file_ids: list[str]) -> dict[str, str | None]:
+    """{file_id: tên} cho các id `email` đã từng kiểm (tên None nếu lúc kiểm không có)."""
+    out: dict[str, str | None] = {}
+    for i in range(0, len(file_ids), 500):
+        lo = file_ids[i:i + 500]
+        out.update({r[0]: r[1] for r in conn.execute(
+            f"SELECT file_id, ten FROM tl_link_kiem WHERE email = ? AND file_id IN ({','.join('?' * len(lo))})", [email, *lo])})
+    return out
 
 
 def con_han(conn, email: str, file_ids: list[str], bay_gio: float | None = None) -> set[str]:

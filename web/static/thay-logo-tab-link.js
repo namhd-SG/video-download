@@ -14,16 +14,22 @@
   let kq = null;                  // phản hồi gần nhất của kiem-link: {ket_qua, email_may, trung_bo}
   let dangKiem = false, thongBao = "", daCopy = false;
   let tran = 100;                 // số video tối đa một lượt (đọc từ /tinh-nang)
+  let dongDaGui = [];             // các dòng đã gửi ở lần kiểm gần nhất (kết quả trỏ về chúng bằng `dong_so`)
+  let toi = null;                 // {email, la_admin} của người đang dùng (từ /me)
   const moRong = new Set();       // id thư mục đang mở hết danh sách
   const cuaTab = new Set();       // id file do tab này đưa vào T.nhapChon (để gỡ đúng phần của mình)
   const daGap = new Set();        // id đã được tự tick một lần — kiểm lại KHÔNG tick lại video người dùng đã bỏ
 
   T.goi("/tinh-nang").then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.thay_logo_video_mot_luot > 0) tran = j.thay_logo_video_mot_luot; }).catch(() => {});
 
+  T.goi("/me").then((r) => (r.ok ? r.json() : null)).then((j) => { toi = j; }).catch(() => {});
+
   // Chỗ còn lại của member = trần một lượt trừ video của họ đang chờ máy (tong − xong − cần-người − lỗi, cộng qua các bộ ở T.bo).
   // Máy chủ vẫn là người chốt (429); đây chỉ để không cho tick quá số chắc chắn bị từ chối.
   const choConLai = () => {
-    const dangCho = (T.bo || []).reduce((a, b) => a + Math.max(0, (b.tong || 0) - (b.xong || 0) - (b.cho_nguoi || 0) - (b.loi || 0)), 0);
+    // Admin thấy bộ của MỌI người ở /bo ⇒ chỉ đếm bộ của chính họ (`nguoi_tao`); không biết là ai thì đếm hết (member chỉ thấy bộ của mình).
+    const cua = (b) => !(toi && toi.la_admin) || b.nguoi_tao === toi.email;
+    const dangCho = (T.bo || []).filter(cua).reduce((a, b) => a + Math.max(0, (b.tong || 0) - (b.xong || 0) - (b.cho_nguoi || 0) - (b.loi || 0)), 0);
     return Math.max(0, tran - dangCho);
   };
   const tickDuoc = (id) => {
@@ -35,6 +41,8 @@
   function datTick(id, bat) { if (bat) tickDuoc(id); else bo(id); }
   const sau = () => { T.capNhatChan(); ve(hop, T); };
 
+  // Id có thể do tab Thư viện cũng chọn (ta không biết ai tick sau) ⇒ nếu nó đang hiện trong lưới thư viện thì KHÔNG gỡ tick.
+  const coTrongThuVien = (id) => !!document.querySelector(`#tl-tab-thu-vien input[value="${id}"]`);
   const mb = (n) => (n == null ? "" : n >= 1048576 ? `${Math.round(n / 1048576)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   const dongCua = () => van.split(/\r?\n/).map((d) => d.trim()).filter(Boolean);
 
@@ -50,8 +58,9 @@
       if (!r.ok) {
         thongBao = r.status === 400 ? "Link chưa đúng: dán tối đa 20 link, mỗi dòng một link."
           : r.status === 409 ? "Tính năng đang tạm tắt hoặc máy chủ chưa nối Google Drive — báo quản trị."
-          : `Chưa kiểm được (lỗi ${r.status}). Thử lại sau ít phút.`;
+          : "Chưa kiểm được lúc này. Thử lại sau ít phút.";
       } else {
+        dongDaGui = dong;
         nhanKetQua(await r.json());
       }
     } catch (e) {
@@ -71,7 +80,7 @@
       for (const i of ids) if (!daGap.has(i)) { daGap.add(i); if (tickDuoc(i)) moi++; }  // mặc định tick hết (tới trần một lượt)
       if (k.kieu === "thu_muc" && moi && !thuMucDau) thuMucDau = k.ten;
     }
-    for (const i of [...cuaTab]) if (!idHienCo.has(i)) { bo(i); cuaTab.delete(i); }  // link đã bị bỏ/sửa khỏi kết quả ⇒ gỡ video của nó
+    for (const i of [...cuaTab]) if (!idHienCo.has(i)) { cuaTab.delete(i); if (!coTrongThuVien(i)) bo(i); }  // link đã bị bỏ/sửa khỏi kết quả ⇒ gỡ video của nó
     if (thuMucDau) dienTenBo(thuMucDau);
   }
 
@@ -133,8 +142,9 @@
   }
 
   function boDong(k) {
-    const con = dongCua().filter((d) => d.slice(0, 300) !== k.link);
-    van = con.join("\n");
+    // Gỡ đúng các dòng đã gửi mà kết quả này trỏ tới (`dong_so`, gồm cả dòng trùng id) — không so chuỗi cắt 300 ký tự.
+    const bi = new Set((k.dong_so || []).map((i) => dongDaGui[i]).filter((d) => d != null));
+    van = dongCua().filter((d) => !bi.has(d)).join("\n");
     kq = { ...kq, ket_qua: kq.ket_qua.filter((x) => x !== k) };
     sau();
   }

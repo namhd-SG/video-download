@@ -8,6 +8,7 @@ Không có hàm nào xoá vĩnh viễn: service account chỉ là Content manage
 """
 from __future__ import annotations
 
+import json
 import logging
 import re
 from pathlib import Path
@@ -31,9 +32,10 @@ class DriveTLKhongQuyen(Exception):
     """Drive trả HTTP 403 kiểu "tài khoản máy không được chia sẻ mục này". 403 do hết hạn mức (rate limit) KHÔNG phải lỗi này."""
 
 
-TRUONG_VIDEO = TRUONG_MUC + ",size"  # `size` là chuỗi số byte; thư mục / file Google-native không có
+TRUONG_VIDEO = "id,name,parents,driveId,mimeType,trashed,size"  # KHAI TƯỜNG MINH (không ghép từ TRUONG_MUC: đợt khác có thể thêm `size` vào đó); `size` là chuỗi số byte
 TRUONG_LIET_KE = "id,name,mimeType,size,trashed"
-_LY_DO_HET_HAN_MUC = (b"rateLimitExceeded", b"userRateLimitExceeded", b"quotaExceeded", b"dailyLimitExceeded")
+# 403 mà Drive nói rõ "tài khoản này không được quyền với mục này". Mọi 403 khác (hết hạn mức, không đọc được lý do) ⇒ ném nguyên = "chưa đo được".
+_LY_DO_KHONG_QUYEN = frozenset({"insufficientFilePermissions", "forbidden", "appNotAuthorizedToFile"})
 
 
 class DriveTL(Protocol):
@@ -122,13 +124,23 @@ class DriveTLThat:
             raise
 
     @staticmethod
-    def _doi_loi_http(exc, dinh_danh: str):
-        """Đổi HttpError thành lỗi có nghĩa: 404 ⇒ KhongThay, 403 chia sẻ ⇒ KhongQuyen. Trả None nếu không phải hai ca đó
-        (người gọi ném nguyên). 403 vì hết hạn mức KHÔNG được đọc thành "chưa chia sẻ" — member sẽ đi chia sẻ vô ích."""
+    def _ly_do_http(exc) -> set[str]:
+        """Các `reason` trong thân JSON lỗi của Drive (`error.errors[].reason`). Không parse được ⇒ tập rỗng."""
+        try:
+            raw = getattr(exc, "content", b"") or b""
+            err = json.loads(raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw).get("error") or {}
+            return {e.get("reason") for e in (err.get("errors") or []) if isinstance(e, dict) and e.get("reason")}
+        except (ValueError, AttributeError, TypeError):
+            return set()
+
+    @classmethod
+    def _doi_loi_http(cls, exc, dinh_danh: str):
+        """404 ⇒ KhongThay; 403 có `reason` thuộc `_LY_DO_KHONG_QUYEN` ⇒ KhongQuyen. Còn lại trả None (người gọi ném nguyên).
+        403 vì hết hạn mức KHÔNG được đọc thành "chưa chia sẻ" — member sẽ đi chia sẻ vô ích."""
         status = getattr(getattr(exc, "resp", None), "status", None)
         if status == 404:
             return DriveTLKhongThay(dinh_danh)
-        if status == 403 and not any(m in (getattr(exc, "content", b"") or b"") for m in _LY_DO_HET_HAN_MUC):
+        if status == 403 and cls._ly_do_http(exc) & _LY_DO_KHONG_QUYEN:
             return DriveTLKhongQuyen(dinh_danh)
         return None
 
@@ -151,8 +163,10 @@ class DriveTLThat:
             while len(out) < toi_da:
                 r = svc.files().list(
                     q=f"'{cha_id}' in parents and trashed = false", fields=f"nextPageToken,files({TRUONG_LIET_KE})",
-                    pageSize=min(1000, toi_da - len(out)), pageToken=trang, corpora="allDrives",
+                    pageSize=min(1000, toi_da - len(out)), pageToken=trang,
                     supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                if r.get("incompleteSearch"):  # Drive nói kết quả CHƯA ĐỦ ⇒ không được coi là "thư mục chỉ có chừng này video"
+                    raise RuntimeError("Drive trả kết quả chưa đầy đủ (incompleteSearch)")
                 out.extend(r.get("files") or [])
                 trang = r.get("nextPageToken")
                 if not trang:

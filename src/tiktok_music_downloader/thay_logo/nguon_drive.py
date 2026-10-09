@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as _HetGio
+from concurrent.futures import ThreadPoolExecutor, wait
 from urllib.parse import parse_qs, urlsplit
 
 from tiktok_music_downloader.nguon import TRAN_DUNG_LUONG_BYTE
@@ -28,20 +28,20 @@ log = logging.getLogger(__name__)
 TRAN_LINK_MOT_LUOT = 20
 TRAN_VIDEO_THU_MUC = 300
 TRAN_LIET_KE = 5000      # số mục (cả file lẫn thư mục con) đọc tối đa trong một thư mục; hơn ⇒ từ chối, không đoán
-TRAN_GIAY_MOT_LINK = 60  # một link treo quá lâu ⇒ `loi_tam`, các link khác vẫn trả
+TRAN_GIAY_CA_LUOT = 45   # hạn CHUNG cho cả lượt kiểm (dưới ~100 s của Cloudflare); link chưa xong khi hết hạn ⇒ `loi_tam`, các link xong rồi vẫn trả
 SO_LUONG_SONG_SONG = 4
 TRAN_MB = TRAN_DUNG_LUONG_BYTE // (1024 * 1024)
 DUOI_VIDEO = (".mp4", ".mov")
 MIME_VIDEO = frozenset({"video/mp4", "video/quicktime"})
 
 _MAU_ID = re.compile(r"^[A-Za-z0-9_-]{10,120}$")
-_MAU_DUONG = re.compile(r"/(?:file|document|spreadsheets|presentation)/d/([A-Za-z0-9_-]+)|/folders/([A-Za-z0-9_-]+)")
-_HOST_DRIVE = frozenset({"drive.google.com", "docs.google.com"})
+_MAU_DUONG = re.compile(r"/file/d/([A-Za-z0-9_-]+)|/folders/([A-Za-z0-9_-]+)")
+_HOST_DRIVE = frozenset({"drive.google.com"})
 
 
 def tach_id(dong: str) -> str | None:
     """Id Drive trong một dòng link, hoặc None nếu không phải link Drive. Nhận /file/d/<id>, /drive/folders/<id>, /drive/u/0/folders/<id>,
-    open?id=<id>, uc?id=<id> (và dạng docs.google.com/.../d/<id>, để báo "không phải video" thay vì "link sai")."""
+    open?id=<id>, uc?id=<id>. Link Google Docs/Sheets/Slides KHÔNG nhận (không phải video)."""
     dong = dong.strip()
     if not dong.lower().startswith(("http://", "https://")):
         return None
@@ -69,7 +69,11 @@ def _cat(ten: str, n: int = 200) -> str:
 def _la_video(m: dict) -> bool:
     if m.get("mimeType") == MIME_THU_MUC:
         return False
-    return (m.get("mimeType") or "") in MIME_VIDEO or (m.get("name") or "").lower().endswith(DUOI_VIDEO)
+    mime = m.get("mimeType") or ""
+    if mime in MIME_VIDEO:
+        return True
+    # đuôi .mp4/.mov ĐƠN ĐỘC không đủ: file `x.mp4` mà mime là pdf/ảnh vẫn không phải video
+    return (m.get("name") or "").lower().endswith(DUOI_VIDEO) and (mime.startswith("video/") or mime == "application/octet-stream")
 
 
 def _byte(m: dict) -> int | None:
@@ -80,18 +84,21 @@ def _byte(m: dict) -> int | None:
     return n if n > 0 else None
 
 
+KHONG_PHAI_VIDEO = f"Không phải video mp4/mov, hoặc nặng quá {TRAN_MB} MB."
+
+
 def danh_gia_file(m: dict) -> str | None:
-    """None = dùng được; chuỗi = lý do lời thường vì sao không."""
-    ten = m.get("name") or "(không tên)"
+    """None = dùng được; chuỗi = lý do lời thường vì sao không. KHÔNG chứa tên file: file không dùng được có thể là của người khác
+    mà tài khoản máy đọc được — không đưa tên nó ra cho member."""
     if m.get("trashed"):
-        return f"“{_cat(ten)}” đang nằm trong thùng rác Drive."
+        return "Mục này đang nằm trong thùng rác Drive."
     if not _la_video(m):
-        return f"“{_cat(ten)}” không phải video. Chỉ nhận mp4 hoặc mov, tối đa {TRAN_MB} MB."
+        return KHONG_PHAI_VIDEO
     n = _byte(m)
     if n is None:
-        return f"Không đọc được dung lượng của “{_cat(ten)}”."
+        return "Không đọc được dung lượng của file này."
     if n > TRAN_DUNG_LUONG_BYTE:  # CỔNG ÂM THẦM: bỏ kiểm này thì worker mới từ chối ở bước tải (đã tốn một chỗ trong hàng chờ)
-        return f"“{_cat(ten)}” nặng {n // (1024 * 1024)} MB — quá {TRAN_MB} MB."
+        return KHONG_PHAI_VIDEO
     return None
 
 
@@ -107,7 +114,7 @@ def _kiem_mot(drive: DriveTL, dong: str, fid: str | None) -> dict:
         if m.get("mimeType") != MIME_THU_MUC:
             ly_do = danh_gia_file(m)
             if ly_do:
-                return _kq(dong, "khong_hop_le", id=fid, kieu="file", ten=_cat(m.get("name") or ""), ly_do=ly_do)
+                return _kq(dong, "khong_hop_le", id=fid, kieu="file", ly_do=ly_do)
             return _kq(dong, "nhan", id=fid, kieu="file", ten=_cat(m.get("name") or ""), size=_byte(m))
         if m.get("trashed"):
             return _kq(dong, "khong_hop_le", id=fid, kieu="thu_muc", ten=_cat(m.get("name") or ""),
@@ -149,38 +156,50 @@ def _kiem_an_toan(drive: DriveTL, dong: str, fid: str | None) -> dict:
 
 def kiem_cac_link(drive: DriveTL, links: list[str]) -> dict:
     """`links` đã qua `tach_dong`. Trả {"ket_qua": [...theo thứ tự], "trung_bo": n, "email_may": str|None}.
-    Id trùng (cùng file dán hai lần, hai dạng link khác nhau) chỉ kiểm một lần; dòng không phải link Drive thì mỗi dòng một kết quả."""
-    muc, thay, trung = [], set(), 0
-    for dong in links:
+    Id trùng (cùng file dán hai lần, hai dạng link khác nhau) chỉ kiểm một lần; mỗi kết quả mang `dong_so` = chỉ số MỌI dòng đầu vào
+    cùng id đó (để nút "Bỏ" gỡ đúng các dòng, không so chuỗi). Dòng không phải link Drive thì mỗi dòng một kết quả.
+    Cả lượt có MỘT hạn chung `TRAN_GIAY_CA_LUOT`: link chưa xong khi hết hạn ⇒ `loi_tam`."""
+    muc: list[list] = []  # [dong, fid, [chỉ số dòng]]
+    theo_id: dict[str, list] = {}
+    trung = 0
+    for i, dong in enumerate(links):
         fid = tach_id(dong)
-        if fid is not None and fid in thay:
+        if fid is not None and fid in theo_id:
+            theo_id[fid][2].append(i)
             trung += 1
             continue
-        thay.add(fid)
-        muc.append((dong, fid))
-    kq: list[dict | None] = [None] * len(muc)
+        m = [dong, fid, [i]]
+        muc.append(m)
+        if fid is not None:
+            theo_id[fid] = m
     pool = ThreadPoolExecutor(max_workers=SO_LUONG_SONG_SONG)
     try:
-        futs = [pool.submit(_kiem_an_toan, drive, d, f) for d, f in muc]
-        for i, fu in enumerate(futs):
-            try:
-                kq[i] = fu.result(timeout=TRAN_GIAY_MOT_LINK)
-            except _HetGio:
-                kq[i] = _kq(muc[i][0], "loi_tam", id=muc[i][1], ly_do="Drive trả lời quá lâu. Bấm Kiểm lại sau ít phút.")
+        futs = [pool.submit(_kiem_an_toan, drive, d, f) for d, f, _ in muc]
+        wait(futs, timeout=TRAN_GIAY_CA_LUOT)
+        kq = []
+        for fu, (dong, fid, so) in zip(futs, muc):
+            r = fu.result() if fu.done() else _kq(dong, "loi_tam", id=fid, ly_do="Drive trả lời quá lâu. Bấm Kiểm lại sau ít phút.")
+            r["dong_so"] = so
+            kq.append(r)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
     email = drive.email_dich_vu() if any(k["trang_thai"] == "khong_mo_duoc" for k in kq) else None
     return {"ket_qua": kq, "trung_bo": trung, "email_may": email}
 
 
-def ids_duoc_nhan(ket_qua: list[dict]) -> list[str]:
-    """Id FILE (không phải id thư mục) mà member được phép đưa vào lượt sau khi kiểm: file nhận + mọi video của thư mục nhận."""
-    out: list[str] = []
+def muc_duoc_nhan(ket_qua: list[dict]) -> list[tuple[str, str, int | None]]:
+    """(id file, tên, size) mà member được phép đưa vào lượt sau khi kiểm: file nhận + mọi video của thư mục nhận. Tên/size lấy từ
+    kết quả ĐÃ XÁC MINH với Drive (không từ client). KHÔNG có id thư mục."""
+    out: list[tuple[str, str, int | None]] = []
     for k in ket_qua:
         if k.get("trang_thai") != "nhan":
             continue
         if k.get("kieu") == "file":
-            out.append(k["id"])
+            out.append((k["id"], k.get("ten") or "", k.get("size")))
         else:
-            out.extend(v["id"] for v in k.get("videos") or [])
+            out.extend((v["id"], v.get("ten") or "", v.get("size")) for v in k.get("videos") or [])
     return out
+
+
+def ids_duoc_nhan(ket_qua: list[dict]) -> list[str]:
+    return [i for i, _, _ in muc_duoc_nhan(ket_qua)]

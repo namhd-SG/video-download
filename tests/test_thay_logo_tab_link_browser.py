@@ -9,7 +9,7 @@ import json
 import re
 
 import pytest
-from test_thay_logo_trang_browser import _anh, _tra_json, may_chu, trinh_duyet  # noqa: F401 — fixture dùng lại
+from test_thay_logo_trang_browser import FILE_THU_VIEN, _anh, _bo_mo, _tra_json, may_chu, trinh_duyet  # noqa: F401 — fixture dùng lại
 from trinh_duyet_khong_mang import dem_mang_ngoai, mo_trang
 
 from web import app as app_mod
@@ -35,12 +35,12 @@ def _file():
     return {"link": URL_F, "trang_thai": "nhan", "kieu": "file", "id": "1aQ7AbCdEfGhIjKlmn", "ten": "Review máy ép chậm.mp4", "size": 64 * MB}
 
 
-CHUA = {"link": URL_CHUA, "trang_thai": "khong_mo_duoc", "id": "1Wn8AbCdEfGhIjKl", "ly_do": "Máy chưa mở được mục này."}
-PDF = {"link": URL_PDF, "trang_thai": "khong_hop_le", "id": "1Bd5AbCdEfGhIjKlmn", "kieu": "file", "ten": "bang-gia.pdf",
-       "ly_do": "“bang-gia.pdf” không phải video. Chỉ nhận mp4 hoặc mov, tối đa 500 MB."}
+CHUA = {"link": URL_CHUA, "trang_thai": "khong_mo_duoc", "id": "1Wn8AbCdEfGhIjKl", "ly_do": "Máy chưa mở được mục này.", "dong_so": [0]}
+PDF = {"link": URL_PDF, "trang_thai": "khong_hop_le", "id": "1Bd5AbCdEfGhIjKlmn", "kieu": "file", "dong_so": [1],
+       "ly_do": "Không phải video mp4/mov, hoặc nặng quá 500 MB."}
 
 
-def _trang(br, goc, monkeypatch, ket_qua, *, theme="light", rong=1280, email=EMAIL_MAY):
+def _trang(br, goc, monkeypatch, ket_qua, *, theme="light", rong=1280, email=EMAIL_MAY, me=None, bo=None):
     """Trang mở, tính năng bật, `kiem-link` trả `ket_qua`, `POST /jobs` được ghi lại vào `p.jobs` và trả 201."""
     monkeypatch.setattr(app_mod, "worker_thay_logo", object())
     ctx = br.new_context(viewport={"width": rong, "height": 900}, color_scheme=theme)
@@ -60,6 +60,10 @@ def _trang(br, goc, monkeypatch, ket_qua, *, theme="light", rong=1280, email=EMA
         p.jobs.append(json.loads(r.request.post_data))
         _tra_json(r, {"job_id": 99}, status=201)
 
+    if me is not None:
+        p.route("**/me", lambda r: _tra_json(r, me))
+    if bo is not None:
+        p.route("**/api/thay-logo/bo", lambda r: _tra_json(r, {"bo": bo}))
     p.route("**/api/thay-logo/kiem-link", kiem_link)
     p.route("**/api/thay-logo/jobs", jobs)
     mo_trang(p, f"{goc}/thay-logo.html", dem_mang_ngoai(ctx))
@@ -140,7 +144,7 @@ def test_loi_chua_chia_se_hien_email_may_nut_copy_kiem_lai_gui_lai(may_chu, trin
     txt = vung.inner_text()
     assert "Máy chưa mở được thư mục này" in txt and EMAIL_MAY in txt and "quyền Xem" in txt
     assert vung.get_by_role("button", name=re.compile("Copy")).count() == 1
-    assert "không phải video" in txt and "0 nhận" in txt and "2 chưa dùng được" in txt
+    assert "không phải video" in txt.lower() and "0 nhận" in txt and "2 chưa dùng được" in txt
     vung.get_by_role("button", name="↻ Kiểm lại").click()
     p.wait_for_function("document.querySelectorAll('#tl-tab-link .tl-lk-loi').length === 2")
     assert len(p.kiem) == 2 and p.kiem[1]["links"] == [URL_CHUA, URL_PDF]
@@ -213,3 +217,61 @@ def test_khong_cuon_ngang_va_anh_nghiem_thu(may_chu, trinh_duyet, monkeypatch, r
     assert p.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1")
     p.evaluate("document.getElementById('tl-vung').style.height = 'auto'")  # chỉ để ảnh thấy hết các thẻ (vùng thật cuộn trong khung)
     _anh(p, f"3-link-{rong}.png")
+
+
+def test_nut_bo_go_dung_dong_theo_dong_so_ke_ca_hai_link_trung_300_ky_tu_dau(may_chu, trinh_duyet, monkeypatch):
+    """Hai link dài giống nhau 300 ký tự đầu, khác ở đuôi: Bỏ link thứ hai chỉ gỡ dòng thứ hai. ĐỘT BIẾN: so khớp theo chuỗi cắt 300 ⇒ gỡ cả hai ⇒ ĐỎ."""
+    dai = URL_PDF + "?x=" + "a" * 320
+    l1, l2 = dai + "&k=1", dai + "&k=2"
+    mau = {"trang_thai": "khong_hop_le", "kieu": "file", "ly_do": "Không phải video mp4/mov, hoặc nặng quá 500 MB."}
+    p = _trang(trinh_duyet, may_chu, monkeypatch, [{**mau, "link": l1[:300], "dong_so": [0]}, {**mau, "link": l2[:300], "dong_so": [1]}])
+    _dan_va_kiem(p, f"{l1}\n{l2}")
+    p.locator("#tl-tab-link .tl-lk-loi").nth(1).get_by_role("button", name="Bỏ").click()
+    assert p.locator("#tl-o-link").input_value() == l1 and p.locator("#tl-tab-link .tl-lk-loi").count() == 1
+
+
+def test_loi_may_chu_khong_lo_ma_loi_ra_chu_nguoi_dung(may_chu, trinh_duyet, monkeypatch):
+    p = _trang(trinh_duyet, may_chu, monkeypatch, [_file()])
+    p.route("**/api/thay-logo/kiem-link", lambda r: r.fulfill(status=500, body="boom"))
+    p.locator("#tl-o-link").fill(URL_F)
+    p.get_by_role("button", name="Kiểm link").click()
+    p.wait_for_selector(".tl-lk-tb:not([hidden])")
+    chu = p.locator(".tl-lk-tb").inner_text()
+    assert "Chưa kiểm được lúc này" in chu and "500" not in chu and "lỗi" not in chu.lower()
+
+
+@pytest.mark.parametrize("la_admin,mong", [(True, 100), (False, 50)])
+def test_admin_chi_dem_bo_cua_chinh_minh_khi_tinh_cho_con_lai(may_chu, trinh_duyet, monkeypatch, la_admin, mong):
+    """/bo của admin chứa bộ của người khác (50 video chờ). Admin: trần 100 (bộ kia không tính). Member (cùng dữ liệu): còn 50.
+    ĐỘT BIẾN: bỏ bộ lọc `nguoi_tao` ở `choConLai` ⇒ ca admin ra 50 ⇒ ĐỎ."""
+    bo = [{**_bo_mo(1, "Của người khác", tong=50), "nguoi_tao": "khac@x"}, {**_bo_mo(2, "Của tôi", tong=3, xong=3), "nguoi_tao": "sep@x"}]
+    p = _trang(trinh_duyet, may_chu, monkeypatch, [_tm(n=120)], me={"email": "sep@x", "la_admin": la_admin}, bo=bo)
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    _dan_va_kiem(p, URL_TM)
+    p.wait_for_function(f"document.querySelector('#tl-tab-link .tl-lk-dem').textContent === '{mong}/120 đã chọn'")
+
+
+def test_bo_link_khong_go_tick_cua_video_dang_co_trong_thu_vien(may_chu, trinh_duyet, monkeypatch):
+    """Video X do tab Link tick, X cũng nằm trong lưới Thư viện ⇒ khi link bị gỡ khỏi kết quả, X vẫn còn tick (không biết tab nào cũng chọn).
+    ĐỘT BIẾN: bỏ `coTrongThuVien` ở nhánh gỡ ⇒ ĐỎ. Video không ở thư viện thì vẫn được gỡ."""
+    x = FILE_THU_VIEN[0]
+    ket = {"v": [{**_file(), "id": x}, {**_file(), "id": "KHONGTHUVIEN12345", "link": URL_PDF}]}
+    p = _trang(trinh_duyet, may_chu, monkeypatch, lambda: ket["v"])
+    p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
+    _dan_va_kiem(p, f"{URL_F}\n{URL_PDF}")
+    assert "Đã chọn 2 video" in p.locator("#tl-dem").inner_text()
+    ket["v"] = []
+    p.get_by_role("button", name="Kiểm link").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-link .tl-lk-the').length === 0")
+    assert "Đã chọn 1 video" in p.locator("#tl-dem").inner_text()
+
+
+def test_403_khi_tao_luot_nhac_bam_kiem_link_lai(may_chu, trinh_duyet, monkeypatch):
+    """ĐỘT BIẾN: trả câu 403 cũ ("…trong thư viện của bạn.") ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, [_file()])
+    p.route("**/api/thay-logo/jobs", lambda r: r.fulfill(status=403, content_type="application/json", body='{"detail":"x"}') if r.request.method == "POST" else r.fallback())
+    _dan_va_kiem(p, URL_F)
+    p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-loi').textContent.length > 0")
+    chu = p.locator("#tl-loi").inner_text()
+    assert "24 giờ" in chu and "Kiểm link lại" in chu and "lỗi 4" not in chu
