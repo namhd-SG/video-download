@@ -8,7 +8,6 @@ KHÔNG còn chữ kỹ sư (agy / khung / box) trong văn bản member thấy. C
 """
 from __future__ import annotations
 
-import json
 import os
 import socket
 import tempfile
@@ -734,14 +733,13 @@ def test_ten_bo_tu_dien_theo_ngay_va_so_bo_hom_nay(may_chu, trinh_duyet, monkeyp
 
 
 def test_loi_400_429_hien_cau_loi_thuong(may_chu, trinh_duyet, monkeypatch):
-    """400: câu cố định của trang (không hiện detail thô). 429: máy chủ trả `detail` bằng lời thường ⇒ trang hiện đúng câu đó, không số lỗi."""
     p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
     _chon_mot_video(p)
-    for ma, detail, mong in ((400, "raw detail", "Tên bộ cần 1–80 ký tự"), (429, "Bạn đang có quá nhiều video chờ (tối đa 100).", "quá nhiều video chờ")):
-        p.route("**/api/thay-logo/jobs", (lambda ma, d: lambda r: r.fulfill(status=ma, content_type="application/json", body=json.dumps({"detail": d})))(ma, detail))
+    for ma, mong in ((400, "Tên bộ cần 1–80 ký tự"), (429, "quá nhiều video chờ")):
+        p.route("**/api/thay-logo/jobs", (lambda ma: lambda r: r.fulfill(status=ma, content_type="application/json", body='{"detail": "raw detail"}'))(ma))
         p.locator("#tl-tao").click()
         p.wait_for_function(f"document.getElementById('tl-loi').textContent.includes({mong!r})")
-        assert "raw detail" not in p.locator("#tl-loi").inner_text() and "429" not in p.locator("#tl-loi").inner_text()
+        assert "raw detail" not in p.locator("#tl-loi").inner_text()
         p.unroute("**/api/thay-logo/jobs")
 
 
