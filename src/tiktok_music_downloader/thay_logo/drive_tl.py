@@ -17,7 +17,7 @@ from typing import Protocol
 log = logging.getLogger(__name__)
 
 MIME_THU_MUC = "application/vnd.google-apps.folder"
-TRUONG_MUC = "id,name,parents,driveId,mimeType,trashed"
+TRUONG_MUC = "id,name,parents,driveId,mimeType,trashed,md5Checksum,size"  # md5/size: chỉ file có (thư mục không có)
 TEN_CAY_CAM = "Creative"  # cây Creative Desk quét: thư mục có video trong đó bị biến thành bộ chạy quảng cáo
 _ID_AN_TOAN = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 TOI_DA_DO_SAU = 50

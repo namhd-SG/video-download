@@ -149,8 +149,15 @@ TEN_BO_TOI_DA = 80
 _DRIVE_ID = _re.compile(r"^[A-Za-z0-9_-]{10,120}$")
 
 
+class MucVaoBo(BaseModel):
+    """Một video chọn từ tab "Đã vào bộ": máy dùng BẢN TRONG BỘ (`ban_copy_id`), không dùng file nguồn thư viện (có thể đã dọn)."""
+    video_id: str = Field(min_length=1, max_length=120)
+    ban_copy_id: str = Field(min_length=1, max_length=120)
+
+
 class TaoJobThayLogo(BaseModel):
-    drive_file_ids: list[str] = Field(min_length=1, max_length=TRAN_VIDEO_MOT_JOB)
+    drive_file_ids: list[str] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)
+    vao_bo: list[MucVaoBo] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)
     ghi_chu: str = Field(default="", max_length=500)
     ten_bo: str | None = None  # bắt buộc, nhưng kiểm tay để thiếu/sai đều trả 400 cùng một khuôn
 
@@ -180,7 +187,8 @@ SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.lo
        (SELECT max(pct_render) FROM tl_vet x WHERE x.video_id = v.video_log_id) AS pct_render,
        (SELECT count(*) FROM tl_box_moi b WHERE b.video_id = v.video_log_id) AS so_box,
        (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.video_log_id ORDER BY luc DESC LIMIT 1) AS danh_gia,
-       t.duong_dan_sheet IS NOT NULL AS co_sheet
+       t.duong_dan_sheet IS NOT NULL AS co_sheet,
+       t.duong_dan_truoc IS NOT NULL AS co_truoc, t.duong_dan_sau IS NOT NULL AS co_sau, t.box_logo AS box_logo_json
 FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.id = v.video_log_id
 """
 
@@ -214,26 +222,42 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
         if getattr(w, "ly_do_khong_nhan", None):  # cổng cấu hình đã CẤM hẳn; chi tiết thư mục chỉ admin thấy (admin/worker)
             raise HTTPException(409, "Tính năng thay logo tạm tắt do cấu hình máy chủ — báo quản trị.")
-        if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids):
+        if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids) or not all(_DRIVE_ID.match(m.ban_copy_id) for m in body.vao_bo):
             raise HTTPException(400, "mã file Drive sai khuôn")
         ten_bo = _kiem_ten_bo(body.ten_bo)
         ids = list(dict.fromkeys(body.drive_file_ids))
+        vao_bo = list({m.ban_copy_id: m for m in body.vao_bo}.values())
+        if not ids and not vao_bo:
+            raise HTTPException(422, "chưa chọn video nào")
+        if len(ids) + len(vao_bo) > TRAN_VIDEO_MOT_JOB:
+            raise HTTPException(422, f"tối đa {TRAN_VIDEO_MOT_JOB} video mỗi lượt")
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
         trong = thu_vien_cua(email, ids)  # id thuộc thư viện CỦA người tạo — dùng chung cho cổng quyền và nhãn nguồn
-        if not la_admin(email) and not _ids_duoc_phep(email, ids, trong):
+        if ids and not la_admin(email) and not _ids_duoc_phep(email, ids, trong):
             raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.")
+        # Bản trong bộ: chủ = người tạo lượt đã tải video đó (`jobs.nguoi_tao`, cùng định nghĩa với `list_videos`) — KHÔNG dựa
+        # `video_vao_bo.chu` (nullable). Kiểm TRƯỚC khi gọi Drive: người không có quyền không làm tốn lời gọi Drive.
+        ban = _ban_vao_bo_cua(_jobs_db(), None if la_admin(email) else email, vao_bo) if vao_bo else {}
+        # Ảnh chụp nguồn (md5/size/folder) lúc tạo lượt: đợt áp vào bộ đối chiếu với nó trước khi thay bản trong bộ.
+        so_moi = len(ids) + len(vao_bo)
         conn = _mo()
         try:
+            # Trần kiểm HAI lần: (1) sơ bộ, không khoá, TRƯỚC Drive — quá trần thì không tốn lời gọi Drive nào;
+            # (2) chính thức trong khoá ghi bên dưới (chống hai POST cùng lúc).
+            if hang_doi.dem_dang_cho_cua(conn, email) + so_moi > TRAN_CHO_MOI_NGUOI:
+                raise HTTPException(429, f"Bạn đang có quá nhiều video chờ (tối đa {TRAN_CHO_MOI_NGUOI}).")
+            # Chụp TRƯỚC khoá ghi: lời gọi Drive có hạn tới ~60 s, giữ BEGIN IMMEDIATE trong lúc đó là chặn mọi POST /jobs khác.
+            chup_vao_bo = _chup_nguon_vao_bo(getattr(w, "drive_tl", None), ban) if ban else []
             # Khoá ghi TRƯỚC khi đếm: hai POST cùng lúc của một người không cùng đọc "chưa có chờ" rồi cùng tạo (vượt trần).
             # `tao_job` tự commit ⇒ khoá nhả ngay sau khi lượt được ghi; nhánh 429 phải rollback để nhả.
             conn.execute("BEGIN IMMEDIATE")
-            if hang_doi.dem_dang_cho_cua(conn, email) + len(ids) > TRAN_CHO_MOI_NGUOI:
+            if hang_doi.dem_dang_cho_cua(conn, email) + so_moi > TRAN_CHO_MOI_NGUOI:
                 conn.rollback()
                 raise HTTPException(429, f"Bạn đang có quá nhiều video chờ (tối đa {TRAN_CHO_MOI_NGUOI}).")
             # `kieu` chỉ là NHÃN nguồn (thẻ bộ đọc nó); worker tải theo `file_id` cho mọi kiểu. Ngoài thư viện của người tạo
             # ⇒ "link" (đến qua sổ kiem-link, hoặc admin dán id) — ghi "drive" cho mọi id làm thẻ bộ nói "Thư viện" sai sự thật.
-            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids]
+            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids] + chup_vao_bo
             jid = hang_doi.tao_job(conn, email, nguon, body.ghi_chu, ten_bo)
         finally:
             conn.close()
@@ -338,19 +362,28 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 d = {k: r[k] for k in r.keys()}
                 d["ten_bo"] = hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"])
                 try:
-                    d["_fid"] = json.loads(r["nguon"]).get("file_id")
+                    ng = json.loads(r["nguon"])
+                    d["_fid"], d["_vid"] = ng.get("file_id"), (ng.get("video_id") if ng.get("kieu") == "vao_bo" else None)
                 except (ValueError, AttributeError):
-                    d["_fid"] = None
+                    d["_fid"], d["_vid"] = None, None
+                d["co_truoc_sau"] = bool(d.pop("co_truoc") and d.pop("co_sau"))
+                d["box_logo"] = _box_logo(d.pop("box_logo_json"))
                 lo.append(d)
-            tv = thong_tin_thu_vien(_jobs_db(), sorted({d["_fid"] for d in lo if d["_fid"]}))
-            if tv is None:
+            # Nguồn thư viện: ghép theo `drive_file_id`. Nguồn "Đã vào bộ": `file_id` là bản trong bộ (không có trong thư viện)
+            # ⇒ ghép theo `video_id` đã chụp lúc tạo lượt.
+            tv = thong_tin_thu_vien(_jobs_db(), sorted({d["_fid"] for d in lo if d["_fid"] and not d["_vid"]}))
+            tv_vb = thong_tin_theo_video(_jobs_db(), sorted({d["_vid"] for d in lo if d["_vid"]}))
+            if tv is None or tv_vb is None:
                 if nen_tang:  # lọc theo nền tảng mà không có thư viện ⇒ trả rỗng sẽ NÓI DỐI "không có video nào"
                     raise HTTPException(503, "Không đọc được thư viện video để lọc theo nền tảng.")
-                thu_vien_loi, tv = True, {}
-            ten_link = _ten_tu_link(lo, tv)
+                thu_vien_loi, tv, tv_vb = True, {}, {}
+            # Tên từ sổ link chỉ cho dòng ghép theo file_id (bản trong bộ đã có tên qua `video_id`).
+            ten_link = _ten_tu_link([d for d in lo if not d["_vid"]], tv)
             for d in lo:
-                fid = d.pop("_fid")
-                t = _thu_vien_cua_chu(tv, fid, d["nguoi_tao"]) or {}  # file thư viện người KHÁC ⇒ coi như ngoài thư viện
+                fid, vid_nguon = d.pop("_fid"), d.pop("_vid")
+                # Bản trong bộ: ghép theo `video_id` đã chụp (chủ đã kiểm lúc tạo lượt). Theo file_id: CHỈ khi thuộc thư viện
+                # của người tạo lượt — file thư viện người KHÁC ⇒ coi như ngoài thư viện.
+                t = (tv_vb.get(vid_nguon) if vid_nguon else _thu_vien_cua_chu(tv, fid, d["nguoi_tao"])) or {}
                 d["ten_video"] = (t.get("title") or "Video không tên") if t else None  # có hàng mà title NULL ⇒ vẫn có tên để hiện
                 if not t and (d["nguoi_tao"], fid) in ten_link:  # video nhập từ link Drive: không ở thư viện, tên lấy từ sổ lúc kiểm
                     d["ten_video"] = ten_link[(d["nguoi_tao"], fid)] or "Video từ link Drive"
@@ -462,3 +495,161 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         finally:
             conn.close()
         return {**kq, "da_ghi_nhan": len(muc)}
+    # ======================================================== đợt 1b: ảnh trước/sau + tab "Đã vào bộ" (route MỚI, thêm cuối)
+    @app.get("/api/thay-logo/videos/{vid}/khung/{ten}")
+    def anh_truoc_sau(vid: int, ten: str, email: str = Depends(require_user)) -> Response:
+        """`truoc.jpg` / `sau.jpg` của video — cùng cổng quyền `_video_cua` (chủ lượt hoặc admin). Chưa có ⇒ 404."""
+        if ten not in ("truoc.jpg", "sau.jpg"):
+            raise HTTPException(404, "không có ảnh này")
+        conn = _mo()
+        try:
+            _video_cua(conn, vid, email)
+            p = conn.execute("SELECT t.duong_dan_truoc, t.duong_dan_sau FROM tl_job_video v JOIN tl_video t ON t.id = v.video_log_id "
+                             "WHERE v.id=?", (vid,)).fetchone()
+        finally:
+            conn.close()
+        duong = (p[0] if ten == "truoc.jpg" else p[1]) if p else None
+        if not duong or not os.path.isfile(duong):
+            raise HTTPException(404, "chưa có ảnh trước/sau")
+        with open(duong, "rb") as f:
+            return Response(f.read(), media_type="image/jpeg")
+
+    @app.get("/api/thay-logo/da-vao-bo")
+    def da_vao_bo(email: str = Depends(require_user)) -> dict:
+        """Video ĐÃ VÀO BỘ của chính người gọi (admin: tất cả), nhóm theo bộ. Chủ = `jobs.nguoi_tao` của video (không dùng
+        `video_vao_bo.chu`). `da_trong_luot` = video này đã có trong một lượt thay logo còn hiệu lực (chưa lỗi)."""
+        chu = None if la_admin(email) else email
+        try:
+            hang = _doc_da_vao_bo(_jobs_db(), chu)
+        except _sqlite3.Error as e:
+            log.warning("thay logo: không đọc được sổ đã-vào-bộ (%s)", type(e).__name__)
+            raise HTTPException(503, "Chưa đọc được danh sách bộ — thử lại sau ít phút.") from None
+        trong_ban, trong_nguon = set(), set()
+        if os.path.exists(lay_log_db()):
+            conn = _mo()
+            try:
+                trong_ban, trong_nguon = _nguon_dang_trong_luot(conn, chu)
+            finally:
+                conn.close()
+        nhom: dict[str, dict] = {}
+        for r in hang:
+            b = nhom.setdefault(r["folder_id"], {"ma_bo": r["ma_bo"], "folder_id": r["folder_id"], "vao_bo_luc": r["thay_luc"],
+                                                  "videos": []})
+            b["vao_bo_luc"] = min(b["vao_bo_luc"], r["thay_luc"])
+            b["videos"].append({
+                "video_id": r["video_id"], "ban_copy_id": r["ban_copy_id"], "ten_video": r["title"] or "Video không tên",
+                "anh_bia": f"/thumbs/{r['video_id']}", "nen_tang": r["nen_tang"], "vao_bo_luc": r["thay_luc"],
+                "da_trong_luot": r["ban_copy_id"] in trong_ban or (r["drive_file_id"] in trong_nguon if r["drive_file_id"] else False)})
+        return {"bo": sorted(nhom.values(), key=lambda b: b["vao_bo_luc"], reverse=True)}
+
+
+# ============================================================================ trợ giúp đợt 1b (module-level; gọi LÚC CHẠY)
+TRAN_DONG_DA_VAO_BO = 3000  # trần số bản sao đọc cho tab "Đã vào bộ" (chống quét cả sổ)
+
+
+def _box_logo(chuoi: str | None) -> dict | None:
+    """JSON {x,y,w,h} tỉ lệ 0–1 lưu trong nhật ký ⇒ dict; hỏng/ngoài miền ⇒ None (hộp duyệt rơi về không phóng to)."""
+    if not chuoi:
+        return None
+    try:
+        b = json.loads(chuoi)
+        v = {k: float(b[k]) for k in ("x", "y", "w", "h")}
+    except (ValueError, TypeError, KeyError):
+        return None
+    if not all(math.isfinite(x) and 0.0 <= x <= 1.0 for x in v.values()) or v["w"] <= 0 or v["h"] <= 0:
+        return None
+    return v
+
+
+def thong_tin_theo_video(jobs_db, video_ids: list[str]) -> dict[str, dict] | None:
+    """Như `thong_tin_thu_vien` nhưng ghép theo `video_id`: → {video_id: {video_id, title, nen_tang}}. Không đọc được ⇒ None."""
+    out: dict[str, dict] = {}
+    if not video_ids:
+        return out
+    try:
+        with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
+            for i in range(0, len(video_ids), 500):
+                lo = video_ids[i:i + 500]
+                for vid, title, nen_tang in c.execute(
+                        "SELECT v.video_id, v.title, j.nen_tang FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
+                        f"WHERE v.video_id IN ({','.join('?' * len(lo))})", lo):
+                    out[vid] = {"video_id": vid, "title": title, "nen_tang": nen_tang}
+    except _sqlite3.Error as e:
+        log.warning("thay logo: không đọc được thư viện theo video_id %s (%s)", jobs_db, type(e).__name__)
+        return None
+    return out
+
+
+def _doc_da_vao_bo(jobs_db, nguoi_tao: str | None) -> list[dict]:
+    """Bản sao trong bộ của các video thuộc `nguoi_tao` (None = mọi người). `jobs.db` mở CHỈ ĐỌC; lỗi sqlite ném lên."""
+    dk, tham = ("", []) if nguoi_tao is None else (" WHERE j.nguoi_tao = ?", [nguoi_tao])
+    with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
+        c.row_factory = _sqlite3.Row
+        rows = c.execute(
+            "SELECT b.video_id, b.ban_copy_id, b.folder_id, b.ma_bo, b.thay_luc, v.title, v.drive_file_id, j.nen_tang "
+            "FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id"
+            f"{dk} ORDER BY b.thay_luc DESC, b.ban_copy_id LIMIT ?", [*tham, TRAN_DONG_DA_VAO_BO]).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _nguon_dang_trong_luot(conn, nguoi_tao: str | None) -> tuple[set[str], set[str]]:
+    """(các `ban_copy_id`, các `file_id` thư viện) đã nằm trong một lượt chưa lỗi của `nguoi_tao` (None = mọi người)."""
+    dk, tham = ("", []) if nguoi_tao is None else (" AND j.nguoi_tao = ?", [nguoi_tao])
+    ban, thu_vien = set(), set()
+    for (nguon,) in conn.execute("SELECT v.nguon FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id "
+                                 f"WHERE v.trang_thai != 'loi'{dk}", tham):
+        try:
+            n = json.loads(nguon)
+        except ValueError:
+            continue
+        if isinstance(n, dict) and n.get("file_id"):
+            (ban if n.get("kieu") == "vao_bo" else thu_vien).add(n["file_id"])
+    return ban, thu_vien
+
+
+def _ban_vao_bo_cua(jobs_db, nguoi_tao: str | None, muc: list[MucVaoBo]) -> dict[str, dict]:
+    """Mỗi `(video_id, ban_copy_id)` phải là bản sao của video THUỘC `nguoi_tao` (None = admin, bất kỳ). Một mục không đạt ⇒ 403 cho
+    cả lượt (không phân biệt "của người khác" với "không có" — không lộ sự tồn tại). Trả {ban_copy_id: {video_id, folder_id, ma_bo}}."""
+    if not muc:
+        return {}
+    dk, tham = ("", []) if nguoi_tao is None else (" AND j.nguoi_tao = ?", [nguoi_tao])
+    try:
+        with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
+            c.row_factory = _sqlite3.Row
+            rows = c.execute(
+                "SELECT b.video_id, b.ban_copy_id, b.folder_id, b.ma_bo FROM video_vao_bo_ban b "
+                "JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id "
+                f"WHERE b.ban_copy_id IN ({','.join('?' * len(muc))}){dk}", [m.ban_copy_id for m in muc] + tham).fetchall()
+    except _sqlite3.Error as e:
+        log.warning("thay logo: không đọc được sổ đã-vào-bộ (%s)", type(e).__name__)
+        raise HTTPException(503, "Chưa kiểm được video đã vào bộ — thử lại sau ít phút.") from None
+    co = {r["ban_copy_id"]: dict(r) for r in rows}
+    for m in muc:
+        r = co.get(m.ban_copy_id)
+        if r is None or r["video_id"] != m.video_id:
+            raise HTTPException(403, "Chỉ chọn được video đã vào bộ của bạn.")
+    return {m.ban_copy_id: co[m.ban_copy_id] for m in muc}
+
+
+def _chup_nguon_vao_bo(drive, ban: dict[str, dict]) -> list[dict]:
+    """Chụp lúc TẠO lượt (đợt áp vào bộ đối chiếu với ảnh chụp này): md5 + size + thư mục cha của bản trong bộ, đọc từ Drive.
+    Bản đã vào thùng rác / không còn trong thư mục bộ / không có md5 ⇒ 400 (video đã chọn không còn hợp lệ)."""
+    if not ban:
+        return []
+    if drive is None:
+        raise HTTPException(503, "Chưa đọc được Drive — thử lại sau ít phút.")
+    from tiktok_music_downloader.thay_logo.drive_tl import DriveTLKhongThay
+    out = []
+    for ban_id, r in ban.items():
+        try:
+            m = drive.lay_muc(ban_id)
+        except DriveTLKhongThay:
+            raise HTTPException(400, "Bản trong bộ của một video đã chọn không còn nữa.") from None
+        except Exception as e:  # noqa: BLE001 — Drive lỗi/timeout: chưa chụp được ⇒ không tạo lượt (khác "bản đã mất")
+            log.warning("thay logo: không đọc được bản trong bộ %s (%s)", ban_id, type(e).__name__)
+            raise HTTPException(503, "Chưa đọc được Drive — thử lại sau ít phút.") from None
+        if m.get("trashed") or r["folder_id"] not in (m.get("parents") or []) or not m.get("md5Checksum") or not m.get("size"):
+            raise HTTPException(400, "Bản trong bộ của một video đã chọn đã đổi hoặc không còn — tải lại danh sách rồi chọn lại.")
+        out.append({"kieu": "vao_bo", "video_id": r["video_id"], "file_id": ban_id, "folder_id": r["folder_id"],
+                    "ma_bo": r["ma_bo"], "md5": m["md5Checksum"], "size": str(m["size"]), "ten": m.get("name") or ""})
+    return out

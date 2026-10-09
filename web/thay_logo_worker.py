@@ -85,12 +85,13 @@ class ThayLogoWorker:
     def __init__(self, log_db: Path, jobs_db: Path, data_dir: Path, *, tai_ve: Callable[[dict, Path], Path],
                  tai_len: Callable[[Path, int], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
                  tran_dia_gb: float = TRAN_DIA_GB, relay_bind: str | None = None,
-                 cong: Callable[[], str | None] | None = None, nhip_cong_giay: float = 60.0):
+                 cong: Callable[[], str | None] | None = None, nhip_cong_giay: float = 60.0, drive_tl=None):
         """`cong`: cổng cấu hình chạy ở ĐẦU thread worker (gọi Drive ⇒ không được chạy trong lifespan của app). Trả None = qua;
         chuỗi = bị cấm vĩnh viễn (dừng hẳn); ném lỗi = chưa kiểm được (thử lại sau `nhip_cong_giay`)."""
         self.log_db, self.jobs_db, self.data = Path(log_db), Path(jobs_db), Path(data_dir)
         self.hop = HopThu(self.data / "thay_logo_hop_thu")
         self.tai_ve, self.tai_len, self.ffmpeg, self.python = tai_ve, tai_len, ffmpeg, python
+        self.drive_tl = drive_tl  # adapter Drive dùng chung: route chụp md5/size nguồn "Đã vào bộ" lúc tạo lượt (None ⇒ route báo 503)
         self.nghi, self.tran_dia_gb = nghi_giay, tran_dia_gb
         self._dung = threading.Event()
         self._thread: threading.Thread | None = None
@@ -392,6 +393,6 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
     from web.thay_logo_relay_server import ENV_BIND
     w = ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg,
                           relay_bind=os.environ.get(ENV_BIND) or None,
-                          cong=lambda: ly_do_creative(drive_tl, thu_muc))
+                          cong=lambda: ly_do_creative(drive_tl, thu_muc), drive_tl=drive_tl)
     ref.append(w)
     return w

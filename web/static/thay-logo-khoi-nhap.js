@@ -111,7 +111,9 @@
     if (!ten || ten.length > 80) { T.loi("Tên bộ cần 1–80 ký tự."); return; }
     dangGui = true; $("tl-tao").disabled = true;
     try {
-      const r = await T.goi("/api/thay-logo/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ drive_file_ids: [...chon], ten_bo: ten }) });
+      const than = { drive_file_ids: [...chon], ten_bo: ten };
+      for (const hook of window.TL_THAN_POST || []) hook(than, T);  // tab nguồn sửa thân (vd tab Đã vào bộ thêm `vao_bo`)
+      const r = await T.goi("/api/thay-logo/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(than) });
       if (!r.ok) { T.loi(cauLoi(r.status)); return; }
       chon.clear(); tenSua = false;
       veVung();
