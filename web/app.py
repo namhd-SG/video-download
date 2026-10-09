@@ -20,7 +20,6 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
@@ -30,6 +29,7 @@ from tiktok_music_downloader.nguon import (
     NEN_TANG_LINK_LE, NGUON, NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, TRAN_DUNG_LUONG_BYTE,
     TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
+from web import gan_phien_ban_tai_nguyen
 from web import giai_captcha
 from web import giai_captcha_api
 from web import models
@@ -1437,4 +1437,4 @@ thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db"
 # behind `require_user`: it is a static shell holding no job data, and every
 # call it makes back into /jobs* is authenticated on its own. Access still
 # gates it for anyone arriving through the tunnel.
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+app.mount("/", gan_phien_ban_tai_nguyen.StaticCoPhienBan(directory=STATIC_DIR, html=True), name="static")

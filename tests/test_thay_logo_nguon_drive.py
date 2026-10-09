@@ -391,6 +391,48 @@ def test_videos_link_toi_file_thu_vien_nguoi_khac_khong_lo_title_nen_tang_video_
     assert theo_nguoi == {"a@x": "b.mp4", "b@x": "Bí mật của B"}  # admin: tên theo NGƯỜI TẠO từng lượt
 
 
+# ------------------------------------------------------------------ nhãn nguồn của bộ: thư viện / link / trộn
+def _nguon_bo(c, user="a@x"):
+    return {b["job_id"]: b["nguon_kieu"] for b in c.get("/api/thay-logo/bo", headers=_h(user)).json()["bo"]}
+
+
+def _kieu_luu(c, job_id):
+    conn = nhat_ky.mo(c.db)
+    try:
+        return {json.loads(r[0])["file_id"]: json.loads(r[0])["kieu"]
+                for r in conn.execute("SELECT nguon FROM tl_job_video WHERE job_id = ?", (job_id,))}
+    finally:
+        conn.close()
+
+
+def test_nhan_nguon_bo_chi_link_chi_thu_vien_va_tron(ctx):
+    """Ca thật 09/10: lượt dán link Drive hiện "Thư viện" vì /jobs ghi `kieu: "drive"` cho MỌI id.
+    ĐỘT BIẾN: ghi "drive" cho mọi id ⇒ ĐỎ (ca link + trộn). ĐỘT BIẾN: /bo lấy kiểu video ĐẦU ⇒ ĐỎ (ca trộn)."""
+    ctx.post("/api/thay-logo/kiem-link", headers=_h("a@x"), json={"links": [_link("1"), _link("2")]})
+    j_link = _tao(ctx, "a@x", [ID("1"), ID("2")]).json()["job_id"]
+    j_tv = _tao(ctx, "a@x", ["A" * 20]).json()["job_id"]
+    j_tron = _tao(ctx, "a@x", ["A" * 20, ID("1")]).json()["job_id"]
+    assert _kieu_luu(ctx, j_link) == {ID("1"): "link", ID("2"): "link"}
+    assert _kieu_luu(ctx, j_tv) == {"A" * 20: "drive"}
+    assert _kieu_luu(ctx, j_tron) == {"A" * 20: "drive", ID("1"): "link"}
+    assert _nguon_bo(ctx) == {j_link: "link", j_tv: "drive", j_tron: "nhieu"}
+    assert _nguon_bo(ctx, "sep@x") == {j_link: "link", j_tv: "drive", j_tron: "nhieu"}  # admin thấy cùng nhãn
+
+
+def test_admin_dan_id_ngoai_thu_vien_cua_minh_la_link(ctx):
+    """Admin được bỏ qua cổng nhưng nhãn vẫn theo sự thật: id không thuộc thư viện của người tạo lượt ⇒ "link"."""
+    j = _tao(ctx, "sep@x", [ID("7")]).json()["job_id"]
+    assert _kieu_luu(ctx, j) == {ID("7"): "link"}
+
+
+def test_the_bo_co_nhan_cho_moi_kieu_nguon():
+    """Mọi `nguon_kieu` /bo có thể trả phải có chữ trên thẻ — thiếu ⇒ thẻ hiện "Nguồn khác"."""
+    from web import app as app_mod
+    js = (app_mod.STATIC_DIR / "thay-logo-the-bo.js").read_text(encoding="utf-8")
+    for k, chu in (("drive", "Thư viện"), ("link", "Link Drive"), ("nhieu", "Nhiều nguồn")):
+        assert f'{k}: "{chu}"' in js, k
+
+
 # ------------------------------------------------------------------ TOCTOU của trần chờ
 def test_hai_post_cung_luc_khong_cung_vuot_tran_cho(ctx, monkeypatch):
     """ĐỘT BIẾN: bỏ `BEGIN IMMEDIATE` ở tao_job ⇒ cả hai cùng đếm 0 và cùng 201 ⇒ ĐỎ."""
