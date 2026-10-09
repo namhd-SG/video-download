@@ -7,13 +7,15 @@ Boot: `dang_chay` ⇒ về `cho_agy` (+1 lần thử; hết lượt ⇒ `loi`) �
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 
 SO_LAN_THU_TOI_DA = 3
+TRANG_THAI = frozenset({'cho', 'cho_agy', 'dang_chay', 'xong', 'cho_nguoi', 'loi'})
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS tl_job (
-  id INTEGER PRIMARY KEY, nguoi_tao TEXT NOT NULL, tao_luc REAL NOT NULL, ghi_chu TEXT);
+  id INTEGER PRIMARY KEY, nguoi_tao TEXT NOT NULL, tao_luc REAL NOT NULL, ghi_chu TEXT, ten_bo TEXT, thu_muc_ra_id TEXT);
 CREATE TABLE IF NOT EXISTS tl_job_video (
   id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES tl_job(id), nguon TEXT NOT NULL,
   trang_thai TEXT NOT NULL DEFAULT 'cho'
@@ -25,16 +27,35 @@ CREATE INDEX IF NOT EXISTS ix_tl_job_nguoi_tao ON tl_job(nguoi_tao);
 """
 
 
+# Cột thêm SAU khi bảng đã có trên máy chạy thật: `CREATE TABLE IF NOT EXISTS` không thêm cột vào bảng cũ ⇒ ALTER có kiểm.
+_COT_THEM_SAU = (("ten_bo", "TEXT"), ("thu_muc_ra_id", "TEXT"))
+
+
 def khoi_tao(conn) -> None:
     conn.executescript(SCHEMA)
+    co = {r[1] for r in conn.execute("PRAGMA table_info(tl_job)")}
+    for cot, kieu in _COT_THEM_SAU:
+        if cot not in co:
+            try:
+                conn.execute(f"ALTER TABLE tl_job ADD COLUMN {cot} {kieu}")
+            except sqlite3.OperationalError as e:  # tiến trình khác (web/worker) vừa thêm giữa lúc kiểm và ALTER
+                if "duplicate column" not in str(e).lower():
+                    raise
+    conn.commit()
 
 
-def tao_job(conn, nguoi_tao: str, nguon: list[dict], ghi_chu: str = "") -> int:
+def ten_bo_hien_thi(job_id: int, ten_bo: str | None) -> str:
+    """Job cũ (trước khi có tên bộ) không có tên ⇒ `Lượt #<id>`."""
+    return ten_bo if ten_bo else f"Lượt #{job_id}"
+
+
+def tao_job(conn, nguoi_tao: str, nguon: list[dict], ghi_chu: str = "", ten_bo: str | None = None) -> int:
     """`nguon`: mỗi phần tử một video, vd {"kieu": "drive", "file_id": "..."} — lưu nguyên dạng JSON."""
     if not nguon:
         raise ValueError("job cần ít nhất 1 video")
     now = time.time()
-    cur = conn.execute("INSERT INTO tl_job (nguoi_tao, tao_luc, ghi_chu) VALUES (?,?,?)", (nguoi_tao, now, ghi_chu[:500]))
+    cur = conn.execute("INSERT INTO tl_job (nguoi_tao, tao_luc, ghi_chu, ten_bo) VALUES (?,?,?,?)",
+                       (nguoi_tao, now, ghi_chu[:500], ten_bo))
     conn.executemany("INSERT INTO tl_job_video (job_id, nguon, cap_nhat_luc) VALUES (?,?,?)",
                      [(cur.lastrowid, json.dumps(n, sort_keys=True), now) for n in nguon])
     conn.commit()
