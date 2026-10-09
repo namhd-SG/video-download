@@ -52,6 +52,13 @@
   // Tab chưa có module ⇒ "Sắp có".
   window.TL_TAB_NGUON = window.TL_TAB_NGUON || [];
 
+  // Hook sửa THÂN của POST /api/thay-logo/jobs: module nguồn nhập (tab) đẩy một hàm `(than, T) => void` vào mảng này. Khối nhập dựng
+  // `than` = {drive_file_ids, ten_bo}, gọi LẦN LƯỢT từng hàm theo thứ tự đăng ký (hàm sửa trực tiếp `than`, vd thêm `vao_bo` và rút
+  // id của mình khỏi `drive_file_ids`), rồi mới gửi. Hàm ném lỗi ⇒ không gửi lượt. Hàm phải tự bỏ qua khi tab mình không có gì được chọn.
+  window.TL_THAN_POST = window.TL_THAN_POST || [];
+  // Hook phụ: POST tạo lượt bị từ chối ⇒ khối nhập phát `document` event "tl-tao-luot-loi" {detail: {status, coVaoBo}} để tab nguồn tải lại
+  // dữ liệu của mình (vd danh sách đã cũ). Module tab có thể khai thêm `dem()` ⇒ số trên nhãn tab = số video đã chọn từ tab đó.
+
   window.TL = {
     $, el, goi, goc, soiKy, phut, IDRE, linkDrive, loiText, sapCo, nhomCua, phanSo, tenVideo, ngayGio,
     videos: [], bo: [], daCham: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],

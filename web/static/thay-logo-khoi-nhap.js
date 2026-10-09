@@ -23,7 +23,9 @@
       const b = el("button", "tl-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.dataset.tab = k;
       b.setAttribute("aria-selected", String(k === tab));
       b.append(ten + " ");
-      const n = k === "thu-vien" && thuVien ? thuVien.length : 0;
+      // Thư viện: số video trong thư viện. Tab của module: số video ĐÃ CHỌN từ tab đó (module cung cấp `dem()`; không có ⇒ 0).
+      const m = k === "thu-vien" ? null : moduleCua(k);
+      const n = k === "thu-vien" ? (thuVien ? thuVien.length : 0) : (m && typeof m.dem === "function" ? m.dem() : 0);
       b.append(el("span", "tl-cnt" + (n ? "" : " zero"), String(n)));
       b.addEventListener("click", () => datTab(k));
       hop.append(b);
@@ -78,6 +80,7 @@
     $("tl-dem").textContent = n ? `Đã chọn ${n} video` : "Chưa chọn video nào";
     $("tl-tao").textContent = n ? `Thay logo ${n} video${ten ? " · bộ " + ten : ""}` : "Thay logo";
     $("tl-tao").disabled = T.tat || n === 0;
+    veTabs();  // số đã chọn trên nhãn tab của module đổi theo lựa chọn
   }
 
   async function taiThuVien() {
@@ -93,9 +96,15 @@
     $("tl-thu-gon").setAttribute("aria-expanded", String(!gon));
   }
 
-  // Câu lời thường cho từng mã lỗi của POST /jobs (400 sai khuôn · 403 video không thuộc bạn · 409 cổng cấm · 429 quá nhiều chờ).
-  function cauLoi(status, detail) {
+  // Câu lời thường cho lỗi của POST /jobs. Máy chủ đã trả `detail` bằng lời thường (403/409/429…) ⇒ dùng nó; ba ca có câu riêng:
+  // 400 khi lượt có video "Đã vào bộ" (bản trong bộ đã đổi), 422 (dữ liệu/độ lớn lượt), 503 (Drive chưa trả lời). Không bao giờ hiện số lỗi.
+  function cauLoi(status, detail, coVaoBo) {
+    if (status === 422) return "Lượt quá lớn hoặc dữ liệu không hợp lệ.";
+    if (status === 503) return "Chưa hỏi được Drive lúc này — thử lại sau ít phút.";
+    if (status === 400 && coVaoBo) return "Một số video trong bộ đã đổi hoặc không còn — tải lại danh sách.";
     if (status === 400) return "Tên bộ cần 1–80 ký tự, và video đã chọn phải hợp lệ. Kiểm lại rồi bấm lại.";
+    // Chỉ 409 đọc câu máy chủ: 409 có HAI nghĩa (tính năng tắt / bản đã nằm trong lượt khác). Mã khác giữ câu cố định của trang.
+    if (status === 409 && typeof detail === "string" && detail) return detail;
     if (status === 403) return "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.";
     if (status === 409) return "Tính năng thay logo đang tạm tắt — chưa nhận lượt mới. Thử lại sau hoặc báo quản trị.";
     if (status === 429) return "Bạn đang có quá nhiều video chờ (tối đa 100). Đợi máy làm bớt rồi bấm lại.";
@@ -111,8 +120,17 @@
     if (!ten || ten.length > 80) { T.loi("Tên bộ cần 1–80 ký tự."); return; }
     dangGui = true; $("tl-tao").disabled = true;
     try {
-      const r = await T.goi("/api/thay-logo/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ drive_file_ids: [...chon], ten_bo: ten }) });
-      if (!r.ok) { T.loi(cauLoi(r.status)); return; }
+      const than = { drive_file_ids: [...chon], ten_bo: ten };
+      try { for (const hook of window.TL_THAN_POST || []) hook(than, T); }  // tab nguồn sửa thân (vd tab Đã vào bộ thêm `vao_bo`)
+      catch (e) { T.loi("Không gửi được lượt này (lỗi dữ liệu trang) — tải lại trang."); return; }
+      const r = await T.goi("/api/thay-logo/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(than) });
+      if (!r.ok) {
+        let detail = null; try { detail = (await r.json()).detail; } catch (_) { /* thân không phải JSON */ }
+        const coVaoBo = !!(than.vao_bo && than.vao_bo.length);
+        T.loi(cauLoi(r.status, detail, coVaoBo));
+        document.dispatchEvent(new CustomEvent("tl-tao-luot-loi", { detail: { status: r.status, coVaoBo } }));  // tab nguồn tải lại dữ liệu của mình
+        return;
+      }
       chon.clear(); tenSua = false;
       veVung();
       await window.TL_taiLai();

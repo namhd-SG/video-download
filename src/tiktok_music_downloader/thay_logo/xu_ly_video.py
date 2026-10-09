@@ -5,6 +5,8 @@ Số luồng OpenCV ghim 2 (mini chạy chung lane tải; bench P0b cũng ghim 2
 """
 from __future__ import annotations
 
+import json
+import logging
 import random
 import resource
 import sys
@@ -19,7 +21,9 @@ from .box_moi import BoxMoi
 from .duong_ong import KetQuaVideo, xu_ly_video as chay_loi
 from .nguon_khung import NguonKhungVideo
 
+log = logging.getLogger(__name__)
 LUONG_OPENCV = 2
+CANH_NGAN_TOI_DA = 720  # cạnh ngắn tối đa của ảnh trước/sau (px)
 O_SOI = (200, 120)  # cỡ một ô ảnh soi
 
 
@@ -74,6 +78,68 @@ def tao_anh_soi(video_goc: str, video_ra: str | None, kq: KetQuaVideo, duong_dan
     return str(duong_dan)
 
 
+def _doc_mot_khung(duong_dan: str, chi_so: int):
+    cap = cv2.VideoCapture(duong_dan)
+    try:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, chi_so)
+        ok, f = cap.read()
+    finally:
+        cap.release()
+    return f if ok else None
+
+
+def _thu_nho(f: np.ndarray) -> np.ndarray:
+    ngan = min(f.shape[:2])
+    if ngan <= CANH_NGAN_TOI_DA:
+        return f
+    t = CANH_NGAN_TOI_DA / ngan
+    return cv2.resize(f, (round(f.shape[1] * t), round(f.shape[0] * t)), interpolation=cv2.INTER_AREA)
+
+
+def _ti_le(x: int, y: int, w: int, h: int, rong: int, cao: int) -> dict:
+    """Box điểm ảnh ⇒ tỉ lệ 0–1 của khung ảnh, kẹp để x+w ≤ 1 và y+h ≤ 1."""
+    x0, y0 = min(1.0, max(0.0, x / rong)), min(1.0, max(0.0, y / cao))
+    return {"x": round(x0, 4), "y": round(y0, 4), "w": round(min(1.0 - x0, max(0.0, w / rong)), 4),
+            "h": round(min(1.0 - y0, max(0.0, h / cao)), 4)}
+
+
+def tao_cap_truoc_sau(video_goc: str, video_ra: str | None, khung_render: dict[int, list[dict]], boxes: list[BoxMoi],
+                      so_khung: int, thu_muc: Path) -> dict | None:
+    """Một cặp ảnh cùng thời điểm: `truoc.jpg` (gốc) + `sau.jpg` (đã thay) ở khung GIỮA đoạn có logo được thay, và box vùng logo
+    (tỉ lệ 0–1). Không có khung thay (`cho_nguoi`): chỉ `truoc.jpg` ở khung của box máy thấy (không có box ⇒ khung giữa video, không box).
+    Trả {duong_dan_truoc, duong_dan_sau | None, box_logo (JSON) | None}; không đọc được khung ⇒ None."""
+    if khung_render and video_ra:
+        ds = sorted(khung_render)
+        chi_so = ds[len(ds) // 2]
+        e = khung_render[chi_so][0]
+        hop = (e["x"], e["y"], e["w"], e["h"])
+    elif boxes:
+        b = sorted(boxes, key=lambda b: b.khung)[len(boxes) // 2]
+        chi_so, hop, video_ra = b.khung, (b.x, b.y, b.w, b.h), None
+    else:
+        chi_so, hop, video_ra = so_khung // 2, None, None
+    truoc = _doc_mot_khung(video_goc, chi_so)
+    if truoc is None:
+        return None
+    sau = _doc_mot_khung(video_ra, chi_so) if video_ra else None
+    if video_ra and sau is None:
+        return None  # có bản đã thay mà không đọc được đúng khung đó ⇒ không ghi nửa cặp
+    thu_muc.mkdir(parents=True, exist_ok=True)
+    kq = {"duong_dan_truoc": str(thu_muc / "truoc.jpg"), "duong_dan_sau": None,
+          "box_logo": json.dumps(_ti_le(*hop, truoc.shape[1], truoc.shape[0])) if hop else None}
+    # `cv2.imwrite` trả False (đĩa đầy, đường dẫn hỏng) chứ không ném lỗi ⇒ phải kiểm, nếu không DB ghi đường dẫn tới file không có.
+    ghi = [(kq["duong_dan_truoc"], truoc)]
+    if sau is not None:
+        kq["duong_dan_sau"] = str(thu_muc / "sau.jpg")
+        ghi.append((kq["duong_dan_sau"], sau))
+    for duong, anh in ghi:
+        if not cv2.imwrite(duong, _thu_nho(anh), [cv2.IMWRITE_JPEG_QUALITY, 85]):
+            for d, _ in ghi:
+                Path(d).unlink(missing_ok=True)  # không để lại nửa cặp
+            return None
+    return kq
+
+
 def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path, *, nguon_video: str,
           ffmpeg: str, job_id: int | None = None, token_agy: int | None = None, man_ket_agy: bool | None = None) -> dict:
     """Trả {"video_log_id", "trang_thai", "dau_ra" | None}. `cho_nguoi` ⇒ KHÔNG ghi file ra (giữ nguyên gốc)."""
@@ -95,10 +161,17 @@ def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path
             render.render_video(video, khung, dau_ra, ffmpeg, luong=LUONG_OPENCV)
             ra = dau_ra
         d = Path(thu_muc_file) / str(vid)
+        cap_anh: dict = {}
+        try:  # ảnh trước/sau chỉ để người duyệt xem: hỏng thì ghi log, video vẫn xong (hộp duyệt rơi về ảnh soi)
+            cap_anh = tao_cap_truoc_sau(video, ra, khung, boxes, nguon.so_khung(), d) or {}
+            if not cap_anh:
+                log.warning("thay logo: video %s không có ảnh trước/sau (không đọc/ghi được khung)", vid)
+        except Exception as e:  # noqa: BLE001
+            log.warning("thay logo: không tạo được ảnh trước/sau video %s (%s): %s", vid, type(e).__name__, e)
         nhat_ky.cap_nhat_video(
             conn, vid, trang_thai=kq.trang_thai, ket_thuc=time.time(), giay_xu_ly=round(time.time() - t0, 1),
             rss_dinh_mb=_rss_dinh_mb(), duong_dan_track=nhat_ky.luu_track(thu_muc_file, vid, [v.track for v in kq.vet]),
-            duong_dan_sheet=tao_anh_soi(video, ra, kq, d / "sheet.jpg", hat=vid))
+            duong_dan_sheet=tao_anh_soi(video, ra, kq, d / "sheet.jpg", hat=vid), **cap_anh)
         return {"video_log_id": vid, "trang_thai": kq.trang_thai, "dau_ra": ra}
     except Exception as e:
         nhat_ky.cap_nhat_video(conn, vid, trang_thai="loi", loi_text=f"{type(e).__name__}: {e}"[:2000],

@@ -49,6 +49,24 @@ NGUONG_CONG_LOI_ERROR = 10  # số lần kiểm cổng Creative trượt LIÊN T
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
 
+NGUON_DA_DOI_CAU = "Bản trong bộ đã đổi từ lúc tạo lượt — tạo lượt mới."
+
+
+class NguonVaoBoDaDoi(Exception):
+    """File tải về của nguồn "Đã vào bộ" không khớp md5 đã chụp lúc tạo lượt."""
+
+
+def kiem_md5_nguon_vao_bo(nguon: dict, duong_dan) -> None:
+    """md5 của file ĐÃ TẢI phải bằng `nguon["md5"]` (ảnh chụp lúc tạo lượt). Thiếu md5 trong ảnh chụp cũng coi là lệch (không có gì để tin)."""
+    import hashlib
+    h = hashlib.md5()  # noqa: S324 — đối chiếu checksum Drive (md5Checksum), không dùng cho bảo mật
+    with open(duong_dan, "rb") as f:
+        for khoi in iter(lambda: f.read(1 << 20), b""):
+            h.update(khoi)
+    if not nguon.get("md5") or h.hexdigest() != str(nguon["md5"]).lower():
+        raise NguonVaoBoDaDoi(f"md5 file tải {h.hexdigest()} khác ảnh chụp {nguon.get('md5')}")
+
+
 def co_job_tai_dang_chay(jobs_db: Path) -> bool:
     """CHỈ ĐỌC `jobs.db`. Bận = cùng tập trạng thái `web/models.py` coi là worker đang bận (`running`, `dang_mo`, `dang_giai`).
     Không đọc được (khoá, thiếu file) ⇒ coi như ĐANG BẬN: nhường là hướng an toàn."""
@@ -85,12 +103,13 @@ class ThayLogoWorker:
     def __init__(self, log_db: Path, jobs_db: Path, data_dir: Path, *, tai_ve: Callable[[dict, Path], Path],
                  tai_len: Callable[[Path, int], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
                  tran_dia_gb: float = TRAN_DIA_GB, relay_bind: str | None = None,
-                 cong: Callable[[], str | None] | None = None, nhip_cong_giay: float = 60.0):
+                 cong: Callable[[], str | None] | None = None, nhip_cong_giay: float = 60.0, drive_tl=None):
         """`cong`: cổng cấu hình chạy ở ĐẦU thread worker (gọi Drive ⇒ không được chạy trong lifespan của app). Trả None = qua;
         chuỗi = bị cấm vĩnh viễn (dừng hẳn); ném lỗi = chưa kiểm được (thử lại sau `nhip_cong_giay`)."""
         self.log_db, self.jobs_db, self.data = Path(log_db), Path(jobs_db), Path(data_dir)
         self.hop = HopThu(self.data / "thay_logo_hop_thu")
         self.tai_ve, self.tai_len, self.ffmpeg, self.python = tai_ve, tai_len, ffmpeg, python
+        self.drive_tl = drive_tl  # adapter Drive dùng chung: route chụp md5/size nguồn "Đã vào bộ" lúc tạo lượt (None ⇒ route báo 503)
         self.nghi, self.tran_dia_gb = nghi_giay, tran_dia_gb
         self._dung = threading.Event()
         self._thread: threading.Thread | None = None
@@ -247,7 +266,14 @@ class ThayLogoWorker:
         if r is None:
             return
         try:
-            goc = self.tai_ve(json.loads(r["nguon"]), self._scratch(r["id"]))
+            nguon = json.loads(r["nguon"])
+            goc = self.tai_ve(nguon, self._scratch(r["id"]))
+            if nguon.get("kieu") == "vao_bo":
+                kiem_md5_nguon_vao_bo(nguon, goc)
+        except NguonVaoBoDaDoi as e:  # bản trong bộ khác ảnh chụp lúc tạo lượt: KHÔNG xử lý (đợt áp sẽ đối chiếu chính ảnh chụp này)
+            log.warning("thay logo: video %s — %s", r["id"], e)
+            self._ket_thuc(conn, r["id"], "loi", loi_text=NGUON_DA_DOI_CAU)
+            return
         except Exception as e:
             log.warning("thay logo: tải video %s lỗi (%s): %s", r["id"], type(e).__name__, e)
             self._ket_thuc(conn, r["id"], "loi", loi_text="Không tải được video nguồn từ Drive.")
@@ -392,6 +418,6 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
     from web.thay_logo_relay_server import ENV_BIND
     w = ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg,
                           relay_bind=os.environ.get(ENV_BIND) or None,
-                          cong=lambda: ly_do_creative(drive_tl, thu_muc))
+                          cong=lambda: ly_do_creative(drive_tl, thu_muc), drive_tl=drive_tl)
     ref.append(w)
     return w

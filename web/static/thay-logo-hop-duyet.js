@@ -13,6 +13,52 @@
     return img;
   }
 
+  // ---- Cặp ảnh trước/sau: vạch kéo (ảnh SAU hiện từ vạch sang phải), giữ Space xem bản gốc, phím [ ] nhích vạch.
+  let pos = 50, giuGoc = false;
+  const anhHong = new Set();  // video có ảnh trước/sau không tải được ⇒ rơi về ảnh soi, không vẽ lại ảnh vỡ
+  const urlKhung = (v, ten) => `/api/thay-logo/videos/${v.id}/khung/${ten}.jpg`;
+  const datVach = (cmp) => cmp.style.setProperty("--pos", (giuGoc ? 100 : pos) + "%");
+  function veSoSanh(v) {
+    const cmp = el("div", "tl-cmp"); cmp.id = "tl-cmp";
+    const t = el("img", "tl-cmp-t"), sau = el("div", "tl-cmp-sau"), s = el("img");
+    t.alt = "Trước"; s.alt = "Sau"; sau.append(s);
+    for (const i of [t, s]) i.addEventListener("error", () => { if (!anhHong.has(v.id)) { anhHong.add(v.id); veDuyet(); } }, { once: true });
+    t.src = urlKhung(v, "truoc"); s.src = urlKhung(v, "sau");
+    const vach = el("div", "tl-cmp-vach"), num = el("div", "tl-cmp-num", "⇆"); num.setAttribute("aria-hidden", "true");
+    const range = el("input"); range.type = "range"; range.min = "0"; range.max = "100"; range.value = String(pos); range.id = "tl-truot";
+    range.setAttribute("aria-label", "Kéo để so trước và sau (phím [ và ])");
+    range.addEventListener("input", () => { pos = Number(range.value); datVach(cmp); });
+    range.addEventListener("change", () => range.blur());  // thả chuột xong trả phím ← → về việc chuyển video
+    cmp.append(t, sau, el("span", "tl-cmp-nhan t", "TRƯỚC"), el("span", "tl-cmp-nhan s", "SAU"), vach, num, range);
+    datVach(cmp);
+    return cmp;
+  }
+  // Chỉ có ảnh TRƯỚC (video máy không chắc): một ảnh, không vạch.
+  function veTruocDon(v) {
+    const img = el("img", "tl-truoc-don"); img.alt = "Khung trước khi thay"; img.src = urlKhung(v, "truoc");
+    img.addEventListener("error", () => { if (!anhHong.has(v.id)) { anhHong.add(v.id); veDuyet(); } }, { once: true });
+    return img;
+  }
+  // Phóng to vùng logo: cắt đúng vùng `box_logo` (tỉ lệ 0–1) bằng định vị ảnh trong ô tỉ lệ 2:1, không thêm thư viện.
+  function veOZoom(v, ten, nhan, cls) {
+    const fig = el("figure"), o = el("div", "tl-zoom-o"), img = el("img"); img.alt = nhan; img.hidden = true;
+    img.addEventListener("load", () => {
+      const W = img.naturalWidth, H = img.naturalHeight, b = v.box_logo; if (!W || !H) return;
+      const rong = Math.min(1, Math.max(b.w * 2.2, 0.18)), cao = Math.min(1, rong * W / H / 2);  // vùng hiển thị (tỉ lệ ảnh), ô 2:1
+      const rx = Math.min(1 - rong, Math.max(0, b.x + b.w / 2 - rong / 2)), ry = Math.min(1 - cao, Math.max(0, b.y + b.h / 2 - cao / 2));
+      img.style.width = (100 / rong) + "%"; img.style.left = (-rx / rong * 100) + "%"; img.style.top = (-ry / cao * 100) + "%"; img.hidden = false;
+    }, { once: true });
+    img.addEventListener("error", () => o.classList.add("hong"), { once: true });
+    img.src = urlKhung(v, ten); o.append(img);
+    const cap = el("figcaption"); cap.append(el("i", cls), nhan); fig.append(o, cap);
+    return fig;
+  }
+  function veZoom(v) {
+    const z = el("div", "tl-zoom"); z.append(veOZoom(v, "truoc", "Trước — logo cũ", "dot-t"), veOZoom(v, "sau", "Sau — logo của bạn", "dot-s"));
+    const w = el("div", "tl-zoom-hop"); w.append(el("div", "tl-zoom-lbl", "Phóng to vùng logo"), z);
+    return w;
+  }
+
   const hangDuyet = () => T.locDuoc().filter((v) => T.nhomCua(v) === "cho_duyet");
 
   const LOI_GUI = { 403: "Bạn không đánh giá được video này.", 409: "Video này chưa thay xong nên chưa đánh giá được.", 400: "Đánh giá chưa hợp lệ — chọn lý do rồi gửi lại." };
@@ -49,9 +95,11 @@
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
     const trai = el("div", "tl-so-sanh");
-    if (v.co_sheet) { const img = el("img"); img.alt = "Ảnh soi trước / sau"; img.src = `/api/thay-logo/videos/${v.id}/sheet.jpg`; trai.append(img); }
+    const anhOk = !anhHong.has(v.id), coCap = !!v.co_truoc_sau && anhOk;
+    if (coCap) { trai.append(veSoSanh(v), el("p", "tl-goi-y", "Kéo vạch để so · giữ Space xem bản gốc · [ ] nhích vạch")); }
+    else if (v.co_truoc && anhOk) { trai.append(veTruocDon(v), el("p", "tl-goi-y", "Khung trước khi thay (chưa có bản đã thay).")); }
+    else if (v.co_sheet) { const img = el("img"); img.alt = "Ảnh soi trước / sau"; img.src = `/api/thay-logo/videos/${v.id}/sheet.jpg`; trai.append(img, el("p", "tl-goi-y", "Ảnh soi ghép trước/sau của máy.")); }
     else trai.append(el("div", "tl-o-trong", "Chưa có ảnh soi"));
-    trai.append(el("p", "tl-goi-y", "Ảnh soi ghép trước/sau của máy. Kéo vạch so từng cảnh: sắp có."));
     const ct = el("div", "tl-chi-tiet");
     const tieu = el("div", "tl-duyet-tieu"), chu = el("div", "tl-duyet-tieu-chu");
     chu.append(chipBo(v), el("h3", "", T.tenVideo(v)));
@@ -60,6 +108,7 @@
     const meta = el("div", "tl-meta");
     if (v.giay_xu_ly != null) meta.append(el("span", "", `máy làm ${T.phut(v.giay_xu_ly)} phút`));
     ct.append(meta);
+    if (coCap && v.box_logo) ct.append(veZoom(v));
     if (v.pct_render != null) {
       const pct = Math.max(0, Math.min(100, Math.round(v.pct_render)));
       const bar = el("div", "tl-phu-bar"); const i = el("i"); i.style.width = pct + "%"; bar.append(i);
@@ -83,7 +132,7 @@
     gui.addEventListener("click", () => danhGia(v, { ket_qua: "hong", loai_loi: sel.value, ghi_chu: note.value }));
     const lk = el("div", "tl-link-phu");
     if (v.drive_file_id_ra) lk.append(T.linkDrive(v.drive_file_id_ra, "▶ Xem cả video đã thay"));
-    try { const g = v.nguon && JSON.parse(v.nguon).file_id; if (g) lk.append(T.linkDrive(g, "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
+    try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g) lk.append(T.linkDrive(g, ng.kieu === "vao_bo" ? "Bản trong bộ" : "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
     ct.append(lk);
     body.append(trai, ct); hop.append(body);
     const phim = el("div", "tl-phim"); phim.append(el("span", "lbl", "Hàng duyệt"));
@@ -103,6 +152,11 @@
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
       const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
       m.append(than);
+      if (nhom === "khong_chac" && v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào
+        const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem"; g.loading = "lazy"; g.src = urlKhung(v, "truoc");
+        g.addEventListener("error", () => { anhHong.add(v.id); g.remove(); }, { once: true });
+        than.append(g);
+      }
       k.append(m);
     }
   }
@@ -115,6 +169,24 @@
       (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
     khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
   };
+
+  // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. CHỈ bắt khi phím đang ở HỘP DUYỆT: focus nằm trong #tl-duyet, hoặc không
+  // focus ở đâu (body). Lý do chọn focus thay vì vị trí con trỏ: ô tick / Tên bộ / ô chọn ở khối nhập phía trên cũng dùng Space — con
+  // trỏ rê qua hộp duyệt không được cướp phím người dùng đang gõ ở chỗ khác. Nút/liên kết giữ Space của riêng chúng.
+  // Space khi không focus ở đâu (body) chỉ thuộc hộp duyệt khi hộp ĐANG HIỆN trong khung nhìn: hộp duyệt là khối thường của trang,
+  // cuộn khỏi màn hình rồi mà vẫn giữ Space thì người dùng mất cuộn trang bằng Space. `[ ]` không có việc mặc định nên không cần điều kiện này.
+  const hopDuyetTrongKhung = () => { const d = $("tl-duyet"); if (!d) return false; const r = d.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; };
+  const laBody = (t) => t === document.body || t === document.documentElement;
+  const trongHopDuyet = (t) => laBody(t) || ($("tl-duyet") && $("tl-duyet").contains(t));
+  const dangNhapChu = (t) => /^(TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName || "") || (t.tagName === "INPUT" && t.type !== "range");
+  const capNhatVach = () => { const c = $("tl-cmp"); if (c) { datVach(c); const r = $("tl-truot"); if (r) r.value = String(pos); } };
+  document.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || dangNhapChu(e.target) || !trongHopDuyet(e.target) || !$("tl-cmp")) return;
+    if (e.code === "Space") { if (laBody(e.target) && !hopDuyetTrongKhung()) return; e.preventDefault(); if (!giuGoc) { giuGoc = true; capNhatVach(); } }
+    else if (e.code === "BracketLeft" || e.code === "BracketRight") { pos = Math.min(100, Math.max(0, pos + (e.code === "BracketRight" ? 5 : -5))); capNhatVach(); }
+  });
+  document.addEventListener("keyup", (e) => { if (e.code === "Space" && giuGoc) { giuGoc = false; capNhatVach(); } });
+  window.addEventListener("blur", () => { if (giuGoc) { giuGoc = false; capNhatVach(); } });  // đổi cửa sổ khi đang giữ Space ⇒ không kẹt ở bản gốc
 
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) return;

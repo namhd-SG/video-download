@@ -23,7 +23,8 @@ CREATE TABLE IF NOT EXISTS tl_video (
   id INTEGER PRIMARY KEY, job_id INTEGER, nguon_video TEXT NOT NULL, sha256_goc TEXT, kho TEXT, fps REAL, so_khung INTEGER,
   giay_video REAL, phien_ban TEXT NOT NULL, bat_dau REAL NOT NULL, ket_thuc REAL, giay_xu_ly REAL, rss_dinh_mb REAL,
   token_agy INTEGER, man_ket_agy INTEGER, cat_giay REAL NOT NULL DEFAULT 0, trang_thai TEXT, loi_text TEXT,
-  duong_dan_track TEXT, duong_dan_sheet TEXT, drive_file_id_ra TEXT);
+  duong_dan_track TEXT, duong_dan_sheet TEXT, drive_file_id_ra TEXT,
+  duong_dan_truoc TEXT, duong_dan_sau TEXT, box_logo TEXT);
 CREATE TABLE IF NOT EXISTS tl_box_moi (
   video_id INTEGER NOT NULL REFERENCES tl_video(id), khung INTEGER, x INTEGER, y INTEGER, w INTEGER, h INTEGER,
   nguon TEXT NOT NULL CHECK (nguon IN ('agy', 'tay')), nhan_agy TEXT, cum INTEGER);
@@ -42,12 +43,30 @@ CREATE INDEX IF NOT EXISTS ix_tl_box_moi_video ON tl_box_moi(video_id);
 """
 
 
+# Cột thêm SAU khi bảng đã có trên máy chạy thật: `CREATE TABLE IF NOT EXISTS` không thêm cột vào bảng cũ ⇒ ALTER có kiểm.
+# `box_logo`: JSON {"x","y","w","h"} theo tỉ lệ 0–1 của khung ảnh `truoc.jpg`/`sau.jpg`.
+_COT_VIDEO_THEM_SAU = (("duong_dan_truoc", "TEXT"), ("duong_dan_sau", "TEXT"), ("box_logo", "TEXT"))
+
+
+def _them_cot_con_thieu(conn) -> None:
+    co = {r[1] for r in conn.execute("PRAGMA table_info(tl_video)")}
+    for cot, kieu in _COT_VIDEO_THEM_SAU:
+        if cot not in co:
+            try:
+                conn.execute(f"ALTER TABLE tl_video ADD COLUMN {cot} {kieu}")
+            except sqlite3.OperationalError as e:  # tiến trình khác (web/worker/tiến trình con) vừa thêm giữa lúc kiểm và ALTER
+                if "duplicate column" not in str(e).lower():
+                    raise
+    conn.commit()
+
+
 def mo(duong_dan: str | Path) -> sqlite3.Connection:
     conn = sqlite3.connect(str(duong_dan), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(_SCHEMA)
+    _them_cot_con_thieu(conn)
     return conn
 
 
@@ -142,7 +161,8 @@ def don_dep(conn, thu_muc_goc: Path, bay_gio: float | None = None, tran_byte: in
     hang = conn.execute("""
         SELECT v.id, v.bat_dau,
                (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.id ORDER BY luc DESC LIMIT 1) AS danh_gia_cuoi
-        FROM tl_video v WHERE v.duong_dan_track IS NOT NULL OR v.duong_dan_sheet IS NOT NULL ORDER BY v.bat_dau""").fetchall()
+        FROM tl_video v WHERE v.duong_dan_track IS NOT NULL OR v.duong_dan_sheet IS NOT NULL
+           OR v.duong_dan_truoc IS NOT NULL OR v.duong_dan_sau IS NOT NULL ORDER BY v.bat_dau""").fetchall()
 
     def co(vid):
         d = Path(thu_muc_goc) / str(vid)
@@ -164,6 +184,6 @@ def don_dep(conn, thu_muc_goc: Path, bay_gio: float | None = None, tran_byte: in
             con_lai -= tong[r["id"]]
     for vid in xoa:
         shutil.rmtree(Path(thu_muc_goc) / str(vid), ignore_errors=True)
-        conn.execute("UPDATE tl_video SET duong_dan_track=NULL, duong_dan_sheet=NULL WHERE id=?", (vid,))
+        conn.execute("UPDATE tl_video SET duong_dan_track=NULL, duong_dan_sheet=NULL, duong_dan_truoc=NULL, duong_dan_sau=NULL WHERE id=?", (vid,))
     conn.commit()
     return {"xoa": len(xoa), "byte_con_lai": con_lai}

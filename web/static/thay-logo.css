@@ -175,3 +175,44 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-lk-email code { flex: 1 1 200px; min-width: 0; font-family: var(--mono); font-size: .68rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; overflow-wrap: anywhere; user-select: all; }
 .tl-vung:has(#tl-tab-link:not([hidden])) { height: 520px; }  /* ô dán + danh sách kết quả cần cao hơn lưới thư viện */
 .tl-lk-than .tl-lk-ok { font-size: .76rem; margin-top: 1px; }
+
+/* Đợt 1b — so sánh trước/sau (vạch kéo) + phóng to vùng logo */
+.tl-cmp { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #111; --pos: 50%; user-select: none; }
+.tl-so-sanh .tl-cmp img { display: block; width: 100%; height: auto; border: 0; border-radius: 0; }
+.tl-cmp-sau { position: absolute; inset: 0; clip-path: inset(0 0 0 var(--pos)); }
+.tl-so-sanh .tl-cmp-sau img { position: absolute; inset: 0; height: 100%; object-fit: cover; }
+.tl-cmp-vach { position: absolute; top: 0; bottom: 0; left: var(--pos); width: 2px; margin-left: -1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.25); pointer-events: none; }
+.tl-cmp-num { position: absolute; top: 50%; left: var(--pos); width: 34px; height: 34px; margin: -17px 0 0 -17px; border-radius: 50%; background: #fff; color: #14201d;
+  display: grid; place-items: center; font-size: .8rem; font-weight: 700; box-shadow: 0 2px 8px rgba(0,0,0,.35); pointer-events: none; }
+.tl-cmp-nhan { position: absolute; top: 10px; font-size: .68rem; font-weight: 700; letter-spacing: .06em; color: #fff; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 999px; pointer-events: none; }
+.tl-cmp-nhan.t { left: 10px; }
+.tl-cmp-nhan.s { right: 10px; background: rgba(13,92,85,.85); }
+.tl-cmp input[type=range] { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: ew-resize; margin: 0; }
+.tl-zoom-hop { margin: 0 0 12px; }
+.tl-zoom-lbl { font-size: .72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+.tl-zoom { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.tl-zoom figure { margin: 0; min-width: 0; }
+.tl-zoom-o { position: relative; aspect-ratio: 2 / 1; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: #111; }
+.tl-zoom-o img { position: absolute; max-width: none; height: auto; }
+.tl-zoom-o.hong { background: var(--surface-alt); }
+.tl-zoom figcaption { font-size: .74rem; color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; }
+.tl-zoom .dot-t, .tl-zoom .dot-s { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); flex: none; }
+.tl-zoom .dot-s { background: var(--accent); }
+
+/* Tab "Đã vào bộ": nhóm theo mã bộ */
+.tl-vb-nhom { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; background: var(--surface-alt); margin-top: 6px; }
+.tl-vb-nhom:first-child { margin-top: 0; }
+.tl-vb-chon-ca { display: flex; align-items: center; gap: 10px; border: 0; background: none; font: inherit; font-size: .84rem; color: var(--text); cursor: pointer; padding: 4px 2px; min-height: 36px; text-align: left; }
+.tl-vb-chon-ca b { font-family: var(--mono); }
+.tl-vb-chon-ca:disabled { cursor: default; opacity: .6; }
+.tl-vb-nhom .muted { margin-left: auto; font-size: .72rem; }
+.tl-vb-hop { width: 22px; height: 22px; border-radius: 5px; border: 2px solid var(--border-strong); background: var(--surface); display: grid; place-items: center; flex: none; color: var(--accent-ink); font-size: .72rem; font-weight: 800; }
+[aria-checked="true"] > .tl-vb-hop, [aria-checked="mixed"] > .tl-vb-hop { background: var(--accent); border-color: var(--accent); }
+[aria-checked="true"] > .tl-vb-hop::after { content: "✓"; }
+[aria-checked="mixed"] > .tl-vb-hop::after { content: "–"; }
+.tl-the-v.mo { opacity: .5; cursor: default; }
+.tl-vb-phu { padding: 0 8px 8px; font-size: .68rem; color: var(--text-muted); }
+.tl-vb-ghi { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: var(--surface-alt); color: var(--text-muted); font-size: .8rem; }
+.tl-vb-luoi { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.tl-so-sanh .tl-truoc-don { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.tl-muc-than .tl-truoc-nho { display: block; width: 72px; height: auto; margin-top: 6px; border-radius: 6px; border: 1px solid var(--border); }

@@ -31,11 +31,14 @@ class DriveGiaTL:
                          "mimeType": MIME_THU_MUC, "trashed": trashed}
         return self.muc[fid]
 
-    def them_file(self, fid, ten, cha=None, *, size=1000, mime="video/mp4", drive="D1", trashed=False):
-        """File trong thư mục `cha` (None ⇒ gốc Shared Drive). `size=None` ⇒ không có trường size (như file Google-native)."""
+    def them_file(self, fid, ten, cha=None, *, size=1000, mime="video/mp4", md5="MD5A", drive="D1", trashed=False):
+        """File trong thư mục `cha` (None ⇒ gốc Shared Drive). `size=None` ⇒ không có trường size (như file Google-native);
+        `md5=None` ⇒ không có `md5Checksum`. Drive trả size là CHUỖI."""
         m = {"id": fid, "name": ten, "parents": [cha or drive], "driveId": drive, "mimeType": mime, "trashed": trashed}
         if size is not None:
-            m["size"] = str(size)  # Drive trả size là CHUỖI
+            m["size"] = str(size)
+        if md5 is not None:
+            m["md5Checksum"] = md5
         self.muc[fid] = m
         return m
 

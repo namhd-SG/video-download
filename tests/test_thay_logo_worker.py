@@ -318,3 +318,34 @@ def test_loi_tai_len_drive_noi_cau_thuong(worker, clip_file, monkeypatch, caplog
         worker.mot_luot()
     assert _loi_text(worker, vid) == "Không tải được bản đã thay lên Drive."
     assert "HttpError" in caplog.text
+
+
+# ---------------------------------------------------------------- nguồn "Đã vào bộ": md5 file tải phải khớp ảnh chụp lúc tạo lượt
+def _tao_vao_bo(w, md5):
+    conn = w._mo()
+    try:
+        j = hang_doi.tao_job(conn, "a@x", [{"kieu": "vao_bo", "video_id": "V1", "file_id": "BAN1", "folder_id": "F1", "ma_bo": "N.1",
+                                           "md5": md5, "size": "1", "ten": "v.mp4"}])
+        return conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (j,)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_vao_bo_md5_lech_thi_loi_cau_thuong_khong_xu_ly(worker, clip_file):
+    import hashlib
+    _, goc = clip_file
+    vid = _tao_vao_bo(worker, "0" * 32)  # ảnh chụp nói md5 khác file thật
+    worker.mot_luot()
+    r = _trang_thai(worker, vid)
+    assert (r["trang_thai"], r["loi_text"]) == ("loi", tw.NGUON_DA_DOI_CAU) and r["duong_dan_goc"] is None
+    assert not (worker.hop.goc / str(vid)).exists()  # chưa đặt việc cho agy: không xử lý
+    # đối chứng cùng điều kiện: md5 ĐÚNG ⇒ đi tiếp sang chờ agy
+    vid2 = _tao_vao_bo(worker, hashlib.md5(goc.read_bytes()).hexdigest())
+    worker.mot_luot()
+    assert _trang_thai(worker, vid2)["trang_thai"] == "cho_agy"
+
+
+def test_nguon_vao_bo_thieu_md5_cung_bi_chan(worker):
+    vid = _tao_vao_bo(worker, "")
+    worker.mot_luot()
+    assert _trang_thai(worker, vid)["trang_thai"] == "loi"
