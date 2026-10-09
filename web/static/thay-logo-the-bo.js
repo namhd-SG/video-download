@@ -5,7 +5,7 @@
   const TT = [["dang_xu_ly", "Đang xử lý"], ["cho_duyet", "Chờ duyệt"], ["khong_chac", "Máy không chắc"], ["loi", "Lỗi"], ["da_dat", "Đã đạt"], ["hong", "Hỏng"]];
   const NEN = [["", "Tất cả"], ["tiktok", "TikTok"], ["douyin", "Douyin"], ["facebook", "Facebook"]];
   const NGAY = [["", "Tất cả"], ["hom_nay", "Hôm nay"], ["7_ngay", "7 ngày"]];
-  const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Đã vào bộ" };
+  const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Đã vào bộ", nhieu: "Nhiều nguồn" };
 
   // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt; còn lại Xong.
   function trangThaiBo(b) {

@@ -220,7 +220,8 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         ids = list(dict.fromkeys(body.drive_file_ids))
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
-        if not la_admin(email) and not _ids_duoc_phep(email, ids):
+        trong = thu_vien_cua(email, ids)  # id thuộc thư viện CỦA người tạo — dùng chung cho cổng quyền và nhãn nguồn
+        if not la_admin(email) and not _ids_duoc_phep(email, ids, trong):
             raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.")
         conn = _mo()
         try:
@@ -230,7 +231,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             if hang_doi.dem_dang_cho_cua(conn, email) + len(ids) > TRAN_CHO_MOI_NGUOI:
                 conn.rollback()
                 raise HTTPException(429, f"Bạn đang có quá nhiều video chờ (tối đa {TRAN_CHO_MOI_NGUOI}).")
-            jid = hang_doi.tao_job(conn, email, [{"kieu": "drive", "file_id": f} for f in ids], body.ghi_chu, ten_bo)
+            # `kieu` chỉ là NHÃN nguồn (thẻ bộ đọc nó); worker tải theo `file_id` cho mọi kiểu. Ngoài thư viện của người tạo
+            # ⇒ "link" (đến qua sổ kiem-link, hoặc admin dán id) — ghi "drive" cho mọi id làm thẻ bộ nói "Thư viện" sai sự thật.
+            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids]
+            jid = hang_doi.tao_job(conn, email, nguon, body.ghi_chu, ten_bo)
         finally:
             conn.close()
         return {"job_id": jid}
@@ -256,14 +260,18 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 "FROM tl_job j LEFT JOIN (SELECT t.*, (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = t.video_log_id "
                 "ORDER BY luc DESC LIMIT 1) AS dg FROM tl_job_video t) v ON v.job_id = j.id"
                 f"{dk} GROUP BY j.id ORDER BY j.id DESC LIMIT 200", tham).fetchall()
-            kieu = {}
+            # Nguồn của bộ = tập `kieu` của MỌI video: một kiểu ⇒ kiểu đó; trộn (vd thư viện + link) ⇒ "nhieu". Lấy video đầu
+            # làm đại diện thì lượt trộn hiện sai nguồn.
+            cac_kieu: dict[int, set] = {}
             ids_trang = [r["job_id"] for r in rows]
-            for r in conn.execute("SELECT job_id, nguon FROM tl_job_video WHERE id IN (SELECT min(id) FROM tl_job_video "
-                                  f"WHERE job_id IN ({','.join('?' * len(ids_trang))}) GROUP BY job_id)", ids_trang):
+            for r in conn.execute(f"SELECT job_id, nguon FROM tl_job_video WHERE job_id IN ({','.join('?' * len(ids_trang))})",
+                                  ids_trang):
                 try:
-                    kieu[r["job_id"]] = json.loads(r["nguon"]).get("kieu")
+                    k = json.loads(r["nguon"]).get("kieu")
                 except (ValueError, AttributeError):
-                    kieu[r["job_id"]] = None
+                    k = None
+                cac_kieu.setdefault(r["job_id"], set()).add(k)
+            kieu = {j: (next(iter(ks)) if len(ks) == 1 else "nhieu") for j, ks in cac_kieu.items()}
         finally:
             conn.close()
         return {"bo": [{"job_id": r["job_id"], "ten_bo": hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"]),
@@ -413,10 +421,9 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         return w.trang_thai() if w is not None else {"song": False, "luot_cuoi": "tinh_nang_tat"}
 
     # ------------------------------------------------------------------ nguồn "Dán link Drive": kiểm link + quyền dùng id đã kiểm
-    def _ids_duoc_phep(email: str, ids: list[str]) -> bool:
-        """Member: MỌI id phải thuộc thư viện của mình, HOẶC do CHÍNH mình kiểm qua `kiem-link` trong 24 h (`link_da_kiem`).
-        Id thô không qua bước kiểm ⇒ False (đường duy nhất vào là có nhật ký ai thêm gì)."""
-        trong = thu_vien_cua(email, ids)
+    def _ids_duoc_phep(email: str, ids: list[str], trong: set[str]) -> bool:
+        """Member: MỌI id phải thuộc thư viện của mình (`trong` = `thu_vien_cua(email, ids)`), HOẶC do CHÍNH mình kiểm qua
+        `kiem-link` trong 24 h (`link_da_kiem`). Id thô không qua bước kiểm ⇒ False (đường duy nhất vào là có nhật ký ai thêm gì)."""
         con_lai = [i for i in ids if i not in trong]
         if not con_lai:
             return True
