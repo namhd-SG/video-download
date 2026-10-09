@@ -51,7 +51,7 @@ def worker(tmp_path, clip_file, monkeypatch):
         shutil.copy(goc, p)
         return p
 
-    def tai_len(p):
+    def tai_len(p, job_id):
         da_len.append(p.read_bytes()[:4])
         return "drive-ra-1"
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join(sys.path))
@@ -233,6 +233,7 @@ def test_mot_dong_hong_khong_chan_ca_hang_doi_pha_2(worker, clip_file):
     os.unlink(_trang_thai(worker, v1)["duong_dan_goc"])  # file gốc của dòng đầu biến mất
     assert worker.mot_luot() == "da_xu_ly"
     assert _trang_thai(worker, v1)["trang_thai"] == "loi"
+    assert _trang_thai(worker, v1)["loi_text"] == "Máy không xử lý tiếp được video này."
     assert _trang_thai(worker, v2)["trang_thai"] == "xong"
 
 
@@ -252,3 +253,68 @@ def test_nhuong_moi_trang_thai_ban_cua_lane_tai(tmp_path, trang_thai):
         c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, trang_thai TEXT)")
         c.execute("INSERT INTO jobs (trang_thai) VALUES (?)", (trang_thai,))
     assert tw.co_job_tai_dang_chay(p) is True
+
+
+# ---------------------------------------------------------------- lời lỗi member đọc: câu thường, không tên exception / thuật ngữ kỹ sư
+
+_MAU_KY_SU = __import__("re").compile(r"agy|khung|box|Error|Exception|\d+s\b", __import__("re").I)
+
+
+def _loi_text(w, vid):
+    ct = _trang_thai(w, vid)
+    assert ct["trang_thai"] == "loi"
+    assert not _MAU_KY_SU.search(ct["loi_text"]), ct["loi_text"]
+    return ct["loi_text"]
+
+
+def test_loi_tai_nguon_noi_cau_thuong_ten_exception_chi_o_log(worker, monkeypatch, caplog):
+    class HttpError(Exception):
+        pass
+
+    def hong(nguon, d):
+        raise HttpError("403 forbidden")
+    monkeypatch.setattr(worker, "tai_ve", hong)
+    vid = _tao(worker)
+    with caplog.at_level("WARNING"):
+        worker.mot_luot()
+    assert _loi_text(worker, vid) == "Không tải được video nguồn từ Drive."
+    assert "HttpError" in caplog.text and "403 forbidden" in caplog.text  # chi tiết kỹ sư vẫn ở log máy chủ
+
+
+def test_loi_khong_doc_duoc_hinh_noi_cau_thuong(worker, monkeypatch):
+    import subprocess as sp
+    thuc = sp.run
+    monkeypatch.setattr(tw.subprocess, "run", lambda cmd, **kw: sp.CompletedProcess(cmd, 0, stdout='{"n": 0}\n', stderr=""))
+    vid = _tao(worker)
+    worker.mot_luot()
+    monkeypatch.setattr(tw.subprocess, "run", thuc)
+    assert _loi_text(worker, vid) == "Không đọc được hình trong video."
+
+
+def test_loi_qua_tran_thoi_gian_noi_cau_thuong(worker, clip_file, monkeypatch):
+    clip, _ = clip_file
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+    monkeypatch.setattr(tw, "TRAN_GIAY_MIN", 0.01)
+    monkeypatch.setattr(tw, "HE_SO_TRAN_GIAY", 0.0)
+    worker.mot_luot()
+    assert _loi_text(worker, vid) == "Xử lý quá lâu nên đã dừng."
+
+
+def test_loi_tai_len_drive_noi_cau_thuong(worker, clip_file, monkeypatch, caplog):
+    clip, _ = clip_file
+
+    class HttpError(Exception):
+        pass
+
+    def hong(p, job_id):
+        raise HttpError("quota")
+    monkeypatch.setattr(worker, "tai_len", hong)
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+    with caplog.at_level("WARNING"):
+        worker.mot_luot()
+    assert _loi_text(worker, vid) == "Không tải được bản đã thay lên Drive."
+    assert "HttpError" in caplog.text

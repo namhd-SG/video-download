@@ -346,7 +346,10 @@ app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
 @app.middleware("http")
 async def add_revalidate_header(request, call_next):
     response = await call_next(request)
-    if request.url.path in REVALIDATE_PATHS:
+    path = request.url.path
+    # Mọi file của trang Thay logo (html/js/css, kể cả file đợt sau thêm) phải tái kiểm: JS cũ cache 2 giờ ở edge
+    # cạnh HTML mới ⇒ hỏng âm thầm (không tìm thấy id, gửi trùng job).
+    if path in REVALIDATE_PATHS or path.startswith("/thay-logo"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
@@ -1425,7 +1428,8 @@ giai_captcha_api.dang_ky_route(app, lay_db=lambda: DB_PATH, la_admin=_la_admin,
 # Tailscale (web/thay_logo_worker.py), để không route nào ở đây thoát lưới `require_user`.
 thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db", require_user, _la_admin,
                                       lambda: worker_thay_logo,
-                                      lambda email, ids: thay_logo_routes.drive_ids_cua(DB_PATH, email, ids))
+                                      lambda email, ids: thay_logo_routes.drive_ids_cua(DB_PATH, email, ids),
+                                      lay_jobs_db=lambda: DB_PATH)
 
 
 # Mounted last so it only catches paths none of the routes above matched —

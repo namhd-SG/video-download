@@ -1,163 +1,113 @@
-// Trang "Thay logo" (M1). Tự poll danh sách (không SSE — ĐP-1508), mọi chữ của dữ liệu đưa vào bằng textContent, không innerHTML.
+// Trang "Thay logo" (M2 khung theo bộ). Khởi động: theme, kiểm tính năng bật/tắt, poll danh sách. Poll 15 giây, không SSE.
 (() => {
   "use strict";
+  const T = window.TL, { $ } = T;
   const POLL_MS = 15000;
-  const NHAN = {
-    xong: ["Đã thay · chờ duyệt", "ok"], cho_nguoi: ["Không thay được", ""], cho_agy: ["Chờ agy", ""],
-    cho: ["Đang chuẩn bị", ""], dang_chay: ["Đang xử lý", ""], loi: ["Lỗi", "bad"],
-  };
-  const LOAI_LOI = [["sot_watermark", "Sót watermark"], ["sai_cho", "Đè sai chỗ"], ["che_phu_de", "Che phụ đề"],
-                    ["pha_noi_dung", "Phá nội dung"], ["khac", "Khác"]];
-  const $ = (id) => document.getElementById(id);
-  let videos = [], loc = "tat_ca", capNhatLuc = 0;
 
-  // ---- theme: cùng khoá với trang chính
   const THEME_KEY = "videodl-theme";
   const apTheme = (t) => (t === "light" || t === "dark") ? document.documentElement.setAttribute("data-theme", t)
                                                         : document.documentElement.removeAttribute("data-theme");
   try { apTheme(localStorage.getItem(THEME_KEY)); } catch (_) { /* trình duyệt chặn lưu trữ: theo hệ điều hành */ }
   $("theme-toggle").addEventListener("click", () => {
-    const cur = document.documentElement.getAttribute("data-theme") ||
-      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+    const cur = document.documentElement.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     const next = cur === "dark" ? "light" : "dark";
     try { localStorage.setItem(THEME_KEY, next); } catch (_) { /* bỏ qua */ }
     apTheme(next);
   });
 
-  async function goi(path, opts) {
-    const res = await fetch(path, { redirect: "manual", ...opts });
-    if (res.type === "opaqueredirect" || res.status === 401) { $("session-expired").hidden = false; throw new Error("het_phien"); }
-    return res;
+  function veTomTat() {
+    const dem = {}; for (const v of T.videos) dem[T.nhomCua(v)] = (dem[T.nhomCua(v)] || 0) + 1;
+    const soi = T.videos.filter((v) => T.nhomCua(v) === "cho_duyet" && T.soiKy(v)).length;
+    const p = $("tl-tom-tat"); p.replaceChildren();
+    const b = document.createElement("b"); b.textContent = `${dem.cho_duyet || 0} video chờ duyệt`;
+    p.append("Việc của bạn: ", b, ` · ${soi} cần bạn xem kỹ · ${dem.dang_xu_ly || 0} video máy đang làm, bạn không cần chờ.`);
   }
-  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
-  const chip = (text, cls, title) => { const c = el("span", "tl-chip " + (cls || ""), text); if (title) c.title = title; return c; };
-  const driveId = (s) => { const m = String(s).match(/(?:\/d\/|id=)([A-Za-z0-9_-]{10,120})/); return m ? m[1] : String(s).trim(); };
-  const phut = (giay) => Math.max(0, Math.round(giay / 60));
-  const nhom = (v) => v.trang_thai === "xong" && v.can_soi_ky ? "soi_ky" : v.trang_thai;
+  T.ve.tomTat = veTomTat;
 
-  // ---- tạo lượt
-  $("tl-mo-thu-vien").addEventListener("click", async () => {
-    const hop = $("tl-chon");
-    if (hop.classList.toggle("mo") && !hop.childElementCount) {
-      const r = await goi("/videos?limit=100");
-      const ds = r.ok ? (await r.json()).videos || [] : [];
-      for (const v of ds.filter((x) => x.drive_file_id)) {
-        const lb = el("label"); const cb = el("input"); cb.type = "checkbox"; cb.value = v.drive_file_id;
-        lb.append(cb, " " + (v.video_id || v.drive_file_id)); hop.append(lb);
-      }
-      if (!hop.childElementCount) hop.append(el("p", "muted", "Thư viện chưa có video nào đã lên Drive."));
+  const z2 = (n) => String(n).padStart(2, "0");
+  const ngayCuc = (d) => `${d.getFullYear()}-${z2(d.getMonth() + 1)}-${z2(d.getDate())}`;
+  // Bộ lọc nối API thật: bộ (job_id), nền tảng, ngày (tu) lọc ở máy chủ; trạng thái lọc ở trang (nhiều chip cùng lúc).
+  // Nhận BẢN CHỤP bộ lọc (không đọc T.loc) để một vòng tải nhiều trang không trộn hai bộ lọc khi người dùng đổi giữa chừng.
+  function duongVideos(loc, truoc) {
+    const q = new URLSearchParams();
+    if (loc.job) q.set("job_id", String(loc.job));
+    if (loc.nen) q.set("nen_tang", loc.nen);
+    if (loc.ngay === "hom_nay") q.set("tu", ngayCuc(new Date()));
+    if (loc.ngay === "7_ngay") q.set("tu", ngayCuc(new Date(Date.now() - 6 * 86400000)));
+    if (truoc) q.set("truoc_id", String(truoc));
+    const chuoi = q.toString();
+    return "/api/thay-logo/videos" + (chuoi ? "?" + chuoi : "");
+  }
+  const LOI_TAI = "Chưa tải được danh sách mới nhất — máy sẽ tự thử lại sau ít giây.";
+  const LOI_LOC = "Không đọc được thư viện để lọc theo nền tảng — thử lại sau.";
+  let soTrang = 1, dangTai = false, choTaiLai = false;
+  let the = 0;  // số THẾ HỆ bộ lọc: đổi lọc ⇒ +1; phản hồi của vòng tải bắt đầu ở thế hệ cũ bị bỏ, không vẽ video của lọc cũ
+  let timPoll = null;
+  async function taiBo() {
+    const r = await T.goi("/api/thay-logo/bo");
+    return r.ok ? ((await r.json()).bo || []) : null;
+  }
+  // Trả {ds, conNua, truocTiep, thuVienLoi, soTrangThat} hoặc {loi}. Số trang là BIẾN CỤC BỘ: `xemThem` bấm giữa vòng tải không bị ghi đè.
+  async function taiVideos(loc, trang) {
+    let ds = [], truoc = null, d = null, daTai = 0;
+    for (let i = 0; i < trang; i++) {  // poll tải lại đủ số trang người dùng đã mở, không cắt về trang đầu
+      const r = await T.goi(duongVideos(loc, truoc));
+      if (!r.ok) return { loi: r.status === 503 && loc.nen ? LOI_LOC : LOI_TAI };
+      d = await r.json(); ds = ds.concat(d.videos || []); truoc = d.truoc_tiep; daTai = i + 1;
+      if (!d.con_nua) break;
     }
-  });
-  $("tl-form").addEventListener("submit", async (ev) => {
-    ev.preventDefault();
-    $("tl-loi").textContent = "";
-    const ids = [...$("tl-link").value.split("\n").map((s) => s.trim()).filter(Boolean).map(driveId),
-                 ...[...document.querySelectorAll("#tl-chon input:checked")].map((c) => c.value)];
-    if (!ids.length) { $("tl-loi").textContent = "Chưa có video nào."; return; }
-    const r = await goi("/api/thay-logo/jobs", { method: "POST", headers: { "Content-Type": "application/json" },
-                                                 body: JSON.stringify({ drive_file_ids: [...new Set(ids)] }) });
-    if (!r.ok) { const b = await r.json().catch(() => ({})); $("tl-loi").textContent = (b.detail && String(b.detail)) || `Lỗi ${r.status}`; return; }
-    $("tl-link").value = ""; document.querySelectorAll("#tl-chon input:checked").forEach((c) => { c.checked = false; });
-    taiLai();
-  });
-
-  // ---- danh sách
-  function veLoc() {
-    const dem = { tat_ca: videos.length };
-    for (const v of videos) dem[nhom(v)] = (dem[nhom(v)] || 0) + 1;
-    const hop = $("tl-loc"); hop.replaceChildren();
-    for (const [k, ten, cls] of [["tat_ca", "Tất cả", ""], ["xong", "Chờ duyệt", "ok"], ["soi_ky", "Cần soi kỹ", "warn"],
-                                 ["cho_agy", "Chờ agy", ""], ["cho_nguoi", "Không thay được", ""], ["loi", "Lỗi", "bad"]]) {
-      const b = el("button", "tl-chip " + cls + (loc === k ? " on" : ""), `${ten} ${dem[k] || 0}`);
-      b.type = "button"; b.addEventListener("click", () => { loc = k; ve(); }); hop.append(b);
-    }
-    hop.append(chip(capNhatLuc ? `⟳ ${Math.round((Date.now() - capNhatLuc) / 1000)} giây trước` : "⟳ …", "", "Lần cập nhật cuối"));
+    return { ds, conNua: !!d.con_nua, truocTiep: d.truoc_tiep, thuVienLoi: !!d.thu_vien_loi, soTrangThat: daTai };
   }
-
-  function nutDanhGia(v) {
-    const hang = el("div", "tl-hang");
-    const goc = (v.nguon && JSON.parse(v.nguon).file_id) || "";
-    if (v.drive_file_id_ra) { const a = el("a", "", "▶ Xem video đã thay"); a.href = `https://drive.google.com/file/d/${encodeURIComponent(v.drive_file_id_ra)}/view`; a.target = "_blank"; a.rel = "noopener"; hang.append(a); }
-    if (goc) { const a = el("a", "", "Bản gốc"); a.href = `https://drive.google.com/file/d/${encodeURIComponent(goc)}/view`; a.target = "_blank"; a.rel = "noopener"; hang.append(a); }
-    if (v.trang_thai !== "xong") return [hang];
-    const dat = el("button", "btn sm", "Đạt"); dat.type = "button";
-    const hong = el("button", "btn sm danger-line", "Hỏng…"); hong.type = "button";
-    const cap = el("span", "tl-cap");  // Đạt/Hỏng luôn đi cùng nhau, không bị dòng tách đôi (ĐP-1507 #3)
-    cap.append(dat, hong);
-    hang.append(cap);
-    const mo = el("div", "tl-hong");
-    const sel = el("select"); sel.setAttribute("aria-label", "Hỏng vì");
-    for (const [k, t] of LOAI_LOI) { const o = el("option", "", t); o.value = k; sel.append(o); }
-    const note = el("input"); note.type = "text"; note.placeholder = "Ghi chú (giây thứ mấy…)"; note.maxLength = 2000;
-    const gui = el("button", "btn sm danger", "Gửi đánh giá hỏng"); gui.type = "button";
-    mo.append(sel, note, gui);
-    const danhGia = async (body) => {
-      const r = await goi(`/api/thay-logo/videos/${v.id}/danh-gia`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (r.ok) taiLai(); else $("tl-loi").textContent = `Không gửi được đánh giá (${r.status}).`;
-    };
-    dat.addEventListener("click", () => danhGia({ ket_qua: "dat" }));
-    hong.addEventListener("click", () => mo.classList.toggle("mo"));
-    gui.addEventListener("click", () => danhGia({ ket_qua: "hong", loai_loi: sel.value, ghi_chu: note.value }));
-    if (v.danh_gia) hang.append(chip(v.danh_gia === "dat" ? "Đã đánh giá: Đạt" : "Đã đánh giá: Hỏng", v.danh_gia === "dat" ? "ok" : "bad"));
-    return [hang, mo];
-  }
-
-  function the(v) {
-    const card = el("article", "tl-card" + (nhom(v) === "soi_ky" ? " co-co" : ""));
-    if (v.co_sheet) { const img = el("img"); img.alt = "Trước / sau"; img.loading = "lazy"; img.src = `/api/thay-logo/videos/${v.id}/sheet.jpg`; card.append(img); }
-    else card.append(el("div", "tl-o-trong", v.trang_thai === "cho_agy" ? "Đang chờ máy định vị" : "—"));
-    const body = el("div");
-    const goc = (v.nguon && JSON.parse(v.nguon).file_id) || `#${v.id}`;
-    body.append(el("h3", "", goc));
-    const meta = el("div", "tl-meta");
-    const [ten, cls] = NHAN[v.trang_thai] || [v.trang_thai, ""];
-    meta.append(chip(v.trang_thai === "cho_agy" && v.cho_agy_tu ? `${ten} · ${phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : ten, cls));
-    if (nhom(v) === "soi_ky") meta.append(chip("⚠ Cần soi kỹ", "warn"));
-    if (v.pct_render != null && v.trang_thai === "xong") {
-      meta.append(chip(`${Math.round(v.pct_render)}% khung`),
-                  chip(`${100 - Math.round(v.pct_render)}% giữ nguyên`, "", "Khung chưa chắc vị trí hoặc có phụ đề/chữ chồng lên — giữ watermark gốc, không đè."));
-    }
-    if (v.trang_thai === "cho_nguoi" && v.so_box != null) meta.append(chip(`agy thấy ${v.so_box} box`));
-    body.append(meta);
-    if (nhom(v) === "soi_ky") body.append(el("p", "tl-co", "Có chữ/hình lạ nằm trong vùng logo ở phần lớn video — máy không tự loại hết được. Xem kỹ cả video trước khi dùng."));
-    if (v.trang_thai === "cho_nguoi") body.append(el("p", "muted", "Không tìm ra watermark đủ chắc — video giữ nguyên, không có bản thay."));
-    if (v.trang_thai === "cho_agy") body.append(el("p", "muted", "Máy định vị chưa trả kết quả. Lượt sẽ tự chạy tiếp khi có."));
-    if (v.trang_thai === "loi") body.append(el("p", "muted", `${v.loi_text || "Lỗi không rõ"} — video gốc không bị ảnh hưởng.`));
-    body.append(...nutDanhGia(v));
-    card.append(body);
-    return card;
-  }
-
-  function ve() {
-    veLoc();
-    const ds = loc === "tat_ca" ? videos : videos.filter((v) => nhom(v) === loc);
-    const list = $("tl-list");
-    list.replaceChildren(...(ds.length ? ds.map(the) : [el("p", "muted", "Chưa có video nào.")]));
-  }
-
   async function taiLai() {
+    if (dangTai) { choTaiLai = true; return; }  // đổi bộ lọc giữa lúc đang tải ⇒ tải lại ngay sau đó, không để dữ liệu cũ nằm lại
+    dangTai = true;
+    const the0 = the, loc = { ...T.loc }, trang = soTrang;
     try {
-      const r = await goi("/api/thay-logo/videos");
-      if (!r.ok) return;
-      videos = (await r.json()).videos || [];
-      capNhatLuc = Date.now();
-      ve();
-    } catch (_) { /* hết phiên đã báo ở trên */ }
+      const [bo, vd] = await Promise.all([taiBo(), taiVideos(loc, trang)]);
+      if (the0 !== the) return;  // lọc đã đổi trong lúc chờ: bỏ phản hồi này (vòng tải kế tiếp do `finally` kích)
+      let loi = bo ? "" : LOI_TAI;
+      if (bo) {
+        T.bo = bo;
+        if (T.loc.job && !bo.some((b) => b.job_id === T.loc.job)) {  // bộ đang lọc không còn ⇒ bỏ lọc và tải lại, dữ liệu vừa tải thuộc lọc cũ
+          T.loc.job = null; the += 1; soTrang = 1; choTaiLai = true; return;
+        }
+      }
+      if (vd.loi) loi = vd.loi;
+      else {
+        for (const v of vd.ds) if (!v.danh_gia && T.daCham.has(v.id)) v.danh_gia = T.daCham.get(v.id);  // phản hồi tải sớm hơn lúc chấm không được đưa video về hàng chờ
+        T.videos = vd.ds; T.conNua = vd.conNua; T.truocTiep = vd.truocTiep; T.thuVienLoi = vd.thuVienLoi;
+        if (vd.soTrangThat < trang) soTrang = Math.max(1, Math.min(soTrang, vd.soTrangThat));  // máy chủ hết dữ liệu sớm hơn số trang đã mở
+      }
+      T.dangTaiLoc = false;
+      T.loiTai(loi);
+      if (!loi) T.capNhatLuc = Date.now();  // "⟳ x giây trước" chỉ nhích khi CẢ /bo và /videos đều ok
+      T.veLai();
+    } catch (e) {
+      if (e && e.message === "het_phien") { clearInterval(timPoll); return; }  // hết phiên đã báo trên trang; poll tiếp chỉ tạo thêm 401
+      if (the0 === the) { T.dangTaiLoc = false; T.loiTai(LOI_TAI); T.veLai(); }  // lỗi mạng
+    } finally { dangTai = false; if (choTaiLai) { choTaiLai = false; taiLai(); } }
   }
+  window.TL_taiLai = taiLai;
+  T.datLoc = (khoa, gia) => {
+    T.loc[khoa] = gia; soTrang = 1; the += 1;
+    T.videos = []; T.conNua = false; T.dangTaiLoc = true;  // đừng để video của lọc cũ nằm dưới chip lọc mới
+    T.veLai(); taiLai();
+  };
+  T.xemThem = () => { soTrang += 1; taiLai(); };
 
   async function kiemBat() {
     try {
-      const r = await goi("/tinh-nang");
+      const r = await T.goi("/tinh-nang");
       if (r.ok && !(await r.json()).thay_logo_bat) {  // máy chủ không nhận lượt mới (409) ⇒ đừng để nút trông bấm được
-        $("tat").hidden = false;
-        $("tl-tao").disabled = true;
-        $("tl-link").disabled = true;
+        T.tat = true; $("tat").hidden = false;
+        document.querySelectorAll("#tl-nhap input, #tl-nhap button.btn").forEach((e) => { if (e.id !== "tl-thu-gon") e.disabled = true; });
+        T.veLai();
       }
     } catch (_) { /* bỏ qua */ }
   }
 
+  T.veLai();
   kiemBat();
   taiLai();
-  setInterval(taiLai, POLL_MS);
-  setInterval(veLoc, 5000);  // chỉ cập nhật chip độ tươi
+  timPoll = setInterval(taiLai, POLL_MS);
 })();

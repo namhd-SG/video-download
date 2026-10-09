@@ -636,6 +636,8 @@ def test_visiting_the_page_puts_you_in_the_directory(tmp_path, monkeypatch):
 KHONG_CAN_KIEM_CHU = {
     "GET /healthz": "thăm dò, không đọc dữ liệu của ai",
     "POST /api/thay-logo/jobs": "tạo cho chính người đang gọi (`tl_job.nguoi_tao` = email `require_user`)",
+    "GET /api/thay-logo/bo": "trả danh sách bộ, tự lọc `j.nguoi_tao = email` trong SQL (admin thấy hết) "
+                             "(tests/test_thay_logo_routes_member.py, có đột biến)",
     "GET /api/thay-logo/videos": "trả danh sách, tự lọc `j.nguoi_tao = email` trong SQL (admin thấy hết) "
                                  "(tests/test_thay_logo_routes_member.py)",
     "POST /api/thay-logo/videos/{vid}/danh-gia": "`_video_cua` (web/thay_logo_routes.py): chủ lượt hoặc admin, 403 cho người "
@@ -1167,6 +1169,15 @@ def test_shell_and_its_assets_must_be_revalidated():
     assert _header_for("/app.css") == "no-cache"
     # Popup giải captcha nói giao thức (`ky`) với máy chủ: JS cũ cạnh máy chủ mới ⇒ mọi lô 400.
     assert _header_for("/giai-captcha-popup.js") == "no-cache"
+
+
+def test_thay_logo_page_and_every_file_under_its_prefix_are_revalidated():
+    """JS cũ cache 2 giờ ở edge đứng cạnh HTML mới ⇒ hỏng âm thầm (không thấy id, gửi trùng job). Tiền tố phủ cả file đợt sau thêm.
+    ĐỘT BIẾN: bỏ `startswith("/thay-logo")` ⇒ ĐỎ."""
+    for path in ("/thay-logo.html", "/thay-logo.js", "/thay-logo-hop-duyet.js", "/thay-logo-khoi-nhap.js",
+                 "/thay-logo.css", "/thay-logo-file-cua-dot-sau.js"):
+        assert _header_for(path) == "no-cache", path
+    assert _header_for("/huong-dan.html") is None  # trang không liên quan không bị đổi
 
 
 def test_other_routes_are_left_alone():
