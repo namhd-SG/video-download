@@ -344,3 +344,25 @@ def test_luot_khac_giu_ban_trong_luc_cho_drive_thi_kiem_lai_va_409(ctx):
     ctx.box["w"] = types.SimpleNamespace(drive_tl=chen, ly_do_khong_nhan=None)
     assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 409
     assert _so_dong(ctx) == 1  # chỉ dòng do "lượt khác" chèn
+
+
+def test_hai_post_that_cung_ban_cung_luc_chi_mot_luot_duoc_tao(ctx):
+    """Hai request HTTP thật trên hai luồng, cùng một bản trong bộ. Rào chắn trong `lay_muc` giữ cả hai ở bước chụp Drive cho tới
+    khi CẢ HAI đã qua kiểm tra sơ bộ (chưa ai ghi) ⇒ chỉ lần kiểm LẠI trong khoá ghi phân định được: đúng một 201, một 409, một dòng.
+    ĐỘT BIẾN: bỏ `_chan_ban_da_trong_luot` trong khoá ⇒ hai 201, hai dòng ⇒ ĐỎ."""
+    import threading
+    rao = threading.Barrier(2, timeout=10)
+
+    class _ChoNhau(DriveGiaTL):
+        def lay_muc(self, file_id):
+            rao.wait()  # cả hai request đều đang ở bước chụp ⇒ cả hai đã qua kiểm tra sơ bộ khi chưa có dòng nào
+            return super().lay_muc(file_id)
+    cho = _ChoNhau()
+    cho.muc = ctx.drive.muc
+    ctx.box["w"] = types.SimpleNamespace(drive_tl=cho, ly_do_khong_nhan=None)
+    kq = []
+    ts = [threading.Thread(target=lambda u=u: kq.append(_tao(ctx, u, [_vb("V1", BAN1)]).status_code)) for u in ("a@x", ADMIN)]
+    [t.start() for t in ts]
+    [t.join(30) for t in ts]
+    assert sorted(kq) == [201, 409]
+    assert _so_dong(ctx) == 1
