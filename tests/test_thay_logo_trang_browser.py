@@ -511,6 +511,7 @@ def test_hang_cu_co_loi_text_ky_su_hien_cau_thuong(may_chu, trinh_duyet, monkeyp
     for cam in ("khung", "HttpError", "120s", "KeyError"):
         assert cam not in chu
     assert "Hết chỗ đĩa khi ghi video ra." in chu and "Lỗi không rõ" in chu  # câu thường giữ nguyên
+    assert ". —" not in chu  # mỗi thẻ là một câu; "video gốc không bị ảnh hưởng" đã ở tiêu đề khối
 
 
 def test_hop_duyet_canh_bao_nen_xem_ky_chi_hien_cho_video_can_soi(may_chu, trinh_duyet, monkeypatch):

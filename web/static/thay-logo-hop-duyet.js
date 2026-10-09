@@ -113,7 +113,7 @@
       v.trang_thai === "cho_agy" && v.cho_agy_tu ? `Máy đang tìm chỗ logo cũ · đã ${T.phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : v.trang_thai === "dang_chay" ? "Đang thay logo" : "Đang xếp hàng");
     khoiPhai("tl-khong-chac", "Máy không chắc", "Máy không tìm ra logo cũ đủ chắc nên giữ nguyên video.", "khong_chac", (v) =>
       (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
-    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => `${T.loiText(v.loi_text)} — video gốc không bị ảnh hưởng.`, "bad");
+    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
   };
 
   document.addEventListener("keydown", (e) => {
