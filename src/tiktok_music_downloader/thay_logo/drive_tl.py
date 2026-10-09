@@ -8,7 +8,9 @@ Không có hàm nào xoá vĩnh viễn: service account chỉ là Content manage
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from pathlib import Path
 from typing import Protocol
 
@@ -17,6 +19,7 @@ log = logging.getLogger(__name__)
 MIME_THU_MUC = "application/vnd.google-apps.folder"
 TRUONG_MUC = "id,name,parents,driveId,mimeType,trashed"
 TEN_CAY_CAM = "Creative"  # cây Creative Desk quét: thư mục có video trong đó bị biến thành bộ chạy quảng cáo
+_ID_AN_TOAN = re.compile(r"^[A-Za-z0-9_-]{6,128}$")
 TOI_DA_DO_SAU = 50
 TIMEOUT_LAY_MUC_GIAY = 10  # mỗi lời gọi đọc siêu dữ liệu (cổng cấu hình): Drive treo ⇒ lỗi sau 10 s, không treo mãi
 
@@ -25,11 +28,32 @@ class DriveTLKhongThay(Exception):
     """Drive trả HTTP 404 ĐÍCH DANH. Lỗi khác (403/5xx/timeout) KHÔNG phải lỗi này — là "chưa đo được"."""
 
 
+class DriveTLKhongQuyen(Exception):
+    """Drive trả HTTP 403 kiểu "tài khoản máy không được chia sẻ mục này". 403 do hết hạn mức (rate limit) KHÔNG phải lỗi này."""
+
+
+TRUONG_VIDEO = "id,name,parents,driveId,mimeType,trashed,size"  # KHAI TƯỜNG MINH (không ghép từ TRUONG_MUC: đợt khác có thể thêm `size` vào đó); `size` là chuỗi số byte
+TRUONG_LIET_KE = "id,name,mimeType,size,trashed"
+# 403 mà Drive nói rõ "tài khoản này không được quyền với mục này". Mọi 403 khác (hết hạn mức, không đọc được lý do) ⇒ ném nguyên = "chưa đo được".
+_LY_DO_KHONG_QUYEN = frozenset({"insufficientFilePermissions", "forbidden", "appNotAuthorizedToFile"})
+
+
 class DriveTL(Protocol):
     def dang_cau_hinh(self) -> bool: ...
 
     def lay_muc(self, file_id: str) -> dict:
         """Siêu dữ liệu `TRUONG_MUC` của file/thư mục. 404 ⇒ `DriveTLKhongThay`; lỗi khác ném nguyên."""
+
+    def lay_muc_day_du(self, file_id: str) -> dict:
+        """Như `lay_muc` nhưng thêm `size` (`TRUONG_VIDEO`). 404 ⇒ `DriveTLKhongThay`; 403 "không được chia sẻ" ⇒
+        `DriveTLKhongQuyen`; lỗi khác (5xx, timeout, hết hạn mức) ném nguyên — là "chưa đo được"."""
+
+    def liet_ke_con(self, cha_id: str, toi_da: int) -> list[dict]:
+        """Con TRỰC TIẾP (một cấp, không đệ quy) của thư mục `cha_id`, mỗi phần tử `TRUONG_LIET_KE` (có cả thư mục con và file
+        không phải video — người gọi lọc). Phân trang tới khi đủ `toi_da` phần tử hoặc hết. Cùng quy ước lỗi với `lay_muc_day_du`."""
+
+    def email_dich_vu(self) -> str | None:
+        """Email service account đang dùng (để member chia sẻ file/thư mục cho nó). Không đọc được ⇒ None."""
 
     def tim_con_theo_ten(self, cha_id: str, ten: str) -> list[dict]:
         # Không đặt timeout ngắn cho tìm/tạo thư mục (chạy trong lượt upload của worker, không ở lifespan): cố ý để mặc định.
@@ -98,6 +122,68 @@ class DriveTLThat:
             if getattr(getattr(exc, "resp", None), "status", None) == 404:
                 raise DriveTLKhongThay(file_id) from exc
             raise
+
+    @staticmethod
+    def _ly_do_http(exc) -> set[str]:
+        """Các `reason` trong thân JSON lỗi của Drive (`error.errors[].reason`). Không parse được ⇒ tập rỗng."""
+        try:
+            raw = getattr(exc, "content", b"") or b""
+            err = json.loads(raw.decode("utf-8", "replace") if isinstance(raw, bytes) else raw).get("error") or {}
+            return {e.get("reason") for e in (err.get("errors") or []) if isinstance(e, dict) and e.get("reason")}
+        except (ValueError, AttributeError, TypeError):
+            return set()
+
+    @classmethod
+    def _doi_loi_http(cls, exc, dinh_danh: str):
+        """404 ⇒ KhongThay; 403 có `reason` thuộc `_LY_DO_KHONG_QUYEN` ⇒ KhongQuyen. Còn lại trả None (người gọi ném nguyên).
+        403 vì hết hạn mức KHÔNG được đọc thành "chưa chia sẻ" — member sẽ đi chia sẻ vô ích."""
+        status = getattr(getattr(exc, "resp", None), "status", None)
+        if status == 404:
+            return DriveTLKhongThay(dinh_danh)
+        if status == 403 and cls._ly_do_http(exc) & _LY_DO_KHONG_QUYEN:
+            return DriveTLKhongQuyen(dinh_danh)
+        return None
+
+    def lay_muc_day_du(self, file_id: str) -> dict:
+        from googleapiclient.errors import HttpError
+        try:
+            return self._svc_ngan().files().get(fileId=file_id, fields=TRUONG_VIDEO, supportsAllDrives=True).execute()
+        except HttpError as exc:
+            loi = self._doi_loi_http(exc, file_id)
+            if loi is None:
+                raise
+            raise loi from exc
+
+    def liet_ke_con(self, cha_id: str, toi_da: int) -> list[dict]:
+        from googleapiclient.errors import HttpError
+        if not _ID_AN_TOAN.match(cha_id):  # id đi thẳng vào câu truy vấn `q` ⇒ chỉ nhận đúng khuôn id Drive
+            raise ValueError("id thư mục sai khuôn")
+        svc, out, trang = self._svc_ngan(), [], None
+        try:
+            while len(out) < toi_da:
+                r = svc.files().list(
+                    q=f"'{cha_id}' in parents and trashed = false", fields=f"nextPageToken,files({TRUONG_LIET_KE})",
+                    pageSize=min(1000, toi_da - len(out)), pageToken=trang,
+                    supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
+                if r.get("incompleteSearch"):  # Drive nói kết quả CHƯA ĐỦ ⇒ không được coi là "thư mục chỉ có chừng này video"
+                    raise RuntimeError("Drive trả kết quả chưa đầy đủ (incompleteSearch)")
+                out.extend(r.get("files") or [])
+                trang = r.get("nextPageToken")
+                if not trang:
+                    break
+        except HttpError as exc:
+            loi = self._doi_loi_http(exc, cha_id)
+            if loi is None:
+                raise
+            raise loi from exc
+        return out[:toi_da]
+
+    def email_dich_vu(self) -> str | None:
+        try:  # đọc từ file credential (không gọi mạng); không phải bí mật — là địa chỉ để member chia sẻ
+            return getattr(self._up._get_credentials(), "service_account_email", None) or None
+        except Exception as e:  # noqa: BLE001 — thiếu file/thư viện: không có email để hiện, KHÔNG làm hỏng cả lượt kiểm
+            log.warning("thay logo: không đọc được email service account (%s)", type(e).__name__)
+            return None
 
     def tim_con_theo_ten(self, cha_id: str, ten: str) -> list[dict]:
         esc = ten.replace("\\", "\\\\").replace("'", "\\'")

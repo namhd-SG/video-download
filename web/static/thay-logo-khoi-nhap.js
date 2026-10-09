@@ -96,10 +96,10 @@
   // Câu lời thường cho từng mã lỗi của POST /jobs (400 sai khuôn · 403 video không thuộc bạn · 409 cổng cấm · 429 quá nhiều chờ).
   function cauLoi(status, detail) {
     if (status === 400) return "Tên bộ cần 1–80 ký tự, và video đã chọn phải hợp lệ. Kiểm lại rồi bấm lại.";
-    if (status === 403) return "Chỉ chọn được video trong thư viện của bạn.";
+    if (status === 403) return "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.";
     if (status === 409) return "Tính năng thay logo đang tạm tắt — chưa nhận lượt mới. Thử lại sau hoặc báo quản trị.";
     if (status === 429) return "Bạn đang có quá nhiều video chờ (tối đa 100). Đợi máy làm bớt rồi bấm lại.";
-    return `Chưa gửi được lượt này (lỗi ${status}). Thử lại sau ít phút.`;
+    return "Chưa gửi được lượt này. Thử lại sau ít phút.";
   }
 
   let dangGui = false;
