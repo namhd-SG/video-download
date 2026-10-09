@@ -362,6 +362,35 @@ def test_videos_hien_ten_tu_so_link_dung_nguoi_tao_va_fallback(ctx):
     assert ten("b@x") == {}
 
 
+def test_videos_link_toi_file_thu_vien_nguoi_khac_khong_lo_title_nen_tang_video_id(ctx):
+    """A dán link tới file nằm trong thư viện của B (tool đã tải cho B ⇒ SA đọc được). /videos của A chỉ được hiện tên từ sổ của A,
+    không được hiện title / nền tảng / video_id của B. ĐỘT BIẾN: bỏ phép so `chu` ở `_thu_vien_cua_chu` ⇒ ĐỎ.
+    Đối chứng dương: lượt của CHÍNH B trên cùng file vẫn ghép đủ thư viện (sửa không làm mất tên của chủ)."""
+    import sqlite3
+    with sqlite3.connect(ctx.db.parent / "jobs.db") as c:
+        c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT, nen_tang TEXT)")
+        c.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT)")
+        c.execute("INSERT INTO jobs VALUES (1, 'b@x', 'tiktok')")
+        c.execute("INSERT INTO videos VALUES ('7777777', 1, 'Bí mật của B', ?)", (ID("1"),))
+    ctx.post("/api/thay-logo/kiem-link", headers=_h("a@x"), json={"links": [_link("1")]})
+    assert _tao(ctx, "a@x", [ID("1")]).status_code == 201
+    conn = nhat_ky.mo(ctx.db)
+    from tiktok_music_downloader.thay_logo import hang_doi
+    hang_doi.tao_job(conn, "b@x", [{"kieu": "drive", "file_id": ID("1")}], "", "Bộ của B")
+    conn.close()
+
+    r_a = ctx.get("/api/thay-logo/videos", headers=_h("a@x"))
+    (v,) = r_a.json()["videos"]
+    assert (v["ten_video"], v["anh_bia"], v["nen_tang"]) == ("b.mp4", None, None)
+    than = r_a.content.decode()
+    assert "Bí mật của B" not in than and "7777777" not in than and "tiktok" not in than
+
+    (vb,) = ctx.get("/api/thay-logo/videos", headers=_h("b@x")).json()["videos"]
+    assert (vb["ten_video"], vb["anh_bia"], vb["nen_tang"]) == ("Bí mật của B", "/thumbs/7777777", "tiktok")
+    theo_nguoi = {x["nguoi_tao"]: x["ten_video"] for x in ctx.get("/api/thay-logo/videos", headers=_h("sep@x")).json()["videos"]}
+    assert theo_nguoi == {"a@x": "b.mp4", "b@x": "Bí mật của B"}  # admin: tên theo NGƯỜI TẠO từng lượt
+
+
 # ------------------------------------------------------------------ TOCTOU của trần chờ
 def test_hai_post_cung_luc_khong_cung_vuot_tran_cho(ctx, monkeypatch):
     """ĐỘT BIẾN: bỏ `BEGIN IMMEDIATE` ở tao_job ⇒ cả hai cùng đếm 0 và cùng 201 ⇒ ĐỎ."""

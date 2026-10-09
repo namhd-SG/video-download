@@ -97,8 +97,9 @@ def drive_ids_cua(jobs_db, email: str, ids: list[str]) -> set[str]:
 
 
 def thong_tin_thu_vien(jobs_db, ids: list[str]) -> dict[str, dict] | None:
-    """Ghép thư viện: `drive_file_id` → {video_id, title, nen_tang}. `jobs.db` mở CHỈ ĐỌC; không đọc được ⇒ `None` (khác `{}` =
-    đọc được mà không khớp) và ghi log. Hàm này KHÔNG phân quyền — chỉ gọi cho id của dòng đã qua cổng quyền."""
+    """Ghép thư viện: `drive_file_id` → {video_id, title, nen_tang, chu}. `jobs.db` mở CHỈ ĐỌC; không đọc được ⇒ `None` (khác `{}` =
+    đọc được mà không khớp) và ghi log. Hàm này KHÔNG phân quyền: id của một lượt có thể nằm trong thư viện NGƯỜI KHÁC (dán link
+    Drive tới file tool đã tải cho người đó), nên người gọi phải tự so `chu` với người tạo lượt — xem `_thu_vien_cua_chu`."""
     out: dict[str, dict] = {}
     if not ids:
         return out
@@ -106,14 +107,22 @@ def thong_tin_thu_vien(jobs_db, ids: list[str]) -> dict[str, dict] | None:
         with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
             for i in range(0, len(ids), 500):
                 lo = ids[i:i + 500]
-                for fid, vid, title, nen_tang in c.execute(
-                        "SELECT v.drive_file_id, v.video_id, v.title, j.nen_tang FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-                        f"WHERE v.drive_file_id IN ({','.join('?' * len(lo))})", lo):
-                    out[fid] = {"video_id": vid, "title": title, "nen_tang": nen_tang}
+                for fid, vid, title, nen_tang, chu in c.execute(
+                        "SELECT v.drive_file_id, v.video_id, v.title, j.nen_tang, j.nguoi_tao FROM videos v LEFT JOIN jobs j "
+                        f"ON j.id = v.job_id WHERE v.drive_file_id IN ({','.join('?' * len(lo))})", lo):
+                    out[fid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "chu": chu}
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được thư viện %s (%s)", jobs_db, type(e).__name__)
         return None
     return out
+
+
+def _thu_vien_cua_chu(tv: dict[str, dict], fid: str | None, nguoi_tao: str) -> dict | None:
+    """Mục thư viện của `fid` CHỈ KHI nó thuộc thư viện của người tạo lượt; khác chủ ⇒ `None`, dòng đó coi như ngoài thư viện
+    (tên lấy từ sổ `tl_link_kiem` của chính người tạo). Bỏ phép so này thì A dán link file của B sẽ thấy title/nền tảng/video_id
+    của B."""
+    t = tv.get(fid) if fid else None
+    return t if t is not None and t.get("chu") == nguoi_tao else None
 
 
 def _moc_thoi_gian(gia_tri: str | None, ten: str, cuoi_ngay: bool = False) -> float | None:
@@ -263,10 +272,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                         "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"]} for r in rows]}
 
     def _ten_tu_link(lo: list[dict], tv: dict) -> dict[tuple[str, str], str | None]:
-        """{(email người tạo lượt, file_id): tên} cho dòng KHÔNG có trong thư viện nhưng CHÍNH người tạo đã kiểm qua `kiem-link`."""
+        """{(email người tạo lượt, file_id): tên} cho dòng KHÔNG có trong thư viện CỦA người tạo lượt nhưng CHÍNH người tạo đã kiểm qua `kiem-link`."""
         theo_nguoi: dict[str, list[str]] = {}
         for d in lo:
-            if d["_fid"] and d["_fid"] not in tv:
+            if d["_fid"] and _thu_vien_cua_chu(tv, d["_fid"], d["nguoi_tao"]) is None:
                 theo_nguoi.setdefault(d["nguoi_tao"], []).append(d["_fid"])
         if not theo_nguoi:
             return {}
@@ -333,7 +342,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             ten_link = _ten_tu_link(lo, tv)
             for d in lo:
                 fid = d.pop("_fid")
-                t = tv.get(fid) or {}
+                t = _thu_vien_cua_chu(tv, fid, d["nguoi_tao"]) or {}  # file thư viện người KHÁC ⇒ coi như ngoài thư viện
                 d["ten_video"] = (t.get("title") or "Video không tên") if t else None  # có hàng mà title NULL ⇒ vẫn có tên để hiện
                 if not t and (d["nguoi_tao"], fid) in ten_link:  # video nhập từ link Drive: không ở thư viện, tên lấy từ sổ lúc kiểm
                     d["ten_video"] = ten_link[(d["nguoi_tao"], fid)] or "Video từ link Drive"
