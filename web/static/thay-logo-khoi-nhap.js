@@ -103,7 +103,8 @@
     if (status === 503) return "Chưa hỏi được Drive lúc này — thử lại sau ít phút.";
     if (status === 400 && coVaoBo) return "Một số video trong bộ đã đổi hoặc không còn — tải lại danh sách.";
     if (status === 400) return "Tên bộ cần 1–80 ký tự, và video đã chọn phải hợp lệ. Kiểm lại rồi bấm lại.";
-    if (typeof detail === "string" && detail) return detail;  // máy chủ trả lời thường (403 link/thư viện, 409 tắt HOẶC trùng bản, 429…)
+    // Chỉ 409 đọc câu máy chủ: 409 có HAI nghĩa (tính năng tắt / bản đã nằm trong lượt khác). Mã khác giữ câu cố định của trang.
+    if (status === 409 && typeof detail === "string" && detail) return detail;
     if (status === 403) return "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại.";
     if (status === 409) return "Tính năng thay logo đang tạm tắt — chưa nhận lượt mới. Thử lại sau hoặc báo quản trị.";
     if (status === 429) return "Bạn đang có quá nhiều video chờ (tối đa 100). Đợi máy làm bớt rồi bấm lại.";

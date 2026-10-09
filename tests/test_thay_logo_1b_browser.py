@@ -297,6 +297,24 @@ def test_cau_loi_tao_luot_doc_detail_khong_hien_so_loi(may_chu, trinh_duyet, ma,
     assert chu == mong and not re.search(r"\d{3}|lỗi \d", chu)
 
 
+@pytest.mark.parametrize("ma,body,mong", [
+    (409, {"detail": "Tính năng thay logo đang tắt trên máy chủ."}, "Tính năng thay logo đang tắt trên máy chủ."),
+    (409, {"detail": "Một số video đã nằm trong một lượt thay logo khác — chọn video khác hoặc đợi lượt đó xong."},
+     "Một số video đã nằm trong một lượt thay logo khác — chọn video khác hoặc đợi lượt đó xong."),
+    (403, {"detail": "câu máy chủ"}, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua — nếu dán link lâu rồi, bấm Kiểm link lại."),
+    (429, {"detail": "câu máy chủ"}, "Bạn đang có quá nhiều video chờ (tối đa 100). Đợi máy làm bớt rồi bấm lại."),
+])
+def test_chi_409_doc_cau_may_chu_ma_khac_giu_cau_co_dinh(may_chu, trinh_duyet, ma, body, mong):
+    """409 có hai nghĩa (tắt / bản đã trong lượt khác) ⇒ hiện đúng câu máy chủ; 403/429 giữ câu cố định của trang dù máy chủ gửi `detail`.
+    ĐỘT BIẾN: cho mọi mã đọc `detail` ⇒ ca 403/429 ĐỎ; bỏ nhánh 409 đọc `detail` ⇒ hai ca 409 ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(ma, body))
+    _chon_bo_1(p)
+    p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-loi').innerText.length > 0")
+    assert p.locator("#tl-loi").inner_text() == mong
+
+
 def test_400_vao_bo_xoa_lua_chon_va_tai_lai_tab(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
     p.route("**/api/thay-logo/jobs", _tra_loi_post(400, {"detail": "x"}))
