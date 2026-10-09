@@ -173,12 +173,16 @@
   // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. CHỈ bắt khi phím đang ở HỘP DUYỆT: focus nằm trong #tl-duyet, hoặc không
   // focus ở đâu (body). Lý do chọn focus thay vì vị trí con trỏ: ô tick / Tên bộ / ô chọn ở khối nhập phía trên cũng dùng Space — con
   // trỏ rê qua hộp duyệt không được cướp phím người dùng đang gõ ở chỗ khác. Nút/liên kết giữ Space của riêng chúng.
-  const trongHopDuyet = (t) => t === document.body || t === document.documentElement || ($("tl-duyet") && $("tl-duyet").contains(t));
+  // Space khi không focus ở đâu (body) chỉ thuộc hộp duyệt khi hộp ĐANG HIỆN trong khung nhìn: hộp duyệt là khối thường của trang,
+  // cuộn khỏi màn hình rồi mà vẫn giữ Space thì người dùng mất cuộn trang bằng Space. `[ ]` không có việc mặc định nên không cần điều kiện này.
+  const hopDuyetTrongKhung = () => { const d = $("tl-duyet"); if (!d) return false; const r = d.getBoundingClientRect(); return r.bottom > 0 && r.top < window.innerHeight; };
+  const laBody = (t) => t === document.body || t === document.documentElement;
+  const trongHopDuyet = (t) => laBody(t) || ($("tl-duyet") && $("tl-duyet").contains(t));
   const dangNhapChu = (t) => /^(TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName || "") || (t.tagName === "INPUT" && t.type !== "range");
   const capNhatVach = () => { const c = $("tl-cmp"); if (c) { datVach(c); const r = $("tl-truot"); if (r) r.value = String(pos); } };
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || dangNhapChu(e.target) || !trongHopDuyet(e.target) || !$("tl-cmp")) return;
-    if (e.code === "Space") { e.preventDefault(); if (!giuGoc) { giuGoc = true; capNhatVach(); } }
+    if (e.code === "Space") { if (laBody(e.target) && !hopDuyetTrongKhung()) return; e.preventDefault(); if (!giuGoc) { giuGoc = true; capNhatVach(); } }
     else if (e.code === "BracketLeft" || e.code === "BracketRight") { pos = Math.min(100, Math.max(0, pos + (e.code === "BracketRight" ? 5 : -5))); capNhatVach(); }
   });
   document.addEventListener("keyup", (e) => { if (e.code === "Space" && giuGoc) { giuGoc = false; capNhatVach(); } });

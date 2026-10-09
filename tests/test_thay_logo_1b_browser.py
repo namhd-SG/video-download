@@ -181,6 +181,7 @@ def test_hop_duyet_co_vach_keo_doi_ti_le_hien_thi(may_chu, trinh_duyet):
     p.keyboard.press("[")
     p.keyboard.press("[")
     assert abs(_ti_le_vach(p) - 0.20) < 0.01
+    p.evaluate("document.getElementById('tl-duyet').scrollIntoView()")  # Space ở body chỉ thuộc hộp duyệt khi hộp đang hiện (1280×900: hộp nằm dưới mép)
     p.keyboard.down(" ")  # giữ Space = xem bản gốc (ảnh SAU bị che hết)
     assert abs(_ti_le_vach(p) - 1.0) < 0.01
     p.keyboard.up(" ")
@@ -369,6 +370,28 @@ def test_space_va_ngoac_vuong_khong_bi_cuop_khi_focus_ngoai_hop_duyet(may_chu, t
     p.evaluate("document.activeElement.blur()")  # không focus ở đâu ⇒ hộp duyệt nhận phím
     p.keyboard.press("BracketRight")
     assert abs(_ti_le_vach(p) - 0.55) < 0.01
+
+
+def test_space_khong_focus_chi_bi_giu_khi_hop_duyet_dang_hien(may_chu, trinh_duyet):
+    """Không focus ở đâu: hộp duyệt cuộn khỏi khung nhìn ⇒ Space là của trang (cuộn), không giữ bản gốc; hộp duyệt hiện ⇒ Space giữ bản gốc.
+    ĐỘT BIẾN: bỏ điều kiện "hộp duyệt trong khung nhìn" cho ca body ⇒ ca ngoài khung ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.wait_for_selector("#tl-cmp")
+    p.set_viewport_size({"width": 1280, "height": 300})
+    p.evaluate("window.__space = []; window.addEventListener('keydown', e => { if (e.code === 'Space') window.__space.push(e.defaultPrevented); })")
+    vi_tri_ngoai = p.evaluate("""(() => { const d = document.getElementById('tl-duyet'), y = d.getBoundingClientRect().top + scrollY;
+        return y > innerHeight ? 0 : y + d.offsetHeight + 5; })()""")
+    p.evaluate(f"window.scrollTo(0, {vi_tri_ngoai})")
+    p.evaluate("document.activeElement && document.activeElement.blur()")
+    assert p.evaluate("(() => { const r = document.getElementById('tl-duyet').getBoundingClientRect(); return r.bottom <= 0 || r.top >= innerHeight; })()")
+    p.keyboard.down(" ")
+    assert p.evaluate("document.getElementById('tl-cmp').style.getPropertyValue('--pos')") != "100%"
+    p.keyboard.up(" ")
+    p.evaluate("document.getElementById('tl-duyet').scrollIntoView()")
+    p.keyboard.down(" ")
+    assert p.evaluate("document.getElementById('tl-cmp').style.getPropertyValue('--pos')") == "100%"
+    p.keyboard.up(" ")
+    assert p.evaluate("window.__space") == [False, True]
 
 
 def test_anh_cho_nguoi_hien_anh_truoc_don_o_cot_phai(may_chu, trinh_duyet):
