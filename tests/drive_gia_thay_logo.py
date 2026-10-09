@@ -27,6 +27,16 @@ class DriveGiaTL:
                          "mimeType": MIME_THU_MUC, "trashed": trashed}
         return self.muc[fid]
 
+    def them_file(self, fid, ten, cha, *, md5="MD5A", size="1000", drive="D1", trashed=False):
+        """File thường (video): có `md5Checksum` + `size` như Drive thật trả cho file không phải Google Docs."""
+        self.muc[fid] = {"id": fid, "name": ten, "parents": [cha], "driveId": drive, "mimeType": "video/mp4",
+                         "trashed": trashed}
+        if md5 is not None:
+            self.muc[fid]["md5Checksum"] = md5
+        if size is not None:
+            self.muc[fid]["size"] = size
+        return self.muc[fid]
+
     def so_lan(self, ten: str) -> int:
         return sum(1 for t, _ in self.goi if t == ten)
 

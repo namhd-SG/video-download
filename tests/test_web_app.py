@@ -643,6 +643,9 @@ KHONG_CAN_KIEM_CHU = {
     "POST /api/thay-logo/videos/{vid}/danh-gia": "`_video_cua` (web/thay_logo_routes.py): chủ lượt hoặc admin, 403 cho người "
                                                  "khác (tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/videos/{vid}/sheet.jpg": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/videos/{vid}/khung/{ten}": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_vao_bo_khung.py, có đột biến)",
+    "GET /api/thay-logo/da-vao-bo": "tự lọc chủ video `j.nguoi_tao = email` trong SQL (admin thấy hết) "
+                                    "(tests/test_thay_logo_vao_bo_khung.py, có đột biến)",
     "GET /api/thay-logo/admin/worker": "chỉ admin (`la_admin`), 403 cho người thường (tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/logo.png": "logo công ty đóng gói sẵn trong mã, không đọc dữ liệu của ai",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
