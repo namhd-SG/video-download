@@ -15,12 +15,15 @@
 
   // ---- Cặp ảnh trước/sau: vạch kéo (ảnh SAU hiện từ vạch sang phải), giữ Space xem bản gốc, phím [ ] nhích vạch.
   let pos = 50, giuGoc = false;
+  const anhHong = new Set();  // video có ảnh trước/sau không tải được ⇒ rơi về ảnh soi, không vẽ lại ảnh vỡ
   const urlKhung = (v, ten) => `/api/thay-logo/videos/${v.id}/khung/${ten}.jpg`;
   const datVach = (cmp) => cmp.style.setProperty("--pos", (giuGoc ? 100 : pos) + "%");
   function veSoSanh(v) {
     const cmp = el("div", "tl-cmp"); cmp.id = "tl-cmp";
     const t = el("img", "tl-cmp-t"), sau = el("div", "tl-cmp-sau"), s = el("img");
-    t.alt = "Trước"; s.alt = "Sau"; t.src = urlKhung(v, "truoc"); s.src = urlKhung(v, "sau"); sau.append(s);
+    t.alt = "Trước"; s.alt = "Sau"; sau.append(s);
+    for (const i of [t, s]) i.addEventListener("error", () => { if (!anhHong.has(v.id)) { anhHong.add(v.id); veDuyet(); } }, { once: true });
+    t.src = urlKhung(v, "truoc"); s.src = urlKhung(v, "sau");
     const vach = el("div", "tl-cmp-vach"), num = el("div", "tl-cmp-num", "⇆"); num.setAttribute("aria-hidden", "true");
     const range = el("input"); range.type = "range"; range.min = "0"; range.max = "100"; range.value = String(pos); range.id = "tl-truot";
     range.setAttribute("aria-label", "Kéo để so trước và sau (phím [ và ])");
@@ -29,6 +32,12 @@
     cmp.append(t, sau, el("span", "tl-cmp-nhan t", "TRƯỚC"), el("span", "tl-cmp-nhan s", "SAU"), vach, num, range);
     datVach(cmp);
     return cmp;
+  }
+  // Chỉ có ảnh TRƯỚC (video máy không chắc): một ảnh, không vạch.
+  function veTruocDon(v) {
+    const img = el("img", "tl-truoc-don"); img.alt = "Khung trước khi thay"; img.src = urlKhung(v, "truoc");
+    img.addEventListener("error", () => { if (!anhHong.has(v.id)) { anhHong.add(v.id); veDuyet(); } }, { once: true });
+    return img;
   }
   // Phóng to vùng logo: cắt đúng vùng `box_logo` (tỉ lệ 0–1) bằng định vị ảnh trong ô tỉ lệ 2:1, không thêm thư viện.
   function veOZoom(v, ten, nhan, cls) {
@@ -86,8 +95,9 @@
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
     const trai = el("div", "tl-so-sanh");
-    const coCap = !!v.co_truoc_sau;
+    const anhOk = !anhHong.has(v.id), coCap = !!v.co_truoc_sau && anhOk;
     if (coCap) { trai.append(veSoSanh(v), el("p", "tl-goi-y", "Kéo vạch để so · giữ Space xem bản gốc · [ ] nhích vạch")); }
+    else if (v.co_truoc && anhOk) { trai.append(veTruocDon(v), el("p", "tl-goi-y", "Khung trước khi thay (chưa có bản đã thay).")); }
     else if (v.co_sheet) { const img = el("img"); img.alt = "Ảnh soi trước / sau"; img.src = `/api/thay-logo/videos/${v.id}/sheet.jpg`; trai.append(img, el("p", "tl-goi-y", "Ảnh soi ghép trước/sau của máy.")); }
     else trai.append(el("div", "tl-o-trong", "Chưa có ảnh soi"));
     const ct = el("div", "tl-chi-tiet");
@@ -142,6 +152,11 @@
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
       const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
       m.append(than);
+      if (nhom === "khong_chac" && v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào
+        const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem"; g.loading = "lazy"; g.src = urlKhung(v, "truoc");
+        g.addEventListener("error", () => { anhHong.add(v.id); g.remove(); }, { once: true });
+        than.append(g);
+      }
       k.append(m);
     }
   }
@@ -155,15 +170,18 @@
     khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
   };
 
-  // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. Không chặn khi đang gõ chữ / bấm nút / chọn trong ô chọn.
+  // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. CHỈ bắt khi phím đang ở HỘP DUYỆT: focus nằm trong #tl-duyet, hoặc không
+  // focus ở đâu (body). Lý do chọn focus thay vì vị trí con trỏ: ô tick / Tên bộ / ô chọn ở khối nhập phía trên cũng dùng Space — con
+  // trỏ rê qua hộp duyệt không được cướp phím người dùng đang gõ ở chỗ khác. Nút/liên kết giữ Space của riêng chúng.
+  const trongHopDuyet = (t) => t === document.body || t === document.documentElement || ($("tl-duyet") && $("tl-duyet").contains(t));
   const dangNhapChu = (t) => /^(TEXTAREA|SELECT|BUTTON|A)$/.test(t.tagName || "") || (t.tagName === "INPUT" && t.type !== "range");
   const capNhatVach = () => { const c = $("tl-cmp"); if (c) { datVach(c); const r = $("tl-truot"); if (r) r.value = String(pos); } };
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey || e.metaKey || e.altKey || dangNhapChu(e.target) || !$("tl-cmp")) return;
-    if (e.key === " ") { e.preventDefault(); if (!giuGoc) { giuGoc = true; capNhatVach(); } }
-    else if (e.key === "[" || e.key === "]") { pos = Math.min(100, Math.max(0, pos + (e.key === "]" ? 5 : -5))); capNhatVach(); }
+    if (e.ctrlKey || e.metaKey || e.altKey || dangNhapChu(e.target) || !trongHopDuyet(e.target) || !$("tl-cmp")) return;
+    if (e.code === "Space") { e.preventDefault(); if (!giuGoc) { giuGoc = true; capNhatVach(); } }
+    else if (e.code === "BracketLeft" || e.code === "BracketRight") { pos = Math.min(100, Math.max(0, pos + (e.code === "BracketRight" ? 5 : -5))); capNhatVach(); }
   });
-  document.addEventListener("keyup", (e) => { if (e.key === " " && giuGoc) { giuGoc = false; capNhatVach(); } });
+  document.addEventListener("keyup", (e) => { if (e.code === "Space" && giuGoc) { giuGoc = false; capNhatVach(); } });
   window.addEventListener("blur", () => { if (giuGoc) { giuGoc = false; capNhatVach(); } });  // đổi cửa sổ khi đang giữ Space ⇒ không kẹt ở bản gốc
 
   document.addEventListener("keydown", (e) => {

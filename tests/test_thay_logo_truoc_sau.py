@@ -118,3 +118,14 @@ def test_don_dep_go_duong_dan_anh_truoc_sau(clip_file, tmp_path):
     nhat_ky.don_dep(conn, tmp_path / "f", bay_gio=v["bat_dau"] + 61 * 86400)
     r = conn.execute("SELECT duong_dan_truoc, duong_dan_sau FROM tl_video WHERE id=?", (v["id"],)).fetchone()
     assert tuple(r) == (None, None) and not (tmp_path / "f" / str(v["id"])).exists()
+
+
+def test_imwrite_that_bai_thi_khong_ghi_duong_dan_khong_de_nua_cap(clip_file, tmp_path, monkeypatch):
+    """`cv2.imwrite` trả False (không ném lỗi): DB không được trỏ tới file không có."""
+    clip, p = clip_file
+    that = cv2.imwrite
+    monkeypatch.setattr(xu_ly_video.cv2, "imwrite", lambda duong, *a, **k: False if duong.endswith("sau.jpg") else that(duong, *a, **k))
+    kq, v = _chay(clip, p, tmp_path, (5, 12, 20, 28, 35))
+    assert kq["trang_thai"] == "render"
+    assert v["duong_dan_truoc"] is None and v["duong_dan_sau"] is None and v["box_logo"] is None
+    assert not list((tmp_path / "f").rglob("truoc.jpg")) and not list((tmp_path / "f").rglob("sau.jpg"))

@@ -87,7 +87,7 @@ def test_da_vao_bo_moi_nguoi_chi_thay_video_cua_minh_admin_thay_het(ctx):
     assert [(b["ma_bo"], b["folder_id"], sorted(v["video_id"] for v in b["videos"])) for b in a] == [("N.1AAAA", F1, ["V1", "V2"])]
     b = ctx.get("/api/thay-logo/da-vao-bo", headers=_h("b@x")).json()["bo"]
     assert [(x["ma_bo"], [v["video_id"] for v in x["videos"]]) for x in b] == [("N.2BBBB", ["V3"])]
-    assert ctx.get("/api/thay-logo/da-vao-bo", headers=_h("c@x")).json() == {"bo": []}
+    assert ctx.get("/api/thay-logo/da-vao-bo", headers=_h("c@x")).json() == {"bo": [], "bi_cat": False}
     assert sorted(x["ma_bo"] for x in ctx.get("/api/thay-logo/da-vao-bo", headers=_h(ADMIN)).json()["bo"]) == ["N.1AAAA", "N.2BBBB"]
     v = next(v for v in a[0]["videos"] if v["video_id"] == "V1")
     assert (v["ban_copy_id"], v["ten_video"], v["nen_tang"], v["anh_bia"], v["da_trong_luot"]) == (BAN1, "Máy hút bụi", "tiktok", "/thumbs/V1", False)
@@ -113,8 +113,10 @@ def test_tao_luot_vao_bo_chup_day_du_nguon(ctx):
     nguon = [json.loads(x[0]) for x in conn.execute("SELECT nguon FROM tl_job_video ORDER BY id")]
     conn.close()
     assert nguon == [
-        {"kieu": "vao_bo", "video_id": "V1", "file_id": BAN1, "folder_id": F1, "ma_bo": "N.1AAAA", "md5": "MD5-1", "size": "111", "ten": "v1.mp4"},
-        {"kieu": "vao_bo", "video_id": "V2", "file_id": BAN2, "folder_id": F1, "ma_bo": "N.1AAAA", "md5": "MD5-2", "size": "222", "ten": "v2.mp4"}]
+        {"kieu": "vao_bo", "video_id": "V1", "file_id": BAN1, "folder_id": F1, "ma_bo": "N.1AAAA", "md5": "MD5-1", "size": "111", "ten": "v1.mp4",
+         "chu_video": "a@x", "file_id_nguon": "SRC1" + "x" * 12},
+        {"kieu": "vao_bo", "video_id": "V2", "file_id": BAN2, "folder_id": F1, "ma_bo": "N.1AAAA", "md5": "MD5-2", "size": "222", "ten": "v2.mp4",
+         "chu_video": "a@x", "file_id_nguon": "SRC2" + "x" * 12}]
 
 
 def test_vao_bo_cua_nguoi_khac_bi_403_va_khong_goi_drive_khong_tao_luot(ctx):
@@ -235,7 +237,12 @@ def test_videos_bao_co_truoc_sau_va_box_logo(ctx, tmp_path):
     assert (ds[v_du]["co_truoc_sau"], ds[v_du]["box_logo"]) == (True, {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.05})
     assert (ds[v_nua]["co_truoc_sau"], ds[v_nua]["box_logo"]) == (False, None)
     assert (ds[v_hong]["co_truoc_sau"], ds[v_hong]["box_logo"]) == (True, None)
-    assert not any(k in ds[v_du] for k in ("co_truoc", "co_sau", "box_logo_json"))
+    v_khong = _video_da_xong(ctx, tmp_path, truoc=False, sau=False, box=None)  # không có ảnh trước: `and` đoản mạch từng bỏ sót pop co_sau
+    assert set(ds_khong := next(d for d in ctx.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"] if d["id"] == v_khong)) \
+        .isdisjoint({"co_sau", "box_logo_json"}) and ds_khong["co_truoc"] is False and ds_khong["co_truoc_sau"] is False
+    assert not any(k in ds[v_du] for k in ("co_sau", "box_logo_json"))
+    assert not any(k in ds[v_nua] for k in ("co_sau", "box_logo_json"))  # short-circuit của `and` từng làm rò khoá thô khi không có ảnh trước
+    assert (ds[v_du]["co_truoc"], ds[v_nua]["co_truoc"]) == (True, True)
 
 
 def test_tran_tong_muc_moi_luot_dung_hang_chung(ctx, monkeypatch):
@@ -243,3 +250,97 @@ def test_tran_tong_muc_moi_luot_dung_hang_chung(ctx, monkeypatch):
     r = _tao(ctx, ADMIN, [_vb("V1", BAN1), _vb("V2", BAN2)], drive_file_ids=["SRC1" + "x" * 12])
     assert r.status_code == 422 and "2" in r.content.decode()
     assert _tao(ctx, ADMIN, [_vb("V1", BAN1), _vb("V2", BAN2)]).status_code == 201
+
+
+# ---------------------------------------------------------------- sửa theo review: chủ sổ, song song, trùng lượt, cắt danh sách
+def _dat_chu_so(c, video_id, chu):
+    import sqlite3
+    with sqlite3.connect(c.jobs) as k:
+        k.execute("UPDATE video_vao_bo SET chu = ? WHERE video_id = ?", (chu, video_id))
+
+
+def test_chu_so_khac_nguoi_tao_thi_403_ke_ca_admin_null_thi_qua(ctx):
+    _dat_chu_so(ctx, "V1", "nguoi-la@x")  # sổ ghi chủ khác người đã tải video
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 403
+    assert _tao(ctx, ADMIN, [_vb("V1", BAN1)]).status_code == 403
+    assert _so_dong(ctx) == 0
+    _dat_chu_so(ctx, "V1", "a@x")  # khớp ⇒ qua
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 201
+    assert _tao(ctx, "a@x", [_vb("V2", BAN2)]).status_code == 201  # chu NULL ⇒ qua
+
+
+def test_admin_tao_luot_cho_video_nguoi_khac_snapshot_ghi_chu_video(ctx):
+    assert _tao(ctx, ADMIN, [_vb("V3", BAN3)]).status_code == 201
+    conn = nhat_ky.mo(ctx.log_db)
+    n = json.loads(conn.execute("SELECT nguon FROM tl_job_video").fetchone()[0])
+    conn.close()
+    assert (n["chu_video"], n["file_id_nguon"]) == ("b@x", "SRC3" + "x" * 12)
+
+
+class _DriveCham(DriveGiaTL):
+    def __init__(self, giay):
+        super().__init__()
+        self.giay = giay
+
+    def lay_muc(self, file_id):
+        import time
+        time.sleep(self.giay)
+        return super().lay_muc(file_id)
+
+
+def _doi_drive_cham(ctx, giay):
+    cham = _DriveCham(giay)
+    cham.muc = ctx.drive.muc
+    ctx.box["w"] = types.SimpleNamespace(drive_tl=cham, ly_do_khong_nhan=None)
+    return cham
+
+
+def test_chup_song_song_nhanh_hon_tuan_tu(ctx):
+    import time
+    _doi_drive_cham(ctx, 0.5)
+    t0 = time.time()
+    r = _tao(ctx, "a@x", [_vb("V1", BAN1), _vb("V2", BAN2)])
+    assert r.status_code == 201 and time.time() - t0 < 0.95  # tuần tự sẽ ≥ 1,0 s
+
+
+def test_chup_het_han_chung_thi_503_va_khong_tao_luot(ctx, monkeypatch):
+    monkeypatch.setattr(thay_logo_routes, "HAN_CHUP_GIAY", 0.3)
+    _doi_drive_cham(ctx, 1.5)
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1), _vb("V2", BAN2)]).status_code == 503
+    assert _so_dong(ctx) == 0
+
+
+def test_cung_ban_vao_hai_luot_thi_cai_thu_hai_409_lot_loi_thi_chon_lai_duoc(ctx):
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 201
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1), _vb("V2", BAN2)]).status_code == 409  # một mục trùng ⇒ hỏng cả lượt
+    assert _tao(ctx, ADMIN, [_vb("V1", BAN1)]).status_code == 409  # người khác cũng không được giữ cùng bản
+    assert _so_dong(ctx) == 1
+    conn = nhat_ky.mo(ctx.log_db)
+    hang_doi.dat(conn, conn.execute("SELECT id FROM tl_job_video").fetchone()[0], "loi", loi_text="x")
+    conn.close()
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 201
+
+
+def test_da_vao_bo_bi_cat_khi_vuot_tran(ctx, monkeypatch):
+    assert ctx.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()["bi_cat"] is False
+    monkeypatch.setattr(thay_logo_routes, "TRAN_DONG_DA_VAO_BO", 1)
+    j = ctx.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()
+    assert j["bi_cat"] is True and sum(len(b["videos"]) for b in j["bo"]) == 1
+    monkeypatch.setattr(thay_logo_routes, "TRAN_DONG_DA_VAO_BO", 2)  # đúng bằng số dòng ⇒ KHÔNG cắt
+    assert ctx.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()["bi_cat"] is False
+
+
+def test_luot_khac_giu_ban_trong_luc_cho_drive_thi_kiem_lai_va_409(ctx):
+    """Drive chậm: giữa lúc chụp, một lượt khác đã giữ cùng bản. Chỉ kiểm ở đầu thì lượt thứ hai lọt qua ⇒ phải kiểm LẠI ngay trước khi tạo."""
+    class _Chen(DriveGiaTL):
+        def lay_muc(self, file_id):
+            conn = nhat_ky.mo(ctx.log_db)
+            hang_doi.khoi_tao(conn)
+            hang_doi.tao_job(conn, "b@x", [{"kieu": "vao_bo", "file_id": BAN1}])
+            conn.close()
+            return super().lay_muc(file_id)
+    chen = _Chen()
+    chen.muc = ctx.drive.muc
+    ctx.box["w"] = types.SimpleNamespace(drive_tl=chen, ly_do_khong_nhan=None)
+    assert _tao(ctx, "a@x", [_vb("V1", BAN1)]).status_code == 409
+    assert _so_dong(ctx) == 1  # chỉ dòng do "lượt khác" chèn

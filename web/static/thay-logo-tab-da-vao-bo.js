@@ -10,7 +10,7 @@
   const TEN_NEN = { tiktok: "TikTok", douyin: "Douyin", facebook: "Facebook" };
   const MA_TEN_MAC_DINH = /^\d{2}\/\d{2}-\d+$/;
   const chon = new Map();               // ban_copy_id → { video_id, ma_bo }: phần của T.nhapChon đến từ tab này
-  let data = null, loi = false, dangTai = false, nen = "", hopVe = null, maTuDien = null;
+  let data = null, biCat = false, loi = false, dangTai = false, nen = "", hopVe = null, maTuDien = null;
 
   const ngay = (iso) => { const d = new Date(iso); return isNaN(d) ? "" : `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
   const dongBoChon = () => { for (const id of [...chon.keys()]) if (!T.nhapChon.has(id)) chon.delete(id); };  // khối nhập đã xoá (tạo lượt xong)
@@ -63,6 +63,7 @@
     hopVe = hop; dongBoChon();
     hop.replaceChildren();
     hop.append(el("p", "tl-vb-ghi", "Máy dùng bản trong bộ."));
+    if (data !== null && biCat) hop.append(el("p", "tl-vb-ghi", "Danh sách dài nên chỉ hiện các video vào bộ gần đây nhất."));
     if (data === null) { hop.append(el("p", "muted", loi ? "Chưa tải được danh sách — chuyển sang tab khác rồi quay lại để thử lại." : "Đang tải…")); taiDuLieu(); return; }
     const nens = [...new Set(data.flatMap((b) => b.videos.map((v) => v.nen_tang)).filter(Boolean))];
     if (nens.length > 1 || nen) {
@@ -93,7 +94,8 @@
     try {
       const r = await T.goi("/api/thay-logo/da-vao-bo");
       if (!r.ok) throw new Error("http");
-      data = (await r.json()).bo || []; loi = false;
+      const j = await r.json();
+      data = j.bo || []; biCat = !!j.bi_cat; loi = false;
     } catch (e) { if (data === null) loi = true; }
     finally {
       dangTai = false;
@@ -106,6 +108,16 @@
     id: "bo",
     giai: "Video của bạn đã nằm trong một bộ. Chọn cả bộ hoặc tick từng video.",
     ve(hop) { daHoi = false; ve(hop); },
+    dem() { dongBoChon(); return chon.size; },  // số trên nhãn tab = số video đã chọn từ tab này
+  });
+
+  // POST tạo lượt bị từ chối vì video đã đổi/đã nằm trong lượt khác ⇒ bỏ dữ liệu cũ, tải lại khi tab mở.
+  document.addEventListener("tl-tao-luot-loi", (e) => {
+    if (!e.detail || !e.detail.coVaoBo || ![400, 409].includes(e.detail.status)) return;
+    for (const id of chon.keys()) T.nhapChon.delete(id);  // lựa chọn cũ không còn đáng tin: chọn lại từ danh sách mới
+    chon.clear(); T.capNhatChan();
+    data = null; daHoi = false;
+    if (hopVe && !hopVe.hidden) ve(hopVe);
   });
 
   // Hook thân POST tạo lượt (TL_THAN_POST): id bản-trong-bộ rời `drive_file_ids` sang `vao_bo`.
@@ -114,6 +126,6 @@
     dongBoChon();
     const vb = [], ids = [];
     for (const id of than.drive_file_ids || []) { const c = chon.get(id); if (c) vb.push({ video_id: c.video_id, ban_copy_id: id }); else ids.push(id); }
-    if (vb.length) { than.drive_file_ids = ids; than.vao_bo = vb; }
+    if (vb.length) { than.drive_file_ids = ids; than.vao_bo = [...(than.vao_bo || []), ...vb]; }  // nối thêm, không ghi đè phần module khác đã thêm
   });
 })();

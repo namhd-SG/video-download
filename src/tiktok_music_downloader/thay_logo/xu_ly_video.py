@@ -127,10 +127,16 @@ def tao_cap_truoc_sau(video_goc: str, video_ra: str | None, khung_render: dict[i
     thu_muc.mkdir(parents=True, exist_ok=True)
     kq = {"duong_dan_truoc": str(thu_muc / "truoc.jpg"), "duong_dan_sau": None,
           "box_logo": json.dumps(_ti_le(*hop, truoc.shape[1], truoc.shape[0])) if hop else None}
-    cv2.imwrite(kq["duong_dan_truoc"], _thu_nho(truoc), [cv2.IMWRITE_JPEG_QUALITY, 85])
+    # `cv2.imwrite` trả False (đĩa đầy, đường dẫn hỏng) chứ không ném lỗi ⇒ phải kiểm, nếu không DB ghi đường dẫn tới file không có.
+    ghi = [(kq["duong_dan_truoc"], truoc)]
     if sau is not None:
         kq["duong_dan_sau"] = str(thu_muc / "sau.jpg")
-        cv2.imwrite(kq["duong_dan_sau"], _thu_nho(sau), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        ghi.append((kq["duong_dan_sau"], sau))
+    for duong, anh in ghi:
+        if not cv2.imwrite(duong, _thu_nho(anh), [cv2.IMWRITE_JPEG_QUALITY, 85]):
+            for d, _ in ghi:
+                Path(d).unlink(missing_ok=True)  # không để lại nửa cặp
+            return None
     return kq
 
 
@@ -158,6 +164,8 @@ def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path
         cap_anh: dict = {}
         try:  # ảnh trước/sau chỉ để người duyệt xem: hỏng thì ghi log, video vẫn xong (hộp duyệt rơi về ảnh soi)
             cap_anh = tao_cap_truoc_sau(video, ra, khung, boxes, nguon.so_khung(), d) or {}
+            if not cap_anh:
+                log.warning("thay logo: video %s không có ảnh trước/sau (không đọc/ghi được khung)", vid)
         except Exception as e:  # noqa: BLE001
             log.warning("thay logo: không tạo được ảnh trước/sau video %s (%s): %s", vid, type(e).__name__, e)
         nhat_ky.cap_nhat_video(

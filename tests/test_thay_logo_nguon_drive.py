@@ -341,6 +341,28 @@ def test_kiem_link_409_khi_cong_cau_hinh_cam(tmp_path):
         mc.dung()
 
 
+def test_kiem_link_mac_dinh_dung_adapter_drive_cua_worker(tmp_path):
+    """MỘT nguồn Drive: không truyền `lay_drive` ⇒ kiem-link dùng `worker.drive_tl` (cùng adapter worker tải/chụp nguồn).
+    ĐỘT BIẾN: mặc định về `DriveTLThat()` ⇒ ĐỎ (adapter riêng, không cấu hình ⇒ 409 / không chạm Drive giả)."""
+    def require_user(request: Request) -> str:
+        return request.headers["x-user"]
+
+    class _W:
+        ly_do_khong_nhan = None
+    w, (drive, _) = _W(), _kho()
+    w.drive_tl = drive
+    app = FastAPI()
+    thay_logo_routes.dang_ky_route_member(app, lambda: tmp_path / "t.db", require_user, lambda e: False, lambda: w,
+                                          lambda e, i: set())
+    mc = MayChu(app)
+    try:
+        r = _Client(mc).post("/api/thay-logo/kiem-link", headers=_h("a@x"), json={"links": [_link("1")]})
+        assert r.status_code == 200 and r.json()["ket_qua"][0]["trang_thai"] == "nhan"
+        assert drive.so_lan("lay_muc_day_du") == 1
+    finally:
+        mc.dung()
+
+
 def test_dong_so_tro_ve_moi_dong_cung_id_ke_ca_dong_trung():
     d, _ = _kho()
     r = nguon_drive.kiem_cac_link(d, [_link("1"), "rác", f"https://drive.google.com/open?id={ID('1')}"])

@@ -214,3 +214,5 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-vb-phu { padding: 0 8px 8px; font-size: .68rem; color: var(--text-muted); }
 .tl-vb-ghi { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: var(--surface-alt); color: var(--text-muted); font-size: .8rem; }
 .tl-vb-luoi { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.tl-so-sanh .tl-truoc-don { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }
+.tl-muc-than .tl-truoc-nho { display: block; width: 72px; height: auto; margin-top: 6px; border-radius: 6px; border: 1px solid var(--border); }

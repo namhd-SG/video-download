@@ -49,6 +49,24 @@ NGUONG_CONG_LOI_ERROR = 10  # số lần kiểm cổng Creative trượt LIÊN T
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
 
+NGUON_DA_DOI_CAU = "Bản trong bộ đã đổi từ lúc tạo lượt — tạo lượt mới."
+
+
+class NguonVaoBoDaDoi(Exception):
+    """File tải về của nguồn "Đã vào bộ" không khớp md5 đã chụp lúc tạo lượt."""
+
+
+def kiem_md5_nguon_vao_bo(nguon: dict, duong_dan) -> None:
+    """md5 của file ĐÃ TẢI phải bằng `nguon["md5"]` (ảnh chụp lúc tạo lượt). Thiếu md5 trong ảnh chụp cũng coi là lệch (không có gì để tin)."""
+    import hashlib
+    h = hashlib.md5()  # noqa: S324 — đối chiếu checksum Drive (md5Checksum), không dùng cho bảo mật
+    with open(duong_dan, "rb") as f:
+        for khoi in iter(lambda: f.read(1 << 20), b""):
+            h.update(khoi)
+    if not nguon.get("md5") or h.hexdigest() != str(nguon["md5"]).lower():
+        raise NguonVaoBoDaDoi(f"md5 file tải {h.hexdigest()} khác ảnh chụp {nguon.get('md5')}")
+
+
 def co_job_tai_dang_chay(jobs_db: Path) -> bool:
     """CHỈ ĐỌC `jobs.db`. Bận = cùng tập trạng thái `web/models.py` coi là worker đang bận (`running`, `dang_mo`, `dang_giai`).
     Không đọc được (khoá, thiếu file) ⇒ coi như ĐANG BẬN: nhường là hướng an toàn."""
@@ -248,7 +266,14 @@ class ThayLogoWorker:
         if r is None:
             return
         try:
-            goc = self.tai_ve(json.loads(r["nguon"]), self._scratch(r["id"]))
+            nguon = json.loads(r["nguon"])
+            goc = self.tai_ve(nguon, self._scratch(r["id"]))
+            if nguon.get("kieu") == "vao_bo":
+                kiem_md5_nguon_vao_bo(nguon, goc)
+        except NguonVaoBoDaDoi as e:  # bản trong bộ khác ảnh chụp lúc tạo lượt: KHÔNG xử lý (đợt áp sẽ đối chiếu chính ảnh chụp này)
+            log.warning("thay logo: video %s — %s", r["id"], e)
+            self._ket_thuc(conn, r["id"], "loi", loi_text=NGUON_DA_DOI_CAU)
+            return
         except Exception as e:
             log.warning("thay logo: tải video %s lỗi (%s): %s", r["id"], type(e).__name__, e)
             self._ket_thuc(conn, r["id"], "loi", loi_text="Không tải được video nguồn từ Drive.")

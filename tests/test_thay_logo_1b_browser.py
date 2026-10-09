@@ -78,6 +78,13 @@ def _seed(data: Path) -> DriveGiaTL:
         conn.commit()
         hang_doi.dat(conn, vid, "xong", video_log_id=log_id)
     hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": "SRC4" + "x" * 12}], ten_bo="Đang làm")
+    # video máy không chắc (cho_nguoi): chỉ có ảnh TRƯỚC + box máy thấy
+    jn = hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": "LIB1" + "x" * 12}], ten_bo="Không chắc")
+    vn = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (jn,)).fetchone()[0]
+    ln = nhat_ky.bat_dau_video(conn, nguon_video="x")
+    _anh(data / "truoc-n.jpg", (220, 40, 40))
+    nhat_ky.cap_nhat_video(conn, ln, duong_dan_truoc=str(data / "truoc-n.jpg"), box_logo=json.dumps(BOX))
+    hang_doi.dat(conn, vn, "cho_nguoi", video_log_id=ln)
     conn.close()
     return drive
 
@@ -136,8 +143,10 @@ def trinh_duyet():
     pw.stop()
 
 
-def _mo(br, goc, rong=1280):
+def _mo(br, goc, rong=1280, truoc=None):
     ctx = br.new_context(viewport={"width": rong, "height": 900})
+    if truoc:
+        truoc(ctx)
     p = ctx.new_page()
     loi_js: list[str] = []
     p.on("pageerror", lambda e: loi_js.append(str(e)))
@@ -238,6 +247,7 @@ def test_tab_da_vao_bo_nhom_theo_ma_bo_chi_video_cua_minh(may_chu, trinh_duyet):
     assert mo.count() == 1 and TEN[4] in mo.inner_text() and mo.locator("input").is_disabled()
     assert _chon_ca(p, "N.2BBBB").is_disabled()  # cả bộ đã nằm trong lượt ⇒ không còn gì để chọn
     _chon_ca(p, "N.1AAAA").click()  # ảnh nghiệm thu: đã chọn cả bộ ⇒ tên bộ tự điền
+    p.locator("#tl-vung").evaluate("e => { e.scrollTop = 70; }")  # thẻ đầu hiện trọn, không bị cắt mép dưới
     _chup(p, "1b-da-vao-bo-1280.png")
 
 
@@ -253,6 +263,115 @@ def test_chon_cung_bo_tu_dien_ten_bo_va_dem(may_chu, trinh_duyet):
     assert p.locator("#tl-dem").inner_text() == "Đã chọn 3 video"
     _chon_ca(p, "N.1AAAA").click()  # bấm lại ⇒ bỏ hết
     assert p.locator("#tl-dem").inner_text() == "Chưa chọn video nào" and p.locator("#tl-tao").is_disabled()
+
+
+def _chon_bo_1(p):
+    _tab_bo(p)
+    _chon_ca(p, "N.1AAAA").click()
+
+
+def _tra_loi_post(status, body):
+    def xu(route):
+        if route.request.method == "POST":
+            route.fulfill(status=status, content_type="application/json", body=json.dumps(body))
+        else:
+            route.continue_()
+    return xu
+
+
+@pytest.mark.parametrize("ma,body,mong", [
+    (503, {"detail": "x"}, "Chưa hỏi được Drive lúc này — thử lại sau ít phút."),
+    (422, {"detail": [{"loc": ["body"], "msg": "kỹ thuật"}]}, "Lượt quá lớn hoặc dữ liệu không hợp lệ."),
+    (400, {"detail": "kỹ thuật"}, "Một số video trong bộ đã đổi hoặc không còn — tải lại danh sách."),
+    (409, {"detail": "Một số video đã nằm trong một lượt thay logo khác — chọn video khác hoặc đợi lượt đó xong."},
+     "Một số video đã nằm trong một lượt thay logo khác — chọn video khác hoặc đợi lượt đó xong."),
+    (500, {}, "Chưa gửi được lượt này. Thử lại sau ít phút."),
+])
+def test_cau_loi_tao_luot_doc_detail_khong_hien_so_loi(may_chu, trinh_duyet, ma, body, mong):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(ma, body))
+    _chon_bo_1(p)
+    p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-loi').innerText.length > 0")
+    chu = p.locator("#tl-loi").inner_text()
+    assert chu == mong and not re.search(r"\d{3}|lỗi \d", chu)
+
+
+def test_400_vao_bo_xoa_lua_chon_va_tai_lai_tab(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(400, {"detail": "x"}))
+    _chon_bo_1(p)
+    with p.expect_request(lambda r: r.url.endswith("/api/thay-logo/da-vao-bo")):
+        p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-dem').innerText === 'Chưa chọn video nào'")
+    p.wait_for_selector("#tl-tab-bo .tl-vb-nhom")  # danh sách tải lại xong
+
+
+def test_hook_nem_loi_thi_bao_cau_thuong_va_khong_gui(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    goi = []
+    p.on("request", lambda r: goi.append(r.url) if r.method == "POST" else None)
+    _chon_bo_1(p)
+    p.evaluate("window.TL_THAN_POST.push(() => { throw new Error('hook hỏng'); })")
+    p.locator("#tl-tao").click()
+    p.wait_for_function("document.getElementById('tl-loi').innerText.includes('Không gửi được lượt này')")
+    assert "tải lại trang" in p.locator("#tl-loi").inner_text() and not [u for u in goi if u.endswith("/api/thay-logo/jobs")]
+    assert p.locator("#tl-tao").is_enabled()  # không kẹt ở trạng thái đang gửi
+
+
+def test_hook_khac_chay_truoc_thi_vao_bo_duoc_noi_them_khong_ghi_de(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(201, {"job_id": 1}))
+    _chon_bo_1(p)
+    p.evaluate("window.TL_THAN_POST.unshift((than) => { than.vao_bo = [{ video_id: 'MODULE-KHAC', ban_copy_id: 'KHACKHACKHAC123' }]; })")
+    with p.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/thay-logo/jobs")) as rq:
+        p.locator("#tl-tao").click()
+    vb = json.loads(rq.value.post_data)["vao_bo"]
+    assert vb[0]["video_id"] == "MODULE-KHAC" and len(vb) == 4
+
+
+def test_nhan_tab_da_vao_bo_dem_so_da_chon(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    _chon_bo_1(p)
+    nhan = p.locator("#tl-tabs [role=tab]").nth(1)
+    assert nhan.inner_text().split() == ["Đã", "vào", "bộ", "3"]
+    p.locator("#tl-tab-bo .tl-the-v:not(.mo) input").first.uncheck()
+    assert nhan.inner_text().split()[-1] == "2"
+
+
+def test_space_va_ngoac_vuong_khong_bi_cuop_khi_focus_ngoai_hop_duyet(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.wait_for_selector("#tl-cmp")
+    p.locator("#tl-vung").focus()  # vùng cuộn của khối nhập (tabindex=0): Space ở đây là của nó
+    p.keyboard.down(" ")
+    assert abs(_ti_le_vach(p) - 0.5) < 0.01
+    p.keyboard.up(" ")
+    p.keyboard.press("]")
+    assert abs(_ti_le_vach(p) - 0.5) < 0.01
+    p.evaluate("document.activeElement.blur()")  # không focus ở đâu ⇒ hộp duyệt nhận phím
+    p.keyboard.press("BracketRight")
+    assert abs(_ti_le_vach(p) - 0.55) < 0.01
+
+
+def test_anh_cho_nguoi_hien_anh_truoc_don_o_cot_phai(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.wait_for_selector("#tl-khong-chac img.tl-truoc-nho")
+    p.wait_for_function("document.querySelector('#tl-khong-chac img.tl-truoc-nho').naturalWidth > 0")
+    assert p.locator("#tl-khong-chac .tl-cmp").count() == 0  # ảnh đơn, không vạch
+
+
+def test_anh_sau_khong_tai_duoc_thi_roi_ve_anh_soi(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, truoc=lambda ctx: ctx.route("**/khung/sau.jpg", lambda r: r.abort()))
+    p.wait_for_function("!document.querySelector('#tl-cmp') && document.querySelector('#tl-duyet .tl-so-sanh img')")
+    assert p.locator("#tl-duyet .tl-so-sanh img").get_attribute("src").endswith("/sheet.jpg") and p.locator(".tl-zoom-o").count() == 0
+
+
+def test_danh_sach_da_vao_bo_bi_cat_thi_bao(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, truoc=lambda ctx: ctx.route("**/api/thay-logo/da-vao-bo", lambda r: r.fulfill(
+        status=200, content_type="application/json", body=json.dumps({"bo": [], "bi_cat": True}))))
+    _tab_bo_trong = p.locator("#tl-tabs [role=tab]").nth(1)
+    _tab_bo_trong.click()
+    p.wait_for_function("document.getElementById('tl-tab-bo').innerText.includes('chỉ hiện các video vào bộ gần đây')")
 
 
 def test_zzz_tao_luot_tu_tab_gui_dung_vao_bo(may_chu, trinh_duyet):
