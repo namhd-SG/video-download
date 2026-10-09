@@ -636,6 +636,8 @@ def test_visiting_the_page_puts_you_in_the_directory(tmp_path, monkeypatch):
 KHONG_CAN_KIEM_CHU = {
     "GET /healthz": "thăm dò, không đọc dữ liệu của ai",
     "POST /api/thay-logo/jobs": "tạo cho chính người đang gọi (`tl_job.nguoi_tao` = email `require_user`)",
+    "GET /api/thay-logo/bo": "trả danh sách bộ, tự lọc `j.nguoi_tao = email` trong SQL (admin thấy hết) "
+                             "(tests/test_thay_logo_routes_member.py, có đột biến)",
     "GET /api/thay-logo/videos": "trả danh sách, tự lọc `j.nguoi_tao = email` trong SQL (admin thấy hết) "
                                  "(tests/test_thay_logo_routes_member.py)",
     "POST /api/thay-logo/videos/{vid}/danh-gia": "`_video_cua` (web/thay_logo_routes.py): chủ lượt hoặc admin, 403 cho người "

@@ -82,8 +82,11 @@ def _gui_nhom(con: subprocess.Popen, sig) -> None:
 
 class ThayLogoWorker:
     def __init__(self, log_db: Path, jobs_db: Path, data_dir: Path, *, tai_ve: Callable[[dict, Path], Path],
-                 tai_len: Callable[[Path], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
-                 tran_dia_gb: float = TRAN_DIA_GB, relay_bind: str | None = None):
+                 tai_len: Callable[[Path, int], str], ffmpeg: str, python: str = sys.executable, nghi_giay: float = 10.0,
+                 tran_dia_gb: float = TRAN_DIA_GB, relay_bind: str | None = None,
+                 cong: Callable[[], str | None] | None = None, nhip_cong_giay: float = 60.0):
+        """`cong`: cổng cấu hình chạy ở ĐẦU thread worker (gọi Drive ⇒ không được chạy trong lifespan của app). Trả None = qua;
+        chuỗi = bị cấm vĩnh viễn (dừng hẳn); ném lỗi = chưa kiểm được (thử lại sau `nhip_cong_giay`)."""
         self.log_db, self.jobs_db, self.data = Path(log_db), Path(jobs_db), Path(data_dir)
         self.hop = HopThu(self.data / "thay_logo_hop_thu")
         self.tai_ve, self.tai_len, self.ffmpeg, self.python = tai_ve, tai_len, ffmpeg, python
@@ -95,6 +98,8 @@ class ThayLogoWorker:
         self.relay_bind = relay_bind
         self.relay = None
         self._don_luc = 0.0
+        self._cong, self.nhip_cong = cong, nhip_cong_giay
+        self._cong_qua, self._cong_cam, self._cong_thu_luc, self._cong_ly_do = cong is None, False, None, None
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -146,8 +151,42 @@ class ThayLogoWorker:
         finally:
             conn.close()
 
+    @property
+    def ly_do_khong_nhan(self) -> str | None:
+        """Lý do worker bị CẤM nhận việc vĩnh viễn (cổng cấu hình); None = đang nhận, hoặc chưa kiểm xong / lỗi tạm."""
+        return self._cong_ly_do if self._cong_cam else None
+
+    def dat_cam(self, ly_do: str) -> None:
+        """Đặt cổng về CẤM (cả khi đã qua trước đó — ví dụ phát hiện lúc sắp tạo thư mục bộ mới)."""
+        self._cong_cam, self._cong_qua, self._cong_ly_do = True, False, ly_do
+        self._lan_cuoi = f"cong_creative: {ly_do}"
+
+    def _cho_cong(self) -> bool:
+        """True = được nhận việc. Chưa qua cổng thì `luot_cuoi` = lý do (admin thấy ở `trang_thai()`), KHÔNG chạy `mot_luot`."""
+        if self._cong_qua:
+            return True
+        if self._cong_cam or (self._cong_thu_luc is not None and time.monotonic() - self._cong_thu_luc < self.nhip_cong):
+            return False
+        self._cong_thu_luc = time.monotonic()
+        self._lan_cuoi = "cong_creative: dang_kiem"  # Drive treo ⇒ admin vẫn thấy lý do worker chưa nhận việc
+        try:
+            ly_do = self._cong()
+        except Exception as e:  # noqa: BLE001 — Drive lỗi tạm: không kết luận gì, thử lại có nhịp
+            log.warning("thay logo: chưa kiểm được cổng Creative (%s) — thử lại sau %ss", type(e).__name__, self.nhip_cong)
+            self._lan_cuoi = f"cong_creative: chua_kiem_duoc ({type(e).__name__})"
+            return False
+        if ly_do:
+            log.warning("thay logo: %s — worker KHÔNG nhận việc", ly_do)
+            self.dat_cam(ly_do)
+            return False
+        self._cong_qua = True
+        return True
+
     def _chay(self) -> None:
         while not self._dung.is_set():
+            if not self._cho_cong():
+                self._dung.wait(self.nghi)
+                continue
             try:
                 self._lan_cuoi = self.mot_luot()
             except Exception:  # một video hỏng không được giết worker
@@ -272,7 +311,7 @@ class ThayLogoWorker:
             return
         if kq.get("trang_thai") == "render" and kq.get("dau_ra"):
             try:
-                file_id = self.tai_len(Path(kq["dau_ra"]))
+                file_id = self.tai_len(Path(kq["dau_ra"]), r["job_id"])
             except Exception as e:
                 log.warning("thay logo: tải lên Drive video %s lỗi: %s", r["id"], e)
                 self._ket_thuc(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"),
@@ -288,6 +327,18 @@ class ThayLogoWorker:
 
 
 # ---------------------------------------------------------------- dựng từ cấu hình máy (app.py gọi)
+def thu_muc_cua_bo(log_db: Path, job_id: int, goc_id: str, drive, kiem_creative=None) -> str:
+    """Id thư mục đầu ra của bộ `job_id` (tìm-hoặc-tạo). Không tra được ⇒ ném (video bị đánh `loi`), KHÔNG rơi về thư mục gốc."""
+    from tiktok_music_downloader.thay_logo import thu_muc_bo
+
+    conn = nhat_ky.mo(log_db)
+    try:
+        hang_doi.khoi_tao(conn)
+        return thu_muc_bo.tim_hoac_tao(conn, job_id, goc_id, drive, kiem_creative)
+    finally:
+        conn.close()
+
+
 ENV_BAT, ENV_THU_MUC_RA = "THAY_LOGO_BAT", "THAY_LOGO_DRIVE_THU_MUC_RA"
 
 
@@ -302,6 +353,8 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
         log.warning("thay logo: BẬT nhưng thiếu thư viện (%s) — không chạy worker", e.name)
         return None
     from tiktok_music_downloader.gdrive_upload import DriveUploader
+    from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat, ly_do_creative
+    from tiktok_music_downloader.thay_logo.thu_muc_bo import CongCreativeCam
     from tiktok_music_downloader.watermark import find_ffmpeg
 
     thu_muc, drive, ffmpeg = os.environ.get(ENV_THU_MUC_RA, ""), DriveUploader(), find_ffmpeg()
@@ -309,18 +362,28 @@ def dung_tu_env(data_dir: Path, jobs_db: Path) -> "ThayLogoWorker | None":
         log.warning("thay logo: BẬT nhưng thiếu cấu hình (thư mục ra=%s, drive=%s, ffmpeg=%s) — không chạy worker",
                     bool(thu_muc), drive.is_configured(), bool(ffmpeg))
         return None
+    drive_tl = DriveTLThat(drive)  # KHÔNG gọi mạng ở đây (lifespan của app): cổng Creative chạy ở đầu thread worker
 
     from tiktok_music_downloader.nguon import TRAN_DUNG_LUONG_BYTE
 
     def tai_ve(nguon: dict, d: Path) -> Path:  # cùng trần dung lượng video của lane tải
         return drive.download_file(nguon["file_id"], d / "goc.mp4", max_bytes=TRAN_DUNG_LUONG_BYTE)
 
-    def tai_len(p: Path) -> str:
-        kq = drive.upload_file(p, parent_folder_id=thu_muc)
-        if not kq.ok:
-            raise RuntimeError(kq.reason or kq.outcome)
-        return kq.file_id
+    log_db = data_dir / "thay_logo_log.db"
+
+    ref: list = []  # worker, gán sau khi dựng (tai_len cần nó để đặt cổng về CẤM)
+
+    def tai_len(p: Path, job_id: int) -> str:  # tải vào thư mục con của bộ (tìm-hoặc-tạo)
+        try:
+            dich = thu_muc_cua_bo(log_db, job_id, thu_muc, drive_tl, lambda: ly_do_creative(drive_tl, thu_muc))
+        except CongCreativeCam as e:
+            ref[0].dat_cam(str(e))
+            raise
+        return drive_tl.tai_len(p, dich)
 
     from web.thay_logo_relay_server import ENV_BIND
-    return ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg,
-                          relay_bind=os.environ.get(ENV_BIND) or None)
+    w = ThayLogoWorker(data_dir / "thay_logo_log.db", jobs_db, data_dir, tai_ve=tai_ve, tai_len=tai_len, ffmpeg=ffmpeg,
+                          relay_bind=os.environ.get(ENV_BIND) or None,
+                          cong=lambda: ly_do_creative(drive_tl, thu_muc))
+    ref.append(w)
+    return w

@@ -51,7 +51,7 @@ def worker(tmp_path, clip_file, monkeypatch):
         shutil.copy(goc, p)
         return p
 
-    def tai_len(p):
+    def tai_len(p, job_id):
         da_len.append(p.read_bytes()[:4])
         return "drive-ra-1"
     monkeypatch.setenv("PYTHONPATH", os.pathsep.join(sys.path))
