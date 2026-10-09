@@ -21,7 +21,8 @@ from typing import Callable
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import hang_doi, nhat_ky
+from tiktok_music_downloader.thay_logo import hang_doi, link_da_kiem, nguon_drive, nhat_ky
+from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 
 log = logging.getLogger(__name__)
@@ -75,10 +76,10 @@ def dang_ky_route(app: FastAPI, lay_hop_thu: Callable[[], HopThu]) -> None:
 # Xác thực bằng `require_user` có sẵn (JWT Cloudflare Access, cùng nguồn với `jobs.nguoi_tao`). Mỗi video chỉ NGƯỜI TẠO job hoặc admin
 # được xem / đánh giá (USER §0: "người tạo job tự duyệt").
 
-TRAN_VIDEO_MOT_JOB = 50
+TRAN_CHO_MOI_NGUOI = 100  # video chưa xong của một người — chặn làm ngập hàng đợi / đĩa (code-reviewer 09/10)
+TRAN_VIDEO_MOT_JOB = TRAN_CHO_MOI_NGUOI  # USER CHỐT: không trần theo bộ — một lượt dùng được cả phần chỗ chờ của người đó
 TRAN_TRANG_VIDEO = 300  # số dòng tối đa mỗi lần trả của /videos
 TRAN_QUET_VIDEO = 5000  # trần số dòng đọc khi lọc theo nền tảng (chống quét cả bảng)
-TRAN_CHO_MOI_NGUOI = 100  # video chưa xong của một người — chặn làm ngập hàng đợi / đĩa (code-reviewer 09/10)
 
 
 def drive_ids_cua(jobs_db, email: str, ids: list[str]) -> set[str]:
@@ -158,6 +159,10 @@ class DanhGia(BaseModel):
     ghi_chu: str = Field(default="", max_length=2000)
 
 
+class KiemLink(BaseModel):
+    links: list[str] = Field(max_length=200)  # mỗi phần tử có thể chứa nhiều dòng; trần 20 LINK kiểm sau khi tách dòng
+
+
 _SQL_DANH_SACH = """
 SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.loi_text, v.drive_file_id_ra, j.nguoi_tao,
        j.ten_bo, j.tao_luc AS tao_luc_bo,
@@ -174,9 +179,11 @@ FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.i
 def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require_user, la_admin,
                          lay_worker: Callable[[], object | None],
                          thu_vien_cua: Callable[[str, list[str]], set[str]],
-                         lay_jobs_db: Callable[[], object] | None = None) -> None:
+                         lay_jobs_db: Callable[[], object] | None = None,
+                         lay_drive: Callable[[], object] | None = None) -> None:
     """`lay_log_db` trả đường dẫn `thay_logo_log.db` LÚC GỌI; `lay_jobs_db` (tuỳ chọn) trả `jobs.db` để ghép thư viện — mặc định nằm cạnh `thay_logo_log.db`; mỗi request mở kết nối mới và tự đóng. `lay_worker` trả None khi
-    tính năng TẮT ⇒ không nhận lượt mới (409), vẫn xem/đánh giá được kết quả cũ."""
+    tính năng TẮT ⇒ không nhận lượt mới (409), vẫn xem/đánh giá được kết quả cũ. `lay_drive` (tuỳ chọn) trả `DriveTL` cho `kiem-link`;
+    mặc định dựng `DriveTLThat()` từ cùng cấu hình môi trường với worker."""
 
     def _mo() -> _sqlite3.Connection:
         conn = nhat_ky.mo(lay_log_db())
@@ -204,8 +211,8 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         ids = list(dict.fromkeys(body.drive_file_ids))
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
-        if not la_admin(email) and thu_vien_cua(email, ids) != set(ids):
-            raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn.")
+        if not la_admin(email) and not _ids_duoc_phep(email, ids):
+            raise HTTPException(403, "Chỉ chọn được video trong thư viện của bạn hoặc link bạn đã kiểm trong 24 giờ qua.")
         conn = _mo()
         try:
             if hang_doi.dem_dang_cho_cua(conn, email) + len(ids) > TRAN_CHO_MOI_NGUOI:
@@ -372,3 +379,44 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(403, "chỉ quản trị")
         w = lay_worker()
         return w.trang_thai() if w is not None else {"song": False, "luot_cuoi": "tinh_nang_tat"}
+
+    # ------------------------------------------------------------------ nguồn "Dán link Drive": kiểm link + quyền dùng id đã kiểm
+    def _ids_duoc_phep(email: str, ids: list[str]) -> bool:
+        """Member: MỌI id phải thuộc thư viện của mình, HOẶC do CHÍNH mình kiểm qua `kiem-link` trong 24 h (`link_da_kiem`).
+        Id thô không qua bước kiểm ⇒ False (đường duy nhất vào là có nhật ký ai thêm gì)."""
+        trong = thu_vien_cua(email, ids)
+        con_lai = [i for i in ids if i not in trong]
+        if not con_lai:
+            return True
+        conn = _mo()
+        try:
+            link_da_kiem.khoi_tao(conn)
+            return link_da_kiem.con_han(conn, email, con_lai) == set(con_lai)
+        finally:
+            conn.close()
+
+    @app.post("/api/thay-logo/kiem-link")
+    def kiem_link(body: KiemLink, email: str = Depends(require_user)) -> dict:
+        """Mỗi dòng link ⇒ một kết quả (`nhan` | `khong_mo_duoc` | `khong_hop_le` | `loi_tam`); xem `thay_logo/nguon_drive.py`.
+        Chỉ ĐỌC Drive. Id file nhận được ghi vào sổ của CHÍNH người gọi để `POST /jobs` chấp nhận trong 24 h."""
+        if lay_worker() is None:
+            raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
+        if sum(len(x) for x in body.links) > 40_000:
+            raise HTTPException(400, "Nội dung dán quá dài.")
+        dong = nguon_drive.tach_dong(body.links)
+        if not dong:
+            raise HTTPException(400, "Chưa có link nào.")
+        if len(dong) > nguon_drive.TRAN_LINK_MOT_LUOT:
+            raise HTTPException(400, f"Mỗi lần kiểm tối đa {nguon_drive.TRAN_LINK_MOT_LUOT} link.")
+        drive = lay_drive() if lay_drive else DriveTLThat()
+        if not drive.dang_cau_hinh():
+            raise HTTPException(409, "Máy chủ chưa nối được Google Drive — báo quản trị.")
+        kq = nguon_drive.kiem_cac_link(drive, dong)
+        ids = nguon_drive.ids_duoc_nhan(kq["ket_qua"])
+        conn = _mo()
+        try:
+            link_da_kiem.khoi_tao(conn)
+            link_da_kiem.ghi_da_kiem(conn, email, ids)
+        finally:
+            conn.close()
+        return {**kq, "da_ghi_nhan": len(ids)}
