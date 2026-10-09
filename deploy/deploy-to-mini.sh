@@ -362,13 +362,30 @@ if [ "$kiem_rc" -ne 0 ]; then
   exit "$kiem_rc"
 fi
 
-for f in index.html app.js app.css; do
+# Trang HTML được máy chủ VIẾT LẠI khi phục vụ: mọi css/js nội bộ mang `?v=<10 hex sha256>`
+# (web/gan_phien_ban_tai_nguyen.py). So byte thô với tệp dev thì LỆCH theo thiết kế — deploy
+# 09/10 19:54 dừng ở đây với rc=4 và không ghi mốc. Nên với trang: (1) BẮT BUỘC có `?v=` —
+# thiếu nghĩa là tiến trình CŨ (trước bản viết lại) còn phục vụ; (2) bỏ `?v=` rồi mới so.
+# Tải nội dung về TỆP (không qua `$(...)`: thay thế lệnh cắt dòng trống cuối ⇒ sha sai).
+noi_dung="$(mktemp)"
+trap 'rm -f "$RSYNC_LOG" "$noi_dung"' EXIT  # GỘP với trap của bước 3 — đặt riêng thì đè mất việc xoá log rsync
+for f in index.html thay-logo.html app.js app.css; do
   local_sha="$(shasum -a 256 "web/static/$f" | cut -d' ' -f1)"
-  remote_sha="$(ssh "$HOST" "curl -s --max-time 10 http://127.0.0.1:$PORT/$f | shasum -a 256 | cut -d' ' -f1")" || {
+  ssh "$HOST" "curl -s --max-time 10 http://127.0.0.1:$PORT/$f" > "$noi_dung" || {
     echo "DỪNG: không đọc được $f đang phục vụ — PHÉP ĐO HỎNG." >&2
     echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
     exit "$RC_DO_HONG"
   }
+  case "$f" in
+    *.html)
+      if ! grep -Eq '\?v=[0-9a-f]{10}"' "$noi_dung"; then
+        echo "   $f: đang phục vụ KHÔNG có ?v= — tiến trình cũ còn chạy, hoặc viết lại trang hỏng" >&2
+        echo "   Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+        exit "$RC_NGHIEM_THU"
+      fi
+      remote_sha="$(sed -E 's/\?v=[0-9a-f]{10}"/"/g' "$noi_dung" | shasum -a 256 | cut -d' ' -f1)" ;;
+    *) remote_sha="$(shasum -a 256 < "$noi_dung" | cut -d' ' -f1)" ;;
+  esac
   if [ "$local_sha" = "$remote_sha" ]; then
     echo "   $f: khớp"
   else

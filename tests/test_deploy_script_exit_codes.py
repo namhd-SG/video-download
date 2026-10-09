@@ -63,6 +63,18 @@ case "$cmd" in
     # sha của tệp tĩnh "đang phục vụ" = sha của chính tệp trong bản clone (cwd).
     f="$(printf '%s' "$cmd" | sed -E 's|.*127\.0\.0\.1:[0-9]+/([^ ]+) .*|\1|')"
     if [ "$KICH_BAN" = static_lech ]; then echo 0000000000; else shasum -a 256 "web/static/$f" | cut -d' ' -f1; fi ;;
+  # Nội dung "đang phục vụ" (script tải về tệp rồi tự băm). Trang HTML: máy chủ thật gắn `?v=<10 hex>`
+  # vào css/js nội bộ (web/gan_phien_ban_tai_nguyen.py) — giả lập đúng điều đó; `trang_khong_v` = tiến trình
+  # CŨ còn phục vụ HTML thô.
+  *"curl -s --max-time 10 http://127.0.0.1:"*)
+    f="$(printf '%s' "$cmd" | sed -E 's|.*127\.0\.0\.1:[0-9]+/([^ ]+).*|\1|')"
+    # static_lech: trang VẪN có ?v (qua cổng ?v) nhưng nội dung khác ⇒ phải rơi đúng nhánh so byte "LỆCH".
+    [ "$KICH_BAN" = static_lech ] && { echo '<script src="la.js?v=0123456789"></script>'; exit 0; }
+    case "$f" in
+      *.html) if [ "$KICH_BAN" = trang_khong_v ]; then cat "web/static/$f"
+              else sed -E 's/((href|src)="[^":?#]+\.(css|js))"/\1?v=0123456789"/g' "web/static/$f"; fi ;;
+      *) cat "web/static/$f" ;;
+    esac ;;
   *) exit 0 ;;
 esac
 '''
@@ -270,6 +282,23 @@ def test_tep_tinh_phuc_vu_lech_la_4(clone, tmp_path):
     r, _ = _yes(clone, tmp_path, "static_lech")
     assert r.returncode == 4, (r.returncode, r.stderr)
     assert "LỆCH" in r.stderr
+
+
+def test_trang_phuc_vu_khong_co_v_la_4(clone, tmp_path):
+    """Trang thô (không ?v) = tiến trình CŨ còn phục vụ. So byte sau khi bỏ ?v thì trang thô KHỚP tệp dev ⇒ không có
+    vế này là cổng xanh giả đúng ca cần bắt. ĐỘT BIẾN: bỏ `grep -Eq '\\?v=…'` ⇒ ĐỎ."""
+    r, _ = _yes(clone, tmp_path, "trang_khong_v")
+    assert r.returncode == 4, (r.returncode, r.stderr)
+    assert "KHÔNG có ?v=" in r.stderr and "rollback-on-mini.sh" in r.stderr
+
+
+def test_trang_co_v_bo_v_roi_so_thi_khop(clone, tmp_path):
+    """Ca thật 09/10 19:54: máy chủ viết lại ?v theo thiết kế ⇒ cổng so byte thô đỏ (rc 4) và không ghi mốc.
+    ĐỘT BIẾN: so byte thô (bỏ `sed` gỡ ?v) ⇒ ĐỎ. Đo cả thay-logo.html — trang member dùng."""
+    r, _ = _yes(clone, tmp_path)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    for f in ("index.html", "thay-logo.html", "app.js", "app.css"):
+        assert f"   {f}: khớp" in r.stdout, f
 
 
 def test_label_doi_sau_deploy_la_4(clone, tmp_path):
