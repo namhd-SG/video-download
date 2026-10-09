@@ -290,6 +290,33 @@ def test_worker_drive_loi_tam_thoi_thi_thu_lai_co_nhip(moi_truong_bat):
     assert _chay_het(w, 1) == 1 and w._cong_qua
 
 
+def test_cong_creative_loi_tam_log_warning_lan_dau_roi_error_mot_lan_o_lan_thu_10(moi_truong_bat, caplog):
+    """Lỗi tạm thử lại vô hạn không được im: lần đầu warning, đủ 10 lần liên tiếp ⇒ đúng MỘT error; vẫn fail-closed (không nhận việc)."""
+    tw, gia, tmp = moi_truong_bat
+    gia["d"].loi[("lay_muc", "*")] = ConnectionError("mạng")
+    w = tw.dung_tu_env(tmp, tmp / "jobs.db")
+    w.nhip_cong = 0
+    with caplog.at_level("WARNING", logger=tw.log.name):
+        for _ in range(15):
+            assert w._cho_cong() is False
+    loi = [r for r in caplog.records if r.levelname == "ERROR"]
+    canh = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(loi) == 1 and "10 lần" in loi[0].getMessage()
+    assert len(canh) == 1  # chỉ lần đầu; các lần giữa không ồn
+    assert w._cong_loi_lien_tiep == 15 and not w._cong_qua
+
+
+def test_cong_creative_chuoi_loi_dut_khi_kiem_duoc(moi_truong_bat, caplog):
+    tw, gia, tmp = moi_truong_bat
+    gia["d"].loi[("lay_muc", "*")] = ConnectionError("mạng")
+    w = tw.dung_tu_env(tmp, tmp / "jobs.db")
+    w.nhip_cong = 0
+    for _ in range(9):
+        w._cho_cong()
+    del gia["d"].loi[("lay_muc", "*")]
+    assert w._cho_cong() is True and w._cong_loi_lien_tiep == 0
+
+
 def test_dung_tu_env_tai_len_vao_thu_muc_cua_bo(moi_truong_bat):
     tw, gia, tmp = moi_truong_bat
     w = tw.dung_tu_env(tmp, tmp / "jobs.db")

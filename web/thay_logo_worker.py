@@ -45,6 +45,7 @@ NICE = 10
 TRAN_CHO_AGY = 5  # pha 1 chỉ tải trước khi số video đang chờ agy < trần này — relay tắt thì không dồn file gốc vào đĩa
 TRAN_GIAY_PHA_1 = 180
 CHU_KY_DON_GIAY = 600
+NGUONG_CONG_LOI_ERROR = 10  # số lần kiểm cổng Creative trượt LIÊN TIẾP thì nâng log từ warning lên error (một lần)
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
 
@@ -100,6 +101,7 @@ class ThayLogoWorker:
         self._don_luc = 0.0
         self._cong, self.nhip_cong = cong, nhip_cong_giay
         self._cong_qua, self._cong_cam, self._cong_thu_luc, self._cong_ly_do = cong is None, False, None, None
+        self._cong_loi_lien_tiep = 0
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -171,10 +173,16 @@ class ThayLogoWorker:
         self._lan_cuoi = "cong_creative: dang_kiem"  # Drive treo ⇒ admin vẫn thấy lý do worker chưa nhận việc
         try:
             ly_do = self._cong()
-        except Exception as e:  # noqa: BLE001 — Drive lỗi tạm: không kết luận gì, thử lại có nhịp
-            log.warning("thay logo: chưa kiểm được cổng Creative (%s) — thử lại sau %ss", type(e).__name__, self.nhip_cong)
+        except Exception as e:  # noqa: BLE001 — Drive lỗi tạm: không kết luận gì, thử lại có nhịp (fail-closed: không nhận việc)
+            self._cong_loi_lien_tiep += 1
+            if self._cong_loi_lien_tiep == 1:
+                log.warning("thay logo: chưa kiểm được cổng Creative (%s) — thử lại sau %ss", type(e).__name__, self.nhip_cong)
+            elif self._cong_loi_lien_tiep == NGUONG_CONG_LOI_ERROR:  # đúng MỘT lần: đừng ồn mỗi nhịp, nhưng đừng để im vô hạn
+                log.error("thay logo: cổng Creative vẫn chưa kiểm được sau %d lần liên tiếp (%s) — worker KHÔNG nhận việc, cần người xem",
+                          self._cong_loi_lien_tiep, type(e).__name__)
             self._lan_cuoi = f"cong_creative: chua_kiem_duoc ({type(e).__name__})"
             return False
+        self._cong_loi_lien_tiep = 0  # kiểm được (qua hoặc cấm) ⇒ chuỗi lỗi tạm đứt
         if ly_do:
             log.warning("thay logo: %s — worker KHÔNG nhận việc", ly_do)
             self.dat_cam(ly_do)
@@ -241,8 +249,8 @@ class ThayLogoWorker:
         try:
             goc = self.tai_ve(json.loads(r["nguon"]), self._scratch(r["id"]))
         except Exception as e:
-            log.warning("thay logo: tải video %s lỗi: %s", r["id"], e)
-            self._ket_thuc(conn, r["id"], "loi", loi_text=f"Không tải được video nguồn ({type(e).__name__}).")
+            log.warning("thay logo: tải video %s lỗi (%s): %s", r["id"], type(e).__name__, e)
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Không tải được video nguồn từ Drive.")
             return
         cmd = ["nice", "-n", str(NICE), self.python, "-m", "tiktok_music_downloader.thay_logo.dat_viec_cli",
                "--video", str(goc), "--hop", str(self.hop.goc), "--job-id", str(r["id"])]
@@ -252,10 +260,10 @@ class ThayLogoWorker:
         except (subprocess.TimeoutExpired, IndexError, json.JSONDecodeError) as e:
             log.warning("thay logo: trích khung video %s hỏng (%s): %s", r["id"], type(e).__name__,
                         getattr(e, "stderr", "") or "")
-            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được video (file hỏng hoặc định dạng lạ).")
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được video này (file hỏng hoặc định dạng lạ).")
             return
         if not ts.get("n"):
-            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được khung nào.")
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Không đọc được hình trong video.")
         else:
             hang_doi.dat(conn, r["id"], "cho_agy", cho_agy_tu=time.time(), duong_dan_goc=str(goc), thong_so=json.dumps(ts))
 
@@ -271,8 +279,8 @@ class ThayLogoWorker:
                 if not Path(r["duong_dan_goc"]).is_file():
                     raise FileNotFoundError("mất file gốc trong scratch")
             except Exception as e:
-                log.warning("thay logo: video %s không chạy pha 2 được: %s", r["id"], e)
-                self._ket_thuc(conn, r["id"], "loi", loi_text=f"Không chạy tiếp được ({type(e).__name__}).")
+                log.warning("thay logo: video %s không chạy pha 2 được (%s): %s", r["id"], type(e).__name__, e)
+                self._ket_thuc(conn, r["id"], "loi", loi_text="Máy không xử lý tiếp được video này.")
                 continue
             hang_doi.dat(conn, r["id"], "dang_chay")
             self._chay_con(conn, r, ts, boxes, man_ket)
@@ -297,7 +305,7 @@ class ThayLogoWorker:
         except subprocess.TimeoutExpired:
             _gui_nhom(self._con, signal.SIGKILL)
             self._con.communicate()
-            self._ket_thuc(conn, r["id"], "loi", loi_text=f"Quá trần thời gian xử lý ({int(tran)}s).")
+            self._ket_thuc(conn, r["id"], "loi", loi_text="Xử lý quá lâu nên đã dừng.")
             return
         finally:
             self._con = None
@@ -313,9 +321,9 @@ class ThayLogoWorker:
             try:
                 file_id = self.tai_len(Path(kq["dau_ra"]), r["job_id"])
             except Exception as e:
-                log.warning("thay logo: tải lên Drive video %s lỗi: %s", r["id"], e)
+                log.warning("thay logo: tải lên Drive video %s lỗi (%s): %s", r["id"], type(e).__name__, e)
                 self._ket_thuc(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"),
-                               loi_text=f"Không tải được bản thay lên Drive ({type(e).__name__}).")
+                               loi_text="Không tải được bản đã thay lên Drive.")
                 return
             nhat_ky.cap_nhat_video(conn, kq["video_log_id"], drive_file_id_ra=file_id)
             self._ket_thuc(conn, r["id"], "xong", video_log_id=kq["video_log_id"], drive_file_id_ra=file_id)

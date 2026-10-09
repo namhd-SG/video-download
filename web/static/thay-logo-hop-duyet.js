@@ -15,9 +15,22 @@
 
   const hangDuyet = () => T.locDuoc().filter((v) => T.nhomCua(v) === "cho_duyet");
 
+  const LOI_GUI = { 403: "Bạn không đánh giá được video này.", 409: "Video này chưa thay xong nên chưa đánh giá được.", 400: "Đánh giá chưa hợp lệ — chọn lý do rồi gửi lại." };
+  let dangDanhGia = false;  // đang gửi một đánh giá ⇒ phím D/H lặp và bấm nút lặp KHÔNG được gửi thêm (cùng video bị chấm hai lần)
   async function danhGia(v, body) {
-    const r = await T.goi(`/api/thay-logo/videos/${v.id}/danh-gia`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-    if (r.ok) { moHong = false; window.TL_taiLai(); } else T.loi(`Không gửi được đánh giá (${r.status}).`);
+    if (dangDanhGia) return;
+    dangDanhGia = true; T.loi("");
+    try {
+      const r = await T.goi(`/api/thay-logo/videos/${v.id}/danh-gia`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!r.ok) { T.loi(LOI_GUI[r.status] || "Chưa gửi được đánh giá. Thử lại sau ít phút."); return; }
+      // Bỏ video khỏi hàng chờ NGAY (không đợi tải lại): `daCham` giữ kết quả để một phản hồi tải đã bay trước lúc chấm không đưa nó về.
+      T.daCham.set(v.id, body.ket_qua); v.danh_gia = body.ket_qua;
+      const x = T.videos.find((a) => a.id === v.id); if (x) x.danh_gia = body.ket_qua;
+      moHong = false; T.veLai();
+      window.TL_taiLai();
+    } catch (e) {
+      if (!e || e.message !== "het_phien") T.loi("Chưa gửi được đánh giá — kiểm tra mạng rồi bấm lại.");  // hết phiên đã có thông báo riêng
+    } finally { dangDanhGia = false; }
   }
 
   function veDuyet() {
@@ -32,7 +45,7 @@
     truoc.addEventListener("click", () => { vi = (vi - 1 + ds.length) % ds.length; moHong = false; veDuyet(); });
     sau.addEventListener("click", () => { vi = (vi + 1) % ds.length; moHong = false; veDuyet(); });
     head.append(truoc, sau); hop.append(head);
-    if (!ds.length) { hop.append(el("p", "tl-rong", "Không có video nào chờ bạn duyệt.")); return; }
+    if (!ds.length) { hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
     const trai = el("div", "tl-so-sanh");
@@ -56,7 +69,7 @@
     }
     if (T.soiKy(v)) { const c = el("div", "tl-canh-bao"); c.append(el("b", "", "⚠ Nên xem kỹ cả video trước khi dùng"), "Gần chỗ logo có chữ hoặc hình lạ, máy có thể đã che nhầm hoặc sót. Bấm “Xem cả video”."); ct.append(c); }
     const cham = el("div", "tl-cham");
-    const dat = el("button", "btn tl-dat"); dat.type = "button"; dat.append("✓ Đạt ", el("kbd", "", "D"));
+    const dat = el("button", "btn tl-dat"); dat.type = "button"; dat.disabled = T.tat; dat.append("✓ Đạt ", el("kbd", "", "D"));
     const hong = el("button", "btn tl-hong-nut"); hong.type = "button"; hong.setAttribute("aria-expanded", String(moHong)); hong.append("✕ Hỏng ", el("kbd", "", "H"));
     cham.append(dat, hong); ct.append(cham);
     const ly = el("div", "tl-ly-do"); ly.hidden = !moHong;
@@ -65,7 +78,7 @@
     const note = el("input"); note.type = "text"; note.placeholder = "Ghi chú (giây thứ mấy…)"; note.maxLength = 2000;
     const gui = el("button", "btn danger", "Gửi đánh giá hỏng"); gui.type = "button";
     ly.append(sel, note, gui); ct.append(ly);
-    dat.addEventListener("click", () => danhGia(v, { ket_qua: "dat" }));
+    dat.addEventListener("click", () => { if (!T.tat) danhGia(v, { ket_qua: "dat" }); });  // tính năng tắt: chuột bị chặn như phím D
     hong.addEventListener("click", () => { moHong = !moHong; hong.setAttribute("aria-expanded", String(moHong)); ly.hidden = !moHong; });
     gui.addEventListener("click", () => danhGia(v, { ket_qua: "hong", loai_loi: sel.value, ghi_chu: note.value }));
     const lk = el("div", "tl-link-phu");
@@ -84,7 +97,7 @@
     const ds = T.locDuoc().filter((v) => T.nhomCua(v) === nhom);
     const h = el("h2", "", tieuDe + " "); h.append(el("span", "so", String(ds.length)));
     k.append(h, el("p", "giai", giai));
-    if (!ds.length) { k.append(el("p", "tl-rong", "Không có video nào.")); return; }
+    if (!ds.length) { k.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào.")); return; }
     for (const v of ds) {
       const m = el("div", "tl-muc");
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
@@ -100,7 +113,7 @@
       v.trang_thai === "cho_agy" && v.cho_agy_tu ? `Máy đang tìm chỗ logo cũ · đã ${T.phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : v.trang_thai === "dang_chay" ? "Đang thay logo" : "Đang xếp hàng");
     khoiPhai("tl-khong-chac", "Máy không chắc", "Máy không tìm ra logo cũ đủ chắc nên giữ nguyên video.", "khong_chac", (v) =>
       (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
-    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => `${v.loi_text || "Lỗi không rõ"} — video gốc không bị ảnh hưởng.`, "bad");
+    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => `${T.loiText(v.loi_text)} — video gốc không bị ảnh hưởng.`, "bad");
   };
 
   document.addEventListener("keydown", (e) => {

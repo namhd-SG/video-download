@@ -306,7 +306,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 thu_vien_loi, tv = True, {}
             for d in lo:
                 t = tv.get(d.pop("_fid")) or {}
-                d["ten_video"] = t.get("title")
+                d["ten_video"] = (t.get("title") or "Video không tên") if t else None  # có hàng mà title NULL ⇒ vẫn có tên để hiện
                 d["anh_bia"] = f"/thumbs/{t['video_id']}" if t.get("video_id") else None
                 d["nen_tang"] = t.get("nen_tang")
                 if not nen_tang or d["nen_tang"] == nen_tang:

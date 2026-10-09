@@ -116,7 +116,7 @@
       chon.clear(); tenSua = false;
       veVung();
       await window.TL_taiLai();
-    } catch (_) { T.loi("Chưa gửi được — kiểm tra mạng rồi bấm lại."); }
+    } catch (e) { if (!e || e.message !== "het_phien") T.loi("Chưa gửi được — kiểm tra mạng rồi bấm lại."); }  // hết phiên đã có thông báo riêng
     finally { dangGui = false; veChan(); }
   }
 

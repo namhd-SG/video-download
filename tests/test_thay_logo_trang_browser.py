@@ -201,8 +201,9 @@ def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet,
     assert p.locator(".tl-ly-do select").is_visible() and p.locator(".tl-ly-do input[type=text]").is_visible()
 
 
-def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet):
-    p, _ = _mo(trinh_duyet, may_chu, 1280)
+def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet, monkeypatch):
+    p = _mo_bat(trinh_duyet, may_chu, monkeypatch)  # tính năng tắt thì nút Đạt bị khoá như phím D
+    p.wait_for_selector("#tl-duyet .tl-dat:enabled")
     p.locator(".tl-dat").click()
     p.wait_for_function("document.querySelector('#tl-loc [data-tt=da_dat]').innerText.includes('1')")
     conn = nhat_ky.mo(app_mod.DATA_DIR / "thay_logo_log.db")
@@ -362,6 +363,335 @@ def test_cho_gan_nguon_nhap_cua_dot_sau(may_chu, trinh_duyet):
     assert "Giải thích của module" in p.locator("#tl-tab-giai").inner_text()
     p.locator("#tl-tabs [role=tab]").nth(2).click()
     assert "Sắp có" in p.locator("#tl-tab-may").inner_text() and p.locator("#tl-tab-link").is_hidden()
+
+
+# ---------------------------------------------------------------- sửa gom lượt cuối: đánh giá trùng, lớp chắn lời lỗi, lỗi tải, race lọc, CSS, XSS
+# Các test dưới đây dựng JSON /bo và /videos giả bằng `page.route` (không đụng DB dùng chung ⇒ không lệch các test đếm ở trên).
+
+def _dong_mo(i, **kw):
+    import json
+    d = {"id": i, "job_id": 1, "nguon": json.dumps({"kieu": "drive", "file_id": "F" * 20}), "trang_thai": "xong", "ten_bo": "Bộ thử",
+         "ten_video": f"Video số {i}", "anh_bia": None, "nen_tang": "tiktok", "so_box": 0, "danh_gia": None, "co_sheet": 0, "can_soi_ky": 0,
+         "drive_file_id_ra": None, "loi_text": None, "pct_render": None, "giay_xu_ly": None}
+    d.update(kw)
+    return d
+
+
+def _bo_mo(job_id, ten, tong=2, xong=0, cho_duyet=0):
+    return {"job_id": job_id, "ten_bo": ten, "nguon_kieu": "drive", "tao_luc": time.time(), "tong": tong, "xong": xong, "cho_duyet": cho_duyet,
+            "cho_nguoi": 0, "loi": 0, "dat": 0, "hong": 0, "thu_muc_ra_id": None}
+
+
+def _tra_json(r, body, status=200):
+    import json
+    r.fulfill(status=status, content_type="application/json", body=json.dumps(body))
+
+
+def _trang_gia(br, goc, monkeypatch, videos, bo=None, bat=True):
+    """Trang mở với /bo và /videos do `videos()` (hàm nhận route) trả; tính năng bật (nút Đạt/phím D dùng được)."""
+    monkeypatch.setattr(app_mod, "worker_thay_logo", object() if bat else None)
+    ctx = br.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    p.route("**/api/thay-logo/bo", lambda r: _tra_json(r, {"bo": bo if bo is not None else [_bo_mo(1, "Bộ thử")]}))
+    p.route("**/api/thay-logo/videos*", videos)
+    return p
+
+
+def _danh_sach(ds, **thua):
+    return {"videos": ds, "con_nua": False, "truoc_tiep": None, "thu_vien_loi": False, **thua}
+
+
+def test_danh_gia_khong_gui_trung_khi_dang_gui_phim_va_nut(may_chu, trinh_duyet, monkeypatch):
+    """Gõ D hai lần nhanh / bấm đúp nút: chỉ MỘT lượt gửi cho video đang hiện, không có hai dòng đánh giá cùng video; xong thì video bị bỏ
+    khỏi hàng chờ ngay và phím D kế tiếp chấm video KẾ. ĐỘT BIẾN: bỏ `if (dangDanhGia) return;` ⇒ ĐỎ."""
+    import re
+    da, posts, giu = {}, [], []
+    dong = [_dong_mo(i) for i in (11, 12, 13)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([dict(d, danh_gia=da.get(d["id"])) for d in dong])))
+
+    def danh_gia(r):
+        vid = int(re.search(r"/videos/(\d+)/danh-gia", r.request.url).group(1))
+        posts.append(vid)
+        giu.append((vid, r))  # giữ phản hồi: đang "gửi"
+    p.route("**/api/thay-logo/videos/*/danh-gia", danh_gia)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem') && document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 3' && !document.querySelector('.tl-dat').disabled")
+    p.keyboard.press("d")
+    p.keyboard.press("d")
+    p.wait_for_timeout(400)
+    assert posts == [11], f"phím D lặp khi đang gửi phải bị chặn: {posts}"
+
+    def tra_loi_het():
+        while giu:
+            vid, r = giu.pop(0)
+            da[vid] = "dat"
+            r.fulfill(status=204)
+    tra_loi_het()
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 2'")  # 11 đã rời hàng chờ
+    assert "Video số 11" not in p.locator("#tl-duyet").inner_text()
+    p.keyboard.press("d")
+    p.wait_for_timeout(200)
+    assert posts == [11, 12]
+    p.locator(".tl-dat").dblclick()  # chuột cũng không gửi trùng
+    p.wait_for_timeout(300)
+    assert posts == [11, 12], posts
+    tra_loi_het()
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 1'")
+    p.keyboard.press("d")
+    p.wait_for_timeout(200)
+    tra_loi_het()
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-rong')")
+    assert posts == [11, 12, 13] and len(set(posts)) == len(posts)
+
+
+def test_video_da_cham_roi_hang_cho_ngay_va_phan_hoi_tai_cu_khong_dua_no_ve(may_chu, trinh_duyet, monkeypatch):
+    """(1) Chấm xong video rời hàng chờ NGAY, không đợi lượt tải lại (lượt tải lại bị giữ). (2) Máy chủ (hoặc phản hồi đã bay trước lúc
+    chấm) vẫn trả video chưa có đánh giá ⇒ trang giữ kết quả vừa chấm. ĐỘT BIẾN: bỏ đoạn đánh dấu ngay ở `danhGia` ⇒ (1) ĐỎ;
+    bỏ dòng ghép `T.daCham` trong `taiLai` ⇒ (2) ĐỎ."""
+    dong = [_dong_mo(71), _dong_mo(72)]
+    giu = []
+    che_do = {"giu": False}
+
+    def videos(r):
+        if che_do["giu"]:
+            giu.append(r)
+        else:
+            _tra_json(r, _danh_sach(dong))  # luôn danh_gia = None
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos)
+    p.route("**/api/thay-logo/videos/*/danh-gia", lambda r: r.fulfill(status=204))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem') && document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 2' && !document.querySelector('.tl-dat').disabled")
+    che_do["giu"] = True
+    p.locator(".tl-dat").click()
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 1'", timeout=3000)  # lượt tải lại đang bị giữ
+    while not giu:
+        p.wait_for_timeout(50)
+    for r in giu:
+        _tra_json(r, _danh_sach(dong))  # máy chủ chưa phản ánh đánh giá
+    p.wait_for_timeout(500)
+    assert p.locator("#tl-duyet .tl-dem").inner_text() == "1 / 1" and "Video số 71" not in p.locator("#tl-duyet").inner_text()
+
+
+@pytest.mark.parametrize("cach", ["mang", 500, 409])
+def test_danh_gia_loi_noi_cau_thuong_va_gui_lai_duoc(may_chu, trinh_duyet, monkeypatch, cach):
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([_dong_mo(21), _dong_mo(22)])))
+    chay = {"loi": True}
+
+    def danh_gia(r):
+        if not chay["loi"]:
+            r.fulfill(status=204)
+        elif cach == "mang":
+            r.abort()
+        else:
+            _tra_json(r, {"detail": "raw detail"}, cach)
+    p.route("**/api/thay-logo/videos/*/danh-gia", danh_gia)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelector('.tl-dat') && !document.querySelector('.tl-dat').disabled")
+    p.locator(".tl-dat").click()
+    p.wait_for_function("document.getElementById('tl-loi').textContent.length > 0")
+    chu = p.locator("#tl-loi").inner_text()
+    assert "raw detail" not in chu and "Error" not in chu and str(cach) not in chu
+    assert "Video số 21" in p.locator("#tl-duyet").inner_text()  # lỗi ⇒ video vẫn ở hàng chờ
+    chay["loi"] = False
+    p.locator(".tl-dat").click()  # cờ đang-gửi đã nhả ⇒ gửi lại được
+    p.wait_for_function("document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 1'")
+    assert p.locator("#tl-loi").inner_text() == ""
+
+
+def test_hang_cu_co_loi_text_ky_su_hien_cau_thuong(may_chu, trinh_duyet, monkeypatch):
+    """Lớp chắn FE cho hàng cũ trong DB. ĐỘT BIẾN: bỏ `T.loiText(...)` ở cột "Không làm được" ⇒ ĐỎ."""
+    cu = ["Không đọc được khung nào.", "Không tải được video nguồn (HttpError).", "Quá trần thời gian xử lý (120s).", "Không chạy tiếp được (KeyError)."]
+    ds = [_dong_mo(30 + i, trang_thai="loi", loi_text=t) for i, t in enumerate(cu)] + [_dong_mo(40, trang_thai="loi", loi_text="Hết chỗ đĩa khi ghi video ra."),
+                                                                                   _dong_mo(41, trang_thai="loi", loi_text=None)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-khong-lam .tl-muc').length === 6")
+    chu = p.locator("#tl-khong-lam").inner_text()
+    assert chu.count("Máy gặp lỗi khi xử lý video này.") == 4
+    for cam in ("khung", "HttpError", "120s", "KeyError"):
+        assert cam not in chu
+    assert "Hết chỗ đĩa khi ghi video ra." in chu and "Lỗi không rõ" in chu  # câu thường giữ nguyên
+
+
+def test_hop_duyet_canh_bao_nen_xem_ky_chi_hien_cho_video_can_soi(may_chu, trinh_duyet, monkeypatch):
+    """ĐỘT BIẾN: xoá dòng `if (T.soiKy(v)) {…}` ở hộp duyệt ⇒ ĐỎ; luôn hiện ⇒ ĐỎ ở video thứ hai."""
+    ds = [_dong_mo(51, can_soi_ky=1, ten_video="Video cần soi"), _dong_mo(52, ten_video="Video thường")]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelector('#tl-duyet h3')")
+    assert "Video cần soi" in p.locator("#tl-duyet h3").inner_text()
+    assert p.locator(".tl-canh-bao").is_visible() and "Nên xem kỹ" in p.locator(".tl-canh-bao").inner_text()
+    p.locator(".tl-nav").nth(1).click()  # › video kế
+    assert "Video thường" in p.locator("#tl-duyet h3").inner_text()
+    assert p.locator(".tl-canh-bao").count() == 0
+
+
+def test_o_nhap_ban_toi_dung_mau_app(may_chu, trinh_duyet):
+    """ĐP-1519: ô nhập bản tối từng hiện nền xám mặc định của trình duyệt. Ô của form/bộ lọc/ghi chú Hỏng = nền app (--bg);
+    ô tìm trong thanh công cụ nằm trên nền --bg nên theo mock dùng --surface. ĐỘT BIẾN: bỏ `background: var(--bg)` ở luật ô nhập ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu, 1280, theme="dark")
+    p.locator(".tl-hong-nut").click()
+    nen = p.evaluate("""() => { const bg = (e) => getComputedStyle(e).backgroundColor;
+        return { app: bg(document.body), ten_bo: bg(document.getElementById('tl-ten-bo')), loc: bg(document.getElementById('tl-loc-bo')),
+                 ghi_chu: bg(document.querySelector('.tl-ly-do input[type=text]')), ly_do: bg(document.querySelector('.tl-ly-do select')),
+                 tim: bg(document.getElementById('tl-tim')), be_mat: bg(document.getElementById('tl-nhap')) }; }""")
+    for k in ("ten_bo", "loc", "ghi_chu", "ly_do"):
+        assert nen[k] == nen["app"], (k, nen)
+    assert nen["tim"] == nen["be_mat"] != nen["app"], nen
+
+
+def test_font_va_kep_dong_theo_mock(may_chu, trinh_duyet):
+    """Tên video không dùng phông mono; lưới thư viện kẹp 2 dòng; cột phải một dòng + dấu …; h3 hộp duyệt 1.2rem. ĐỘT BIẾN: trả `var(--mono)` ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.wait_for_function("document.querySelector('.tl-ten-v')")
+    kq = p.evaluate("""() => { const cs = (s) => getComputedStyle(document.querySelector(s));
+        return { luoi: [cs('.tl-ten-v').fontFamily, cs('.tl-ten-v').webkitLineClamp], h3: [cs('.tl-chi-tiet h3').fontFamily, cs('.tl-chi-tiet h3').fontSize],
+                 cot: [cs('.tl-muc .ten').fontFamily, cs('.tl-muc .ten').whiteSpace, cs('.tl-muc .ten').textOverflow] }; }""")
+    for ho in (kq["luoi"][0], kq["h3"][0], kq["cot"][0]):
+        assert "mono" not in ho.lower(), kq
+    assert kq["luoi"][1] == "2" and kq["h3"][1] == "19.2px" and kq["cot"][1:] == ["nowrap", "ellipsis"], kq
+
+
+@pytest.mark.parametrize("hong", [500, 503, 404, "mang"])
+def test_moc_cap_nhat_chi_nhich_khi_ca_bo_va_videos_ok(may_chu, trinh_duyet, hong):
+    """Lỗi tải (mọi non-2xx + lỗi mạng) ⇒ MỘT câu thường, mốc "⟳ x giây trước" không nhích; lần sau ok ⇒ câu lỗi biến mất, mốc nhích.
+    ĐỘT BIẾN: đặt `capNhatLuc` vô điều kiện ⇒ ĐỎ."""
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    tinh = {"hong": True}
+
+    def videos(r):
+        if not tinh["hong"]:
+            r.continue_()
+        elif hong == "mang":
+            r.abort()
+        else:
+            _tra_json(r, {"detail": "raw"}, hong)
+    p.route("**/api/thay-logo/videos*", videos)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.getElementById('tl-loi-tai').textContent.length > 0")
+    chu = p.locator("#tl-loi-tai").inner_text()
+    assert "Chưa tải được" in chu and str(hong) not in chu and "raw" not in chu
+    assert p.locator("#tl-do-tuoi").inner_text() == "⟳ …" and p.evaluate("window.TL.capNhatLuc") == 0
+    tinh["hong"] = False
+    p.evaluate("window.TL_taiLai()")
+    p.wait_for_function("document.getElementById('tl-do-tuoi').textContent.includes('giây trước')")
+    assert p.locator("#tl-loi-tai").is_hidden() and p.locator("#tl-loi-tai").inner_text() == ""
+
+
+def test_moc_khong_nhich_khi_chi_bo_loi(may_chu, trinh_duyet):
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    p.route("**/api/thay-logo/bo", lambda r: _tra_json(r, {"detail": "x"}, 500))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.getElementById('tl-loi-tai').textContent.length > 0")
+    assert p.locator("#tl-do-tuoi").inner_text() == "⟳ …"
+
+
+def test_het_phien_401_dung_poll(may_chu, trinh_duyet):
+    """401 giữa chừng: báo hết phiên và DỪNG vòng poll (không bắn 401 mỗi 15 giây). ĐỘT BIẾN: bỏ `clearInterval` ⇒ ĐỎ."""
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    p.add_init_script("window.__ci = 0; const ci = window.clearInterval; window.clearInterval = (...a) => { window.__ci++; return ci(...a); };")
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length >= 2")
+    assert p.evaluate("window.__ci") == 0
+    p.route("**/api/thay-logo/bo", lambda r: _tra_json(r, {"detail": "x"}, 401))
+    p.evaluate("void window.TL_taiLai()")
+    p.wait_for_function("!document.getElementById('session-expired').hidden")
+    assert p.evaluate("window.__ci") == 1
+    assert p.locator("#tl-loi-tai").is_hidden()  # hết phiên đã có thông báo riêng, không chồng thêm câu "chưa tải được"
+
+
+def test_doi_loc_giua_luc_dang_tai_khong_hien_video_cua_loc_cu(may_chu, trinh_duyet, monkeypatch):
+    """Phản hồi thuộc bộ lọc cũ bị bỏ (số thế hệ lọc). ĐỘT BIẾN: bỏ `if (the0 !== the) return;` ⇒ ĐỎ (video cũ nhấp lên trước khi lọc mới về)."""
+    import re
+    giu = []
+    dong = {None: [_dong_mo(61, job_id=1, ten_video="CHI CUA LOC CU"), _dong_mo(62, job_id=2, ten_video="Chung")],
+            "1": [_dong_mo(61, job_id=1, ten_video="CHI CUA LOC CU")], "2": [_dong_mo(62, job_id=2, ten_video="CHI CUA LOC MOI")]}
+
+    def videos(r):
+        m = re.search(r"job_id=(\d+)", r.request.url)
+        if m:
+            giu.append((m.group(1), r))
+        else:
+            _tra_json(r, _danh_sach(dong[None]))
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos, bo=[_bo_mo(1, "Bộ một"), _bo_mo(2, "Bộ hai")])
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 2 && document.querySelector('#tl-duyet h3')")
+    p.locator("button.tl-bo-chon[data-job='1']").click()  # lượt tải cho bộ 1: đang bay
+    while not giu:
+        p.wait_for_timeout(50)
+    p.locator("button.tl-bo-chon[data-job='2']").click()  # đổi lọc sang bộ 2 khi bộ 1 chưa về
+    assert "Đang tải" in p.locator("#tl-duyet").inner_text()
+    ma, r = giu.pop(0)
+    assert ma == "1"
+    _tra_json(r, _danh_sach(dong["1"]))  # phản hồi của lọc CŨ về muộn
+    p.wait_for_timeout(400)
+    assert "CHI CUA LOC CU" not in p.locator("#tl-duyet").inner_text() + p.locator("aside.tl-cot").inner_text()
+    while not giu:
+        p.wait_for_timeout(50)
+    ma, r = giu.pop(0)
+    assert ma == "2"
+    _tra_json(r, _danh_sach(dong["2"]))
+    p.wait_for_function("document.querySelector('#tl-duyet h3') && document.querySelector('#tl-duyet h3').textContent === 'CHI CUA LOC MOI'")
+
+
+def test_xem_them_bam_giua_luc_dang_tai_khong_bi_mat(may_chu, trinh_duyet, monkeypatch):
+    """`xemThem` tăng số trang ngay; vòng tải đang bay không ghi đè. ĐỘT BIẾN: bỏ `soTrang += 1` ⇒ ĐỎ (trang 2 không bao giờ về)."""
+    giu, goi = [], []
+
+    def videos(r):
+        goi.append(r.request.url)
+        trang1 = "truoc_id" not in r.request.url
+        if trang1 and len(goi) > 1 and not giu:
+            giu.append(r)  # lượt tải lại (poll) đang bay, giữ phản hồi
+            return
+        _tra_json(r, _danh_sach([_dong_mo(80, trang_thai="cho", ten_video="Video 80")] if trang1 else [_dong_mo(70, trang_thai="cho", ten_video="Video 70")],
+                                con_nua=trang1, truoc_tiep=80 if trang1 else None))
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector(".tl-xem-them")
+    p.evaluate("void window.TL_taiLai()")
+    while not giu:
+        p.wait_for_timeout(50)
+    p.locator(".tl-xem-them").click()  # bấm khi vòng tải trang 1 còn bay
+    giu[0].fulfill(status=200, content_type="application/json",
+                   body='{"videos": [], "con_nua": true, "truoc_tiep": 80, "thu_vien_loi": false}')
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 2 && document.querySelector('#tl-dang-lam').innerText.includes('Video 70')", timeout=8000)
+    assert p.locator(".tl-xem-them").count() == 0
+    assert any("truoc_id=80" in u for u in goi)
+
+
+def test_link_drive_chung_khuon_id_va_nut_dat_bi_khoa_khi_tinh_nang_tat(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu, 1280)
+    ket = p.evaluate("""() => { const T = window.TL; return [T.linkDrive('../etc/passwd', 'x').tagName, T.linkDrive('a b', 'x').tagName,
+        T.linkDrive('FILE20xxxxxxxxxxxx', 'x').tagName, T.IDRE.test('FILE20xxxxxxxxxxxx')]; }""")
+    assert ket == ["SPAN", "SPAN", "A", True]
+    goi = []
+    p.on("request", lambda rq: goi.append(rq.url) if "danh-gia" in rq.url else None)
+    p.wait_for_function("window.TL.tat === true")
+    assert p.locator(".tl-dat").is_disabled()
+    p.locator(".tl-dat").click(force=True)
+    p.locator(".tl-dat").dispatch_event("click")
+    p.keyboard.press("d")
+    p.wait_for_timeout(300)
+    assert goi == []  # chuột và phím cùng bị chặn
+
+
+def test_ten_bo_la_html_hien_nguyen_van_khong_chay(may_chu, trinh_duyet, monkeypatch):
+    xau = "<img src=x onerror=alert(1)>"
+    ds = [_dong_mo(91, ten_bo=xau, ten_video=xau, trang_thai="cho"), _dong_mo(92, ten_bo=xau, ten_video=xau)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)), bo=[_bo_mo(1, xau)])
+    hop = []
+    p.on("dialog", lambda d: (hop.append(d.message), d.dismiss()))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 1 && document.querySelector('#tl-duyet h3')")
+    p.wait_for_timeout(500)
+    assert p.locator(".tl-bo-ten").inner_text() == xau and p.locator("#tl-duyet h3").inner_text() == xau
+    assert xau in p.locator("#tl-dang-lam").inner_text()
+    assert p.locator("img[src='x']").count() == 0 and p.locator("#tl-loc-bo option", has_text=xau).count() == 1
+    assert hop == [], "mã trong tên bộ đã chạy"
 
 
 # ---------------------------------------------------------------- tạo lượt (CUỐI file: thêm một bộ vào DB dùng chung)

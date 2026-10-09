@@ -1171,6 +1171,15 @@ def test_shell_and_its_assets_must_be_revalidated():
     assert _header_for("/giai-captcha-popup.js") == "no-cache"
 
 
+def test_thay_logo_page_and_every_file_under_its_prefix_are_revalidated():
+    """JS cũ cache 2 giờ ở edge đứng cạnh HTML mới ⇒ hỏng âm thầm (không thấy id, gửi trùng job). Tiền tố phủ cả file đợt sau thêm.
+    ĐỘT BIẾN: bỏ `startswith("/thay-logo")` ⇒ ĐỎ."""
+    for path in ("/thay-logo.html", "/thay-logo.js", "/thay-logo-hop-duyet.js", "/thay-logo-khoi-nhap.js",
+                 "/thay-logo.css", "/thay-logo-file-cua-dot-sau.js"):
+        assert _header_for(path) == "no-cache", path
+    assert _header_for("/huong-dan.html") is None  # trang không liên quan không bị đổi
+
+
 def test_other_routes_are_left_alone():
     """Ca âm: middleware đóng dấu MỌI response thì bốn assert trên vẫn xanh
     trong khi header đã bị dán sai khắp nơi — kể cả lên JSON của /jobs."""

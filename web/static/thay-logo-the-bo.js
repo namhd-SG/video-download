@@ -6,7 +6,6 @@
   const NEN = [["", "Tất cả"], ["tiktok", "TikTok"], ["douyin", "Douyin"], ["facebook", "Facebook"]];
   const NGAY = [["", "Tất cả"], ["hom_nay", "Hôm nay"], ["7_ngay", "7 ngày"]];
   const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Đã vào bộ" };
-  const IDRE = /^[A-Za-z0-9_-]{6,120}$/;
 
   // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt; còn lại Xong.
   function trangThaiBo(b) {
@@ -32,7 +31,7 @@
     nut.append(h, nguon, bar, tien);
     nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
     the.append(nut);
-    if (b.thu_muc_ra_id && IDRE.test(b.thu_muc_ra_id)) {
+    if (b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id)) {
       const a = el("a", "tl-bo-thumuc", "Mở thư mục đầu ra →");
       a.href = `https://drive.google.com/drive/folders/${encodeURIComponent(b.thu_muc_ra_id)}`; a.target = "_blank"; a.rel = "noopener";
       the.append(a);

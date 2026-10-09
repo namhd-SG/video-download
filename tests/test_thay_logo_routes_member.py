@@ -250,6 +250,16 @@ def test_videos_ghep_thu_vien_va_loc(ctx):
     assert c.get("/api/thay-logo/videos?tu=hom-qua", headers=_h("a@x")).status_code == 400
 
 
+def test_video_co_trong_thu_vien_ma_title_null_van_co_ten_hien_thi(ctx):
+    """Có hàng thư viện mà title NULL/rỗng ⇒ tên dự phòng (để trang không nói dối "không còn trong thư viện"); không có hàng ⇒ vẫn null."""
+    c, db = ctx
+    _jobs_db(db, [("A" * 20, "111", None, "tiktok", "a@x"), ("B" * 20, "112", "", "tiktok", "a@x")])
+    _, (v1, v2, v3) = _bo(db, "a@x", "Bộ", ["A" * 20, "B" * 20, "F" * 20])
+    d = {x["id"]: x for x in c.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"]}
+    assert d[v1]["ten_video"] == "Video không tên" and d[v2]["ten_video"] == "Video không tên"
+    assert d[v3]["ten_video"] is None
+
+
 def test_videos_loc_khong_pha_cong_quyen_member(ctx):
     c, db = ctx
     _jobs_db(db, [("A" * 20, "111", "Video A", "tiktok", "a@x")])
