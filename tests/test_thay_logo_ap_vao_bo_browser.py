@@ -238,10 +238,10 @@ def test_bo_mot_xong_mot_lui_hien_nut_ap_lai(may_chu, trinh_duyet):
     assert nut.inner_text() == "Áp lại 1 video chưa vào bộ" and "Đã áp 1 video vào bộ" in p.locator(".tl-bx").inner_text()
     p.wait_for_function("document.querySelectorAll('.tl-bx-thumbs img').length === 2")
     p.wait_for_function("[...document.images].every(i => i.complete)")
-    d = os.environ.get("VIDEODL_ANH_THAY_LOGO")  # cùng luật `_chup`: chỉ chụp khi có đặt thư mục, không ghi đường dẫn cứng
-    if d:
-        Path(d).mkdir(parents=True, exist_ok=True)
-        p.locator(".tl-bx").screenshot(path=str(Path(d) / "2a-mot-xong-mot-lui-1280.png"))
+    thu_muc_anh = os.environ.get("VIDEODL_ANH_THAY_LOGO")  # cùng luật `_chup`: chỉ chụp khi có đặt thư mục, không ghi đường dẫn cứng
+    if thu_muc_anh:
+        Path(thu_muc_anh).mkdir(parents=True, exist_ok=True)
+        p.locator(".tl-bx").screenshot(path=str(Path(thu_muc_anh) / "2a-mot-xong-mot-lui-1280.png"))
     with p.expect_request(lambda r: r.method == "POST" and r.url.endswith(f"/api/thay-logo/bo/{j2}/ap")):
         nut.click()
     p.wait_for_function("document.querySelector('.tl-bx-da-ap') && document.querySelector('.tl-bx-da-ap').textContent.includes('Đã áp 2 video')",
