@@ -600,3 +600,26 @@ def test_hai_post_that_cung_bo_chi_mot_202(ap):
     assert ap.post(f"/api/thay-logo/bo/{thang}/hoan-tac", headers=_h("a@x")).status_code == 409
     di.set()
     _cho(ap)
+
+
+def test_quyen_kiem_truoc_drive_nguoi_la_403_khong_phai_503(ap):
+    """ĐỘT BIẾN: kiểm worker/Drive trước quyền ⇒ người lạ nhận 503 (lộ cấu hình máy chủ) ⇒ ĐỎ."""
+    import types
+    j = ap.tao("a@x", [1])
+    ap.box["w"] = types.SimpleNamespace(ly_do_khong_nhan=None)
+    for duong in ("ap", "hoan-tac"):
+        assert ap.post(f"/api/thay-logo/bo/{j}/{duong}", headers=_h("b@x")).status_code == 403
+        assert ap.post(f"/api/thay-logo/bo/{j}/{duong}", headers=_h(ADMIN)).status_code == 403
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 503
+
+
+def test_tab_da_vao_bo_co_tat_khong_tao_bang_ap(ap, monkeypatch):
+    """ĐỘT BIẾN: gọi `ban_da_ap` cả khi cờ tắt ⇒ bảng `tl_ap_bo` bị tạo ⇒ ĐỎ."""
+    from tiktok_music_downloader.thay_logo import ap_vao_bo
+    ap.tao("a@x", [1])
+    monkeypatch.delenv(ap_vao_bo.ENV_BAT)
+    vb = ap.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()
+    assert [v["da_ap"] for b in vb["bo"] for v in b["videos"]] == [False, False]
+    conn = ap.mo()
+    assert conn.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE 'tl_ap_bo%'").fetchone()[0] == 0
+    conn.close()

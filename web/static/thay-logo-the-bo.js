@@ -94,19 +94,23 @@
 
   // ------------------------------------------------------------------ thẻ mở rộng: áp vào bộ / hoàn tác (đợt 2A)
   const apCua = {};  // job_id ⇒ phản hồi GET …/ap gần nhất; null = máy chủ tắt tính năng (404)
+  const apThu = {};  // job_id ⇒ lúc bắt đầu lần tải gần nhất (chặn vòng tải dồn dập khi máy chủ lỗi tạm)
   let apDangTai = null, apHen = null, apLoi = "";
   const gio = (giay) => { if (!giay) return ""; const d = new Date(giay * 1000), z = (n) => String(n).padStart(2, "0"); return `lúc ${z(d.getHours())}:${z(d.getMinutes())}`; };
   const boMo = () => { const b = T.bo.find((x) => x.job_id === T.loc.job); return b && b.nguon_kieu === "vao_bo" && trangThaiBo(b)[1] === "xong" ? b : null; };
 
   async function taiAp(jid) {
     if (apDangTai === jid) return;
-    apDangTai = jid;
+    apDangTai = jid; apThu[jid] = Date.now();
     try {
       const r = await T.goi(`/api/thay-logo/bo/${jid}/ap`);
-      apCua[jid] = r.ok ? { ...(await r.json()), _luc: Date.now() } : (r.status === 404 ? null : apCua[jid]);
-    } catch (_) { /* mạng chập: giữ dữ liệu cũ */ } finally { apDangTai = null; }
+      if (r.ok) apCua[jid] = { ...(await r.json()), _luc: Date.now() };
+      else if (r.status === 404) apCua[jid] = null;
+      else if (!apCua[jid]) delete apCua[jid];  // lỗi tạm ở lần ĐẦU: không dựng khoá rỗng (thẻ sẽ kẹt), thử lại sau
+    } catch (_) { if (!apCua[jid]) delete apCua[jid]; } finally { apDangTai = null; }  // mạng chập: giữ dữ liệu cũ nếu có
     clearTimeout(apHen);
-    if (apCua[jid] && apCua[jid].trang_thai === "chay" && T.loc.job === jid) apHen = setTimeout(() => taiAp(jid), 2000);
+    const chua = !(jid in apCua), chay = apCua[jid] && apCua[jid].trang_thai === "chay";
+    if ((chua || chay) && T.loc.job === jid) apHen = setTimeout(() => taiAp(jid), 2000);
     veBo(); veMo();
   }
 
@@ -128,14 +132,15 @@
     const hop = el("div", "tl-bx-act"), maBo = ap.ma_bo || b.ten_bo, thuMuc = `Thay logo - bản gốc/${maBo}`;
     const nutLink = (chu, f) => { const n = el("button", "tl-bx-link", chu); n.type = "button"; n.addEventListener("click", f); return n; };
     if (!ap.la_chu) {  // quản trị xem bộ người khác: CHỈ ĐỌC
-      hop.append(nho(ap.trang_thai === "xong" ? `Chủ bộ đã áp ${ap.so_da_ap} video ${gio(ap.xong_luc)}.` : "Chỉ chủ video tự áp vào bộ."));
+      hop.append(nho(ap.trang_thai === "xong" ? `Chủ lượt đã áp ${ap.so_da_ap} video ${gio(ap.xong_luc)}.`
+                                              : "Chỉ người vừa tạo lượt vừa là chủ video mới áp được vào bộ."));
     } else if (ap.trang_thai === "chay") {
       hop.append(el("div", "tl-bx-chay", `Đang chạy… còn ${ap.so_dang_lam} video — có thể rời trang, máy vẫn làm tiếp.`));
     } else if (ap.trang_thai === "xong") {
       const o = el("div", "tl-bx-da-ap"); o.setAttribute("role", "status");
       o.append(`✓ Đã áp ${ap.so_da_ap} video vào bộ ${gio(ap.xong_luc)} · `, nutLink("Hoàn tác", () => bam(b.job_id, "hoan-tac")));
       hop.append(o, nho("Bản gốc đang ở ", duong(thuMuc), ". Creative Desk vẫn dùng bản cũ tới lượt đồng bộ."), nho(CAU_META));
-      if (ap.so_du_dieu_kien) hop.append(nho(`Còn ${ap.so_du_dieu_kien} video Đạt chưa áp — hoàn tác rồi áp lại để gồm cả chúng.`));
+      if (ap.so_du_dieu_kien) hop.append(nho(`Còn ${ap.so_du_dieu_kien} video Đạt chưa áp. Bộ đã áp — hoàn tác trước nếu muốn áp lại cả chúng.`));
     } else if (ap.trang_thai === "do_dang" || ap.trang_thai === "loi") {
       const o = el("div", "tl-bx-do-dang"); o.setAttribute("role", "status");
       o.append(ap.trang_thai === "loi" ? "Có video cần quản trị xem (dưới đây). " : "Lượt trước còn dở. ");
@@ -147,7 +152,7 @@
       const n = el("button", "btn primary tl-bx-ap", `Áp ${ap.so_du_dieu_kien} video Đạt vào bộ ${maBo}`); n.type = "button";
       n.addEventListener("click", () => { n.disabled = true; bam(b.job_id, "ap"); });
       const chiBan = el("b", "", "Chỉ video của bạn.");
-      hop.append(n, nho(chiBan, " Video Đạt của người khác vẫn ở thư mục đầu ra — chủ video tự áp."),
+      hop.append(n, nho(chiBan, " Chỉ áp được video Đạt mà bạn vừa là người tạo lượt vừa là chủ video; video khác vẫn ở thư mục đầu ra."),
                  nho("Bản gốc chuyển sang ", duong(thuMuc), " — hoàn tác được. ", CAU_META));
       if (ap.da_hoan_tac) hop.append(nho("Bộ này đã hoàn tác một lần — áp lại dùng bản mới."));
     } else {
@@ -174,10 +179,10 @@
     hop.replaceChildren();
     const b = boMo();
     if (!b) return;
-    if (!(b.job_id in apCua)) { taiAp(b.job_id); return; }
+    if (!(b.job_id in apCua)) { if (Date.now() - (apThu[b.job_id] || 0) > 1500) taiAp(b.job_id); return; }
     const ap = apCua[b.job_id];
     if (ap && Date.now() - ap._luc > 14000) taiAp(b.job_id);  // theo nhịp poll của trang: vẽ bản đang có, tải bản mới ở nền
-    if (ap === null) return;  // máy chủ tắt tính năng áp vào bộ
+    if (!ap) return;  // null = máy chủ tắt tính năng áp vào bộ
     const the = el("article", "panel tl-bx"); the.setAttribute("aria-label", `Bộ ${b.ten_bo} đã duyệt xong`);
     const dau = el("div", "tl-bx-head");
     dau.append(el("h3", "", b.ten_bo), el("span", "tl-bx-tt", "Xong · đã duyệt hết"), el("span", "tl-bx-grow"),

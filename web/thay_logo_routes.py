@@ -545,7 +545,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             conn = _mo()
             try:
                 trong_ban, trong_nguon = _nguon_dang_trong_luot(conn, chu)
-                da_ap = ap_vao_bo.ban_da_ap(conn)
+                da_ap = ap_vao_bo.ban_da_ap(conn) if ap_vao_bo.dang_bat() else set()  # cờ tắt ⇒ không tạo bảng tl_ap_bo
             finally:
                 conn.close()
         nhom: dict[str, dict] = {}
@@ -582,6 +582,20 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(503, "Chưa kiểm được chủ video — thử lại sau ít phút.")
         return r
 
+    def _chi_chu_luot(job_id: int, email: str) -> None:
+        """Quyền TRƯỚC mọi thứ khác (kể cả kiểm Drive): người không phải chủ lượt nhận 403/404, không nhận 503 lộ cấu hình máy chủ."""
+        if not os.path.exists(lay_log_db()):
+            raise HTTPException(404, "không có lượt này")
+        conn = _mo()
+        try:
+            chu = ap_vao_bo.chu_job(conn, job_id)
+        except ap_vao_bo.LoiAp as e:
+            raise HTTPException(e.ma, str(e)) from None
+        finally:
+            conn.close()
+        if chu != email:
+            raise HTTPException(403, "chỉ người tạo lượt được áp vào bộ / hoàn tác")
+
     def _khoi_chay(w, job_id: int) -> None:
         try:
             w.bat_dau_ap(job_id)
@@ -598,6 +612,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
     def ap_vao_bo_post(job_id: int = ID_LUOT, email: str = Depends(require_user)) -> dict:
         """Áp video Đạt của CHÍNH người gọi vào bộ (cũng là nút "Tiếp tục" khi lượt trước dở). Admin cũng không áp thay."""
         _cong_ap()
+        _chi_chu_luot(job_id, email)
         w = _worker_ap()
         conn = _mo()
         try:
@@ -612,6 +627,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
     @app.post("/api/thay-logo/bo/{job_id}/hoan-tac", status_code=202)
     def ap_vao_bo_hoan_tac(job_id: int = ID_LUOT, email: str = Depends(require_user)) -> dict:
         _cong_ap()
+        _chi_chu_luot(job_id, email)
         w = _worker_ap()
         conn = _mo()
         try:

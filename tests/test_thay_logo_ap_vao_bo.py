@@ -182,19 +182,37 @@ def test_ap_lai_sau_hoan_tac_dung_lai_hang_tang_lan(san):
 
 
 def test_ap_lai_khong_nham_ban_moi_lan_truoc_bi_keo_lai_vao_bo(san):
-    """Áp → hoàn tác → ai đó kéo bản HOAN-TAC của lần 1 về lại bộ → áp lần 2, chết ngay sau khi dời G ⇒ quét phải ra đúng một bản mới
-    MỚI (thẻ lần 2), không nhận bản lần 1. ĐỘT BIẾN: dùng lại hàng mà không tăng `lan` (thẻ trùng lần trước) ⇒ ĐỎ."""
+    """Áp → hoàn tác → áp lần 2, chết ngay sau khi dời G → ai đó kéo bản HOAN-TAC của lần 1 về bộ và đổi lại đúng tên → quét. Bản đó mang
+    thẻ lần 1 ⇒ KHÔNG được nhận làm bản mới của lần 2 (có thể là copy của đầu ra khác) ⇒ `lui`, G về bộ, bản lạ vào thùng rác.
+    ĐỘT BIẾN: dùng lại hàng mà không tăng `lan` (thẻ trùng lần trước) ⇒ nhận bản cũ làm "xong" ⇒ ĐỎ."""
     san.ap(); san.chay(); san.hoan_tac(); san.chay()
     cu = next(iter(k for k, v in san.drive.muc.items() if v["name"].startswith("HOAN-TAC-") and v["appProperties"][ap_vao_bo.THE_GOC] == BAN[1]))
-    san.drive.muc[cu]["parents"] = [F1]
     san.ap()
     san.drive.loi_sau[("doi_cha", BAN[1])] = RuntimeError("chết sau khi dời G")
     san.chay()
+    san.drive.muc[cu]["parents"], san.drive.muc[cu]["name"] = [F1], TEN[1]
     san.quet()
     h1 = san.hang()[0]
-    assert h1["buoc"] == "xong" and h1["ban_moi_id"] != cu
-    moi = [v for v in san.song_trong_bo().values() if v["name"] == TEN[1]]
-    assert len(moi) == 1 and moi[0]["appProperties"][ap_vao_bo.THE_AP] == ap_vao_bo.the_lan(h1["id"], 2)
+    assert (h1["chieu"], h1["buoc"]) == ("lui", "loi") and h1["ban_moi_id"] is None
+    assert san.drive.muc[BAN[1]]["parents"] == [F1] and san.drive.muc[cu]["trashed"] and san.vi_pham == []
+    assert san.hang()[1]["buoc"] == "xong"
+
+
+def test_chi_muc_tre_copy_co_hieu_luc_chet_truoc_khi_ghi_roi_tiep_tuc(san):
+    """Kịch bản reviewer: copy CÓ hiệu lực, tiến trình chết TRƯỚC khi ghi `ban_moi_id`, chỉ mục tìm theo thẻ chưa thấy bản đó; bấm Tiếp tục.
+    Phải nhận lại đúng bản đã copy (đo bằng liệt kê bộ), KHÔNG copy bản thứ hai, bất biến không vỡ. ĐỘT BIẾN: quay về đo M chỉ bằng
+    `tim_theo_the` ⇒ copy bản thứ hai ⇒ lùi chỉ gỡ bản đã biết ⇒ bộ có G + bản đầu ⇒ ĐỎ."""
+    san.drive.tre_chi_muc = True
+    san.drive.loi_sau[("sao_chep", RA[1])] = RuntimeError("chết sau khi copy")
+    san.ap()
+    san.chay()
+    h1 = san.hang()[0]
+    assert h1["buoc"] == "da_doi_goc" and h1["ban_moi_id"] is None
+    assert san.drive.tim_theo_the(F1, ap_vao_bo.THE_AP, ap_vao_bo.the_lan(h1["id"], 1)) == []  # chỉ mục chưa thấy
+    san.ap()  # "Tiếp tục"
+    san.chay()
+    _da_ap_dung(san)
+    assert san.drive.so_lan("sao_chep") == 2  # mỗi video đúng một lần copy
 
 
 def test_bam_ap_lan_hai_khi_da_ap_thi_409(san):
@@ -215,7 +233,7 @@ def test_ap_khi_dang_khoa_409_hoan_tac_chua_ap_409(san):
 
 
 # ---------------------------------------------------------------- lỗi tiêm ở mỗi bước + quét chạy lại
-BUOC_AP = ["lay_muc", "tim_con_theo_ten", "tao_thu_muc", "doi_cha", "tim_theo_the", "sao_chep", "liet_ke_con"]
+BUOC_AP = ["lay_muc", "tim_con_theo_ten", "tao_thu_muc", "doi_cha", "sao_chep", "liet_ke_con"]
 
 
 @pytest.mark.parametrize("buoc", BUOC_AP)
@@ -243,7 +261,7 @@ def test_ap_chet_sau_khi_drive_da_lam_quet_lai_khong_lam_thua(san, buoc, id_):
     assert len(san.thu_muc("Thay logo - bản gốc")) == 1
 
 
-@pytest.mark.parametrize("buoc,ai", [("doi_ten", "M"), ("doi_cha", "M"), ("doi_cha", "G"), ("tim_theo_the", None)])
+@pytest.mark.parametrize("buoc,ai", [("doi_ten", "M"), ("doi_cha", "M"), ("doi_cha", "G"), ("liet_ke_con", None)])
 def test_hoan_tac_chet_o_moi_buoc_quet_lai_ra_dung(san, buoc, ai):
     """ĐỘT BIẾN: bỏ probe trước dời ở hoàn tác (M hoặc G) ⇒ doi_cha giả ném khi chạy lại ⇒ ĐỎ; bỏ probe tên ⇒ HOAN-TAC-HOAN-TAC- ⇒ ĐỎ."""
     san.ap(); san.chay()
@@ -336,7 +354,8 @@ def test_vi_pham_bat_bien_co_san_thi_go_ban_moi(san):
     conn = san.mo()
     rid, lan = conn.execute("SELECT id, lan FROM tl_ap_bo ORDER BY id").fetchone()
     conn.close()
-    san.drive.them_file("LACHNHAP01" + "z" * 10, "x.mp4", F1, app_properties={ap_vao_bo.THE_AP: ap_vao_bo.the_lan(rid, lan)})
+    san.drive.them_file("LACHNHAP01" + "z" * 10, "x.mp4", F1, app_properties={ap_vao_bo.THE_AP: ap_vao_bo.the_lan(rid, lan),
+                                                                           ap_vao_bo.THE_GOC: BAN[1]})
     san.chay()
     h = san.hang()[0]
     assert (h["chieu"], h["buoc"]) == ("lui", "loi") and san.drive.muc["LACHNHAP01" + "z" * 10]["trashed"]
@@ -501,3 +520,102 @@ def test_script_khoi_phuc_dung_tu_drive_khi_db_mat(san, capsys):
         assert m["parents"] == [dh] and m["name"] == "HOAN-TAC-" + TEN[i]
     assert san.vi_pham == [] and sc.lap_ke_hoach(san.drive, [F1]) == []
     assert sc.thuc_hien(san.drive, ke) == 2  # chạy lại: probe ⇒ không dời thừa, không ném
+
+
+# ---------------------------------------------------------------- vòng vá review: lượt khác · đã áp · quét
+def _hai_luot_cung_ban(tmp_path):
+    """Lượt J dở (lỗi tạm ở video 1), rồi lượt K của cùng chủ chứa CÙNG bản trong bộ (lượt J đã lỗi ở tầng hàng đợi)."""
+    s = San(tmp_path, n=1)
+    s.drive.loi[("doi_cha", BAN[1])] = TimeoutError("treo")
+    s.ap(); s.chay()
+    s.drive.loi.clear()
+    conn = s.mo()
+    n = json.loads(conn.execute("SELECT nguon FROM tl_job_video WHERE id=?", (s.vids[0],)).fetchone()[0])
+    k = hang_doi.tao_job(conn, A, [n], ten_bo="K")
+    vk = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (k,)).fetchone()[0]
+    log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+    nhat_ky.ghi_danh_gia(conn, log_id, A, "dat")
+    hang_doi.dat(conn, vk, "xong", video_log_id=log_id, drive_file_id_ra=RA[1])
+    conn.close()
+    return s, k, vk
+
+
+def test_tiep_tuc_o_luot_khac_khi_hang_do_thuoc_luot_truoc(tmp_path):
+    """Hàng dở thuộc lượt J; bấm áp ở lượt K ⇒ bỏ qua kèm lý do chỉ về lượt J, KHÔNG đổi `job_video_id`/`job_id` của hàng.
+    ĐỘT BIẾN: bỏ nhánh "lượt khác" ⇒ hàng thành "tiep" của K mà `chay_luot(K)` không bao giờ chạy nó ⇒ ĐỎ."""
+    s, k, vk = _hai_luot_cung_ban(tmp_path)
+    truoc = s.hang()[0]
+    conn = s.mo()
+    kq = ap_vao_bo.phan_loai(conn, k, A, _chu)
+    assert kq["lam"] == [] and kq["bo_qua"] == [{"job_video_id": vk, "ly_do": f"đang dở ở lượt #{s.job} — mở lượt đó bấm Tiếp tục"}]
+    with pytest.raises(ap_vao_bo.LoiAp) as e:
+        ap_vao_bo.dat_lich_ap(conn, k, A, _chu)
+    conn.close()
+    assert e.value.ma == 409 and f"#{s.job}" in str(e.value)
+    sau = s.hang()[0]
+    assert (sau["job_id"], sau["job_video_id"]) == (truoc["job_id"], truoc["job_video_id"])
+    s.ap(); s.chay()  # mở lượt J bấm Tiếp tục ⇒ chạy được
+    assert s.hang()[0]["buoc"] == "xong"
+
+
+def test_bo_da_co_video_ap_xong_thi_khong_ap_them_phan_con_lai(san):
+    """Plan: bộ đã áp (chưa hoàn tác) ⇒ 409 "đã áp — hoàn tác trước"; không áp nốt video mới Đạt. Hàng DỞ vẫn Tiếp tục được.
+    ĐỘT BIẾN: bỏ chặn L4 ⇒ áp thêm video 2 ⇒ ĐỎ."""
+    conn = san.mo()
+    conn.execute("UPDATE tl_danh_gia SET ket_qua='hong', loai_loi='khac' WHERE video_id=(SELECT video_log_id FROM tl_job_video WHERE id=?)",
+                 (san.vids[1],))
+    conn.commit()
+    conn.close()
+    san.ap(); san.chay()
+    conn = san.mo()
+    conn.execute("UPDATE tl_danh_gia SET ket_qua='dat', loai_loi=NULL WHERE video_id=(SELECT video_log_id FROM tl_job_video WHERE id=?)",
+                 (san.vids[1],))
+    conn.commit()
+    conn.close()
+    with pytest.raises(ap_vao_bo.LoiAp) as e:
+        san.ap()
+    assert e.value.ma == 409 and str(e.value) == ap_vao_bo.LY_DO_DA_AP
+    assert len(san.hang()) == 1 and ("doi_cha", BAN[2]) not in san.drive.goi
+
+
+def test_quet_mot_bo_loi_khong_chan_bo_khac_va_van_nha_khoa(san, monkeypatch):
+    """ĐỘT BIẾN: bỏ try/except từng bộ (hoặc bỏ `finally` xoá khoá cũ) ⇒ bộ thứ hai không chạy / khoá còn ⇒ ĐỎ."""
+    F2 = "FOLDERBO2" + "g" * 12
+    san.ap()
+    conn = san.mo()
+    conn.execute("INSERT INTO tl_ap_bo (job_id, job_video_id, folder_id, ban_copy_id, chieu, buoc, lan, luc) "
+                 "VALUES (?,?,?,?, 'ap', 'moi', 1, ?)", (san.job, san.vids[0], F2, BAN[1], time.time()))
+    conn.execute("INSERT INTO tl_ap_bo_khoa VALUES (?, ?, ?)", (F2, san.job, time.time()))
+    conn.execute("INSERT INTO tl_ap_bo_khoa VALUES ('BOKHONGDO' || 'zzzzzzzzzzz', 7, ?)", (time.time(),))
+    conn.execute("UPDATE tl_ap_bo_khoa SET luc = luc - 100")
+    conn.commit()
+    conn.close()
+    da = []
+
+    def gia(conn, drive, rids, cha_goc=None):
+        da.append(rids)
+        if len(da) == 1:
+            raise RuntimeError("bộ đầu hỏng")
+    monkeypatch.setattr(ap_vao_bo, "_chay_cac_hang", gia)
+    kq = san.quet()
+    assert len(da) == 2 and kq["hang_chay_tiep"] == 1
+    conn = san.mo()
+    assert conn.execute("SELECT count(*) FROM tl_ap_bo_khoa").fetchone()[0] == 0
+    conn.close()
+
+
+def test_khoa_cua_quet_khong_bi_nha_khoa_cua_mot_luot_xoa_nham(san, monkeypatch):
+    """ĐỘT BIẾN: khoá quét mang `job_id` của lượt ⇒ `nha_khoa(job_id)` của lượt đó xoá khoá quét đang chạy ⇒ ĐỎ."""
+    san.ap()
+    conn = san.mo()
+    conn.execute("UPDATE tl_ap_bo_khoa SET luc = luc - 100")
+    conn.commit()
+    conn.close()
+    con = []
+
+    def gia(conn, drive, rids, cha_goc=None):
+        ap_vao_bo.nha_khoa(conn, san.job)  # một lượt thường của cùng job_id nhả khoá của nó giữa lúc quét đang chạy
+        con.append(conn.execute("SELECT job_id FROM tl_ap_bo_khoa WHERE folder_id=?", (F1,)).fetchall())
+    monkeypatch.setattr(ap_vao_bo, "_chay_cac_hang", gia)
+    san.quet()
+    assert [[tuple(r) for r in x] for x in con] == [[(ap_vao_bo.KHOA_QUET,)]]

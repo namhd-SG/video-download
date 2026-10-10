@@ -21,7 +21,7 @@ import threading
 import time
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo.drive_tl import DriveTL, DriveTLKhongQuyen, DriveTLKhongThay, ly_do_creative
+from tiktok_music_downloader.thay_logo.drive_tl import MIME_THU_MUC, DriveTL, DriveTLKhongQuyen, DriveTLKhongThay, ly_do_creative
 from tiktok_music_downloader.thay_logo.thu_muc_bo import CongCreativeCam
 
 log = logging.getLogger(__name__)
@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS tl_ap_bo_khoa (folder_id TEXT PRIMARY KEY, job_id INT
 
 LY_DO_SAI_CHU = "không phải video của bạn"
 LY_DO_SO_CHU = "sổ Đã vào bộ chưa xác nhận bạn là chủ video"
+LY_DO_DO_LUOT_KHAC = "đang dở ở lượt"
+LY_DO_DA_AP = "Bộ này đã áp — hoàn tác trước nếu muốn áp lại."
 THONG_DIEP_THIEU_QUYEN = "Tài khoản máy thiếu quyền Content manager trên bộ — báo quản trị."
 
 
@@ -169,6 +171,8 @@ def phan_loai(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], dict
             kq["hoan_tac_do"] += 1
         elif _dung_lai_duoc(h["chieu"], h["buoc"]):
             kq["lam"].append((v, h, "dung_lai"))
+        elif h["job_id"] != job_id:  # hàng dở của lượt KHÁC: lượt này chạy `WHERE job_id=?` sẽ không bao giờ chạm nó
+            bo(v, f"{LY_DO_DO_LUOT_KHAC} #{h['job_id']} — mở lượt đó bấm Tiếp tục")
         else:  # ap/lui dở (Drive lỗi giữa chừng, tiến trình chết) ⇒ "Tiếp tục" = chạy tiếp theo phép đo
             kq["lam"].append((v, h, "tiep"))
     return kq
@@ -195,9 +199,17 @@ def dat_lich_ap(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], di
         kq = phan_loai(conn, job_id, email, chu_cua)
         if kq["hoan_tac_do"]:
             raise LoiAp(409, "Hoàn tác của bộ này đang dở — bấm Hoàn tác để chạy tiếp.")
+        if kq["da_ap"]:  # bộ đã có video áp xong (chưa hoàn tác): KHÔNG áp thêm phần còn lại; chỉ cho "Tiếp tục" hàng đang dở
+            for v, _, cach in kq["lam"]:
+                if cach != "tiep":
+                    kq["bo_qua"].append({"job_video_id": v["id"], "ly_do": LY_DO_DA_AP})
+            kq["lam"] = [x for x in kq["lam"] if x[2] == "tiep"]
         if not kq["lam"]:
             if kq["da_ap"]:
-                raise LoiAp(409, "Bộ này đã áp — hoàn tác trước nếu muốn áp lại.")
+                raise LoiAp(409, LY_DO_DA_AP)
+            khac = next((b["ly_do"] for b in kq["bo_qua"] if b["ly_do"].startswith(LY_DO_DO_LUOT_KHAC)), None)
+            if khac:
+                raise LoiAp(409, f"Video {khac}.")
             if kq["sai_chu"]:
                 raise LoiAp(403, "Chỉ áp được video của chính bạn.")
             raise LoiAp(409, "Không có video Đạt nào để áp.")
@@ -209,6 +221,8 @@ def dat_lich_ap(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], di
                 conn.execute("INSERT INTO tl_ap_bo (job_id, job_video_id, folder_id, ban_copy_id, chieu, buoc, lan, luc) "
                              "VALUES (?,?,?,?, 'ap', 'moi', 1, ?)", (job_id, v["id"], n["folder_id"], n["file_id"], now))
             elif cach == "dung_lai":  # áp lại sau hoàn tác: MỌI trạng thái phục hồi reset trong CÙNG câu, `lan` tăng ⇒ thẻ mới
+                # Cũng dùng lại hàng `lui/loi` và `ap/bo_qua`. Cái giá: lỗi CỐ ĐỊNH (vd bản copy luôn mang dấu nguồn) ⇒ mỗi lần bấm
+                # sinh 1 bản copy rồi bỏ thùng rác. CHƯA đặt trần số lần thử — cố ý (ĐP chốt giữ nguyên, chờ số liệu thật).
                 conn.execute("UPDATE tl_ap_bo SET chieu='ap', job_id=?, job_video_id=?, ban_moi_id=NULL, buoc='moi', loi=NULL, "
                              "lan = lan + 1, luc=? WHERE id=?", (job_id, v["id"], now, h["id"]))
             else:
@@ -353,6 +367,22 @@ def _do_g(drive: DriveTL, g: str, folder: str, cac_ban_goc: set[str]) -> tuple[s
     return "mat", m
 
 
+def _liet_ke_bo(drive: DriveTL, folder: str) -> list[dict]:
+    """Con trực tiếp CHƯA vào thùng rác của bộ (liệt theo thư mục — không qua chỉ mục tìm kiếm `appProperties has`, vốn có thể trễ sau
+    một lần copy). Bộ quá lớn để đọc hết ⇒ ném (không kết luận được "không có bản mới")."""
+    con = drive.liet_ke_con(folder, TRAN_LIET_KE_BO)
+    if len(con) >= TRAN_LIET_KE_BO:
+        raise RuntimeError(f"bộ có từ {TRAN_LIET_KE_BO} mục trở lên — không đọc hết được")
+    return [c for c in con if not c.get("trashed")]
+
+
+def _cac_m_trong_bo(drive: DriveTL, folder: str, g: str) -> list[dict]:
+    """MỌI bản mới của G đang nằm trong bộ: file mang `appProperties.tl_ap_goc == G`, BẤT KỂ thẻ lần nào (bản của lần áp trước bị kéo về
+    bộ cũng tính — bất biến nói "bộ không có G + bản mới của G", không nói "bản mới của lần này")."""
+    return [c for c in _liet_ke_bo(drive, folder)
+            if c.get("mimeType") != MIME_THU_MUC and (c.get("appProperties") or {}).get(THE_GOC) == g]
+
+
 def _cung_ten_trong_bo(drive: DriveTL, folder: str, ten: str) -> list[str] | None:
     """Id các file CHƯA vào thùng rác mang đúng tên `ten` trong bộ. Bộ quá lớn để đếm hết ⇒ None (không kết luận được)."""
     con = drive.liet_ke_con(folder, TRAN_LIET_KE_BO)
@@ -383,11 +413,15 @@ def _ap(conn, drive: DriveTL, tm: _ThuMuc, h, n: dict, file_ra: str) -> None:
         drive.doi_cha(g, bg, folder)
     if h["buoc"] == "moi":
         _dat(conn, h["id"], buoc="da_doi_goc")
-    co = drive.tim_theo_the(folder, THE_AP, the)                         # 4. thẻ của lần này ⇒ không bao giờ copy hai bản
-    if len(co) > 1:
-        _dat(conn, h["id"], chieu="lui", loi="Trong bộ có nhiều bản mới cùng thẻ — đã gỡ ra.")
+    # 4. Đo bản mới bằng LIỆT KÊ bộ (không bằng truy vấn thẻ — chỉ mục có thể trễ ⇒ copy bản thứ hai). Bản của lần này ⇒ dùng lại (copy
+    # đã có hiệu lực mà chết trước khi ghi DB). Có bản của G mang thẻ KHÁC (lần trước, bị kéo về) ⇒ KHÔNG copy thêm, chuyển `lui`: bản đó
+    # có thể là copy của một đầu ra khác, nhận nó làm "xong" là áp nhầm video.
+    ms = _cac_m_trong_bo(drive, folder, g)
+    cua_lan = [m for m in ms if (m.get("appProperties") or {}).get(THE_AP) == the]
+    if len(cua_lan) != len(ms) or len(cua_lan) > 1:
+        _dat(conn, h["id"], chieu="lui", loi="Trong bộ có bản mới lạ hoặc trùng của video này — đã gỡ, bản trong bộ trả về.")
         return
-    moi = co[0]["id"] if co else drive.sao_chep(file_ra, folder, n["ten"], {THE_AP: the, THE_GOC: g})
+    moi = cua_lan[0]["id"] if cua_lan else drive.sao_chep(file_ra, folder, n["ten"], {THE_AP: the, THE_GOC: g})
     _dat(conn, h["id"], buoc="da_sao", ban_moi_id=moi)
     mm = drive.lay_muc(moi)                                              # kiểm sau copy: không mang dấu nguồn, tên duy nhất
     ly_do = None
@@ -403,8 +437,9 @@ def _ap(conn, drive: DriveTL, tm: _ThuMuc, h, n: dict, file_ra: str) -> None:
     _dat(conn, h["id"], buoc="xong", loi=None)                          # 5.
 
 
-def _cac_m(drive: DriveTL, h, folder: str) -> list[str]:
-    ids = [m["id"] for m in drive.tim_theo_the(folder, THE_AP, the_lan(h["id"], h["lan"]))]
+def _cac_m(drive: DriveTL, h, folder: str, g: str) -> list[str]:
+    """Bản mới cần gỡ của hàng: mọi bản của G trong bộ (đo bằng liệt kê) + `ban_moi_id` đã ghi (người gọi probe lại từng cái)."""
+    ids = [m["id"] for m in _cac_m_trong_bo(drive, folder, g)]
     if h["ban_moi_id"] and h["ban_moi_id"] not in ids:
         ids.append(h["ban_moi_id"])
     return ids
@@ -424,7 +459,7 @@ def _tra_g_ve(drive: DriveTL, g: str, folder: str, cac_ban_goc: set[str]) -> Non
 def _lui(conn, drive: DriveTL, tm: _ThuMuc, h, n: dict) -> None:
     """Gỡ M (thùng rác — M là bản copy của đầu ra, đầu ra vẫn còn) rồi trả G về bộ ⇒ video `loi`."""
     folder = n["folder_id"]
-    for m in _cac_m(drive, h, folder):
+    for m in _cac_m(drive, h, folder, n["file_id"]):
         try:
             mm = drive.lay_muc(m)
         except DriveTLKhongThay:
@@ -438,7 +473,7 @@ def _lui(conn, drive: DriveTL, tm: _ThuMuc, h, n: dict) -> None:
 def _hoan_tac(conn, drive: DriveTL, tm: _ThuMuc, h, n: dict) -> None:
     """Đổi tên M `HOAN-TAC-…` + dời M ra `da-hoan-tac/` (mỗi việc probe trước) RỒI trả G về bộ."""
     folder, ma_bo = n["folder_id"], n.get("ma_bo") or ""
-    ms = _cac_m(drive, h, folder)
+    ms = _cac_m(drive, h, folder, n["file_id"])
     if ms:
         dh = tm.da_hoan_tac(folder, ma_bo)
         for m in ms:
@@ -473,7 +508,7 @@ def _chay_hang(conn, drive: DriveTL, tm: _ThuMuc, rid: int) -> None:
                 log.error("thay logo áp: bản trong bộ %s (hàng %s) mất/lệch chỗ — dừng, cần người xem", g, rid)
                 _dat(conn, rid, buoc="can_nguoi", loi="Bản trong bộ đã mất hoặc nằm sai chỗ — cần quản trị xem (script khôi phục).")
                 return
-            co_m = bool(drive.tim_theo_the(folder, THE_AP, the_lan(h["id"], h["lan"])))
+            co_m = bool(_cac_m_trong_bo(drive, folder, g))
             if h["chieu"] == "ap":
                 if vi_tri == "bo" and co_m:  # code đúng không sinh ra ca này
                     log.error("thay logo áp: VI PHẠM BẤT BIẾN — bộ %s có cả bản trong bộ %s và bản mới (hàng %s)", folder, g, rid)
@@ -544,31 +579,48 @@ def chay_nen(mo_conn: Callable[[], object], drive: DriveTL, job_id: int, cha_goc
     return t
 
 
+KHOA_QUET = 0  # `job_id` của khoá do quét khởi động lấy: id lượt thật luôn ≥ 1 ⇒ `nha_khoa(job_id)` của một lượt không xoá nhầm được
+
+
 def quet_do_dang(conn, drive: DriveTL, moc: float | None = None, cha_goc=None) -> dict:
     """Lúc khởi động (thread `tl-ap`): chạy tiếp MỌI hàng chưa xong (cả chiều áp lẫn hoàn tác) theo phép đo Drive, rồi xoá khoá CŨ
-    (lấy trước `moc`). Khoá lấy SAU `moc` là của lượt đang sống ⇒ bộ đó để yên (lượt đó tự chạy hết)."""
+    (lấy trước `moc`). Khoá lấy SAU `moc` là của lượt đang sống ⇒ bộ đó để yên (lượt đó tự chạy hết). Một bộ lỗi không chặn bộ khác;
+    khoá cũ luôn được xoá (`finally`)."""
     khoi_tao(conn)
     moc = time.time() if moc is None else moc
-    theo_bo: dict[str, list[tuple[int, int]]] = {}
-    for r in conn.execute("SELECT id, job_id, folder_id, chieu, buoc FROM tl_ap_bo ORDER BY id").fetchall():
+    theo_bo: dict[str, list[int]] = {}
+    for r in conn.execute("SELECT id, folder_id, chieu, buoc FROM tl_ap_bo ORDER BY id").fetchall():
         if not da_xong(r["chieu"], r["buoc"]):
-            theo_bo.setdefault(r["folder_id"], []).append((r["id"], r["job_id"]))
+            theo_bo.setdefault(r["folder_id"], []).append(r["id"])
+    xoa = 0
     da_chay = 0
-    for folder, hang in theo_bo.items():
-        conn.execute("BEGIN IMMEDIATE")
-        k = conn.execute("SELECT luc FROM tl_ap_bo_khoa WHERE folder_id=?", (folder,)).fetchone()
-        if k is not None and k["luc"] >= moc:
-            conn.rollback()
-            continue
-        luc = time.time()
-        conn.execute("INSERT OR REPLACE INTO tl_ap_bo_khoa (folder_id, job_id, luc) VALUES (?,?,?)", (folder, hang[0][1], luc))
+    try:
+        # Bộ không còn hàng dở: khoá cũ không canh gì nữa ⇒ xoá NGAY (đừng để chúng chờ tới cuối một lượt quét dài).
+        cu = [r[0] for r in conn.execute("SELECT folder_id FROM tl_ap_bo_khoa WHERE luc < ?", (moc,)) if r[0] not in theo_bo]
+        for f in cu:
+            xoa += conn.execute("DELETE FROM tl_ap_bo_khoa WHERE folder_id=? AND luc < ?", (f, moc)).rowcount
         conn.commit()
-        try:
-            _chay_cac_hang(conn, drive, [rid for rid, _ in hang], cha_goc)
-            da_chay += len(hang)
-        finally:
-            conn.execute("DELETE FROM tl_ap_bo_khoa WHERE folder_id=? AND luc=?", (folder, luc))
-            conn.commit()
-    xoa = conn.execute("DELETE FROM tl_ap_bo_khoa WHERE luc < ?", (moc,)).rowcount
-    conn.commit()
+        for folder, rids in theo_bo.items():
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                k = conn.execute("SELECT luc FROM tl_ap_bo_khoa WHERE folder_id=?", (folder,)).fetchone()
+                if k is not None and k["luc"] >= moc:
+                    conn.rollback()
+                    continue
+                luc = time.time()
+                conn.execute("INSERT OR REPLACE INTO tl_ap_bo_khoa (folder_id, job_id, luc) VALUES (?,?,?)", (folder, KHOA_QUET, luc))
+                conn.commit()
+                try:
+                    _chay_cac_hang(conn, drive, rids, cha_goc)
+                    da_chay += len(rids)
+                finally:
+                    conn.execute("DELETE FROM tl_ap_bo_khoa WHERE folder_id=? AND job_id=? AND luc=?", (folder, KHOA_QUET, luc))
+                    conn.commit()
+            except Exception:  # noqa: BLE001 — một bộ hỏng (DB/Drive lạ) không được chặn các bộ khác
+                if conn.in_transaction:
+                    conn.rollback()
+                log.exception("thay logo áp: quét bộ %s lỗi", folder)
+    finally:
+        xoa += conn.execute("DELETE FROM tl_ap_bo_khoa WHERE luc < ?", (moc,)).rowcount
+        conn.commit()
     return {"hang_chay_tiep": da_chay, "khoa_cu_xoa": xoa}

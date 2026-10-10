@@ -28,6 +28,10 @@ class DriveGiaTL:
         self.loi_sau: dict[tuple[str, str], Exception] = {}
         self.sau_thao_tac: list = []
         self.copy_mang_properties = False
+        # Chỉ mục tìm kiếm TRỄ (như Drive thật ngay sau một lần copy): `tim_theo_the` (truy vấn `appProperties has`) KHÔNG thấy bản vừa
+        # copy; `liet_ke_con` (liệt theo thư mục) và `lay_muc` thì thấy.
+        self.tre_chi_muc = False
+        self._chua_vao_chi_muc: set[str] = set()
         self._so = 0
 
     # --- dựng kho ---
@@ -159,6 +163,8 @@ class DriveGiaTL:
         self.them_file(moi, ten, cha_id, size=nguon.get("size"), md5=nguon.get("md5Checksum"), mime=nguon.get("mimeType", "video/mp4"),
                        drive=cha.get("driveId", "D1"), app_properties=dict(the),
                        properties=nguon.get("properties") if self.copy_mang_properties else None)
+        if self.tre_chi_muc:
+            self._chua_vao_chi_muc.add(moi)
         self._xong_ghi("sao_chep", file_id)
         return moi
 
@@ -166,7 +172,8 @@ class DriveGiaTL:
         self.goi.append(("tim_theo_the", cha_id))
         self._loi("tim_theo_the", cha_id)
         return [copy.deepcopy(m) for m in self.muc.values()
-                if cha_id in m["parents"] and not m["trashed"] and (m.get("appProperties") or {}).get(khoa) == gia_tri]
+                if cha_id in m["parents"] and not m["trashed"] and (m.get("appProperties") or {}).get(khoa) == gia_tri
+                and m["id"] not in self._chua_vao_chi_muc]
 
     def vao_thung_rac(self, file_id):
         self.goi.append(("vao_thung_rac", file_id))

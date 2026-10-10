@@ -36,7 +36,9 @@ class DriveTLKhongQuyen(Exception):
 
 
 TRUONG_VIDEO = "id,name,parents,driveId,mimeType,trashed,size"  # KHAI TƯỜNG MINH (không ghép từ TRUONG_MUC: đợt khác có thể thêm `size` vào đó); `size` là chuỗi số byte
-TRUONG_LIET_KE = "id,name,mimeType,size,trashed"
+# `appProperties`: đợt áp vào bộ đo bản mới (thẻ `tl_ap_goc`) bằng LIỆT KÊ THƯ MỤC + lọc phía client — truy vấn `appProperties has`
+# đi qua chỉ mục tìm kiếm, có thể trễ sau một lần copy (không thấy bản vừa tạo ⇒ copy bản thứ hai).
+TRUONG_LIET_KE = "id,name,mimeType,size,trashed,appProperties"
 # 403 mà Drive nói rõ "tài khoản này không được quyền với mục này". Mọi 403 khác (hết hạn mức, không đọc được lý do) ⇒ ném nguyên = "chưa đo được".
 _LY_DO_KHONG_QUYEN = frozenset({"insufficientFilePermissions", "forbidden", "appNotAuthorizedToFile"})
 
@@ -79,7 +81,8 @@ class DriveTL(Protocol):
         """`files.copy` PHÍA MÁY CHỦ vào `cha_id` với tên `ten`, gắn `appProperties = the`; trả id file MỚI."""
 
     def tim_theo_the(self, cha_id: str, khoa: str, gia_tri: str) -> list[dict]:
-        """File con trực tiếp của `cha_id`, chưa vào thùng rác, mang `appProperties[khoa] == gia_tri` (mỗi phần tử `TRUONG_MUC`)."""
+        """File con trực tiếp của `cha_id`, chưa vào thùng rác, mang `appProperties[khoa] == gia_tri` (mỗi phần tử `TRUONG_MUC`).
+        Đi qua chỉ mục tìm kiếm ⇒ CÓ THỂ TRỄ sau khi vừa copy: KHÔNG dùng để đo "đã có bản mới chưa" (dùng `liet_ke_con`)."""
 
     def vao_thung_rac(self, file_id: str) -> None:
         """Bỏ file vào Thùng rác (KHÔNG xoá vĩnh viễn — SA chỉ là Content manager)."""
@@ -258,10 +261,15 @@ class DriveTLThat:
     def tim_theo_the(self, cha_id: str, khoa: str, gia_tri: str) -> list[dict]:
         if not _ID_AN_TOAN.match(cha_id) or not _THE_AN_TOAN.match(khoa) or not _THE_AN_TOAN.match(gia_tri):
             raise ValueError("id thư mục / thẻ sai khuôn")
+        drive_id = self.lay_muc(cha_id).get("driveId")
+        if not drive_id:
+            raise RuntimeError("thư mục không thuộc Shared Drive")
         r = self._goi_drive(cha_id, lambda f: f.list(
             q=f"'{cha_id}' in parents and appProperties has {{ key='{khoa}' and value='{gia_tri}' }} and trashed = false",
-            fields=f"files({TRUONG_MUC})", pageSize=100, corpora="allDrives",
+            fields=f"incompleteSearch,files({TRUONG_MUC})", pageSize=100, corpora="drive", driveId=drive_id,
             supportsAllDrives=True, includeItemsFromAllDrives=True).execute())
+        if r.get("incompleteSearch"):  # kết quả CHƯA ĐỦ ⇒ không được coi là "không có bản mang thẻ này"
+            raise RuntimeError("Drive trả kết quả chưa đầy đủ (incompleteSearch)")
         return r.get("files") or []
 
     def vao_thung_rac(self, file_id: str) -> None:

@@ -150,6 +150,24 @@ def test_co_tat_thi_the_bo_khong_co_nut_ap(may_chu, trinh_duyet, monkeypatch):
     assert loi_js == []
 
 
+def test_lan_tai_dau_502_khong_ket_the_tu_thu_lai(may_chu, trinh_duyet):
+    """Lần tải tiến độ ĐẦU trả 502 ⇒ không dựng khoá rỗng (từng làm thẻ kẹt + lỗi JS), tự thử lại và hiện nút.
+    ĐỘT BIẾN: bỏ `delete apCua[jid]` / bỏ `if (!ap) return` ⇒ lỗi JS hoặc thẻ không bao giờ hiện ⇒ ĐỎ."""
+    p, loi_js = _mo(trinh_duyet, may_chu)
+    dem = {"502": 0}
+
+    def chan(route):
+        if route.request.method == "GET" and dem["502"] == 0:
+            dem["502"] += 1
+            route.fulfill(status=502, body="bad gateway")
+        else:
+            route.continue_()
+    p.route("**/api/thay-logo/bo/*/ap", chan)
+    p.click(f'.tl-bo-chon[data-job="{_SAN["job"]}"]')
+    p.locator(".tl-bx-ap").wait_for(timeout=10000)
+    assert dem["502"] == 1 and loi_js == []
+
+
 def test_ap_roi_hoan_tac_tren_the_bo(may_chu, trinh_duyet):
     p, loi_js = _mo(trinh_duyet, may_chu)
     p.click(f'.tl-bo-chon[data-job="{_SAN["job"]}"]')
@@ -158,6 +176,7 @@ def test_ap_roi_hoan_tac_tren_the_bo(may_chu, trinh_duyet):
     assert nut.inner_text() == "Áp 3 video Đạt vào bộ N.2809C"
     chu = p.locator(".tl-bx").inner_text()
     assert "Hoàn tác KHÔNG lùi camp đã lên Meta." in chu and "Thay logo - bản gốc/N.2809C" in chu and "Chỉ video của bạn." in chu
+    assert "vừa là người tạo lượt vừa là chủ video" in chu and "chủ video tự áp" not in chu
     p.wait_for_function("document.querySelectorAll('.tl-bx-thumbs img').length === 4")
     _chup(p, "2a-truoc-ap-1280.png")
     nut.click()
