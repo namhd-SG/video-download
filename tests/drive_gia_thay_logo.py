@@ -22,6 +22,12 @@ class DriveGiaTL:
         self.khong_quyen: set[str] = set()  # id mà tài khoản máy KHÔNG được chia sẻ ⇒ 403 như Drive thật
         self.email = "may@du-an.iam.gserviceaccount.com"
         self.cham: dict[str, float] = {}  # id ⇒ số giây `lay_muc_day_du` ngủ trước khi trả (giả Drive chậm)
+        # Đợt áp vào bộ: `loi_sau` ném SAU KHI thao tác GHI đã có hiệu lực (giả tiến trình chết ngay sau khi Drive trả 200, trước khi
+        # kịp ghi DB). `sau_thao_tac`: hàm gọi sau MỖI thao tác ghi (test cài bộ kiểm bất biến vết). `copy_mang_properties`: bản copy
+        # mang theo `properties` của file nguồn (Drive thật CHƯA đo — code phải kiểm sau copy).
+        self.loi_sau: dict[tuple[str, str], Exception] = {}
+        self.sau_thao_tac: list = []
+        self.copy_mang_properties = False
         self._so = 0
 
     # --- dựng kho ---
@@ -31,7 +37,8 @@ class DriveGiaTL:
                          "mimeType": MIME_THU_MUC, "trashed": trashed}
         return self.muc[fid]
 
-    def them_file(self, fid, ten, cha=None, *, size=1000, mime="video/mp4", md5="MD5A", drive="D1", trashed=False):
+    def them_file(self, fid, ten, cha=None, *, size=1000, mime="video/mp4", md5="MD5A", drive="D1", trashed=False,
+                  properties=None, app_properties=None):
         """File trong thư mục `cha` (None ⇒ gốc Shared Drive). `size=None` ⇒ không có trường size (như file Google-native);
         `md5=None` ⇒ không có `md5Checksum`. Drive trả size là CHUỖI."""
         m = {"id": fid, "name": ten, "parents": [cha or drive], "driveId": drive, "mimeType": mime, "trashed": trashed}
@@ -39,6 +46,10 @@ class DriveGiaTL:
             m["size"] = str(size)
         if md5 is not None:
             m["md5Checksum"] = md5
+        if properties:
+            m["properties"] = dict(properties)
+        if app_properties:
+            m["appProperties"] = dict(app_properties)
         self.muc[fid] = m
         return m
 
@@ -105,3 +116,60 @@ class DriveGiaTL:
 
     def email_dich_vu(self):
         return self.email
+
+    # --- đợt áp vào bộ (thao tác GHI) ---
+    def _xong_ghi(self, ten, arg):
+        for f in self.sau_thao_tac:
+            f(self, ten, arg)
+        for khoa in ((ten, arg), (ten, "*")):
+            if khoa in self.loi_sau:
+                raise self.loi_sau.pop(khoa)  # một lần: lần chạy lại không chết ở cùng chỗ
+
+    def _can(self, fid):
+        if fid in self.khong_quyen:
+            raise DriveTLKhongQuyen(fid)
+        if fid not in self.muc:
+            raise DriveTLKhongThay(fid)
+        return self.muc[fid]
+
+    def doi_cha(self, file_id, them, bo):
+        """Như Drive thật nhưng KHẮT KHE: `bo` không phải cha hiện tại ⇒ NÉM (Drive thật có thể trả 200 — bản giả dễ dãi sẽ cho xanh
+        giả khi người gọi quên probe `parents`)."""
+        self.goi.append(("doi_cha", file_id))
+        self._loi("doi_cha", file_id)
+        m = self._can(file_id)
+        if bo not in m["parents"]:
+            raise RuntimeError(f"doi_cha: {bo} không phải cha hiện tại của {file_id} ({m['parents']})")
+        m["parents"] = [them] + [p for p in m["parents"] if p not in (bo, them)]
+        self._xong_ghi("doi_cha", file_id)
+
+    def doi_ten(self, file_id, ten):
+        self.goi.append(("doi_ten", file_id))
+        self._loi("doi_ten", file_id)
+        self._can(file_id)["name"] = ten
+        self._xong_ghi("doi_ten", file_id)
+
+    def sao_chep(self, file_id, cha_id, ten, the):
+        self.goi.append(("sao_chep", file_id))
+        self._loi("sao_chep", file_id)
+        nguon = self._can(file_id)
+        self._so += 1
+        moi = f"COPY{self._so:04d}" + "c" * 10
+        cha = self.muc.get(cha_id) or {}
+        self.them_file(moi, ten, cha_id, size=nguon.get("size"), md5=nguon.get("md5Checksum"), mime=nguon.get("mimeType", "video/mp4"),
+                       drive=cha.get("driveId", "D1"), app_properties=dict(the),
+                       properties=nguon.get("properties") if self.copy_mang_properties else None)
+        self._xong_ghi("sao_chep", file_id)
+        return moi
+
+    def tim_theo_the(self, cha_id, khoa, gia_tri):
+        self.goi.append(("tim_theo_the", cha_id))
+        self._loi("tim_theo_the", cha_id)
+        return [copy.deepcopy(m) for m in self.muc.values()
+                if cha_id in m["parents"] and not m["trashed"] and (m.get("appProperties") or {}).get(khoa) == gia_tri]
+
+    def vao_thung_rac(self, file_id):
+        self.goi.append(("vao_thung_rac", file_id))
+        self._loi("vao_thung_rac", file_id)
+        self._can(file_id)["trashed"] = True
+        self._xong_ghi("vao_thung_rac", file_id)

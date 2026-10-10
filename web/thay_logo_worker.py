@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import hang_doi, nhat_ky
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -136,6 +136,9 @@ class ThayLogoWorker:
             conn.close()
         self._thread = threading.Thread(target=self._chay, name="thay-logo-worker", daemon=True)
         self._thread.start()
+        if ap_vao_bo.dang_bat() and self.drive_tl is not None:  # cờ TẮT ⇒ không đụng Drive, khoá cũ để nguyên
+            moc = time.time()  # khoá lấy TRƯỚC mốc này là của tiến trình trước (đã chết) ⇒ quét xong thì xoá
+            threading.Thread(target=self._quet_ap, args=(moc,), name="tl-ap", daemon=True).start()
         if self.relay_bind:  # không có địa chỉ ⇒ không mở listener (không mặc định)
             from web.thay_logo_relay_server import RelayServer
             try:
@@ -145,6 +148,22 @@ class ThayLogoWorker:
             else:
                 if not self.relay.start():
                     self.relay = None
+
+    # ---------------------------------------------------------------- áp vào bộ (thread `tl-ap`, không chung hàng xử lý video)
+    def _quet_ap(self, moc: float) -> None:
+        """Khởi động: chạy tiếp mọi lượt áp/hoàn tác dở theo phép đo Drive, rồi xoá khoá cũ (Drive gọi ở đây, không trong lifespan)."""
+        try:
+            conn = self._mo()
+            try:
+                log.info("thay logo áp: quét dở dang %s", ap_vao_bo.quet_do_dang(conn, self.drive_tl, moc))
+            finally:
+                conn.close()
+        except Exception:  # noqa: BLE001 — Drive lỗi lúc khởi động: hàng giữ chiều, người dùng bấm "Tiếp tục"
+            log.exception("thay logo áp: quét dở dang lỗi")
+
+    def bat_dau_ap(self, job_id: int) -> threading.Thread:
+        """Route gọi SAU khi đã ghi chiều ý định + lấy khoá bộ; thread nhả khoá trong `finally`."""
+        return ap_vao_bo.chay_nen(self._mo, self.drive_tl, job_id)
 
     def stop(self, timeout: float = 15.0) -> None:
         """Không bao giờ chờ vô hạn: tắt listener relay, TERM tiến trình con, KILL nếu cần, join có trần."""
