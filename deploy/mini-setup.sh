@@ -89,6 +89,15 @@ chmod 700 "$CFG" "$DATA" "$DATA/cookies"
   echo "  GDRIVE_SHARED_DRIVE_FOLDER_ID=<id thư mục trên Shared Drive>"
   exit 1
 }
+# Cờ tính năng TUỲ CHỌN trong cùng file env (vắng = TẮT; chỉ giá trị đúng "1" mới bật):
+#   TL_AP_VAO_BO=1  — Thay logo: nút + route "Áp vào bộ / Hoàn tác" (ghi vào bộ THẬT trên Drive: dời bản gốc ra
+#                     "Thay logo - bản gốc/", copy bản thay logo vào bộ). Vắng/khác "1" ⇒ route 404, nút ẩn, không
+#                     đụng Drive. Cần worker thay logo đang bật (THAY_LOGO_BAT=1). Ai bật: điều phối, lúc deploy, SAU
+#                     khi smoke trên bộ THỬ đạt. Tắt = xoá dòng + restart dịch vụ (không đụng Drive; lượt đã áp hoàn
+#                     tác được khi bật lại, hoặc bằng scripts/thay_logo_ap_bo_khoi_phuc.py).
+#                     KHÔNG đổi service account (drive-key.json) khi còn lượt áp dở hoặc đã áp chưa hoàn tác: thẻ
+#                     appProperties (tl_ap_bo, tl_ap_goc) riêng theo app ⇒ đổi SA thì thẻ vô hình, bộ có thể mang cả
+#                     bản gốc lẫn bản mới mà không phát hiện, script khôi phục cũng mù.
 
 # Nghiệm thu cấu hình bằng hành vi, không bằng sự tồn tại của file.
 set -a; . "$CFG/env"; set +a

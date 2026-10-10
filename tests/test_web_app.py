@@ -650,6 +650,11 @@ KHONG_CAN_KIEM_CHU = {
     "POST /api/thay-logo/kiem-link": "chỉ ĐỌC Drive theo link người gọi dán; id nhận được ghi vào sổ `tl_link_kiem` của CHÍNH người gọi "
                                      "(`POST /jobs` chỉ chấp nhận id do chính người đó kiểm) (tests/test_thay_logo_nguon_drive.py, có đột biến)",
     "GET /api/thay-logo/logo.png": "logo công ty đóng gói sẵn trong mã, không đọc dữ liệu của ai",
+    "POST /api/thay-logo/bo/{job_id}/ap": "`ap_vao_bo.dat_lich_ap`: CHỈ chủ lượt (admin cũng 403), từng video phải là của người gọi "
+                                          "(ảnh chụp + jobs.db + `video_vao_bo.chu`) (tests/test_thay_logo_routes_member.py, có đột biến)",
+    "POST /api/thay-logo/bo/{job_id}/hoan-tac": "`ap_vao_bo.dat_lich_hoan_tac`: CHỈ chủ lượt, 403 cho người khác kể cả admin "
+                                                "(tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/bo/{job_id}/ap": "chủ lượt hoặc admin (chỉ đọc), 403 cho người khác (tests/test_thay_logo_routes_member.py)",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",

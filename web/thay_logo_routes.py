@@ -19,9 +19,10 @@ from pathlib import Path
 from typing import Callable
 
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Response
+from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import hang_doi, link_da_kiem, nguon_drive, nhat_ky
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 
@@ -539,11 +540,12 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         except _sqlite3.Error as e:
             log.warning("thay logo: không đọc được sổ đã-vào-bộ (%s)", type(e).__name__)
             raise HTTPException(503, "Chưa đọc được danh sách bộ — thử lại sau ít phút.") from None
-        trong_ban, trong_nguon = set(), set()
+        trong_ban, trong_nguon, da_ap = set(), set(), set()
         if os.path.exists(lay_log_db()):
             conn = _mo()
             try:
                 trong_ban, trong_nguon = _nguon_dang_trong_luot(conn, chu)
+                da_ap = ap_vao_bo.ban_da_ap(conn) if ap_vao_bo.dang_bat() else set()  # cờ tắt ⇒ không tạo bảng tl_ap_bo
             finally:
                 conn.close()
         nhom: dict[str, dict] = {}
@@ -554,8 +556,119 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             b["videos"].append({
                 "video_id": r["video_id"], "ban_copy_id": r["ban_copy_id"], "ten_video": r["title"] or "Video không tên",
                 "anh_bia": f"/thumbs/{r['video_id']}", "nen_tang": r["nen_tang"], "vao_bo_luc": r["thay_luc"],
-                "da_trong_luot": r["ban_copy_id"] in trong_ban | trong_nguon or (r["drive_file_id"] in trong_nguon if r["drive_file_id"] else False)})
+                "da_trong_luot": r["ban_copy_id"] in trong_ban | trong_nguon or (r["drive_file_id"] in trong_nguon if r["drive_file_id"] else False),
+                "da_ap": r["ban_copy_id"] in da_ap})
         return {"bo": sorted(nhom.values(), key=lambda b: b["vao_bo_luc"], reverse=True), "bi_cat": bi_cat}
+
+    # ======================================================== đợt 2A: áp vào bộ + hoàn tác (route MỚI, thêm cuối; cờ `TL_AP_VAO_BO`)
+    # Route trả 202 sau khi kiểm TẦNG DB + lấy khoá bộ + ghi chiều ý định; Drive chạy ở thread `tl-ap` của worker (không trong request:
+    # 50 video × vài lời gọi Drive vượt trần ~100 s của Cloudflare). Cờ TẮT ⇒ 404 (như route không tồn tại), không đụng DB/Drive.
+    ID_LUOT = PathParam(ge=1, le=2**63 - 1)
+
+    def _cong_ap() -> None:
+        if not ap_vao_bo.dang_bat():
+            raise HTTPException(404, "Not Found")
+
+    def _worker_ap():
+        w = lay_worker()
+        drive = getattr(w, "drive_tl", None) if w is not None else None
+        if drive is None or not callable(getattr(w, "bat_dau_ap", None)) or not drive.dang_cau_hinh():
+            raise HTTPException(503, "Máy chủ chưa nối được Google Drive — báo quản trị.")
+        return w
+
+    def _chu_cua(video_ids: list[str]) -> dict:
+        r = chu_video_vao_bo(_jobs_db(), video_ids)
+        if r is None:
+            raise HTTPException(503, "Chưa kiểm được chủ video — thử lại sau ít phút.")
+        return r
+
+    def _chi_chu_luot(job_id: int, email: str) -> None:
+        """Quyền TRƯỚC mọi thứ khác (kể cả kiểm Drive): người không phải chủ lượt nhận 403/404, không nhận 503 lộ cấu hình máy chủ."""
+        if not os.path.exists(lay_log_db()):
+            raise HTTPException(404, "không có lượt này")
+        conn = _mo()
+        try:
+            chu = ap_vao_bo.chu_job(conn, job_id)
+        except ap_vao_bo.LoiAp as e:
+            raise HTTPException(e.ma, str(e)) from None
+        finally:
+            conn.close()
+        if chu != email:
+            raise HTTPException(403, "chỉ người tạo lượt được áp vào bộ / hoàn tác")
+
+    def _khoi_chay(w, job_id: int) -> None:
+        try:
+            w.bat_dau_ap(job_id)
+        except Exception:  # thread không khởi được ⇒ nhả khoá ngay (chiều ý định đã ghi; "Tiếp tục" chạy lại theo phép đo)
+            log.exception("thay logo áp: không khởi được thread cho lượt %s", job_id)
+            conn = _mo()
+            try:
+                ap_vao_bo.nha_khoa(conn, job_id)
+            finally:
+                conn.close()
+            raise HTTPException(500, "Không khởi chạy được — thử lại.") from None
+
+    @app.post("/api/thay-logo/bo/{job_id}/ap", status_code=202)
+    def ap_vao_bo_post(job_id: int = ID_LUOT, email: str = Depends(require_user)) -> dict:
+        """Áp video Đạt của CHÍNH người gọi vào bộ (cũng là nút "Tiếp tục" khi lượt trước dở). Admin cũng không áp thay."""
+        _cong_ap()
+        _chi_chu_luot(job_id, email)
+        w = _worker_ap()
+        conn = _mo()
+        try:
+            kq = ap_vao_bo.dat_lich_ap(conn, job_id, email, _chu_cua)
+        except ap_vao_bo.LoiAp as e:
+            raise HTTPException(e.ma, str(e)) from None
+        finally:
+            conn.close()
+        _khoi_chay(w, job_id)
+        return kq
+
+    @app.post("/api/thay-logo/bo/{job_id}/hoan-tac", status_code=202)
+    def ap_vao_bo_hoan_tac(job_id: int = ID_LUOT, email: str = Depends(require_user)) -> dict:
+        _cong_ap()
+        _chi_chu_luot(job_id, email)
+        w = _worker_ap()
+        conn = _mo()
+        try:
+            kq = ap_vao_bo.dat_lich_hoan_tac(conn, job_id, email)
+        except ap_vao_bo.LoiAp as e:
+            raise HTTPException(e.ma, str(e)) from None
+        finally:
+            conn.close()
+        _khoi_chay(w, job_id)
+        return kq
+
+    @app.get("/api/thay-logo/bo/{job_id}/ap")
+    def ap_vao_bo_get(job_id: int = ID_LUOT, email: str = Depends(require_user)) -> dict:
+        """Tiến độ áp/hoàn tác của bộ — chủ lượt hoặc admin (admin CHỈ ĐỌC: `la_chu=false`, không có số video áp được)."""
+        _cong_ap()
+        if not os.path.exists(lay_log_db()):
+            raise HTTPException(404, "không có lượt này")
+        conn = _mo()
+        try:
+            try:
+                chu = ap_vao_bo.chu_job(conn, job_id)
+            except ap_vao_bo.LoiAp as e:
+                raise HTTPException(e.ma, str(e)) from None
+            if chu != email and not la_admin(email):
+                raise HTTPException(403, "chỉ người tạo lượt hoặc quản trị")
+            kq = ap_vao_bo.trang_thai(conn, job_id)
+            ma_bo = sorted({v["nguon"].get("ma_bo") for v in ap_vao_bo.cac_video(conn, job_id)
+                            if v["nguon"].get("kieu") == "vao_bo" and v["nguon"].get("ma_bo")})
+            so, moi_chan = None, 0
+            if chu == email:
+                try:
+                    pl = ap_vao_bo.phan_loai(conn, job_id, email, _chu_cua)
+                    # Bộ đã áp: video MỚI bị chặn (hoàn tác trước), hàng dở/dùng lại vẫn áp được — đếm tách để UI vẽ đúng nút.
+                    moi_chan = sum(1 for x in pl["lam"] if x[2] == "moi") if pl["da_ap"] else 0
+                    so = len(pl["lam"]) - moi_chan
+                except HTTPException:
+                    so = None  # jobs.db tạm không đọc được: tiến độ vẫn trả, nút áp chờ lần sau
+        finally:
+            conn.close()
+        return {**kq, "la_chu": chu == email, "ma_bo": ", ".join(ma_bo), "so_du_dieu_kien": so,
+                "so_moi_bi_chan": moi_chan}
 
 
 # ============================================================================ trợ giúp đợt 1b (module-level; gọi LÚC CHẠY)
@@ -693,3 +806,22 @@ def _chup_nguon_vao_bo(drive, ban: dict[str, dict]) -> list[dict]:
         return out
     finally:
         pool.shutdown(wait=False, cancel_futures=True)  # lời gọi Drive đang treo không giữ request lại
+
+
+def chu_video_vao_bo(jobs_db, video_ids: list[str]) -> dict[str, tuple[str | None, str | None]] | None:
+    """{video_id: (jobs.nguoi_tao, video_vao_bo.chu)} đọc LÚC ÁP (không tin ảnh chụp). `jobs.db` mở CHỈ ĐỌC; lỗi ⇒ None (route 503)."""
+    out: dict[str, tuple[str | None, str | None]] = {}
+    if not video_ids:
+        return out
+    try:
+        with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
+            for i in range(0, len(video_ids), 500):
+                lo = video_ids[i:i + 500]
+                for vid, nguoi_tao, chu in c.execute(
+                        "SELECT v.video_id, j.nguoi_tao, vb.chu FROM videos v JOIN jobs j ON j.id = v.job_id "
+                        f"LEFT JOIN video_vao_bo vb ON vb.video_id = v.video_id WHERE v.video_id IN ({','.join('?' * len(lo))})", lo):
+                    out[vid] = (nguoi_tao, chu)
+    except _sqlite3.Error as e:
+        log.warning("thay logo áp: không đọc được chủ video (%s)", type(e).__name__)
+        return None
+    return out

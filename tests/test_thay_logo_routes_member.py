@@ -1,4 +1,6 @@
 """Route member trang Thay logo: chỉ người tạo hoặc admin thấy/đánh giá; đánh giá chỉ khi đã thay xong; trạng thái worker chỉ admin."""
+import json
+
 import pytest
 
 pytest.importorskip("fastapi")
@@ -404,3 +406,265 @@ def test_post_jobs_cong_cam_vinh_vien_409_loi_tam_van_nhan(ctx):
     W.ly_do_khong_nhan = "thư mục đầu ra nằm trong cây 'Creative' (bí mật)"
     r = c.post("/api/thay-logo/jobs", headers=_h("a@x"), json=body)
     assert r.status_code == 409 and "báo quản trị" in r.json()["detail"] and "Creative" not in r.json()["detail"]  # member không thấy chi tiết
+
+
+# ---------------------------------------------------------------- đợt 2A: POST/GET /bo/{job_id}/ap, POST /bo/{job_id}/hoan-tac
+F_AP = "FOLDERBO1" + "f" * 12
+BAN_AP = {1: "BANCOPY0001" + "a" * 10, 2: "BANCOPY0002" + "b" * 10, 3: "BANCOPY0003" + "c" * 10}
+
+
+@pytest.fixture
+def ap(tmp_path, monkeypatch):
+    """Lượt `vao_bo` thật: `jobs.db` (models), `POST /jobs` qua route (producer thật), video xong + Đạt; worker có `bat_dau_ap` chạy
+    thread `tl-ap` THẬT trên DB file và Drive giả. Cờ `TL_AP_VAO_BO=1` (chỉ trong tiến trình test)."""
+    import types
+
+    from drive_gia_thay_logo import DriveGiaTL
+
+    from tiktok_music_downloader.thay_logo import ap_vao_bo
+    from web import models, models_vao_bo
+
+    monkeypatch.setenv(ap_vao_bo.ENV_BAT, "1")
+    jobs = tmp_path / "jobs.db"
+    models.init_db(jobs)
+    ja = models.create_job(jobs, "https://x/a", 2, "a@x", nen_tang="tiktok")
+    jb = models.create_job(jobs, "https://x/b", 1, "b@x", nen_tang="tiktok")
+    for i, j in ((1, ja), (2, ja), (3, jb)):
+        models.record_video(jobs, j, f"V{i}", f"https://x/v{i}", title=f"T{i}", drive_file_id=f"SRC{i}" + "x" * 12)
+        models_vao_bo.ghi_da_vao_bo(jobs, f"V{i}", "a@x" if i < 3 else "b@x",
+                                    [dict(ban_copy_id=BAN_AP[i], folder_id=F_AP, ma_bo="N.1AAAA", bang_chung="properties")])
+    drive = DriveGiaTL()
+    drive.them_thu_muc(F_AP, "N.1AAAA")
+    drive.them_thu_muc("DAURA00000" + "o" * 10, "Thay logo - đầu ra")
+    for i in (1, 2, 3):
+        drive.them_file(BAN_AP[i], f"v{i}.mp4", F_AP, md5=f"MD5-{i}", size=str(100 * i))
+        drive.them_file(f"RA{i:04d}" + "r" * 14, f"ra{i}.mp4", "DAURA00000" + "o" * 10, md5=f"MD5-RA{i}", size=str(90 * i))
+    log_db = tmp_path / "tl.db"
+
+    def mo():
+        conn = nhat_ky.mo(log_db)
+        hang_doi.khoi_tao(conn)
+        return conn
+
+    luong: list = []
+    worker = types.SimpleNamespace(drive_tl=drive, ly_do_khong_nhan=None,
+                                   bat_dau_ap=lambda job_id: luong.append(ap_vao_bo.chay_nen(mo, drive, job_id)))
+
+    def require_user(request: Request) -> str:
+        return request.headers["x-user"]
+
+    app = FastAPI()
+    box = {"w": worker}
+    thay_logo_routes.dang_ky_route_member(app, lambda: log_db, require_user, lambda e: e == ADMIN, lambda: box["w"],
+                                          lambda email, ids: set(), lay_jobs_db=lambda: jobs)
+    mc = MayChu(app)
+    c = _Client(mc)
+    c.drive, c.mo, c.box, c.jobs, c.luong = drive, mo, box, jobs, luong
+
+    def tao(nguoi, cac, dat=True):
+        r = c.post("/api/thay-logo/jobs", headers=_h(nguoi), json={"vao_bo": [{"video_id": f"V{i}", "ban_copy_id": BAN_AP[i]} for i in cac],
+                                                                   "ten_bo": "N.1AAAA"})
+        assert r.status_code == 201, r.content
+        jid = r.json()["job_id"]
+        conn = mo()
+        for (vid, n) in conn.execute("SELECT id, nguon FROM tl_job_video WHERE job_id=? ORDER BY id", (jid,)).fetchall():
+            i = int(json.loads(n)["video_id"][1:])
+            log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+            if dat:
+                nhat_ky.ghi_danh_gia(conn, log_id, nguoi, "dat")
+            hang_doi.dat(conn, vid, "xong", video_log_id=log_id, drive_file_id_ra=f"RA{i:04d}" + "r" * 14)
+        conn.close()
+        return jid
+    c.tao = tao
+    yield c
+    for t in luong:
+        t.join(10)
+    mc.dung()
+
+
+
+def _cho(c):
+    for t in list(c.luong):
+        t.join(10)
+
+
+def _so_ghi(drive):
+    return sum(drive.so_lan(t) for t in ("doi_cha", "doi_ten", "sao_chep", "vao_thung_rac", "tao_thu_muc"))
+
+
+def test_ap_co_tat_thi_404_ca_ba_route(ap, monkeypatch):
+    from tiktok_music_downloader.thay_logo import ap_vao_bo
+    j = ap.tao("a@x", [1])
+    monkeypatch.delenv(ap_vao_bo.ENV_BAT)
+    for cach, duong in (("post", f"/bo/{j}/ap"), ("post", f"/bo/{j}/hoan-tac"), ("get", f"/bo/{j}/ap")):
+        assert getattr(ap, cach)(f"/api/thay-logo{duong}", headers=_h("a@x")).status_code == 404
+    assert ap.drive.goi == [("lay_muc", BAN_AP[1])]  # chỉ lời gọi chụp nguồn lúc tạo lượt
+
+
+def test_ap_202_roi_xong_bam_lai_409_hoan_tac_roi_ap_lai(ap):
+    j = ap.tao("a@x", [1, 2])
+    assert ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()["so_du_dieu_kien"] == 2
+    r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x"))
+    assert r.status_code == 202 and r.json() == {"ap_id": j, "so_video": 2, "bo_qua": []}
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_da_ap"], g["la_chu"], g["ma_bo"], g["so_du_dieu_kien"]) == ("xong", 2, True, "N.1AAAA", 0)
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 409
+    assert ap.post(f"/api/thay-logo/bo/{j}/hoan-tac", headers=_h("a@x")).status_code == 202
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["da_hoan_tac"]) == ("chua_ap", True)
+    assert ap.post(f"/api/thay-logo/bo/{j}/hoan-tac", headers=_h("a@x")).status_code == 409  # chưa áp
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 202  # áp lại sau hoàn tác
+    _cho(ap)
+    assert ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()["trang_thai"] == "xong"
+    vb = {v["ban_copy_id"]: v["da_ap"] for b in ap.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()["bo"] for v in b["videos"]}
+    assert vb == {BAN_AP[1]: True, BAN_AP[2]: True}
+
+
+def test_ap_quyen_member_khac_403_admin_chi_doc(ap):
+    j = ap.tao("a@x", [1])
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("b@x")).status_code == 403
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h(ADMIN)).status_code == 403
+    assert ap.post(f"/api/thay-logo/bo/{j}/hoan-tac", headers=_h(ADMIN)).status_code == 403
+    assert ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("b@x")).status_code == 403
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h(ADMIN))
+    assert g.status_code == 200 and g.json()["la_chu"] is False and g.json()["so_du_dieu_kien"] is None
+    assert ap.post("/api/thay-logo/bo/99999/ap", headers=_h("a@x")).status_code == 404
+    assert ap.post("/api/thay-logo/bo/0/ap", headers=_h("a@x")).status_code == 422
+    assert _so_ghi(ap.drive) == 0
+
+
+def test_admin_tao_luot_cho_video_nguoi_khac_cung_khong_ap_thay_duoc(ap):
+    """ĐỘT BIẾN: bỏ kiểm `chu_video == email` ⇒ admin áp được bản trong bộ của b ⇒ ĐỎ."""
+    j = ap.tao(ADMIN, [3])
+    r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h(ADMIN))
+    assert r.status_code == 403 and _so_ghi(ap.drive) == 0
+
+
+def test_so_vao_bo_chu_null_thi_403_cho_video_do(ap):
+    """Lúc TẠO lượt NULL được qua; lúc ÁP thì không. ĐỘT BIẾN: bỏ kiểm `video_vao_bo.chu` ⇒ ĐỎ."""
+    import sqlite3
+    j = ap.tao("a@x", [1, 2])
+    with sqlite3.connect(ap.jobs) as k:
+        k.execute("UPDATE video_vao_bo SET chu = NULL WHERE video_id = 'V1'")
+    r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x"))
+    assert r.status_code == 202 and r.json()["so_video"] == 1 and r.json()["bo_qua"][0]["ly_do"].startswith("sổ Đã vào bộ")
+    _cho(ap)
+    assert ("doi_cha", BAN_AP[1]) not in ap.drive.goi and ("doi_cha", BAN_AP[2]) in ap.drive.goi
+    with sqlite3.connect(ap.jobs) as k:
+        k.execute("UPDATE video_vao_bo SET chu = NULL WHERE video_id = 'V2'")
+    ap.post(f"/api/thay-logo/bo/{j}/hoan-tac", headers=_h("a@x"))
+    _cho(ap)
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 403  # cả hai video NULL ⇒ không còn gì của "bạn"
+
+
+def test_chua_dat_hoac_nguon_khac_khong_ap(ap):
+    j = ap.tao("a@x", [1], dat=False)
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 409
+    assert _so_ghi(ap.drive) == 0
+
+
+def test_khong_co_drive_thi_503(ap):
+    import types
+    j = ap.tao("a@x", [1])
+    ap.box["w"] = types.SimpleNamespace(ly_do_khong_nhan=None)
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 503
+
+
+def test_hai_post_that_cung_bo_chi_mot_202(ap):
+    """Hai lượt KHÁC NHAU cùng bộ (folder), hai request HTTP thật trên hai luồng, DB đã tạo trước. Thread của lượt thắng bị giữ ở lời gọi
+    Drive đầu ⇒ khoá còn đó. ĐỘT BIẾN: bỏ khoá bộ ⇒ hai 202 ⇒ ĐỎ."""
+    import threading
+    j1, j2 = ap.tao("a@x", [1]), ap.tao("a@x", [2])
+    di = threading.Event()
+    goc = ap.drive.lay_muc
+
+    def cham(fid):
+        di.wait(10)
+        return goc(fid)
+    ap.drive.lay_muc = cham
+    kq = []
+    ts = [threading.Thread(target=lambda j=j: kq.append(ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code)) for j in (j1, j2)]
+    [t.start() for t in ts]
+    [t.join(15) for t in ts]
+    assert sorted(kq) == [202, 409]
+    assert ap.get(f"/api/thay-logo/bo/{j1}/ap", headers=_h("a@x")).json()["trang_thai"] in ("chay", "chua_ap")
+    di.set()
+    _cho(ap)
+    # áp ‖ hoàn tác cùng bộ cũng 409: lượt thắng xong ⇒ hoàn tác nó trong lúc lượt kia đang chạy
+    thang = j1 if ap.get(f"/api/thay-logo/bo/{j1}/ap", headers=_h("a@x")).json()["so_da_ap"] else j2
+    thua = j2 if thang == j1 else j1
+    di.clear()
+    assert ap.post(f"/api/thay-logo/bo/{thua}/ap", headers=_h("a@x")).status_code == 202
+    assert ap.post(f"/api/thay-logo/bo/{thang}/hoan-tac", headers=_h("a@x")).status_code == 409
+    di.set()
+    _cho(ap)
+
+
+def test_quyen_kiem_truoc_drive_nguoi_la_403_khong_phai_503(ap):
+    """ĐỘT BIẾN: kiểm worker/Drive trước quyền ⇒ người lạ nhận 503 (lộ cấu hình máy chủ) ⇒ ĐỎ."""
+    import types
+    j = ap.tao("a@x", [1])
+    ap.box["w"] = types.SimpleNamespace(ly_do_khong_nhan=None)
+    for duong in ("ap", "hoan-tac"):
+        assert ap.post(f"/api/thay-logo/bo/{j}/{duong}", headers=_h("b@x")).status_code == 403
+        assert ap.post(f"/api/thay-logo/bo/{j}/{duong}", headers=_h(ADMIN)).status_code == 403
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 503
+
+
+def test_tab_da_vao_bo_co_tat_khong_tao_bang_ap(ap, monkeypatch):
+    """ĐỘT BIẾN: gọi `ban_da_ap` cả khi cờ tắt ⇒ bảng `tl_ap_bo` bị tạo ⇒ ĐỎ."""
+    from tiktok_music_downloader.thay_logo import ap_vao_bo
+    ap.tao("a@x", [1])
+    monkeypatch.delenv(ap_vao_bo.ENV_BAT)
+    vb = ap.get("/api/thay-logo/da-vao-bo", headers=_h("a@x")).json()
+    assert [v["da_ap"] for b in vb["bo"] for v in b["videos"]] == [False, False]
+    conn = ap.mo()
+    assert conn.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE 'tl_ap_bo%'").fetchone()[0] == 0
+    conn.close()
+
+
+def _danh_gia_moi(ap, j, i, ket_qua):
+    """Ghi một đánh giá MỚI HƠN cho video thứ i (1-based theo thứ tự id) của lượt j."""
+    import time
+    conn = ap.mo()
+    vid, log_id = conn.execute("SELECT id, video_log_id FROM tl_job_video WHERE job_id=? ORDER BY id", (j,)).fetchall()[i - 1]
+    conn.execute("INSERT INTO tl_danh_gia (video_id, member, ket_qua, loai_loi, luc) VALUES (?,?,?,?,?)",
+                 (log_id, "a@x", ket_qua, "khac" if ket_qua == "hong" else None, time.time() + 1))
+    conn.commit()
+    conn.close()
+
+
+def test_bo_mot_xong_mot_lui_ap_lai_duoc_video_lui(ap):
+    """1 video `xong` + 1 video `lui/loi` ⇒ GET báo `xong`, còn 1 video áp lại được, 0 video mới bị chặn; POST ⇒ 202, video lùi vào bộ.
+    ĐỘT BIẾN: `dat_lich_ap` chỉ cho `tiep` qua ⇒ POST 409 ⇒ ĐỎ."""
+    ra1 = "RA0001" + "r" * 14
+    ap.drive.copy_mang_properties = True
+    ap.drive.muc[ra1]["properties"] = {"videodesk_src": "SRCX" + "x" * 12}  # bản copy của video 1 mang dấu nguồn ⇒ lùi
+    j = ap.tao("a@x", [1, 2])
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 202
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_da_ap"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 1, 1, 0)
+    assert [(v["chieu"], v["buoc"]) for v in g["tung_video"]] == [("lui", "loi"), ("ap", "xong")]
+    del ap.drive.muc[ra1]["properties"]  # lỗi đã hết
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 202
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_da_ap"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 2, 0, 0)
+    assert F_AP not in ap.drive.muc[BAN_AP[1]]["parents"]
+
+
+def test_bo_da_ap_video_dat_moi_bi_chan_dem_rieng(ap):
+    """Video 2 được chấm Đạt SAU khi bộ đã áp ⇒ `so_moi_bi_chan == 1`, `so_du_dieu_kien == 0`; POST ⇒ 409 "đã áp".
+    ĐỘT BIẾN: bỏ `so_moi_bi_chan` (đếm video mới vào `so_du_dieu_kien`) ⇒ ĐỎ."""
+    j = ap.tao("a@x", [1, 2])
+    _danh_gia_moi(ap, j, 2, "hong")
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()["so_video"] == 1
+    _cho(ap)
+    _danh_gia_moi(ap, j, 2, "dat")
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 0, 1)
+    r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x"))
+    assert r.status_code == 409 and "hoàn tác trước" in r.json()["detail"]
