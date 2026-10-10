@@ -720,3 +720,53 @@ def test_bo_da_ap_van_ap_lai_duoc_video_lui_cua_cung_luot(san):
                 and (m.get("appProperties") or {}).get("tl_ap_goc") == g]
         assert len(song) == 1
     assert san.vi_pham == []
+
+
+def _mot_m_moi_g(san):
+    for g in (BAN[1], BAN[2]):
+        song = [m for m in san.drive.muc.values() if F1 in m["parents"] and not m["trashed"]
+                and (m.get("appProperties") or {}).get("tl_ap_goc") == g]
+        assert len(song) == 1, (g, song)
+
+
+def test_bo_da_ap_van_ap_lai_duoc_video_bo_qua(san):
+    """Bộ đã áp (v2 xong) + v1 bị loại ở tầng Drive (`ap/bo_qua`: md5 lệch ảnh chụp) ⇒ hết lệch thì áp lại được v1 mà không cần hoàn
+    tác cả bộ. ĐỘT BIẾN: khi bộ đã áp chỉ cho `lui` (chặn `bo_qua`) ⇒ 409 ⇒ ĐỎ."""
+    san.drive.muc[BAN[1]]["md5Checksum"] = "MD5-DOI"
+    san.ap()
+    san.chay()
+    h = san.hang()
+    assert (h[0]["chieu"], h[0]["buoc"]) == ("ap", "bo_qua") and h[1]["buoc"] == "xong"
+    san.drive.muc[BAN[1]]["md5Checksum"] = "MD5-1"
+    assert san.ap()["so_video"] == 1
+    san.chay()
+    h = san.hang()
+    assert (h[0]["chieu"], h[0]["buoc"], h[0]["lan"]) == ("ap", "xong", 2) and h[1]["buoc"] == "xong"
+    _mot_m_moi_g(san)
+    assert san.vi_pham == []
+
+
+def test_bo_da_ap_boi_luot_khac_van_ap_lai_duoc_hang_da_hoan_tac(san):
+    """Lượt J1 [v1, v2] áp rồi hoàn tác hết; lượt J2 [v1] áp xong ⇒ bộ đã áp. Áp lại J1: v1 tính "đã áp" (hàng của J2), v2 (`da_hoan_tac`)
+    dùng lại ⇒ xong, `lan`=2; mỗi G đúng 1 M. ĐỘT BIẾN: khi bộ đã áp chặn hàng `da_hoan_tac` ⇒ 409 ⇒ ĐỎ."""
+    san.ap(); san.chay()
+    san.hoan_tac(); san.chay()
+    assert [(r["chieu"], r["buoc"]) for r in san.hang()] == [("hoan_tac", "da_hoan_tac")] * 2
+    conn = san.mo()
+    n1 = json.loads(conn.execute("SELECT nguon FROM tl_job_video WHERE id=?", (san.vids[0],)).fetchone()[0])
+    j2 = hang_doi.tao_job(conn, A, [n1], ten_bo="N.1AAAA lần 2")
+    v = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (j2,)).fetchone()[0]
+    log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+    nhat_ky.ghi_danh_gia(conn, log_id, A, "dat")
+    hang_doi.dat(conn, v, "xong", video_log_id=log_id, drive_file_id_ra=RA[1])
+    ap_vao_bo.dat_lich_ap(conn, j2, A, _chu)
+    ap_vao_bo.chay_luot(conn, san.drive, j2)
+    ap_vao_bo.nha_khoa(conn, j2)
+    conn.close()
+    assert san.ap()["so_video"] == 1
+    san.chay()
+    h = {r["ban_copy_id"]: r for r in san.hang()}
+    assert (h[BAN[2]]["chieu"], h[BAN[2]]["buoc"], h[BAN[2]]["lan"]) == ("ap", "xong", 2)
+    assert (h[BAN[1]]["job_id"], h[BAN[1]]["buoc"]) == (j2, "xong")
+    _mot_m_moi_g(san)
+    assert san.vi_pham == []

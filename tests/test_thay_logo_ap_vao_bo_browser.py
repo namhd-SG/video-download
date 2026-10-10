@@ -1,7 +1,7 @@
 """Đợt 2A trên trình duyệt THẬT (Chromium, chặn mạng ngoài): bấm một bộ "Đã vào bộ" đã duyệt xong ⇒ thẻ mở rộng có nút "Áp N video Đạt
 vào bộ" ⇒ bấm ⇒ thread `tl-ap` thật chạy trên Drive giả ⇒ thẻ đổi sang "Đã áp … · Hoàn tác" ⇒ bấm Hoàn tác ⇒ về như cũ. Cờ tắt ⇒ không nút.
 
-Ảnh chụp ghi vào `$VIDEODL_ANH_THAY_LOGO` nếu có đặt (2a-truoc-ap-1280.png, 2a-da-ap-1280.png)."""
+Ảnh chụp ghi vào `$VIDEODL_ANH_THAY_LOGO` nếu có đặt (2a-truoc-ap-1280.png, 2a-da-ap-1280.png, 2a-mot-xong-mot-lui-1280.png)."""
 from __future__ import annotations
 
 import os
@@ -26,7 +26,6 @@ RA = {i: f"RAFILE{i:04d}" + "r" * 10 for i in range(1, 7)}
 F2 = "FOLDERBO2" + "g" * 12
 VID = lambda i: f"7100000000000000{i}"  # noqa: E731 — id số (route /thumbs chỉ nhận id số)
 DG = {1: "dat", 2: "dat", 3: "dat", 4: "hong"}
-ANH_MOT_XONG_MOT_LUI = "/Users/macos/plans/261007-2254-video-desk-thay-logo/shots-2a/2a-mot-xong-mot-lui-1280.png"
 
 
 def _seed(data: Path):
@@ -239,7 +238,10 @@ def test_bo_mot_xong_mot_lui_hien_nut_ap_lai(may_chu, trinh_duyet):
     assert nut.inner_text() == "Áp lại 1 video chưa vào bộ" and "Đã áp 1 video vào bộ" in p.locator(".tl-bx").inner_text()
     p.wait_for_function("document.querySelectorAll('.tl-bx-thumbs img').length === 2")
     p.wait_for_function("[...document.images].every(i => i.complete)")
-    p.locator(".tl-bx").screenshot(path=str(Path(ANH_MOT_XONG_MOT_LUI)))
+    d = os.environ.get("VIDEODL_ANH_THAY_LOGO")  # cùng luật `_chup`: chỉ chụp khi có đặt thư mục, không ghi đường dẫn cứng
+    if d:
+        Path(d).mkdir(parents=True, exist_ok=True)
+        p.locator(".tl-bx").screenshot(path=str(Path(d) / "2a-mot-xong-mot-lui-1280.png"))
     with p.expect_request(lambda r: r.method == "POST" and r.url.endswith(f"/api/thay-logo/bo/{j2}/ap")):
         nut.click()
     p.wait_for_function("document.querySelector('.tl-bx-da-ap') && document.querySelector('.tl-bx-da-ap').textContent.includes('Đã áp 2 video')",
