@@ -467,3 +467,37 @@ def test_trang_thai_theo_tien_do(san):
     assert t["trang_thai"] == "xong" and t["so_da_ap"] == 2 and t["xong_luc"]
     assert ap_vao_bo.ban_da_ap(conn) == {BAN[1], BAN[2]}
     conn.close()
+
+
+# ---------------------------------------------------------------- script khôi phục (DB mất)
+def _script():
+    import importlib.util
+    from pathlib import Path
+    p = Path(__file__).resolve().parent.parent / "scripts" / "thay_logo_ap_bo_khoi_phuc.py"
+    spec = importlib.util.spec_from_file_location("thay_logo_ap_bo_khoi_phuc", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_script_khoi_phuc_dung_tu_drive_khi_db_mat(san, capsys):
+    """DB rỗng (xoá file) ⇒ script vẫn ghép đúng cặp gốc↔mới THEO `tl_ap_goc`, dry-run không dời gì, `--thuc-hien` trả về như hoàn tác.
+    ĐỘT BIẾN: bỏ `tl_ap_goc` khỏi bản mới ⇒ không ghép được ⇒ ĐỎ."""
+    san.ap(); san.chay()
+    moi = {v["appProperties"][ap_vao_bo.THE_GOC]: k for k, v in san.ban_moi_trong_bo().items()}
+    san.db.unlink()
+    sc = _script()
+    so_ghi = sum(san.drive.so_lan(t) for t in ("doi_cha", "doi_ten", "tao_thu_muc"))
+    assert sc.main(["--bo", F1], drive=san.drive) == 0
+    assert "DRY-RUN" in capsys.readouterr().out
+    assert sum(san.drive.so_lan(t) for t in ("doi_cha", "doi_ten", "tao_thu_muc")) == so_ghi
+    ke = sc.lap_ke_hoach(san.drive, [F1])
+    assert {(k["ban_goc"], k["ban_moi"], k["g_o"]) for k in ke} == {(BAN[i], moi[BAN[i]], "ban_goc") for i in (1, 2)}
+    assert sc.main(["--bo", F1, "--thuc-hien"], drive=san.drive) == 0
+    [dh] = san.thu_muc(ap_vao_bo.TEN_DA_HOAN_TAC)
+    for i in (1, 2):
+        assert san.drive.muc[BAN[i]]["parents"] == [F1]
+        m = san.drive.muc[moi[BAN[i]]]
+        assert m["parents"] == [dh] and m["name"] == "HOAN-TAC-" + TEN[i]
+    assert san.vi_pham == [] and sc.lap_ke_hoach(san.drive, [F1]) == []
+    assert sc.thuc_hien(san.drive, ke) == 2  # chạy lại: probe ⇒ không dời thừa, không ném
