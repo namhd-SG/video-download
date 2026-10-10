@@ -40,7 +40,7 @@
     const bia = el("span", "tl-bia", "▶");
     if (v.anh_bia) { const img = el("img"); img.alt = ""; img.src = v.anh_bia; img.addEventListener("load", () => bia.replaceChildren(img), { once: true }); }
     const ten = el("span", "tl-ten-v", v.ten_video || "Video");
-    const phu = [TEN_NEN[v.nen_tang] || v.nen_tang, v.da_trong_luot ? "đã trong lượt thay logo" : ""].filter(Boolean).join(" · ");
+    const phu = [TEN_NEN[v.nen_tang] || v.nen_tang, v.da_ap ? "đã áp bản thay logo vào bộ" : v.da_trong_luot ? "đã trong lượt thay logo" : ""].filter(Boolean).join(" · ");
     the.append(cb, bia, ten);
     if (phu) the.append(el("span", "tl-vb-phu", phu));
     return the;
