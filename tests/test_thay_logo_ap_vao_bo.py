@@ -619,3 +619,49 @@ def test_khoa_cua_quet_khong_bi_nha_khoa_cua_mot_luot_xoa_nham(san, monkeypatch)
     monkeypatch.setattr(ap_vao_bo, "_chay_cac_hang", gia)
     san.quet()
     assert [[tuple(r) for r in x] for x in con] == [[(ap_vao_bo.KHOA_QUET,)]]
+
+
+def test_bo_co_ca_g_va_ban_moi_lan_truoc_la_vi_pham_khong_doi_g(san):
+    """Bộ có G VÀ một bản mới của G mang thẻ lần KHÁC ⇒ vi phạm bất biến ⇒ `lui` ngay, không dời G ra rồi mới phát hiện.
+    ĐỘT BIẾN: nhánh vi phạm chỉ xét thẻ của lần này ⇒ G bị dời ra ⇒ ĐỎ."""
+    san.drive.them_file("CU0000000001" + "z" * 8, TEN[1] + ".cu", F1, app_properties={ap_vao_bo.THE_AP: "999.1", ap_vao_bo.THE_GOC: BAN[1]})
+    san.ap()
+    san.chay()
+    h = san.hang()[0]
+    assert (h["chieu"], h["buoc"]) == ("lui", "loi") and ("doi_cha", BAN[1]) not in san.drive.goi
+    assert san.drive.muc["CU0000000001" + "z" * 8]["trashed"] and san.drive.muc[BAN[1]]["parents"] == [F1]
+
+
+def test_tim_theo_the_that_dung_corpora_drive_va_chan_incomplete():
+    """`DriveTLThat.tim_theo_the`: truy vấn trong ĐÚNG Shared Drive (`corpora=drive` + `driveId`), `incompleteSearch` ⇒ ném.
+    ĐỘT BIẾN: bỏ kiểm `incompleteSearch` ⇒ ĐỎ."""
+    pytest.importorskip("googleapiclient")
+    from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
+
+    class Goi:
+        def __init__(self, kq):
+            self.kq = kq
+
+        def execute(self):
+            return self.kq
+
+    class Files:
+        def __init__(self, ds):
+            self.ds, self.kw = ds, []
+
+        def list(self, **kw):
+            self.kw.append(kw)
+            return Goi(self.ds.pop(0))
+
+        def get(self, **kw):
+            return Goi({"id": kw["fileId"], "driveId": "DRIVE1"})
+
+    files = Files([{"files": [{"id": "x"}]}, {"files": [], "incompleteSearch": True}])
+    svc = type("S", (), {"files": lambda self: files})()
+    d = DriveTLThat(uploader=object())
+    d._svc = d._svc_ngan = lambda: svc
+    assert d.tim_theo_the(F1, ap_vao_bo.THE_AP, "1.1") == [{"id": "x"}]
+    kw = files.kw[0]
+    assert (kw["corpora"], kw["driveId"]) == ("drive", "DRIVE1") and "incompleteSearch" in kw["fields"]
+    with pytest.raises(RuntimeError, match="incompleteSearch"):
+        d.tim_theo_the(F1, ap_vao_bo.THE_AP, "1.1")
