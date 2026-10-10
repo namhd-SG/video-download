@@ -21,10 +21,12 @@ from web import app as app_mod
 
 NGUOI = "thaylogo@dev.local"
 F1, DAU_RA = "FOLDERBO1" + "f" * 12, "DAURAFOLD0" + "o" * 10
-BAN = {i: f"BANCOPY{i:04d}" + "q" * 10 for i in range(1, 5)}
-RA = {i: f"RAFILE{i:04d}" + "r" * 10 for i in range(1, 5)}
+BAN = {i: f"BANCOPY{i:04d}" + "q" * 10 for i in range(1, 7)}
+RA = {i: f"RAFILE{i:04d}" + "r" * 10 for i in range(1, 7)}
+F2 = "FOLDERBO2" + "g" * 12
 VID = lambda i: f"7100000000000000{i}"  # noqa: E731 — id số (route /thumbs chỉ nhận id số)
 DG = {1: "dat", 2: "dat", 3: "dat", 4: "hong"}
+ANH_MOT_XONG_MOT_LUI = "/Users/macos/plans/261007-2254-video-desk-thay-logo/shots-2a/2a-mot-xong-mot-lui-1280.png"
 
 
 def _seed(data: Path):
@@ -48,8 +50,26 @@ def _seed(data: Path):
         drive.them_file(RA[i], f"thay-logo-{i}.mp4", DAU_RA, md5=f"MD5-RA{i}", size=str(90 * i))
         nguon.append({"kieu": "vao_bo", "video_id": VID(i), "file_id": BAN[i], "folder_id": F1, "ma_bo": "N.2809C", "md5": f"MD5-{i}",
                       "size": str(100 * i), "ten": f"v{i}.mp4", "chu_video": NGUOI, "file_id_nguon": f"SRC{i}" + "x" * 12})
+    # Bộ thứ hai (N.3010D, 2 video Đạt) cho ca "1 xong + 1 lùi": dựng trạng thái bằng hàm lõi thật trong test.
+    drive.them_thu_muc(F2, "N.3010D - bộ thử 2")
+    nguon2 = []
+    for i in (5, 6):
+        models.record_video(db, j, VID(i), f"https://x/{i}", title=f"Video {i}", drive_file_id=f"SRC{i}" + "x" * 12)
+        Image.new("RGB", (90, 160), (40 * i % 255, 160, 90)).save(data / "thumbs" / f"{VID(i)}.webp", "WEBP")
+        models_vao_bo.ghi_da_vao_bo(db, VID(i), NGUOI, [dict(ban_copy_id=BAN[i], folder_id=F2, ma_bo="N.3010D", bang_chung="properties")])
+        drive.them_file(BAN[i], f"v{i}.mp4", F2, md5=f"MD5-{i}", size=str(100 * i))
+        drive.them_file(RA[i], f"thay-logo-{i}.mp4", DAU_RA, md5=f"MD5-RA{i}", size=str(90 * i))
+        nguon2.append({"kieu": "vao_bo", "video_id": VID(i), "file_id": BAN[i], "folder_id": F2, "ma_bo": "N.3010D", "md5": f"MD5-{i}",
+                       "size": str(100 * i), "ten": f"v{i}.mp4", "chu_video": NGUOI, "file_id_nguon": f"SRC{i}" + "x" * 12})
     conn = nhat_ky.mo(data / "thay_logo_log.db")
     hang_doi.khoi_tao(conn)
+    j2 = hang_doi.tao_job(conn, NGUOI, nguon2, ten_bo="N.3010D")
+    conn.execute("UPDATE tl_job SET thu_muc_ra_id=? WHERE id=?", (DAU_RA, j2))
+    for i, (vid,) in zip((5, 6), conn.execute("SELECT id FROM tl_job_video WHERE job_id=? ORDER BY id", (j2,)).fetchall()):
+        log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+        nhat_ky.ghi_danh_gia(conn, log_id, NGUOI, "dat")
+        hang_doi.dat(conn, vid, "xong", video_log_id=log_id, drive_file_id_ra=RA[i])
+    _SAN["job2"] = j2
     jt = hang_doi.tao_job(conn, NGUOI, nguon, ten_bo="N.2809C")
     conn.execute("UPDATE tl_job SET thu_muc_ra_id=? WHERE id=?", (DAU_RA, jt))
     conn.commit()
@@ -193,3 +213,35 @@ def test_ap_roi_hoan_tac_tren_the_bo(may_chu, trinh_duyet):
     assert all(d.muc[BAN[i]]["parents"] == [F1] for i in (1, 2, 3, 4))
     assert "đã hoàn tác một lần" in p.locator(".tl-bx").inner_text()
     assert loi_js == []
+
+
+def test_bo_mot_xong_mot_lui_hien_nut_ap_lai(may_chu, trinh_duyet):
+    """Bộ N.3010D: video 5 lùi (bản copy mang dấu nguồn), video 6 áp xong ⇒ thẻ có "Áp lại 1 video chưa vào bộ"; bấm ⇒ POST /ap ⇒ video 5
+    vào bộ. ĐỘT BIẾN: bỏ nút "Áp lại" trong JS ⇒ ĐỎ."""
+    d, j2 = _SAN["drive"], _SAN["job2"]
+    log_db = _SAN["tmp"] / "thay_logo_log.db"
+    d.copy_mang_properties = True
+    d.muc[RA[5]]["properties"] = {"videodesk_src": "SRCX" + "x" * 12}
+    conn = nhat_ky.mo(log_db)
+    hang_doi.khoi_tao(conn)
+    ap_vao_bo.dat_lich_ap(conn, j2, NGUOI, lambda ids: {i: (NGUOI, NGUOI) for i in ids})
+    ap_vao_bo.chay_luot(conn, d, j2)
+    ap_vao_bo.nha_khoa(conn, j2)
+    assert [(r["chieu"], r["buoc"]) for r in conn.execute("SELECT chieu, buoc FROM tl_ap_bo WHERE job_id=? ORDER BY id", (j2,))] == \
+        [("lui", "loi"), ("ap", "xong")]
+    conn.close()
+    del d.muc[RA[5]]["properties"]
+    d.copy_mang_properties = False
+    p, loi_js = _mo(trinh_duyet, may_chu)
+    p.click(f'.tl-bo-chon[data-job="{j2}"]')
+    nut = p.locator(".tl-bx-ap-lai")
+    nut.wait_for()
+    assert nut.inner_text() == "Áp lại 1 video chưa vào bộ" and "Đã áp 1 video vào bộ" in p.locator(".tl-bx").inner_text()
+    p.wait_for_function("document.querySelectorAll('.tl-bx-thumbs img').length === 2")
+    p.wait_for_function("[...document.images].every(i => i.complete)")
+    p.locator(".tl-bx").screenshot(path=str(Path(ANH_MOT_XONG_MOT_LUI)))
+    with p.expect_request(lambda r: r.method == "POST" and r.url.endswith(f"/api/thay-logo/bo/{j2}/ap")):
+        nut.click()
+    p.wait_for_function("document.querySelector('.tl-bx-da-ap') && document.querySelector('.tl-bx-da-ap').textContent.includes('Đã áp 2 video')",
+                        timeout=15000)
+    assert F2 not in d.muc[BAN[5]]["parents"] and p.locator(".tl-bx-ap-lai").count() == 0 and loi_js == []

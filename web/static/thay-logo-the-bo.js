@@ -140,7 +140,12 @@
       const o = el("div", "tl-bx-da-ap"); o.setAttribute("role", "status");
       o.append(`✓ Đã áp ${ap.so_da_ap} video vào bộ ${gio(ap.xong_luc)} · `, nutLink("Hoàn tác", () => bam(b.job_id, "hoan-tac")));
       hop.append(o, nho("Bản gốc đang ở ", duong(thuMuc), ". Creative Desk vẫn dùng bản cũ tới lượt đồng bộ."), nho(CAU_META));
-      if (ap.so_du_dieu_kien) hop.append(nho(`Còn ${ap.so_du_dieu_kien} video Đạt chưa áp. Bộ đã áp — hoàn tác trước nếu muốn áp lại cả chúng.`));
+      if (ap.so_du_dieu_kien) {  // video lỗi/bị loại lần trước: áp lại được mà không cần hoàn tác cả bộ
+        const n = el("button", "btn tl-bx-ap-lai", `Áp lại ${ap.so_du_dieu_kien} video chưa vào bộ`); n.type = "button";
+        n.addEventListener("click", () => { n.disabled = true; bam(b.job_id, "ap"); });
+        hop.append(n);
+      }
+      if (ap.so_moi_bi_chan) hop.append(nho(`Còn ${ap.so_moi_bi_chan} video Đạt mới chưa áp. Bộ đã áp — hoàn tác trước nếu muốn áp cả chúng.`));
     } else if (ap.trang_thai === "do_dang" || ap.trang_thai === "loi") {
       const o = el("div", "tl-bx-do-dang"); o.setAttribute("role", "status");
       o.append(ap.trang_thai === "loi" ? "Có video cần quản trị xem (dưới đây). " : "Lượt trước còn dở. ");

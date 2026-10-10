@@ -699,3 +699,24 @@ def test_quet_loi_truoc_khi_lay_khoa_van_xoa_khoa_cu(san, tien_to, ne_ra):
         ap_vao_bo.quet_do_dang(boc, san.drive)
     assert conn.execute("SELECT count(*) FROM tl_ap_bo_khoa").fetchone()[0] == 0
     conn.close()
+
+
+def test_bo_da_ap_van_ap_lai_duoc_video_lui_cua_cung_luot(san):
+    """Một video lùi (lỗi) + một video xong cùng lượt ⇒ bấm áp lại chạy được video lùi (dùng lại hàng, `lan` tăng), không cần
+    hoàn tác cả bộ; mỗi G đúng 1 bản mới. ĐỘT BIẾN: chỉ cho "tiep" qua khi bộ đã áp ⇒ 409 ⇒ ĐỎ."""
+    san.drive.copy_mang_properties = True
+    san.drive.muc[RA[1]]["properties"] = {"videodesk_src": "SRCX" + "s" * 12}
+    san.ap()
+    san.chay()
+    h = san.hang()
+    assert (h[0]["chieu"], h[0]["buoc"]) == ("lui", "loi") and h[1]["buoc"] == "xong"
+    del san.drive.muc[RA[1]]["properties"]  # lỗi tạm đã hết
+    san.ap()
+    san.chay()
+    h = san.hang()
+    assert (h[0]["chieu"], h[0]["buoc"], h[0]["lan"]) == ("ap", "xong", 2) and h[1]["buoc"] == "xong"
+    for g in (BAN[1], BAN[2]):
+        song = [m for m in san.drive.muc.values() if F1 in m["parents"] and not m["trashed"]
+                and (m.get("appProperties") or {}).get("tl_ap_goc") == g]
+        assert len(song) == 1
+    assert san.vi_pham == []

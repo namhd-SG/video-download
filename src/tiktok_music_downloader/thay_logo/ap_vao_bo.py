@@ -199,11 +199,12 @@ def dat_lich_ap(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], di
         kq = phan_loai(conn, job_id, email, chu_cua)
         if kq["hoan_tac_do"]:
             raise LoiAp(409, "Hoàn tác của bộ này đang dở — bấm Hoàn tác để chạy tiếp.")
-        if kq["da_ap"]:  # bộ đã có video áp xong (chưa hoàn tác): KHÔNG áp thêm phần còn lại; chỉ cho "Tiếp tục" hàng đang dở
+        if kq["da_ap"]:  # bộ đã có video áp xong (chưa hoàn tác): KHÔNG áp video MỚI; hàng đang dở ("tiep") và hàng dùng lại được
+            # ("dung_lai": lùi xong sau lỗi / bị loại / đã hoàn tác — G ở bộ, chưa có M) vẫn chạy, kẻo video lỗi tạm phải chờ hoàn tác cả bộ
             for v, _, cach in kq["lam"]:
-                if cach != "tiep":
+                if cach == "moi":
                     kq["bo_qua"].append({"job_video_id": v["id"], "ly_do": LY_DO_DA_AP})
-            kq["lam"] = [x for x in kq["lam"] if x[2] == "tiep"]
+            kq["lam"] = [x for x in kq["lam"] if x[2] != "moi"]
         if not kq["lam"]:
             if kq["da_ap"]:
                 raise LoiAp(409, LY_DO_DA_AP)

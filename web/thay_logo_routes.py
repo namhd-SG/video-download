@@ -656,15 +656,19 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             kq = ap_vao_bo.trang_thai(conn, job_id)
             ma_bo = sorted({v["nguon"].get("ma_bo") for v in ap_vao_bo.cac_video(conn, job_id)
                             if v["nguon"].get("kieu") == "vao_bo" and v["nguon"].get("ma_bo")})
-            so = None
+            so, moi_chan = None, 0
             if chu == email:
                 try:
-                    so = len(ap_vao_bo.phan_loai(conn, job_id, email, _chu_cua)["lam"])
+                    pl = ap_vao_bo.phan_loai(conn, job_id, email, _chu_cua)
+                    # Bộ đã áp: video MỚI bị chặn (hoàn tác trước), hàng dở/dùng lại vẫn áp được — đếm tách để UI vẽ đúng nút.
+                    moi_chan = sum(1 for x in pl["lam"] if x[2] == "moi") if pl["da_ap"] else 0
+                    so = len(pl["lam"]) - moi_chan
                 except HTTPException:
                     so = None  # jobs.db tạm không đọc được: tiến độ vẫn trả, nút áp chờ lần sau
         finally:
             conn.close()
-        return {**kq, "la_chu": chu == email, "ma_bo": ", ".join(ma_bo), "so_du_dieu_kien": so}
+        return {**kq, "la_chu": chu == email, "ma_bo": ", ".join(ma_bo), "so_du_dieu_kien": so,
+                "so_moi_bi_chan": moi_chan}
 
 
 # ============================================================================ trợ giúp đợt 1b (module-level; gọi LÚC CHẠY)

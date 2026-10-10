@@ -623,3 +623,48 @@ def test_tab_da_vao_bo_co_tat_khong_tao_bang_ap(ap, monkeypatch):
     conn = ap.mo()
     assert conn.execute("SELECT count(*) FROM sqlite_master WHERE name LIKE 'tl_ap_bo%'").fetchone()[0] == 0
     conn.close()
+
+
+def _danh_gia_moi(ap, j, i, ket_qua):
+    """Ghi một đánh giá MỚI HƠN cho video thứ i (1-based theo thứ tự id) của lượt j."""
+    import time
+    conn = ap.mo()
+    vid, log_id = conn.execute("SELECT id, video_log_id FROM tl_job_video WHERE job_id=? ORDER BY id", (j,)).fetchall()[i - 1]
+    conn.execute("INSERT INTO tl_danh_gia (video_id, member, ket_qua, loai_loi, luc) VALUES (?,?,?,?,?)",
+                 (log_id, "a@x", ket_qua, "khac" if ket_qua == "hong" else None, time.time() + 1))
+    conn.commit()
+    conn.close()
+
+
+def test_bo_mot_xong_mot_lui_ap_lai_duoc_video_lui(ap):
+    """1 video `xong` + 1 video `lui/loi` ⇒ GET báo `xong`, còn 1 video áp lại được, 0 video mới bị chặn; POST ⇒ 202, video lùi vào bộ.
+    ĐỘT BIẾN: `dat_lich_ap` chỉ cho `tiep` qua ⇒ POST 409 ⇒ ĐỎ."""
+    ra1 = "RA0001" + "r" * 14
+    ap.drive.copy_mang_properties = True
+    ap.drive.muc[ra1]["properties"] = {"videodesk_src": "SRCX" + "x" * 12}  # bản copy của video 1 mang dấu nguồn ⇒ lùi
+    j = ap.tao("a@x", [1, 2])
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 202
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_da_ap"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 1, 1, 0)
+    assert [(v["chieu"], v["buoc"]) for v in g["tung_video"]] == [("lui", "loi"), ("ap", "xong")]
+    del ap.drive.muc[ra1]["properties"]  # lỗi đã hết
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).status_code == 202
+    _cho(ap)
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_da_ap"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 2, 0, 0)
+    assert F_AP not in ap.drive.muc[BAN_AP[1]]["parents"]
+
+
+def test_bo_da_ap_video_dat_moi_bi_chan_dem_rieng(ap):
+    """Video 2 được chấm Đạt SAU khi bộ đã áp ⇒ `so_moi_bi_chan == 1`, `so_du_dieu_kien == 0`; POST ⇒ 409 "đã áp".
+    ĐỘT BIẾN: bỏ `so_moi_bi_chan` (đếm video mới vào `so_du_dieu_kien`) ⇒ ĐỎ."""
+    j = ap.tao("a@x", [1, 2])
+    _danh_gia_moi(ap, j, 2, "hong")
+    assert ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()["so_video"] == 1
+    _cho(ap)
+    _danh_gia_moi(ap, j, 2, "dat")
+    g = ap.get(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x")).json()
+    assert (g["trang_thai"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 0, 1)
+    r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x"))
+    assert r.status_code == 409 and "hoàn tác trước" in r.json()["detail"]
