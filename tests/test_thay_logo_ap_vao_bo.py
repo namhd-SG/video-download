@@ -665,3 +665,37 @@ def test_tim_theo_the_that_dung_corpora_drive_va_chan_incomplete():
     assert (kw["corpora"], kw["driveId"]) == ("drive", "DRIVE1") and "incompleteSearch" in kw["fields"]
     with pytest.raises(RuntimeError, match="incompleteSearch"):
         d.tim_theo_the(F1, ap_vao_bo.THE_AP, "1.1")
+
+
+class _ConnNem:
+    """Bọc kết nối sqlite: ném MỘT lần ở câu SQL bắt đầu bằng `tien_to` (giả DB khoá/hỏng đúng chỗ đó)."""
+
+    def __init__(self, conn, tien_to):
+        self._c, self._t = conn, tien_to
+
+    def execute(self, sql, *a):
+        if self._t and sql.lstrip().startswith(self._t):
+            self._t = None
+            raise RuntimeError(f"giả lỗi ở: {sql[:40]}")
+        return self._c.execute(sql, *a)
+
+    def __getattr__(self, ten):
+        return getattr(self._c, ten)
+
+
+@pytest.mark.parametrize("tien_to,ne_ra", [("BEGIN IMMEDIATE", False), ("SELECT folder_id FROM tl_ap_bo_khoa", True)])
+def test_quet_loi_truoc_khi_lay_khoa_van_xoa_khoa_cu(san, tien_to, ne_ra):
+    """Lỗi xảy ra TRƯỚC khi quét kịp thay khoá cũ của bộ (BEGIN trượt) hoặc ngay đầu (đọc khoá trượt) ⇒ khoá cũ vẫn bị xoá ở `finally`.
+    ĐỘT BIẾN: bỏ lệnh xoá cuối trong `finally` ⇒ khoá cũ kẹt ⇒ ĐỎ."""
+    san.ap()
+    conn = san.mo()
+    conn.execute("UPDATE tl_ap_bo_khoa SET luc = luc - 100")
+    conn.commit()
+    boc = _ConnNem(conn, tien_to)
+    if ne_ra:
+        with pytest.raises(RuntimeError):
+            ap_vao_bo.quet_do_dang(boc, san.drive)
+    else:
+        ap_vao_bo.quet_do_dang(boc, san.drive)
+    assert conn.execute("SELECT count(*) FROM tl_ap_bo_khoa").fetchone()[0] == 0
+    conn.close()
