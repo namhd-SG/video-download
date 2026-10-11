@@ -173,8 +173,38 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-lk-them:hover { background: var(--surface-alt); }
 .tl-lk-email { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
 .tl-lk-email code { flex: 1 1 200px; min-width: 0; font-family: var(--mono); font-size: .68rem; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 7px; overflow-wrap: anywhere; user-select: all; }
-.tl-vung:has(#tl-tab-link:not([hidden])) { height: 520px; }  /* ô dán + danh sách kết quả cần cao hơn lưới thư viện */
+.tl-vung:has(#tl-tab-link:not([hidden])), .tl-vung:has(#tl-tab-may:not([hidden])) { height: 520px; }  /* ô dán + danh sách kết quả cần cao hơn lưới thư viện */
 .tl-lk-than .tl-lk-ok { font-size: .76rem; margin-top: 1px; }
+
+/* Tab "Tải từ máy" (thay-logo-tab-may.js): nhãn tab chỉ hiện khi máy chủ bật tính năng (module gắn class lên body) */
+body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
+.tl-may-tha { border: 2px dashed var(--border); border-radius: 12px; padding: 22px 16px; text-align: center; background: var(--bg); display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.tl-may-tha.on { border-color: var(--accent); background: var(--accent-soft); }
+.tl-may-ic { font-size: 1.5rem; color: var(--accent); line-height: 1; }
+.tl-may-tha-tieu { font-size: .95rem; font-weight: 700; }
+.tl-may-tha-phu { font-size: .76rem; color: var(--text-muted); margin-bottom: 6px; }
+.tl-may-khoa { font-size: .76rem; margin: 8px 0 0; }
+.tl-may-tom { font-size: .82rem; margin: 10px 0 0; }
+.tl-may-do { color: var(--danger); }
+.tl-may-tb[hidden] { display: none; }
+.tl-may-ds { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.tl-may-the { display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); }
+.tl-may-xong { border-color: var(--accent); }
+.tl-may-loi { border-color: var(--danger); background: var(--danger-bg); }
+.tl-may-dau { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: .78rem; font-weight: 800; background: var(--surface-alt); color: var(--text-muted); }
+.tl-may-loi .tl-may-dau { color: var(--danger); background: var(--surface); }
+.tl-may-xong .tl-may-dau { background: transparent; }
+.tl-may-dau input[type=checkbox] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.tl-may-ten { font-size: .86rem; font-weight: 700; overflow-wrap: anywhere; }
+.tl-may-phu { font-size: .76rem; color: var(--text-muted); margin-top: 1px; }
+.tl-may-ok { font-size: .76rem; color: var(--success); margin-top: 1px; }
+.tl-may-loi-chu { font-size: .78rem; margin-top: 3px; line-height: 1.45; color: var(--danger); overflow-wrap: anywhere; }
+.tl-may-tien { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.tl-may-bar { flex: 1; height: 6px; border-radius: 999px; background: var(--surface-alt); overflow: hidden; }
+.tl-may-bar i { display: block; height: 100%; background: var(--accent); }
+.tl-may-pct { font-family: var(--mono); font-size: .7rem; color: var(--text-muted); min-width: 34px; text-align: right; }
+.tl-may-nut { display: flex; gap: 6px; align-items: center; }
+.tl-may-the .btn { min-height: 34px; font-size: .8rem; white-space: nowrap; }
 
 /* Đợt 1b — so sánh trước/sau (vạch kéo) + phóng to vùng logo */
 .tl-cmp { position: relative; border-radius: 10px; overflow: hidden; border: 1px solid var(--border); background: #111; --pos: 50%; user-select: none; }
