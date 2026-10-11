@@ -64,26 +64,24 @@ TEN_THU_MUC_VAO = "Thay logo - đầu vào"
 
 
 def thu_muc_vao_cua(drive: DriveTL, thu_muc_ra_id: str, email: str, kiem_creative=None) -> str:
-    """Id `Thay logo - đầu vào/<email>/` — CÙNG CHA với thư mục ra (`thu_muc_ra_id`), tìm-hoặc-tạo. Dùng lại đường tìm/tạo của đợt áp vào bộ
-    (`ap_vao_bo._ThuMuc._tim_tao`), không viết đường thứ hai. `kiem_creative() -> str | None` (cổng Creative) chạy MỖI KHI sắp TẠO một
+    """Id `Thay logo - đầu vào/<email>/` — CÙNG CHA với thư mục ra (`thu_muc_ra_id`), tìm-hoặc-tạo bằng chính `tim_con_theo_ten`/
+    `tao_thu_muc` của `DriveTL` (cùng đường `ap_vao_bo._ThuMuc._tim_tao`), nhưng `ngan=True`: hàm này chạy TRONG request tạo phiên, Drive
+    treo ⇒ lỗi sau ~`TIMEOUT_LAY_MUC_GIAY` thay vì giữ thread uvicorn. `kiem_creative() -> str | None` (cổng Creative) chạy MỖI KHI sắp TẠO một
     thư mục: có lý do ⇒ `CongCreativeCam`; nó ném ⇒ ném nguyên (chưa kiểm được ≠ được phép). Lỗi Drive ném lên."""
-    from tiktok_music_downloader.thay_logo.ap_vao_bo import _ThuMuc  # nạp muộn: ap_vao_bo nhập CongCreativeCam từ module này
-
     cha = (drive.lay_muc(thu_muc_ra_id).get("parents") or [None])[0]
     if not cha:
         raise RuntimeError("thư mục ra không có thư mục cha")
     ten_email = "".join(c for c in email if c.isprintable()).strip()
     if not ten_email:
         raise ValueError("email rỗng")
-    tm = _ThuMuc(drive)
     hien = cha
     for ten in (TEN_THU_MUC_VAO, ten_email):
-        co = tm._tim_tao(ten, hien, False)
+        co = [m["id"] for m in drive.tim_con_theo_ten(hien, ten, ngan=True)]
         if not co:
             if kiem_creative is not None:
                 ly_do = kiem_creative()
                 if ly_do:
                     raise CongCreativeCam(ly_do)
-            co = tm._tim_tao(ten, hien, True)
+            co = [drive.tao_thu_muc(ten, hien, ngan=True)]
         hien = co[0]
     return hien

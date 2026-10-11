@@ -931,3 +931,26 @@ def test_jobs_may_tinh_vao_tran_cho(tai, monkeypatch):
     assert conn.execute("SELECT count(*) FROM tl_phien_tai WHERE trang_thai='xong'").fetchone()[0] == 2  # 429 không đổi phiên
     assert _tao_job_may(tai, "a@x", [f1]).status_code == 201
     assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 429  # video chờ + phiên mở chung một trần
+
+
+def test_tao_phien_drive_treo_luc_tim_thu_muc_vao_thi_503_nhanh(tai):
+    """Tìm/tạo thư mục đầu vào chạy TRONG request: phải xin timeout ngắn (`ngan=True`). Drive giả: lời gọi KHÔNG xin ngắn thì treo 15 s
+    (như `_svc()` không timeout gặp Drive treo); xin ngắn thì ném `TimeoutError` (như httplib2 hết `TIMEOUT_LAY_MUC_GIAY`).
+    ĐỘT BIẾN: bỏ `ngan=True` ở `thu_muc_vao_cua` ⇒ request treo 15 s rồi 201 ⇒ ĐỎ."""
+    import threading
+    import time
+
+    goc = tai.drive.tim_con_theo_ten
+
+    def tim(cha_id, ten, *, ngan=False):
+        if not ngan:
+            threading.Event().wait(15)
+            return goc(cha_id, ten)
+        raise TimeoutError("timed out")
+
+    tai.drive.tim_con_theo_ten = tim
+    t0 = time.monotonic()
+    r = tai.post(PHIEN, headers=_h("a@x"), json=_khai())
+    assert r.status_code == 503, r.content
+    assert time.monotonic() - t0 < 10
+    assert tai.ss.goi == []  # không tạo phiên Google khi chưa có thư mục

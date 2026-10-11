@@ -1,6 +1,7 @@
 """`DriveTLThat` với service GIẢ ném `HttpError` THẬT của googleapiclient: phân biệt 403 "không được quyền" với 403 hết hạn mức,
 404, 429/5xx; phân trang `liet_ke_con`; danh sách trường. Không gọi mạng."""
 import json
+import types
 
 import pytest
 
@@ -122,3 +123,34 @@ def test_truong_video_khai_tuong_minh_khong_lap_size():
     d, files = _drive([{"id": "x"}])
     d.lay_muc_day_du("F" * 20)
     assert files.goi[0][1]["fields"] == drive_tl.TRUONG_VIDEO
+
+
+class _SvcGhi:
+    """Service giả chỉ ghi tên service đã dùng; `list`/`create` trả kết quả hợp lệ tối thiểu."""
+
+    def __init__(self, ten, nhat_ky):
+        self.ten, self.nhat_ky = ten, nhat_ky
+
+    def files(self):
+        return self
+
+    def list(self, **kw):
+        self.nhat_ky.append((self.ten, "list"))
+        return types.SimpleNamespace(execute=lambda: {"files": []})
+
+    def create(self, **kw):
+        self.nhat_ky.append((self.ten, "create"))
+        return types.SimpleNamespace(execute=lambda: {"id": "F1", "driveId": "D1"})
+
+
+def test_tim_tao_thu_muc_ngan_dung_service_co_timeout_mac_dinh_giu_nguyen():
+    """`ngan=True` (request web) ⇒ `_svc_ngan` (timeout); mặc định (worker / `tl-ap` / script khôi phục) ⇒ `_svc` như cũ.
+    ĐỘT BIẾN: bỏ `_svc_ngan` khỏi nhánh `ngan` ⇒ ĐỎ; đổi mặc định sang ngắn ⇒ ĐỎ."""
+    nk = []
+    d = DriveTLThat(uploader=object())
+    d._svc, d._svc_ngan = (lambda: _SvcGhi("dai", nk)), (lambda: _SvcGhi("ngan", nk))
+    d.tim_con_theo_ten("C", "x", ngan=True)
+    d.tao_thu_muc("x", "C", ngan=True)
+    d.tim_con_theo_ten("C", "x")
+    d.tao_thu_muc("x", "C")
+    assert nk == [("ngan", "list"), ("ngan", "create"), ("dai", "list"), ("dai", "create")]
