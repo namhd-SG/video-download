@@ -154,3 +154,17 @@ def test_tim_tao_thu_muc_ngan_dung_service_co_timeout_mac_dinh_giu_nguyen():
     d.tim_con_theo_ten("C", "x")
     d.tao_thu_muc("x", "C")
     assert nk == [("ngan", "list"), ("ngan", "create"), ("dai", "list"), ("dai", "create")]
+
+
+def test_session_http_tra_authorized_session_mang_dung_credentials_khong_goi_mang():
+    """`session_http()` dựng `AuthorizedSession` từ credentials của uploader (không mạng). Đột biến: không truyền credentials ⇒ ĐỎ."""
+    pytest.importorskip("google.auth.transport.requests")
+    from google.auth.credentials import AnonymousCredentials
+
+    cred = AnonymousCredentials()
+    up = types.SimpleNamespace(_get_credentials=lambda: cred)
+    ss = DriveTLThat(uploader=up).session_http()
+    try:
+        assert ss.credentials is cred
+    finally:
+        ss.close()

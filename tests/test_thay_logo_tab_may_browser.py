@@ -81,7 +81,7 @@ class GoogleGia:
         return route.fulfill(status=308, headers={**cors, "Range": f"bytes=0-{s['da'] - 1}"}, body="")
 
 
-def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=None, rong=1280):
+def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=None, rong=1280, xong_loi=()):
     monkeypatch.setattr(app_mod, "worker_thay_logo", object())
     ctx = br.new_context(viewport={"width": rong, "height": 900})
     ctx.add_cookies([{"name": "phien_may_chu", "value": "COOKIE-BI-MAT", "domain": "upload.google.test", "path": "/", "secure": True, "sameSite": "None"}])  # có cookie cho host Google: gửi kèm là LỘ ngay
@@ -98,6 +98,8 @@ def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=
 
     def xong(r):
         p.xong.append({"url": r.request.url, "body": json.loads(r.request.post_data)})
+        if len(p.xong) in xong_loi:
+            return _tra_json(r, {"detail": "Drive chưa thấy file này — thử lại sau vài giây."}, status=503)
         _tra_json(r, {"file_id": FILE_ID})
 
     def jobs(r):
@@ -236,6 +238,7 @@ def test_file_khong_hop_le_chan_o_trang_khong_goi_phien(may_chu, trinh_duyet, mo
     kq = p.evaluate("""() => { const k = window.TL.tabMay.kiemFile, M = 1048576, v = 'video/mp4';
         return [k({name:'a.mp4', size: 500*M, type: v}), k({name:'a.mp4', size: 500*M + 1, type: v}), k({name:'a.mp4', size: 0, type: v}), k({name:'a.pdf', size: 5, type: 'application/pdf'})]; }""")
     assert kq[0] == "" and "quá 500 MB" in kq[1] and kq[2] != "" and "Không phải video" in kq[3], kq
+    assert "Chỉ nhận file video" in kq[3] and "mp4 hoặc mov" not in kq[3], kq  # chữ khớp hành vi (nhận mọi video/*)
 
 
 def test_loi_may_chu_thu_lai_chay_tiep_va_huy(may_chu, trinh_duyet, monkeypatch):
@@ -297,3 +300,27 @@ def test_anh_nghiem_thu_rong_dang_tai_va_loi(may_chu, trinh_duyet, monkeypatch):
     p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-loi').length === 2")
     _anh(p, "dot4-3-co-file-loi-1280.png")
     assert not p.loi_js
+
+
+def test_xong_503_mot_lan_roi_200_dong_thanh_xong(may_chu, trinh_duyet, monkeypatch):
+    """`/xong` 503 ("Drive chưa thấy file") một lần ⇒ FE thử lại ⇒ 200 ⇒ dòng thành xong, không lỗi. Đột biến: FE coi 503 là lỗi cuối ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, xong_loi={1})
+    _file(p, "xong-503.mp4", 2 * MB)
+    _cho_xong(p)
+    assert len(p.xong) == 2 and not p.loi_js and p.locator("#tl-tab-may .tl-may-loi").count() == 0
+
+
+@pytest.mark.parametrize("cach", ["abort", "503"])
+def test_khuc_hong_mai_ma_hoi_size_van_308_cung_range_thi_bao_loi_huu_han(may_chu, trinh_duyet, monkeypatch, cach):
+    """Khúc dữ liệu luôn hỏng (abort mạng / 503) trong khi `*/size` trả 308 cùng `Range` (không tiến) ⇒ thẻ ra lỗi có Thử lại trong thời gian
+    hữu hạn, không lặp vô hạn. Đột biến: bỏ đếm "không tiến" ở nhánh lỗi mạng / 5xx ⇒ thẻ đứng mãi ⇒ hết giờ ⇒ ĐỎ."""
+    def hook(g, s, info):
+        if info["hoi"]:
+            return (308, {"Range": f"bytes=0-{4 * MB - 1}"}, "")   # Google nhận 4 MiB và đứng yên
+        return "abort" if cach == "abort" else (503, {}, "")
+    p = _trang(trinh_duyet, may_chu, monkeypatch, google=GoogleGia(hook))
+    p.evaluate("window.setTimeout = ((st) => (f, ms, ...a) => st(f, Math.min(ms || 0, 20), ...a))(window.setTimeout)")  # rút thời gian lùi (500ms…8s) cho test
+    _file(p, "hong-mai.mp4", 9 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-loi", timeout=20000)
+    assert "Google không nhận thêm dữ liệu" in p.locator("#tl-tab-may").inner_text()
+    assert p.get_by_role("button", name="↻ Thử lại").count() == 1 and not p.loi_js

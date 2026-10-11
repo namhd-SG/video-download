@@ -137,20 +137,22 @@ def kiem_khai_bao(ten, size, mime) -> tuple[str, int, str]:
 
 
 # ============================================================================ tạo phiên
-def dem_phien_mo(conn, email: str, bay_gio: float) -> int:
-    """Phiên `mo` còn trong hạn 24 h của một người — tính vào trần chờ chung (phiên `mo` cũ hơn sẽ bị dọn, không được giữ trần)."""
-    return conn.execute("SELECT count(*) FROM tl_phien_tai WHERE email=? AND trang_thai='mo' AND tao_luc > ?",
-                        (email, bay_gio - HAN_BO_DO_GIAY)).fetchone()[0]
+def dem_phien_giu_cho(conn, email: str, bay_gio: float) -> int:
+    """Phiên còn giữ chỗ trong trần chờ chung của một người: `mo` còn trong hạn 24 h (tính từ `tao_luc`) VÀ `xong` chưa thành lượt còn
+    trong hạn 24 h (tính từ `cap_nhat_luc`, tức lúc chốt). `xong` phải tính: file đã tải xong là một video sắp chờ, không đếm thì người dùng
+    tải vượt trần rồi mới bị chặn ở bước tạo lượt. Phiên cũ hơn 24 h sẽ bị dọn ⇒ không giữ trần; `da_dung`/`bo_do`/`da_don` không tính
+    (`da_dung` đã nằm trong `hang_doi.dem_dang_cho_cua` qua video của lượt)."""
+    han = bay_gio - HAN_BO_DO_GIAY
+    return conn.execute("SELECT count(*) FROM tl_phien_tai WHERE email=? AND ((trang_thai='mo' AND tao_luc > ?) OR (trang_thai='xong' AND cap_nhat_luc > ?))",
+                        (email, han, han)).fetchone()[0]
 
 
 def session_that(drive):
-    """`AuthorizedSession` từ credentials service account CỦA CHÍNH adapter Drive đang dùng (không đọc credentials lần hai)."""
-    from google.auth.transport.requests import AuthorizedSession
-
-    up = getattr(drive, "_up", None)
-    if up is None:
+    """`AuthorizedSession` từ credentials service account CỦA CHÍNH adapter Drive đang dùng (`DriveTLThat.session_http`, không đọc credentials lần hai)."""
+    ham = getattr(drive, "session_http", None)
+    if ham is None:
         raise LoiPhien(503, "Máy chủ chưa nối được Google Drive — báo quản trị.")
-    return AuthorizedSession(up._get_credentials())
+    return ham()
 
 
 def _xin_url_phien(session, origin: str, ten: str, size: int, mime: str, thu_muc_id: str, token: str) -> str:
@@ -184,7 +186,7 @@ def mo_phien(conn, drive, lay_session, email: str, ten, size, mime, thu_muc_ra_i
     ten, size, mime = kiem_khai_bao(ten, size, mime)
     bay_gio = bay_gio or time.time()
     thong_diep_429 = f"Bạn đang có quá nhiều video chờ (tối đa {tran_cho})."
-    if hang_doi.dem_dang_cho_cua(conn, email) + dem_phien_mo(conn, email, bay_gio) + 1 > tran_cho:
+    if hang_doi.dem_dang_cho_cua(conn, email) + dem_phien_giu_cho(conn, email, bay_gio) + 1 > tran_cho:
         raise LoiPhien(429, thong_diep_429)  # sơ bộ, TRƯỚC mọi lời gọi Drive
     try:
         thu_muc_id = thu_muc_bo.thu_muc_vao_cua(drive, thu_muc_ra_id, email, lambda: ly_do_creative(drive, thu_muc_ra_id))
@@ -197,7 +199,7 @@ def mo_phien(conn, drive, lay_session, email: str, ten, size, mime, thu_muc_ra_i
     token = secrets.token_urlsafe(32)  # khớp `drive_tl._THE_AN_TOAN`
     conn.execute("BEGIN IMMEDIATE")
     try:
-        if hang_doi.dem_dang_cho_cua(conn, email) + dem_phien_mo(conn, email, bay_gio) + 1 > tran_cho:
+        if hang_doi.dem_dang_cho_cua(conn, email) + dem_phien_giu_cho(conn, email, bay_gio) + 1 > tran_cho:
             conn.rollback()
             raise LoiPhien(429, thong_diep_429)
         conn.execute("INSERT INTO tl_phien_tai (token, email, ten, size, mime, thu_muc_id, tao_luc, cap_nhat_luc) VALUES (?,?,?,?,?,?,?,?)",
@@ -252,7 +254,7 @@ def xac_nhan_xong(conn, drive, email: str, token: str, file_id: str) -> str:
     try:
         m = drive.lay_muc(file_id)
     except DriveTLKhongThay:
-        raise LoiPhien(409, "Drive chưa thấy file này — thử lại sau vài giây.") from None
+        raise LoiPhien(503, "Drive chưa thấy file này — thử lại sau vài giây.") from None  # 503 (không phải 409): FE coi 4xx là lỗi cuối, 503 thì thử lại
     except Exception as e:  # noqa: BLE001 — chưa đo được ≠ lệch
         log.warning("thay logo tải từ máy: không đọc được file để chốt phiên (%s)", mo_ta_loi(e))
         raise LoiPhien(503, "Chưa hỏi được Drive lúc này — thử lại sau ít phút.") from None

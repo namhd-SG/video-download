@@ -217,9 +217,29 @@ def test_tran_429_chung_voi_video_cho_va_chi_dem_phien_mo_con_han(mt):
     _mo(mt, "c@x", tran=2)  # người khác không bị ảnh hưởng
 
 
-def test_phien_xong_hoac_da_bo_khong_tinh_vao_tran(mt):
-    token, _ = _phien_xong(mt)
-    _mo(mt, tran=1)  # phiên `xong` không giữ trần phiên `mo`
+def test_tran_429_tinh_ca_phien_xong_trong_24h_con_xong_cu_bo_do_da_dung_thi_khong(mt):
+    """Phiên `xong` (đã chốt, chưa thành lượt) trong 24 h giữ chỗ trong trần; `xong` cũ > 24 h, `bo_do`, `da_dung` thì không.
+    Đột biến: bỏ `xong` khỏi điều kiện đếm ⇒ ĐỎ (người dùng tải vượt trần rồi mới bị chặn khi tạo lượt)."""
+    _phien_xong(mt)
+    with pytest.raises(tl.LoiPhien) as e:
+        _mo(mt, tran=1)  # 1 phiên `xong` còn hạn + 1 mới > 1
+    assert e.value.ma == 429
+    _mo(mt, tran=2)  # còn đúng 1 chỗ
+    # `xong` cũ > 24 h (tính từ `cap_nhat_luc`) không tính
+    t_cu, _ = _phien_xong(mt, "b@x")
+    _tuoi(mt, t_cu, 25 * 3600)
+    _mo(mt, "b@x", tran=1)
+    # `bo_do` không tính
+    t_bo, _ = _phien_xong(mt, "c@x")
+    mt.conn.execute("UPDATE tl_phien_tai SET trang_thai='bo_do' WHERE token=?", (t_bo,))
+    mt.conn.commit()
+    _mo(mt, "c@x", tran=1)
+    # `da_dung` không tính ở đây (nó đã là video chờ trong `hang_doi.dem_dang_cho_cua`, không đếm đôi)
+    _, f_dung = _phien_xong(mt, "d@x")
+    _tao_luot(mt, "d@x", f_dung)
+    mt.conn.execute("UPDATE tl_job_video SET trang_thai='xong'")  # video đã xong ⇒ không còn "chờ"
+    mt.conn.commit()
+    _mo(mt, "d@x", tran=1)
 
 
 # ---------------------------------------------------------------- chốt phiên
@@ -251,16 +271,16 @@ def test_xong_lech_thi_409(mt, kw):
     assert e.value.ma == 409 and _hang(mt, token)["trang_thai"] == "mo"
 
 
-def test_xong_file_trong_thung_rac_hoac_khong_co_thi_409(mt):
+def test_xong_file_trong_thung_rac_thi_409_con_drive_chua_thay_file_thi_503_de_FE_thu_lai(mt):
     token = _mo(mt)["token"]
     fid = _len_file(mt, token)
     mt.drive.muc[fid]["trashed"] = True
     with pytest.raises(tl.LoiPhien) as e:
         tl.xac_nhan_xong(mt.conn, mt.drive, "a@x", token, fid)
     assert e.value.ma == 409
-    with pytest.raises(tl.LoiPhien) as e:
+    with pytest.raises(tl.LoiPhien) as e:  # Drive chưa thấy file (404): lệch tạm thời ⇒ 503 để FE thử lại (4xx ≠ 429 là lỗi cuối ở FE)
         tl.xac_nhan_xong(mt.conn, mt.drive, "a@x", token, "KHONGCO000000000001")
-    assert e.value.ma == 409
+    assert e.value.ma == 503 and _hang(mt, token)["trang_thai"] == "mo"
 
 
 def test_xong_nguoi_khac_403_va_khong_co_phien_404(mt):
@@ -513,6 +533,42 @@ def test_khoa_dang_don_chan_dung_lai_file_giua_luc_trash(mt):
     mt.drive.sau_thao_tac.append(trong_luc_trash)
     tl.don_mot_luot(mt.conn, mt.drive)
     assert thu == {"trang_thai": "dang_don", "ma": 409}
+
+
+def test_don_file_da_dung_kiem_lai_sau_khoa_khi_jobs_dung_lai_file_giua_hai_buoc(mt, monkeypatch):
+    """Giữa lúc đọc "đủ điều kiện dọn" và lúc giữ khoá, `/jobs` dùng lại file (video mới `cho`) ⇒ sau khoá phải kiểm lại ⇒ KHÔNG trash,
+    phiên về `da_dung`. Đột biến: bỏ bước kiểm lại sau `_giu` ⇒ file bị trash dù đang có video chờ ⇒ ĐỎ."""
+    token, fid, vid = _da_dung(mt, "loi", tuoi_ngay=61)
+    giu_that = tl._giu
+
+    def giu_sau_khi_jobs_dung_lai(conn, tk, tu, bay_gio):
+        _tao_luot(mt, "a@x", fid)  # lượt mới dùng lại file (mọi lượt cũ đều `loi` ⇒ được phép)
+        conn.commit()
+        return giu_that(conn, tk, tu, bay_gio)
+    monkeypatch.setattr(tl, "_giu", giu_sau_khi_jobs_dung_lai)
+    assert tl.don_mot_luot(mt.conn, mt.drive)["da_dung"] == 0
+    assert mt.drive.muc[fid]["trashed"] is False and _hang(mt, token)["trang_thai"] == "da_dung" and "da_don" not in _nguon(mt, vid)
+
+
+def test_don_xong_chua_dung_trash_truot_thi_ve_xong_khong_bo_do_roi_thu_lai(mt):
+    """Trash trượt ⇒ phiên về `xong` (KHÔNG `bo_do`), lượt sau thử lại. Đột biến: trash trượt mà vẫn ghi `bo_do` ⇒ file kẹt trên Drive
+    mà sổ nói đã bỏ ⇒ ĐỎ."""
+    token, fid = _phien_xong(mt)
+    _tuoi(mt, token, 25 * 3600)
+    mt.drive.loi[("vao_thung_rac", "*")] = RuntimeError("Drive 500")
+    assert tl.don_mot_luot(mt.conn, mt.drive)["xong_qua_han"] == 0
+    assert _hang(mt, token)["trang_thai"] == "xong" and mt.drive.muc[fid]["trashed"] is False
+    del mt.drive.loi[("vao_thung_rac", "*")]
+    assert tl.don_mot_luot(mt.conn, mt.drive)["xong_qua_han"] == 1
+    assert _hang(mt, token)["trang_thai"] == "bo_do" and mt.drive.muc[fid]["trashed"] is True
+
+
+def test_session_that_dung_session_http_cua_drive_va_thieu_thi_503():
+    sentinel = object()
+    assert tl.session_that(types.SimpleNamespace(session_http=lambda: sentinel)) is sentinel
+    with pytest.raises(tl.LoiPhien) as e:
+        tl.session_that(object())
+    assert e.value.ma == 503
 
 
 def test_don_chay_khong_can_co_tai_tu_may(mt, monkeypatch):

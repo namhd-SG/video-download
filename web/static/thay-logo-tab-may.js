@@ -49,7 +49,7 @@
   const mb = (n) => (n >= MB ? `${Math.round(n / MB)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
   // Trả câu lỗi (chuỗi, "" = hợp lệ). Nhận bất kỳ vật có {name, size, type} nên test gọi được với file giả khai size lớn.
   function kiemFile(f) {
-    if (!mimeCua(f)) return "Không phải video. Chỉ nhận file mp4 hoặc mov.";
+    if (!mimeCua(f)) return "Không phải video. Chỉ nhận file video (mp4, mov…).";
     if (!(f.size > 0)) return "File rỗng — chọn lại file khác.";
     if (f.size > TRAN_BYTE) return `File ${mb(f.size)} — quá 500 MB. Hãy cắt ngắn hoặc nén lại rồi tải lại.`;
     return "";
@@ -108,7 +108,11 @@
 
   // Đẩy dữ liệu tới khi Google trả 200/201 (trả id). `m.ke` = byte kế; `m.canHoi` = lần trước bị ngắt giữa chừng ⇒ hỏi Google trước.
   async function dayLen(m) {
-    let khongTien = 0;
+    let khongTien = 0;   // số lượt liền không đẩy được byte kế tiến lên (mọi nhánh: 308 đứng yên, lỗi mạng, 5xx/429/408) ⇒ chạm trần thì báo lỗi, không lặp vô hạn
+    const xet = (truoc) => {   // sau mỗi lượt: tiến được ⇒ về 0, không ⇒ +1; vượt trần ⇒ lỗi có Thử lại
+      khongTien = m.ke > truoc ? 0 : khongTien + 1;
+      if (khongTien >= THU_TOI_DA) throw new LoiHien("Google không nhận thêm dữ liệu — bấm Thử lại.", true);
+    };
     if (m.canHoi) { const h = await hoiTiep(m); m.canHoi = false; if (h.id) return h.id; m.ke = h.ke; }
     while (true) {
       if (m.huy) throw new LoiHuy();
@@ -119,19 +123,14 @@
         if (!(e instanceof LoiMang)) throw e;
         const h = await hoiTiep(m);
         if (h.id) return h.id;
-        m.ke = h.ke; dat(); continue;
+        m.ke = h.ke; xet(dau); dat(); continue;
       }
       if (r.status === 200 || r.status === 201) return docId(r);
-      if (r.status === 308) {
-        const ke = byteKe(r);
-        khongTien = ke <= dau ? khongTien + 1 : 0;   // Google không nhận thêm byte nào nhiều lần liền ⇒ dừng, không lặp vô hạn
-        if (khongTien >= THU_TOI_DA) throw new LoiHien("Google không nhận thêm dữ liệu — bấm Thử lại.", true);
-        m.ke = ke; dat(); continue;
-      }
+      if (r.status === 308) { m.ke = byteKe(r); xet(dau); dat(); continue; }
       if (r.status >= 500 || r.status === 429 || r.status === 408) {   // lỗi tạm của Google: hỏi tiếp rồi nối
         const h = await hoiTiep(m);
         if (h.id) return h.id;
-        m.ke = h.ke; dat(); continue;
+        m.ke = h.ke; xet(dau); dat(); continue;
       }
       throw loiCung(r.status);
     }

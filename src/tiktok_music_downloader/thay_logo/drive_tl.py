@@ -89,6 +89,9 @@ class DriveTL(Protocol):
     def vao_thung_rac(self, file_id: str) -> None:
         """Bỏ file vào Thùng rác (KHÔNG xoá vĩnh viễn — SA chỉ là Content manager)."""
 
+    def session_http(self):
+        """`AuthorizedSession` (requests) mang credentials service account của chính adapter này — dùng để xin URL phiên resumable."""
+
 
 def duong_dan_ten(drive: DriveTL, file_id: str) -> list[str]:
     """Tên từ `file_id` đi ngược lên gốc Shared Drive (phần tử đầu = chính nó). Lỗi Drive ném lên — người gọi quyết định."""
@@ -201,6 +204,11 @@ class DriveTLThat:
                 raise
             raise loi from exc
         return out[:toi_da]
+
+    def session_http(self):
+        from google.auth.transport.requests import AuthorizedSession
+
+        return AuthorizedSession(self._up._get_credentials())
 
     def email_dich_vu(self) -> str | None:
         try:  # đọc từ file credential (không gọi mạng); không phải bí mật — là địa chỉ để member chia sẻ

@@ -444,3 +444,35 @@ def test_thu_muc_bo_cu_da_cache_khong_kiem_lai_creative(tmp_path):
     j = _job(conn, "B")
     thu_muc_bo.tim_hoac_tao(conn, j, "GOC", d)
     thu_muc_bo.tim_hoac_tao(conn, j, "GOC", d, lambda: "phải không được gọi")  # chỉ kiểm khi sắp TẠO mới
+
+
+def test_thu_muc_vao_ba_thread_cung_luc_chi_tao_mot_lan_moi_cap():
+    """3 request song song lần đầu cùng thấy rỗng: khoá cấp module ⇒ mỗi cấp (`Thay logo - đầu vào`, `<email>`) tạo ĐÚNG 1 lần.
+    Fake chậm ở `tim_con_theo_ten` để mở cửa sổ race. Đột biến: bỏ khoá ⇒ ĐỎ."""
+    import threading
+
+    class DriveCham(DriveGiaTL):
+        def tim_con_theo_ten(self, cha_id, ten, *, ngan=False):
+            kq = super().tim_con_theo_ten(cha_id, ten, ngan=ngan)
+            time.sleep(0.15)  # giữa "tìm" và "tạo" của các thread khác
+            return kq
+
+    d = DriveCham()
+    d.them_thu_muc("GOC", "Thay logo - đầu ra", "VT")
+    d.them_thu_muc("VT", "video-tool")
+    kq, loi = [], []
+
+    def chay():
+        try:
+            kq.append(thu_muc_bo.thu_muc_vao_cua(d, "GOC", "a@x"))
+        except Exception as e:  # noqa: BLE001 — gom để assert ở thread chính
+            loi.append(e)
+    ts = [threading.Thread(target=chay) for _ in range(3)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join(30)
+    assert not loi and len(kq) == 3 and len(set(kq)) == 1, (kq, loi)
+    ten_tao = [d.muc[f"NEW{i}"]["name"] for i in range(1, d._so + 1)]
+    assert sorted(ten_tao) == sorted([thu_muc_bo.TEN_THU_MUC_VAO, "a@x"]), ten_tao
+    assert d.so_lan("tao_thu_muc") == 2

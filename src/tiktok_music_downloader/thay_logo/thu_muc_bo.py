@@ -8,6 +8,7 @@ Drive đi qua `drive_tl.DriveTL` (test thay bằng bản giả) — module này 
 from __future__ import annotations
 
 import logging
+import threading
 
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTL, DriveTLKhongThay
 
@@ -61,6 +62,10 @@ def tim_hoac_tao(conn, job_id: int, goc_id: str, drive: DriveTL, kiem_creative=N
 
 # ============================================================================ thư mục ĐẦU VÀO của nguồn "Tải từ máy"
 TEN_THU_MUC_VAO = "Thay logo - đầu vào"
+# Một tiến trình uvicorn, nhiều thread request: ba request đầu tiên cùng thấy "chưa có thư mục" rồi cùng tạo ⇒ trùng thư mục. Khoá cấp module
+# bọc phần tìm-rồi-tạo (lời gọi Drive đều có timeout ngắn nên giữ khoá không treo vô hạn). Mini chạy ĐÚNG 1 tiến trình; chạy nhiều tiến trình
+# thì khoá này không đủ.
+_KHOA_THU_MUC_VAO = threading.Lock()
 
 
 def thu_muc_vao_cua(drive: DriveTL, thu_muc_ra_id: str, email: str, kiem_creative=None) -> str:
@@ -75,13 +80,14 @@ def thu_muc_vao_cua(drive: DriveTL, thu_muc_ra_id: str, email: str, kiem_creativ
     if not ten_email:
         raise ValueError("email rỗng")
     hien = cha
-    for ten in (TEN_THU_MUC_VAO, ten_email):
-        co = [m["id"] for m in drive.tim_con_theo_ten(hien, ten, ngan=True)]
-        if not co:
-            if kiem_creative is not None:
-                ly_do = kiem_creative()
-                if ly_do:
-                    raise CongCreativeCam(ly_do)
-            co = [drive.tao_thu_muc(ten, hien, ngan=True)]
-        hien = co[0]
+    with _KHOA_THU_MUC_VAO:
+        for ten in (TEN_THU_MUC_VAO, ten_email):
+            co = [m["id"] for m in drive.tim_con_theo_ten(hien, ten, ngan=True)]
+            if not co:
+                if kiem_creative is not None:
+                    ly_do = kiem_creative()
+                    if ly_do:
+                        raise CongCreativeCam(ly_do)
+                co = [drive.tao_thu_muc(ten, hien, ngan=True)]
+            hien = co[0]
     return hien
