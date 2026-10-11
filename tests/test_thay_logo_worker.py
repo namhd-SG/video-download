@@ -4,6 +4,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 
 import pytest
@@ -349,3 +350,113 @@ def test_nguon_vao_bo_thieu_md5_cung_bi_chan(worker):
     vid = _tao_vao_bo(worker, "")
     worker.mot_luot()
     assert _trang_thai(worker, vid)["trang_thai"] == "loi"
+
+
+# ---------------------------------------------------------------- nguồn "Tải từ máy": thread `tl-don-phien` (riêng, không phụ thuộc cờ, không nằm trong `mot_luot`)
+RA_DON = "RAFOLDER0000000000001"
+VAO_DON = "VAOFOLDER000000000001"
+
+
+def _phien_bo_do_cu(w):
+    """Một phiên `mo` đã quá 24 h, KHÔNG có file trên Drive."""
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+
+    conn = w._mo()
+    try:
+        tai_len_phien.khoi_tao(conn)
+        t = time.time() - 25 * 3600
+        conn.execute("INSERT INTO tl_phien_tai (token, email, ten, size, mime, thu_muc_id, tao_luc, cap_nhat_luc) VALUES (?,?,?,?,?,?,?,?)",
+                     ("T" * 43, "a@x", "c.mp4", 10, "video/mp4", VAO_DON, t, t))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _trang_thai_phien(w):
+    conn = w._mo()
+    try:
+        return conn.execute("SELECT trang_thai FROM tl_phien_tai").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _cho_phien(w, mong, giay=8.0):
+    han = time.time() + giay
+    while time.time() < han and _trang_thai_phien(w) != mong:
+        time.sleep(0.05)
+    return _trang_thai_phien(w)
+
+
+@pytest.fixture
+def worker_don(worker, monkeypatch):
+    from drive_gia_thay_logo import DriveGiaTL
+    drive = DriveGiaTL()
+    drive.them_thu_muc(VAO_DON, "a@x")
+    worker.drive_tl = drive
+    monkeypatch.setattr(tw, "CHU_KY_DON_PHIEN_GIAY", 0.05)
+    monkeypatch.delenv("TL_TAI_TU_MAY", raising=False)  # cờ TẮT: dọn vẫn phải chạy (tắt cờ để lui không được làm kẹt file)
+    _phien_bo_do_cu(worker)
+    yield worker
+    worker.stop()
+
+
+def test_don_phien_chay_thread_rieng_khi_cong_tai_tu_may_tat(worker_don):
+    """Đột biến: gắn tác vụ dọn vào cờ `TL_TAI_TU_MAY` ⇒ tắt cờ thì phiên đọng `mo` ⇒ ĐỎ."""
+    worker_don.start()
+    assert _cho_phien(worker_don, "bo_do") == "bo_do"
+    assert any(t.name == "tl-don-phien" and t.daemon for t in threading.enumerate())
+
+
+def test_don_phien_van_chay_khi_het_dia(worker_don, monkeypatch):
+    """Đột biến: GẮN DỌN VÀO `mot_luot` ⇒ `cho_dia` thoát sớm, dọn tắt âm thầm ⇒ ĐỎ."""
+    monkeypatch.setattr(worker_don, "dia_trong_gb", lambda: 4.9)
+    worker_don.start()
+    assert _cho_phien(worker_don, "bo_do") == "bo_do"
+    assert worker_don._lan_cuoi == "cho_dia"  # worker chính vẫn đang ở cổng đĩa suốt thời gian đó
+
+
+def test_don_phien_van_chay_khi_nhuong_lane_tai(worker_don, tmp_path):
+    """Đột biến: gắn dọn vào `mot_luot` ⇒ `nhuong_lane_tai` thoát sớm ⇒ ĐỎ."""
+    _jobs_db(tmp_path, running=1)
+    worker_don.start()
+    assert _cho_phien(worker_don, "bo_do") == "bo_do"
+    assert worker_don._lan_cuoi == "nhuong_lane_tai"
+
+
+def test_don_phien_van_chay_khi_cong_creative_chua_qua(worker_don):
+    """`_chay` không gọi `mot_luot` khi cổng Creative chưa qua — dọn vẫn phải chạy."""
+    worker_don._cong, worker_don._cong_qua = (lambda: (_ for _ in ()).throw(RuntimeError("Drive chậm"))), False
+    worker_don.start()
+    assert _cho_phien(worker_don, "bo_do") == "bo_do"
+    assert worker_don._lan_cuoi.startswith("cong_creative")
+
+
+def test_don_phien_loi_mot_luot_khong_giet_thread(worker_don, monkeypatch):
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    that, goi = tai_len_phien.don_mot_luot, []
+
+    def hong_roi_chay(conn, drive, *a, **k):
+        goi.append(1)
+        if len(goi) == 1:
+            raise RuntimeError("lỗi tạm")
+        return that(conn, drive, *a, **k)
+    monkeypatch.setattr(tai_len_phien, "don_mot_luot", hong_roi_chay)
+    worker_don.start()
+    assert _cho_phien(worker_don, "bo_do") == "bo_do" and len(goi) >= 2
+
+
+def test_khong_co_drive_thi_khong_dung_thread_don_phien(worker):
+    worker.start()
+    try:
+        assert worker._thread_don_phien is None
+    finally:
+        worker.stop()
+
+
+def test_tat_worker_dung_ca_thread_don_phien(worker_don):
+    worker_don.start()
+    t = worker_don._thread_don_phien
+    assert t is not None and t.is_alive()
+    worker_don.stop()
+    t.join(timeout=3)
+    assert not t.is_alive()

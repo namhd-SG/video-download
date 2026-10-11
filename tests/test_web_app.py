@@ -655,6 +655,11 @@ KHONG_CAN_KIEM_CHU = {
     "POST /api/thay-logo/bo/{job_id}/hoan-tac": "`ap_vao_bo.dat_lich_hoan_tac`: CHỈ chủ lượt, 403 cho người khác kể cả admin "
                                                 "(tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/bo/{job_id}/ap": "chủ lượt hoặc admin (chỉ đọc), 403 cho người khác (tests/test_thay_logo_routes_member.py)",
+    "GET /api/thay-logo/tai-len/bat": "chỉ báo cờ `TL_TAI_TU_MAY` bật/tắt (200 {} / 404), không đọc dữ liệu của ai",
+    "POST /api/thay-logo/tai-len/phien": "tạo phiên cho CHÍNH người gọi (`tl_phien_tai.email` = email `require_user`); 403 khi `Origin` request lạ "
+                                         "(tests/test_thay_logo_routes_member.py, có đột biến)",
+    "POST /api/thay-logo/tai-len/{token}/xong": "`tai_len_phien.xac_nhan_xong`: CHỈ chủ phiên (admin cũng 403) + đối chiếu file trên Drive "
+                                                "(tests/test_thay_logo_routes_member.py, có đột biến)",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",

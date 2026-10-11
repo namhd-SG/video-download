@@ -22,9 +22,10 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Respon
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky, tai_len_phien
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
+from web import thay_logo_tai_len_routes
 
 log = logging.getLogger(__name__)
 
@@ -159,6 +160,7 @@ class MucVaoBo(BaseModel):
 class TaoJobThayLogo(BaseModel):
     drive_file_ids: list[str] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)
     vao_bo: list[MucVaoBo] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)
+    may_file_ids: list[str] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)  # file của phiên "Tải từ máy" đã `xong` (cờ TL_TAI_TU_MAY)
     ghi_chu: str = Field(default="", max_length=500)
     ten_bo: str | None = None  # bắt buộc, nhưng kiểm tay để thiếu/sai đều trả 400 cùng một khuôn
 
@@ -198,10 +200,12 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                          lay_worker: Callable[[], object | None],
                          thu_vien_cua: Callable[[str, list[str]], set[str]],
                          lay_jobs_db: Callable[[], object] | None = None,
-                         lay_drive: Callable[[], object] | None = None) -> None:
+                         lay_drive: Callable[[], object] | None = None,
+                         lay_session_tai: Callable[[object], object] | None = None) -> None:
     """`lay_log_db` trả đường dẫn `thay_logo_log.db` LÚC GỌI; `lay_jobs_db` (tuỳ chọn) trả `jobs.db` để ghép thư viện — mặc định nằm cạnh `thay_logo_log.db`; mỗi request mở kết nối mới và tự đóng. `lay_worker` trả None khi
     tính năng TẮT ⇒ không nhận lượt mới (409), vẫn xem/đánh giá được kết quả cũ. `lay_drive` (tuỳ chọn, cho test) trả `DriveTL` cho `kiem-link`;
-    mặc định dùng `worker.drive_tl` — CÙNG adapter worker dùng để tải/chụp nguồn (dựng `DriveTLThat()` chỉ khi worker không có)."""
+    mặc định dùng `worker.drive_tl` — CÙNG adapter worker dùng để tải/chụp nguồn (dựng `DriveTLThat()` chỉ khi worker không có).
+    `lay_session_tai(drive)` (tuỳ chọn, cho test) trả session HTTP tạo phiên resumable của "Tải từ máy"; mặc định `AuthorizedSession` của service account."""
 
     def _mo() -> _sqlite3.Connection:
         conn = nhat_ky.mo(lay_log_db())
@@ -218,19 +222,23 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
 
     @app.post("/api/thay-logo/jobs", status_code=201)
     def tao_job(body: TaoJobThayLogo, email: str = Depends(require_user)) -> dict:
+        if body.may_file_ids and not tai_len_phien.dang_bat():  # cờ TẮT ⇒ 404 như các route "Tải từ máy" (không phân biệt với route không có)
+            raise HTTPException(404, "Not Found")
         w = lay_worker()
         if w is None:
             raise HTTPException(409, "Tính năng thay logo đang tắt trên máy chủ.")
         if getattr(w, "ly_do_khong_nhan", None):  # cổng cấu hình đã CẤM hẳn; chi tiết thư mục chỉ admin thấy (admin/worker)
             raise HTTPException(409, "Tính năng thay logo tạm tắt do cấu hình máy chủ — báo quản trị.")
-        if not all(_DRIVE_ID.match(f) for f in body.drive_file_ids) or not all(_DRIVE_ID.match(m.ban_copy_id) for m in body.vao_bo):
+        if (not all(_DRIVE_ID.match(f) for f in body.drive_file_ids) or not all(_DRIVE_ID.match(m.ban_copy_id) for m in body.vao_bo)
+                or not all(_DRIVE_ID.match(f) for f in body.may_file_ids)):
             raise HTTPException(400, "mã file Drive sai khuôn")
         ten_bo = _kiem_ten_bo(body.ten_bo)
         ids = list(dict.fromkeys(body.drive_file_ids))
         vao_bo = list({m.ban_copy_id: m for m in body.vao_bo}.values())
-        if not ids and not vao_bo:
+        may = list(dict.fromkeys(body.may_file_ids))
+        if not ids and not vao_bo and not may:
             raise HTTPException(422, "chưa chọn video nào")
-        if len(ids) + len(vao_bo) > TRAN_VIDEO_MOT_JOB:
+        if len(ids) + len(vao_bo) + len(may) > TRAN_VIDEO_MOT_JOB:
             raise HTTPException(422, f"tối đa {TRAN_VIDEO_MOT_JOB} video mỗi lượt")
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
@@ -243,9 +251,11 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         # Admin được TẠO lượt vao_bo cho video người khác là lựa chọn của lane; KHÔNG mở quyền ÁP vào bộ người khác — áp vẫn chỉ chủ video (đợt 2).
         ban = _ban_vao_bo_cua(_jobs_db(), None if la_admin(email) else email, vao_bo) if vao_bo else {}
         # Ảnh chụp nguồn (md5/size/folder) lúc tạo lượt: đợt áp vào bộ đối chiếu với nó trước khi thay bản trong bộ.
-        so_moi = len(ids) + len(vao_bo)
+        so_moi = len(ids) + len(vao_bo) + len(may)
         conn = _mo()
         try:
+            if may:
+                tai_len_phien.khoi_tao(conn)  # tạo bảng TRƯỚC khoá ghi (executescript tự commit)
             # Trần kiểm HAI lần: (1) sơ bộ, không khoá, TRƯỚC Drive — quá trần thì không tốn lời gọi Drive nào;
             # (2) chính thức trong khoá ghi bên dưới (chống hai POST cùng lúc).
             if hang_doi.dem_dang_cho_cua(conn, email) + so_moi > TRAN_CHO_MOI_NGUOI:
@@ -266,7 +276,14 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 raise
             # `kieu` chỉ là NHÃN nguồn (thẻ bộ đọc nó); worker tải theo `file_id` cho mọi kiểu. Ngoài thư viện của người tạo
             # ⇒ "link" (đến qua sổ kiem-link, hoặc admin dán id) — ghi "drive" cho mọi id làm thẻ bộ nói "Thư viện" sai sự thật.
-            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids] + chup_vao_bo
+            # Kiểu `may`: file của phiên "Tải từ máy" CỦA CHÍNH người tạo (admin cũng không dùng phiên người khác); `xong → da_dung` ghi trong
+            # CÙNG khoá ghi và cùng commit với `tao_job` ⇒ một file không vào hai lượt. Tên/token do SERVER tra từ phiên, FE không khai.
+            try:
+                nguon_may = tai_len_phien.dung_cho_luot(conn, email, may) if may else []
+            except tai_len_phien.LoiPhien as e:
+                conn.rollback()
+                raise HTTPException(e.ma, str(e)) from None
+            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids] + chup_vao_bo + nguon_may
             jid = hang_doi.tao_job(conn, email, nguon, body.ghi_chu, ten_bo)
         finally:
             conn.close()
@@ -373,8 +390,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 try:
                     ng = json.loads(r["nguon"])
                     d["_fid"], d["_vid"] = ng.get("file_id"), (ng.get("video_id") if ng.get("kieu") == "vao_bo" else None)
+                    # Nguồn "Tải từ máy": tên do server ghi lúc tạo lượt; `da_don` (file nhập đã dọn) ⇒ FE ẩn link "Bản gốc".
+                    d["_ten_may"], d["da_don"] = (ng.get("ten"), bool(ng.get("da_don"))) if ng.get("kieu") == "may" else (None, False)
                 except (ValueError, AttributeError):
-                    d["_fid"], d["_vid"] = None, None
+                    d["_fid"], d["_vid"], d["_ten_may"], d["da_don"] = None, None, None, False
                 co_truoc, co_sau = d.pop("co_truoc"), d.pop("co_sau")  # pop CẢ HAI trước khi `and` (short-circuit làm rò khoá thô)
                 d["co_truoc"], d["co_truoc_sau"] = bool(co_truoc), bool(co_truoc and co_sau)
                 d["box_logo"] = _box_logo(d.pop("box_logo_json"))
@@ -390,13 +409,15 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             # Tên từ sổ link chỉ cho dòng ghép theo file_id (bản trong bộ đã có tên qua `video_id`).
             ten_link = _ten_tu_link([d for d in lo if not d["_vid"]], tv)
             for d in lo:
-                fid, vid_nguon = d.pop("_fid"), d.pop("_vid")
+                fid, vid_nguon, ten_may = d.pop("_fid"), d.pop("_vid"), d.pop("_ten_may")
                 # Bản trong bộ: ghép theo `video_id` đã chụp (chủ đã kiểm lúc tạo lượt). Theo file_id: CHỈ khi thuộc thư viện
                 # của người tạo lượt — file thư viện người KHÁC ⇒ coi như ngoài thư viện.
                 t = (tv_vb.get(vid_nguon) if vid_nguon else _thu_vien_cua_chu(tv, fid, d["nguoi_tao"])) or {}
                 d["ten_video"] = (t.get("title") or "Video không tên") if t else None  # có hàng mà title NULL ⇒ vẫn có tên để hiện
                 if not t and (d["nguoi_tao"], fid) in ten_link:  # video nhập từ link Drive: không ở thư viện, tên lấy từ sổ lúc kiểm
                     d["ten_video"] = ten_link[(d["nguoi_tao"], fid)] or "Video từ link Drive"
+                if ten_may:  # kiểu `may` không thuộc thư viện lẫn sổ link ⇒ tên đã ghi cùng nguồn
+                    d["ten_video"] = ten_may
                 d["anh_bia"] = f"/thumbs/{t['video_id']}" if t.get("video_id") else None
                 d["nen_tang"] = t.get("nen_tang")
                 if not nen_tang or d["nen_tang"] == nen_tang:
@@ -669,6 +690,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             conn.close()
         return {**kq, "la_chu": chu == email, "ma_bo": ", ".join(ma_bo), "so_du_dieu_kien": so,
                 "so_moi_bi_chan": moi_chan}
+
+    # ======================================================== đợt 4: Tải từ máy (3 route trong `thay_logo_tai_len_routes`; cờ `TL_TAI_TU_MAY`)
+    thay_logo_tai_len_routes.dang_ky(app, lay_log_db=lay_log_db, require_user=require_user, lay_worker=lay_worker,
+                                     lay_tran_cho=lambda: TRAN_CHO_MOI_NGUOI, mau_file_id=_DRIVE_ID, lay_session=lay_session_tai)
 
 
 # ============================================================================ trợ giúp đợt 1b (module-level; gọi LÚC CHẠY)

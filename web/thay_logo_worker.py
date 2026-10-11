@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky, tai_len_phien
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -45,6 +45,7 @@ NICE = 10
 TRAN_CHO_AGY = 5  # pha 1 chỉ tải trước khi số video đang chờ agy < trần này — relay tắt thì không dồn file gốc vào đĩa
 TRAN_GIAY_PHA_1 = 180
 CHU_KY_DON_GIAY = 600
+CHU_KY_DON_PHIEN_GIAY = 3600  # thread `tl-don-phien` (nguồn "Tải từ máy"): dọn phiên bỏ dở + file nhập đã dùng
 NGUONG_CONG_LOI_ERROR = 10  # số lần kiểm cổng Creative trượt LIÊN TIẾP thì nâng log từ warning lên error (một lần)
 TRAN_GIAY_MIN, HE_SO_TRAN_GIAY = 600, 10  # trần thời gian tiến trình con = max(10 phút, 10 × độ dài video)
 
@@ -121,6 +122,7 @@ class ThayLogoWorker:
         self._cong, self.nhip_cong = cong, nhip_cong_giay
         self._cong_qua, self._cong_cam, self._cong_thu_luc, self._cong_ly_do = cong is None, False, None, None
         self._cong_loi_lien_tiep = 0
+        self._thread_don_phien: threading.Thread | None = None
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -139,6 +141,9 @@ class ThayLogoWorker:
         if ap_vao_bo.dang_bat() and self.drive_tl is not None:  # cờ TẮT ⇒ không đụng Drive, khoá cũ để nguyên
             moc = time.time()  # khoá lấy TRƯỚC mốc này là của tiến trình trước (đã chết) ⇒ quét xong thì xoá
             threading.Thread(target=self._quet_ap, args=(moc,), name="tl-ap", daemon=True).start()
+        if self.drive_tl is not None:  # KHÔNG phụ thuộc cờ TL_TAI_TU_MAY (tắt cờ để lui không được làm kẹt file) và KHÔNG gắn vào `mot_luot`
+            self._thread_don_phien = threading.Thread(target=self._chay_don_phien, name="tl-don-phien", daemon=True)
+            self._thread_don_phien.start()
         if self.relay_bind:  # không có địa chỉ ⇒ không mở listener (không mặc định)
             from web.thay_logo_relay_server import RelayServer
             try:
@@ -161,6 +166,24 @@ class ThayLogoWorker:
         except Exception:  # noqa: BLE001 — Drive lỗi lúc khởi động: hàng giữ chiều, người dùng bấm "Tiếp tục"
             log.exception("thay logo áp: quét dở dang lỗi")
 
+    # ---------------------------------------------------------------- dọn nguồn "Tải từ máy" (thread `tl-don-phien`, riêng hoàn toàn)
+    def _chay_don_phien(self) -> None:
+        """Mỗi giờ: dọn phiên bỏ dở, quét theo thẻ, dọn file nhập đã dùng. Thread RIÊNG chứ không nằm trong `_don_dinh_ky`/`mot_luot`: `mot_luot`
+        thoát sớm khi hết đĩa / nhường lane tải, và `_chay` không gọi nó khi cổng Creative chưa qua — dọn sẽ TẮT ÂM THẦM, phiên `mo` đọng,
+        trần chờ khoá người dùng. Lỗi một lượt không giết thread."""
+        while not self._dung.is_set():
+            try:
+                conn = self._mo()
+                try:
+                    kq = tai_len_phien.don_mot_luot(conn, self.drive_tl)
+                finally:
+                    conn.close()
+                if any(v for v in kq.values() if not isinstance(v, dict)) or any(kq["quet_the"].values()):
+                    log.info("thay logo: dọn tải từ máy %s", kq)
+            except Exception:  # noqa: BLE001 — lượt sau thử lại
+                log.exception("thay logo: dọn tải từ máy lỗi")
+            self._dung.wait(CHU_KY_DON_PHIEN_GIAY)
+
     def bat_dau_ap(self, job_id: int) -> threading.Thread:
         """Route gọi SAU khi đã ghi chiều ý định + lấy khoá bộ; thread nhả khoá trong `finally`."""
         return ap_vao_bo.chay_nen(self._mo, self.drive_tl, job_id)
@@ -181,6 +204,8 @@ class ThayLogoWorker:
                 con.wait(timeout=5)
         if self._thread is not None:
             self._thread.join(timeout=timeout)
+        if self._thread_don_phien is not None:
+            self._thread_don_phien.join(timeout=2.0)  # đang giữa một lời gọi Drive thì không chờ: thread daemon, lượt sau khởi động làm tiếp
 
     def trang_thai(self) -> dict:
         conn = self._mo()
