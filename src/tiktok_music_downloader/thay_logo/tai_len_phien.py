@@ -273,6 +273,40 @@ def xac_nhan_xong(conn, drive, email: str, token: str, file_id: str) -> str:
     raise LoiPhien(409, "Phiên tải này không còn nhận chốt — tải lại file.")
 
 
+# ============================================================================ phiên của tôi (khôi phục sau tải lại trang + nhả chỗ)
+def liet_ke_cua_toi(conn, email: str, gioi_han: int, bay_gio: float | None = None) -> list[dict]:
+    """Phiên `xong` (chưa thành lượt, còn trong hạn 24 h như `dem_phien_giu_cho`) của CHÍNH `email`, mới nhất trước. Admin cũng chỉ thấy của mình.
+    Chỉ trả cái FE cần dựng lại dòng: KHÔNG có `thu_muc_id`, KHÔNG có URL phiên (không lưu ở đâu cả)."""
+    han = (bay_gio or time.time()) - HAN_BO_DO_GIAY
+    rows = conn.execute("SELECT token, file_id, ten, size, cap_nhat_luc FROM tl_phien_tai "
+                        "WHERE email=? AND trang_thai='xong' AND cap_nhat_luc > ? ORDER BY cap_nhat_luc DESC, token LIMIT ?",
+                        (email, han, max(0, int(gioi_han)))).fetchall()
+    return [{"token": r["token"], "file_id": r["file_id"], "ten": r["ten"], "size": r["size"], "cap_nhat_luc": r["cap_nhat_luc"]} for r in rows]
+
+
+def bo_phien(conn, email: str, token: str, bay_gio: float | None = None) -> str:
+    """Người dùng bỏ phiên CỦA MÌNH (`mo` | `xong` → `bo_do`) bằng MỘT UPDATE có điều kiện; KHÔNG gọi Drive trong request. Thread `tl-don-phien`
+    (`_quet_theo_the`) trash file mang thẻ của phiên `bo_do`, kể cả file xuất hiện muộn. Trả `bo_do` (đã `bo_do` ⇒ vẫn trả, idempotent).
+    Thứ tự quyền như `xac_nhan_xong`: 404 (không có) → 403 (của người khác, admin cũng vậy) → 409 (`da_dung`/`dang_don`/`da_don`)."""
+    bay_gio = bay_gio or time.time()
+    r = conn.execute("SELECT email, trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()
+    if r is None:
+        raise LoiPhien(404, "Không có phiên tải này.")
+    if r["email"] != email:
+        raise LoiPhien(403, "Phiên tải này không phải của bạn.")
+    if r["trang_thai"] == "bo_do":
+        return "bo_do"
+    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='bo_do', cap_nhat_luc=? WHERE token=? AND email=? AND trang_thai IN ('mo', 'xong')",
+                       (bay_gio, token, email))
+    conn.commit()
+    if cur.rowcount == 1:
+        return "bo_do"
+    r2 = conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()
+    if r2 is not None and r2["trang_thai"] == "bo_do":  # hai lần bỏ cùng lúc
+        return "bo_do"
+    raise LoiPhien(409, "Phiên tải này không còn bỏ được (file đã nằm trong một lượt hoặc đang được dọn).")
+
+
 # ============================================================================ cấp file cho lượt (gọi TRONG BEGIN IMMEDIATE của POST /jobs)
 def _chi_con_video_loi(conn, file_id: str) -> bool:
     """Mọi video đã dùng `file_id` đều đang `loi` (cùng ngữ nghĩa `_nguon_dang_trong_luot`: `trang_thai != 'loi'` mới giữ nguồn)."""

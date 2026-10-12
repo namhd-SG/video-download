@@ -1,9 +1,11 @@
 """Route nguồn "Tải từ máy" (đợt 4): phiên resumable thẳng Google Drive. Đăng ký ở KHỐI CUỐI `thay_logo_routes.dang_ky_route_member`.
 
-Ba route, cùng cờ `TL_TAI_TU_MAY` (TẮT ⇒ 404 như route không tồn tại; FE dùng `GET /tai-len/bat` để ẩn tab):
+Năm route, cùng cờ `TL_TAI_TU_MAY` (TẮT ⇒ 404 như route không tồn tại; FE dùng `GET /tai-len/bat` để ẩn tab):
   GET  /api/thay-logo/tai-len/bat             200 {} khi bật
   POST /api/thay-logo/tai-len/phien           201 {token, url_phien} — URL phiên trả MỘT lần, không lưu, không log
   POST /api/thay-logo/tai-len/{token}/xong    200 {file_id} — đối chiếu file trên Drive rồi chốt phiên
+  GET  /api/thay-logo/tai-len/cua-toi         200 {phien: [{token, file_id, ten, size, cap_nhat_luc}]} — phiên `xong` của CHÍNH người gọi
+  POST /api/thay-logo/tai-len/{token}/bo      200 {trang_thai: "bo_do"} — bỏ phiên của mình (nhả chỗ chờ); Drive do thread dọn xử lý
 Logic (DB, Google, dọn) nằm ở `thay_logo/tai_len_phien.py`; file này chỉ xác thực, đổi lỗi nghiệp vụ thành mã HTTP.
 """
 from __future__ import annotations
@@ -108,6 +110,28 @@ def dang_ky(app: FastAPI, *, lay_log_db: Callable[[], object], require_user, lay
         conn = _mo()
         try:
             return {"file_id": tai_len_phien.xac_nhan_xong(conn, drive, email, token, body.file_id)}
+        except tai_len_phien.LoiPhien as e:
+            raise _http(e) from None
+        finally:
+            conn.close()
+
+    @app.get("/api/thay-logo/tai-len/cua-toi")
+    def tai_len_cua_toi(email: str = Depends(require_user)) -> dict:
+        _cong()
+        conn = _mo()
+        try:
+            return {"phien": tai_len_phien.liet_ke_cua_toi(conn, email, lay_tran_cho())}
+        finally:
+            conn.close()
+
+    @app.post("/api/thay-logo/tai-len/{token}/bo")
+    def tai_len_bo(token: str = PathParam(max_length=200), email: str = Depends(require_user)) -> dict:
+        _cong()
+        if not _MAU_TOKEN.match(token):
+            raise HTTPException(404, "Không có phiên tải này.")
+        conn = _mo()
+        try:
+            return {"trang_thai": tai_len_phien.bo_phien(conn, email, token)}
         except tai_len_phien.LoiPhien as e:
             raise _http(e) from None
         finally:

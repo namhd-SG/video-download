@@ -593,3 +593,75 @@ def test_dang_ky_route_log_loi_luc_khoi_dong_khi_co_bat_ma_origin_sai(monkeypatc
     r.dang_ky(FastAPI(), lay_log_db=lambda: None, require_user=lambda: "a", lay_worker=lambda: None, lay_tran_cho=lambda: 1,
               mau_file_id=re.compile("."))
     assert caplog.text == ""
+
+
+# ---------------------------------------------------------------- phiên của tôi: liệt kê + bỏ
+def test_liet_ke_cua_toi_chi_phien_xong_cua_chinh_minh_moi_nhat_truoc_co_tran(mt):
+    """ĐỘT BIẾN: bỏ `email=?` ⇒ thấy phiên người khác ⇒ ĐỎ; bỏ `trang_thai='xong'` ⇒ thấy phiên `mo`/`da_dung` ⇒ ĐỎ; bỏ ORDER/LIMIT ⇒ ĐỎ."""
+    t1, f1 = _phien_xong(mt, "a@x")
+    t2, f2 = _phien_xong(mt, "a@x")
+    t3, f3 = _phien_xong(mt, "a@x")
+    _phien_xong(mt, "b@x")                       # của người khác
+    _mo(mt, "a@x")                               # `mo`: chưa tải xong
+    t_dung, _ = _phien_xong(mt, "a@x")
+    mt.conn.execute("UPDATE tl_phien_tai SET trang_thai='da_dung' WHERE token=?", (t_dung,))
+    mt.conn.commit()
+    t_cu, _ = _phien_xong(mt, "a@x")
+    mt.conn.execute("UPDATE tl_phien_tai SET cap_nhat_luc=? WHERE token=?", (1_000_000_000 - 2 * NGAY, t_cu))   # quá 24 h: sắp bị dọn ⇒ không dựng lại
+    for i, t in enumerate((t1, t2, t3)):
+        mt.conn.execute("UPDATE tl_phien_tai SET cap_nhat_luc=? WHERE token=?", (1_000_000_000 + i, t))
+    mt.conn.commit()
+    ds = tl.liet_ke_cua_toi(mt.conn, "a@x", 10, bay_gio=1_000_000_000 + 100)
+    assert [d["token"] for d in ds] == [t3, t2, t1]
+    assert set(ds[0]) == {"token", "file_id", "ten", "size", "cap_nhat_luc"} and ds[0]["file_id"] == f3
+    assert [d["token"] for d in tl.liet_ke_cua_toi(mt.conn, "a@x", 2, bay_gio=1_000_000_000 + 100)] == [t3, t2]
+    assert tl.liet_ke_cua_toi(mt.conn, "nguoi-la@x", 10) == []
+
+
+def test_bo_phien_mo_va_xong_ve_bo_do_idempotent_va_chi_dong_cua_minh(mt):
+    """ĐỘT BIẾN: bỏ `AND trang_thai IN ('mo','xong')` khỏi UPDATE ⇒ `da_dung` bị đổi ⇒ ĐỎ (test 409)."""
+    t_mo = _mo(mt, "a@x")["token"]
+    t_xong, _ = _phien_xong(mt, "a@x")
+    assert tl.bo_phien(mt.conn, "a@x", t_mo) == "bo_do" and tl.bo_phien(mt.conn, "a@x", t_xong) == "bo_do"
+    assert tl.bo_phien(mt.conn, "a@x", t_xong) == "bo_do"                      # idempotent
+    assert _hang(mt, t_mo)["trang_thai"] == _hang(mt, t_xong)["trang_thai"] == "bo_do"
+
+
+def test_bo_phien_404_403_409(mt):
+    token, _ = _phien_xong(mt, "a@x")
+    with pytest.raises(tl.LoiPhien) as e:
+        tl.bo_phien(mt.conn, "a@x", "khong-co-token-nay-0000")
+    assert e.value.ma == 404
+    with pytest.raises(tl.LoiPhien) as e:
+        tl.bo_phien(mt.conn, "b@x", token)
+    assert e.value.ma == 403 and _hang(mt, token)["trang_thai"] == "xong"
+    for tt in ("da_dung", "dang_don", "da_don"):
+        mt.conn.execute("UPDATE tl_phien_tai SET trang_thai=? WHERE token=?", (tt, token))
+        mt.conn.commit()
+        with pytest.raises(tl.LoiPhien) as e:
+            tl.bo_phien(mt.conn, "a@x", token)
+        assert e.value.ma == 409 and _hang(mt, token)["trang_thai"] == tt
+
+
+def test_bo_phien_nha_tran_429_ngay(mt):
+    """ĐỘT BIẾN: `bo_phien` không đổi trạng thái (hoặc đổi sang trạng thái vẫn tính giữ chỗ) ⇒ vẫn 429 ⇒ ĐỎ."""
+    t1, _ = _phien_xong(mt, "a@x")
+    t2 = _mo(mt, "a@x", tran=2)["token"]
+    with pytest.raises(tl.LoiPhien) as e:
+        _mo(mt, "a@x", tran=2)
+    assert e.value.ma == 429
+    tl.bo_phien(mt.conn, "a@x", t1)
+    assert tl.dem_phien_giu_cho(mt.conn, "a@x", __import__("time").time()) == 1
+    assert _mo(mt, "a@x", tran=2)["token"]
+    tl.bo_phien(mt.conn, "a@x", t2)
+
+
+def test_bo_phien_xong_co_file_thi_mot_luot_don_dua_file_vao_thung_rac(mt):
+    """Không gọi Drive trong request `bo`; thread dọn quét theo thẻ trash file của phiên `bo_do`. ĐỘT BIẾN: bỏ `bo_do` khỏi `_quet_theo_the` ⇒ ĐỎ."""
+    token, fid = _phien_xong(mt, "a@x")
+    goi_truoc = len(mt.drive.goi)
+    tl.bo_phien(mt.conn, "a@x", token)
+    assert len(mt.drive.goi) == goi_truoc and mt.drive.muc[fid]["trashed"] is False   # request bo không đụng Drive
+    kq = tl.don_mot_luot(mt.conn, mt.drive)
+    assert kq["quet_the"]["rac"] == 1 and mt.drive.muc[fid]["trashed"] is True
+    assert _hang(mt, token)["trang_thai"] == "bo_do"
