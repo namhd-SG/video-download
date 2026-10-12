@@ -1043,6 +1043,16 @@ def test_bo_phien_xong_roi_thread_don_trash_file(tai):
     goi = len(tai.drive.goi)
     assert _bo_phien(tai, "a@x", token).status_code == 200 and len(tai.drive.goi) == goi and tai.drive.muc[fid]["trashed"] is False
     conn = nhat_ky.mo(tai.db)
-    assert tai_len_phien.don_mot_luot(conn, tai.drive)["quet_the"]["rac"] == 1
-    assert tai.drive.muc[fid]["trashed"] is True
+    assert tai_len_phien.don_mot_luot(conn, tai.drive)["bo_do_co_file"] == 1
+    assert tai.drive.muc[fid]["trashed"] is True and _tt(tai, token) == "da_don"
     conn.close()
+
+
+def test_bo_phien_da_bo_do_cua_nguoi_khac_van_403_khong_phai_200_idempotent(tai):
+    """ĐỘT BIẾN: đưa lối tắt idempotent `bo_do ⇒ 200` lên TRƯỚC kiểm chủ phiên ⇒ B (và admin) thấy 200 trên token đã bỏ của A ⇒ ĐỎ."""
+    token, _ = _phien_xong(tai, "a@x")
+    assert _bo_phien(tai, "a@x", token).status_code == 200 and _tt(tai, token) == "bo_do"
+    assert _bo_phien(tai, "b@x", token).status_code == 403
+    assert _bo_phien(tai, ADMIN, token).status_code == 403
+    assert _tt(tai, token) == "bo_do"
+    assert _bo_phien(tai, "a@x", token).status_code == 200   # chủ phiên vẫn idempotent

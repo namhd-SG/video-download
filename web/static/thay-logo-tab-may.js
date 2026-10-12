@@ -218,7 +218,11 @@
     m.tt = "dang"; m.loi = ""; m.thuLai = false; dat();
     try {
       if (!m.fileId) {
-        if (!m.url) await taoPhien(m);
+        if (!m.url) {
+          // Tạo phiên MỚI để thử lại: phiên cũ (nếu có) bị bỏ rơi ⇒ báo máy chủ bỏ nó TRƯỚC khi ghi đè token; token mới bắt đầu với cờ đã-báo sạch.
+          if (m.token) { baoBo(m); m.token = null; m.daBao = false; }
+          await taoPhien(m);
+        }
         if (m.huy) throw new LoiHuy();
         m.fileId = await dayLen(m);
         m.url = null;   // xong dữ liệu: không giữ quyền ghi lâu hơn cần thiết

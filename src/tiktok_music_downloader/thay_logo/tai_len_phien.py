@@ -10,8 +10,10 @@ Mọi exception trên đường gọi Google chỉ được log bằng `mo_ta_lo
 
 Máy trạng thái phiên (CHECK ở schema):
   mo → xong → da_dung → da_don          (da_dung → xong KHÔNG có; dùng lại file sau lỗi giữ nguyên da_dung)
-  mo → bo_do · xong → bo_do             (quá 24 h chưa thành lượt)
-  dang_don: khoá của tác vụ dọn trong lúc trash (từ mo | xong | da_dung); trash trượt ⇒ trả về trạng thái cũ.
+  mo → bo_do · xong → bo_do             (quá 24 h chưa thành lượt, hoặc người dùng bỏ)
+  bo_do (đã có file_id) → dang_don → da_don   (trash THẲNG theo file_id; không phụ thuộc quét theo thẻ bị chặn bởi trần liệt kê)
+  dang_don: khoá của tác vụ dọn trong lúc trash (từ mo | xong | da_dung | bo_do); trash trượt ⇒ trả về trạng thái cũ
+  (cột `dang_don_tu` ghi trạng thái trước khoá để khoá chết giữa chừng trả đúng chỗ).
 Dọn LUÔN: khoá `dang_don` (UPDATE có điều kiện) ⇒ trash ⇒ ghi trạng thái cuối. Ghi mốc SAU việc nó khẳng định.
 """
 from __future__ import annotations
@@ -49,7 +51,7 @@ CREATE TABLE IF NOT EXISTS tl_phien_tai (
   token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, md5 TEXT,
   thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT,
   trang_thai TEXT NOT NULL DEFAULT 'mo'
-    CHECK (trang_thai IN ('mo', 'xong', 'da_dung', 'da_don', 'bo_do', 'dang_don')));
+    CHECK (trang_thai IN ('mo', 'xong', 'da_dung', 'da_don', 'bo_do', 'dang_don')), dang_don_tu TEXT);
 CREATE INDEX IF NOT EXISTS ix_tl_phien_tai_email ON tl_phien_tai(email, trang_thai);
 CREATE INDEX IF NOT EXISTS ix_tl_phien_tai_file ON tl_phien_tai(file_id);
 """
@@ -69,6 +71,8 @@ def dang_bat() -> bool:
 
 def khoi_tao(conn) -> None:
     conn.executescript(SCHEMA)
+    if "dang_don_tu" not in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)").fetchall()}:  # DB tạo trước khi có cột
+        conn.execute("ALTER TABLE tl_phien_tai ADD COLUMN dang_don_tu TEXT")
     conn.commit()
 
 
@@ -348,21 +352,26 @@ def _rac(drive, file_id: str) -> None:
 
 
 def _giu(conn, token: str, tu: str, bay_gio: float) -> bool:
-    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='dang_don', cap_nhat_luc=? WHERE token=? AND trang_thai=?", (bay_gio, token, tu))
+    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='dang_don', dang_don_tu=?, cap_nhat_luc=? WHERE token=? AND trang_thai=?",
+                       (tu, bay_gio, token, tu))
     conn.commit()
     return cur.rowcount == 1
 
 
 def _tra(conn, token: str, ve: str, cap_nhat_luc: float) -> None:
-    conn.execute("UPDATE tl_phien_tai SET trang_thai=?, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (ve, cap_nhat_luc, token))
+    conn.execute("UPDATE tl_phien_tai SET trang_thai=?, dang_don_tu=NULL, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (ve, cap_nhat_luc, token))
     conn.commit()
 
 
 def _phuc_hoi_khoa_cu(conn, bay_gio: float) -> int:
-    """Khoá `dang_don` quá cũ (tiến trình chết giữa trash) ⇒ trả về trạng thái trước: không file ⇒ `mo`; file đã vào lượt ⇒ `da_dung`; còn lại `xong`."""
+    """Khoá `dang_don` quá cũ (tiến trình chết giữa trash) ⇒ trả về trạng thái trước: khoá từ `bo_do` ⇒ `bo_do` (không được sống lại thành `xong`); không file ⇒ `mo`; file đã vào lượt ⇒ `da_dung`; còn lại `xong`."""
     n = 0
-    for r in conn.execute("SELECT token, file_id, tao_luc FROM tl_phien_tai WHERE trang_thai='dang_don' AND cap_nhat_luc < ?",
+    for r in conn.execute("SELECT token, file_id, tao_luc, dang_don_tu FROM tl_phien_tai WHERE trang_thai='dang_don' AND cap_nhat_luc < ?",
                           (bay_gio - HAN_DANG_DON_GIAY,)).fetchall():
+        if r["dang_don_tu"] == "bo_do":
+            _tra(conn, r["token"], "bo_do", bay_gio)
+            n += 1
+            continue
         if not r["file_id"]:
             ve = "mo"
         elif conn.execute("SELECT 1 FROM tl_job_video WHERE json_extract(nguon, '$.kieu') = 'may' AND json_extract(nguon, '$.file_id') = ? LIMIT 1",
@@ -413,6 +422,25 @@ def _don_xong_chua_dung(conn, drive, bay_gio: float) -> int:
     return n
 
 
+def _don_bo_do_co_file(conn, drive, bay_gio: float) -> int:
+    """Phiên `bo_do` đã biết `file_id`: trash THẲNG theo `file_id` rồi mới ghi `da_don` (không dựa vào quét theo thẻ: nó chỉ đọc tối đa
+    `TRAN_LIET_KE_THE` con mỗi thư mục, không sắp thứ tự ⇒ file có thể nằm ngoài lần đọc mãi mãi). Khoá `dang_don` trước; trash trượt ⇒ về
+    `bo_do`, lượt sau thử lại; file đã mất (404) ⇒ `_rac` coi như đã dọn."""
+    n = 0
+    for r in conn.execute("SELECT token, file_id, cap_nhat_luc FROM tl_phien_tai WHERE trang_thai='bo_do' AND file_id IS NOT NULL").fetchall():
+        if not _giu(conn, r["token"], "bo_do", bay_gio):
+            continue
+        try:
+            _rac(drive, r["file_id"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("thay logo tải từ máy: dọn file của phiên đã bỏ lỗi (%s) — giữ nguyên, thử lại lượt sau", mo_ta_loi(e))
+            _tra(conn, r["token"], "bo_do", r["cap_nhat_luc"])
+            continue
+        _tra(conn, r["token"], "da_don", bay_gio)
+        n += 1
+    return n
+
+
 def _het_han_giu(conn, file_id: str, bay_gio: float) -> bool:
     """Mọi video dùng file đã ở trạng thái cuối VÀ quá hạn giữ cùng luật với khung/ảnh soi cục bộ (`nhat_ky`): 60 ngày; có video đánh giá
     MỚI NHẤT là `hong` ⇒ 180 ngày. Tuổi tính từ lần cập nhật trạng thái cuối muộn nhất."""
@@ -427,7 +455,7 @@ def _het_han_giu(conn, file_id: str, bay_gio: float) -> bool:
 
 def _ghi_da_don(conn, token: str, file_id: str, bay_gio: float) -> None:
     """SAU khi trash thành công: phiên `da_don` + cờ `da_don:true` trong JSON `nguon` của mọi video dùng file (FE ẩn "Bản gốc"). Một commit."""
-    conn.execute("UPDATE tl_phien_tai SET trang_thai='da_don', cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (bay_gio, token))
+    conn.execute("UPDATE tl_phien_tai SET trang_thai='da_don', dang_don_tu=NULL, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (bay_gio, token))
     for r in conn.execute("SELECT id, nguon FROM tl_job_video WHERE json_extract(nguon, '$.kieu') = 'may' AND json_extract(nguon, '$.file_id') = ?",
                           (file_id,)).fetchall():
         d = json.loads(r["nguon"])
@@ -481,10 +509,11 @@ def _quet_theo_the(conn, drive) -> dict:
 
 
 def don_mot_luot(conn, drive, bay_gio: float | None = None) -> dict:
-    """Một lượt dọn đủ 4 việc (khoá cũ · bỏ dở · đã chốt chưa dùng · file nhập đã dùng) + quét theo thẻ. Thread `tl-don-phien` gọi mỗi giờ."""
+    """Một lượt dọn đủ 5 việc (khoá cũ · file của phiên đã bỏ · bỏ dở · đã chốt chưa dùng · file nhập đã dùng) + quét theo thẻ. Thread `tl-don-phien` gọi mỗi giờ."""
     khoi_tao(conn)
     bay_gio = bay_gio or time.time()
-    kq = {"phuc_hoi": _phuc_hoi_khoa_cu(conn, bay_gio), "bo_do": _don_bo_do(conn, drive, bay_gio),
+    kq = {"phuc_hoi": _phuc_hoi_khoa_cu(conn, bay_gio), "bo_do_co_file": _don_bo_do_co_file(conn, drive, bay_gio),
+          "bo_do": _don_bo_do(conn, drive, bay_gio),
           "xong_qua_han": _don_xong_chua_dung(conn, drive, bay_gio), "da_dung": _don_file_da_dung(conn, drive, bay_gio)}
     kq["quet_the"] = _quet_theo_the(conn, drive)
     return kq

@@ -116,8 +116,8 @@ def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=
 
     def bo(r):
         p.bo.append(re.search(r"/tai-len/([^/]+)/bo", r.request.url).group(1))
-        if bo_loi:
-            return _tra_json(r, {"detail": "Drive bận"}, status=503)
+        if bo_loi:   # True ⇒ 503 (tạm); số nguyên ⇒ đúng mã đó
+            return _tra_json(r, {"detail": "Drive bận"}, status=503 if bo_loi is True else int(bo_loi))
         p.cua_toi[:] = [x for x in p.cua_toi if x["token"] != p.bo[-1]]
         _tra_json(r, {"trang_thai": "bo_do"})
 
@@ -455,3 +455,73 @@ def test_cua_toi_loi_thi_bo_qua_yen_lang_khong_chan_tab_khong_lap(may_chu, trinh
     _file(p, "van-tai-duoc.mp4", 2 * MB)   # tab vẫn dùng bình thường
     _cho_xong(p)
     assert p.cua_toi_goi == [1]
+
+
+@pytest.mark.parametrize("ma", [403, 404, 409])
+def test_bo_nhan_4xx_dut_khoat_thi_khong_thu_lai_khong_bao_chu(may_chu, trinh_duyet, monkeypatch, ma):
+    """`/bo` trả 403/404/409 = máy chủ đã trả lời dứt khoát ⇒ đúng 1 lần gọi, không hiện "Chưa báo được máy chủ…".
+    ĐỘT BIẾN: thử lại / báo chữ cả với 4xx (chỉ coi `r.ok` là xong) ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC[:1], bo_loi=ma)
+    _cho_xong(p)
+    p.locator("#tl-tab-may .tl-may-xong").get_by_role("button", name="Bỏ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    p.wait_for_timeout(2500)   # dài hơn nhịp thử lại (1 s) để một lần thử lại nếu có kịp xảy ra
+    assert len(p.bo) == 1 and "Chưa báo được" not in p.locator("#tl-tab-may").inner_text() and not p.loi_js
+
+
+def test_huy_luc_post_phien_con_chay_token_ve_sau_van_goi_bo(may_chu, trinh_duyet, monkeypatch):
+    """Huỷ khi `POST /tai-len/phien` chưa trả (chưa có token) ⇒ token về sau phải được báo bỏ, và không PUT dữ liệu nào lên Google.
+    ĐỘT BIẾN: bỏ `baoBo(m)` trong `catch` của `chay` ⇒ `/bo` không bao giờ được gọi ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch)
+    giu = []
+    p.unroute("**/api/thay-logo/tai-len/phien")
+    p.route("**/api/thay-logo/tai-len/phien", lambda r: giu.append(r))   # giữ im: phiên "đang được tạo"
+    _file(p, "huy-som.mp4", 2 * MB)
+    for _ in range(40):
+        if giu:
+            break
+        p.wait_for_timeout(50)
+    assert len(giu) == 1 and p.bo == []
+    p.get_by_role("button", name="Huỷ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    _tra_json(giu[0], {"token": f"{TOKEN}1", "url_phien": _url_phien(1)}, status=201)   # token về MUỘN, sau khi đã Huỷ
+    for _ in range(40):
+        if p.bo:
+            break
+        p.wait_for_timeout(50)
+    p.wait_for_timeout(300)
+    assert p.bo == [f"{TOKEN}1"] and p.google.puts == [] and p.xong == [] and not p.loi_js
+
+
+def test_thu_lai_tao_phien_moi_bao_bo_token_cu_dung_mot_lan(may_chu, trinh_duyet, monkeypatch):
+    """Google 404 giữa chừng (phiên chết) ⇒ Thử lại mở phiên MỚI ⇒ token cũ phải được `/bo` đúng 1 lần, token mới thì KHÔNG bị báo bỏ.
+    ĐỘT BIẾN: bỏ `baoBo` trước khi ghi đè token ⇒ `/bo` không được gọi cho token cũ ⇒ ĐỎ; không đặt lại `daBao` ⇒ token mới bị
+    bỏ qua khi Huỷ về sau (xem test kế)."""
+    gg = GoogleGia(hook=lambda g, s, info: (404, {}, "") if info["up"] == f"{BI_MAT}1" else None)
+    p = _trang(trinh_duyet, may_chu, monkeypatch, google=gg)
+    _file(p, "phien-chet.mp4", 2 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-loi")
+    assert p.bo == []
+    p.get_by_role("button", name="↻ Thử lại").click()
+    _cho_xong(p)
+    p.wait_for_timeout(300)
+    assert len(p.phien) == 2 and p.bo == [f"{TOKEN}1"], p.bo
+    assert p.xong[-1]["url"].endswith(f"/tai-len/{TOKEN}2/xong") and not p.loi_js
+
+
+def test_thu_lai_tao_phien_moi_roi_huy_thi_bao_bo_token_moi(may_chu, trinh_duyet, monkeypatch):
+    """Sau khi thay token, cờ đã-báo phải sạch: Huỷ phiên mới ⇒ `/bo` cho token MỚI. ĐỘT BIẾN: không đặt lại `m.daBao = false` ⇒ ĐỎ."""
+    gg = GoogleGia(hook=lambda g, s, info: (404, {}, "") if info["up"] == f"{BI_MAT}1" else None, giu={f"{BI_MAT}2": 1})
+    p = _trang(trinh_duyet, may_chu, monkeypatch, google=gg)
+    _file(p, "phien-chet-roi-huy.mp4", 2 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-loi")
+    p.get_by_role("button", name="↻ Thử lại").click()
+    for _ in range(60):
+        if gg.da_giu:
+            break
+        p.wait_for_timeout(50)
+    assert gg.da_giu and len(p.phien) == 2
+    p.get_by_role("button", name="Huỷ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    p.wait_for_timeout(400)
+    assert p.bo == [f"{TOKEN}1", f"{TOKEN}2"], p.bo

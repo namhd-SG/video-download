@@ -657,11 +657,69 @@ def test_bo_phien_nha_tran_429_ngay(mt):
 
 
 def test_bo_phien_xong_co_file_thi_mot_luot_don_dua_file_vao_thung_rac(mt):
-    """Không gọi Drive trong request `bo`; thread dọn quét theo thẻ trash file của phiên `bo_do`. ĐỘT BIẾN: bỏ `bo_do` khỏi `_quet_theo_the` ⇒ ĐỎ."""
+    """Không gọi Drive trong request `bo`; thread dọn trash THẲNG theo `file_id` của phiên `bo_do` rồi ghi `da_don`."""
     token, fid = _phien_xong(mt, "a@x")
     goi_truoc = len(mt.drive.goi)
     tl.bo_phien(mt.conn, "a@x", token)
     assert len(mt.drive.goi) == goi_truoc and mt.drive.muc[fid]["trashed"] is False   # request bo không đụng Drive
     kq = tl.don_mot_luot(mt.conn, mt.drive)
-    assert kq["quet_the"]["rac"] == 1 and mt.drive.muc[fid]["trashed"] is True
-    assert _hang(mt, token)["trang_thai"] == "bo_do"
+    assert kq["bo_do_co_file"] == 1 and mt.drive.muc[fid]["trashed"] is True
+    assert _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def _bo_do_nam_ngoai_lan_doc(mt, monkeypatch):
+    """Thư mục vào có nhiều file hơn trần liệt kê (hạ còn 2); file của phiên `bo_do` nằm NGOÀI lần đọc (các file khác xếp trước)."""
+    monkeypatch.setattr(tl, "TRAN_LIET_KE_THE", 2)
+    token, fid = _phien_xong(mt, "a@x")
+    tren = [_phien_xong(mt, "a@x")[1] for _ in range(2)]      # cùng người ⇒ cùng thư mục; 2 file xếp trước ⇒ lần đọc 2 con không chạm tới `fid`
+    mt.drive.muc[fid] = mt.drive.muc.pop(fid)                  # dời `fid` xuống cuối thứ tự duyệt
+    assert [m["id"] for m in mt.drive.liet_ke_con(_hang(mt, token)["thu_muc_id"], 2)] == tren
+    tl.bo_phien(mt.conn, "a@x", token)
+    return token, fid
+
+
+def test_phien_bo_do_co_file_ngoai_tran_liet_ke_van_bi_trash_theo_file_id(mt, monkeypatch):
+    """ĐỘT BIẾN: bỏ `_don_bo_do_co_file` khỏi `don_mot_luot` ⇒ quét theo thẻ không thấy file ⇒ ĐỎ."""
+    token, fid = _bo_do_nam_ngoai_lan_doc(mt, monkeypatch)
+    tl.don_mot_luot(mt.conn, mt.drive)
+    assert mt.drive.muc[fid]["trashed"] is True and _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def test_phien_bo_do_trash_truot_thi_ve_bo_do_roi_thu_lai_khong_ghi_da_don_truoc(mt, monkeypatch):
+    """ĐỘT BIẾN: ghi `da_don` TRƯỚC trash (trash trượt vẫn đánh dấu) ⇒ ĐỎ."""
+    token, fid = _bo_do_nam_ngoai_lan_doc(mt, monkeypatch)
+    mt.drive.loi[("vao_thung_rac", "*")] = RuntimeError("Drive 500")
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 0
+    assert _hang(mt, token)["trang_thai"] == "bo_do" and mt.drive.muc[fid]["trashed"] is False
+    del mt.drive.loi[("vao_thung_rac", "*")]
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 1
+    assert _hang(mt, token)["trang_thai"] == "da_don" and mt.drive.muc[fid]["trashed"] is True
+
+
+def test_phien_bo_do_file_da_mat_404_coi_nhu_da_don(mt):
+    token, fid = _phien_xong(mt, "a@x")
+    tl.bo_phien(mt.conn, "a@x", token)
+    del mt.drive.muc[fid]
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 1
+    assert _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def test_khoa_dang_don_cu_cua_phien_bo_do_tra_ve_bo_do_khong_song_lai_thanh_xong(mt):
+    """ĐỘT BIẾN: `_phuc_hoi_khoa_cu` trả `xong` cho khoá bắt đầu từ `bo_do` ⇒ phiên đã bỏ sống lại ⇒ ĐỎ."""
+    token, _ = _phien_xong(mt, "a@x")
+    tl.bo_phien(mt.conn, "a@x", token)
+    assert tl._giu(mt.conn, token, "bo_do", 1000.0)
+    assert _hang(mt, token)["trang_thai"] == "dang_don"
+    kq = tl._phuc_hoi_khoa_cu(mt.conn, 1000.0 + 3600)
+    assert kq == 1 and _hang(mt, token)["trang_thai"] == "bo_do"
+
+
+def test_khoi_tao_them_cot_dang_don_tu_vao_db_cu(tmp_path):
+    conn = nhat_ky.mo(tmp_path / "cu.db")
+    conn.executescript("CREATE TABLE tl_phien_tai (token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, "
+                       "mime TEXT NOT NULL, md5 TEXT, thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT, "
+                       "trang_thai TEXT NOT NULL DEFAULT 'mo' CHECK (trang_thai IN ('mo','xong','da_dung','da_don','bo_do','dang_don')));")
+    tl.khoi_tao(conn)
+    tl.khoi_tao(conn)  # chạy lại không lỗi
+    assert "dang_don_tu" in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)")}
+    conn.close()
