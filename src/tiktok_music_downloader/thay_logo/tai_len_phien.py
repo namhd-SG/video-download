@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 import time
 from urllib.parse import urlsplit
 
@@ -72,7 +73,11 @@ def dang_bat() -> bool:
 def khoi_tao(conn) -> None:
     conn.executescript(SCHEMA)
     if "dang_don_tu" not in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)").fetchall()}:  # DB tạo trước khi có cột
-        conn.execute("ALTER TABLE tl_phien_tai ADD COLUMN dang_don_tu TEXT")
+        try:
+            conn.execute("ALTER TABLE tl_phien_tai ADD COLUMN dang_don_tu TEXT")
+        except sqlite3.OperationalError as e:  # thread dọn và một request cùng thấy thiếu cột rồi cùng ALTER (khởi động đầu sau deploy)
+            if "duplicate column" not in str(e).lower():
+                raise
     conn.commit()
 
 
@@ -290,7 +295,8 @@ def liet_ke_cua_toi(conn, email: str, gioi_han: int, bay_gio: float | None = Non
 
 def bo_phien(conn, email: str, token: str, bay_gio: float | None = None) -> str:
     """Người dùng bỏ phiên CỦA MÌNH (`mo` | `xong` → `bo_do`) bằng MỘT UPDATE có điều kiện; KHÔNG gọi Drive trong request. Thread `tl-don-phien`
-    (`_quet_theo_the`) trash file mang thẻ của phiên `bo_do`, kể cả file xuất hiện muộn. Trả `bo_do` (đã `bo_do` ⇒ vẫn trả, idempotent).
+    trash file của phiên `bo_do` theo `file_id` (`_don_bo_do_co_file`, rồi `da_don`) và file xuất hiện muộn theo thẻ (`_quet_theo_the`).
+    Trả `bo_do` (đã `bo_do` ⇒ vẫn trả); thread đã dọn xong (`da_don`) ⇒ 409, FE coi là trả lời dứt khoát.
     Thứ tự quyền như `xac_nhan_xong`: 404 (không có) → 403 (của người khác, admin cũng vậy) → 409 (`da_dung`/`dang_don`/`da_don`)."""
     bay_gio = bay_gio or time.time()
     r = conn.execute("SELECT email, trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()

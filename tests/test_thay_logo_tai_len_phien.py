@@ -723,3 +723,32 @@ def test_khoi_tao_them_cot_dang_don_tu_vao_db_cu(tmp_path):
     tl.khoi_tao(conn)  # chạy lại không lỗi
     assert "dang_don_tu" in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)")}
     conn.close()
+
+
+def test_khoi_tao_hai_ket_noi_cung_them_cot_khong_loi(tmp_path):
+    """Khởi động đầu sau deploy: thread dọn và một request cùng thấy thiếu `dang_don_tu` rồi cùng ALTER ⇒ bên chậm gặp "duplicate column".
+    Chen tất định: B đọc PRAGMA (thiếu cột) ⇒ A thêm cột ⇒ B mới ALTER. Đột biến: bỏ bắt "duplicate column" ⇒ OperationalError ⇒ ĐỎ."""
+    db = tmp_path / "cu.db"
+    a = nhat_ky.mo(db)
+    a.executescript("CREATE TABLE tl_phien_tai (token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, "
+                    "mime TEXT NOT NULL, md5 TEXT, thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT, "
+                    "trang_thai TEXT NOT NULL DEFAULT 'mo' CHECK (trang_thai IN ('mo','xong','da_dung','da_don','bo_do','dang_don')));")
+    b = nhat_ky.mo(db)
+
+    class BCham:
+        """Kết nối B: trả kết quả PRAGMA đọc TRƯỚC khi A kịp thêm cột (cửa sổ giữa kiểm và ALTER)."""
+
+        def __getattr__(self, ten):
+            return getattr(b, ten)
+
+        def execute(self, sql, *args):
+            if sql.startswith("PRAGMA table_info"):
+                cu = b.execute(sql, *args).fetchall()
+                tl.khoi_tao(a)  # A thêm cột đúng lúc này
+                return type("KQ", (), {"fetchall": staticmethod(lambda: cu)})()
+            return b.execute(sql, *args)
+
+    tl.khoi_tao(BCham())
+    assert "dang_don_tu" in {r[1] for r in b.execute("PRAGMA table_info(tl_phien_tai)")}
+    a.close()
+    b.close()
