@@ -8,6 +8,7 @@ Drive đi qua `drive_tl.DriveTL` (test thay bằng bản giả) — module này 
 from __future__ import annotations
 
 import logging
+import threading
 
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTL, DriveTLKhongThay
 
@@ -57,3 +58,44 @@ def tim_hoac_tao(conn, job_id: int, goc_id: str, drive: DriveTL, kiem_creative=N
     conn.execute("UPDATE tl_job SET thu_muc_ra_id=? WHERE id=?", (fid, job_id))
     conn.commit()
     return fid
+
+
+# ============================================================================ thư mục ĐẦU VÀO của nguồn "Tải từ máy"
+TEN_THU_MUC_VAO = "Thay logo - đầu vào"
+# Một tiến trình uvicorn, nhiều thread request: ba request đầu tiên cùng thấy "chưa có thư mục" rồi cùng tạo ⇒ trùng thư mục. Khoá cấp module
+# CHỈ bọc nhánh phải tạo (kiểm hai lần: tra không khoá, thiếu thì lấy khoá rồi tra lại) — đường thường gặp "đã có đủ thư mục" không xếp hàng,
+# nên Drive chậm không làm mọi request tạo phiên nối đuôi nhau chiếm threadpool. Mini chạy ĐÚNG 1 tiến trình; nhiều tiến trình thì khoá không đủ.
+_KHOA_THU_MUC_VAO = threading.Lock()
+
+
+def thu_muc_vao_cua(drive: DriveTL, thu_muc_ra_id: str, email: str, kiem_creative=None) -> str:
+    """Id `Thay logo - đầu vào/<email>/` — CÙNG CHA với thư mục ra (`thu_muc_ra_id`), tìm-hoặc-tạo bằng chính `tim_con_theo_ten`/
+    `tao_thu_muc` của `DriveTL` (cùng đường `ap_vao_bo._ThuMuc._tim_tao`), nhưng `ngan=True`: hàm này chạy TRONG request tạo phiên, Drive
+    treo ⇒ lỗi sau ~`TIMEOUT_LAY_MUC_GIAY` thay vì giữ thread uvicorn. `kiem_creative() -> str | None` (cổng Creative) chạy MỖI KHI sắp TẠO một
+    thư mục: có lý do ⇒ `CongCreativeCam`; nó ném ⇒ ném nguyên (chưa kiểm được ≠ được phép). Lỗi Drive ném lên."""
+    cha = (drive.lay_muc(thu_muc_ra_id).get("parents") or [None])[0]
+    if not cha:
+        raise RuntimeError("thư mục ra không có thư mục cha")
+    ten_email = "".join(c for c in email if c.isprintable()).strip()
+    if not ten_email:
+        raise ValueError("email rỗng")
+    def di(tao: bool) -> str | None:
+        hien = cha
+        for ten in (TEN_THU_MUC_VAO, ten_email):
+            co = [m["id"] for m in drive.tim_con_theo_ten(hien, ten, ngan=True)]
+            if not co:
+                if not tao:
+                    return None
+                if kiem_creative is not None:
+                    ly_do = kiem_creative()
+                    if ly_do:
+                        raise CongCreativeCam(ly_do)
+                co = [drive.tao_thu_muc(ten, hien, ngan=True)]
+            hien = co[0]
+        return hien
+
+    co_san = di(tao=False)  # đường thường gặp: đủ hai cấp ⇒ không đụng khoá
+    if co_san is not None:
+        return co_san
+    with _KHOA_THU_MUC_VAO:
+        return di(tao=True)  # tra LẠI trong khoá: request khác có thể vừa tạo xong

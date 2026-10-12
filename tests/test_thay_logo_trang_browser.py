@@ -159,8 +159,9 @@ def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     assert "2 video chờ duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần bạn xem kỹ" in p.locator("#tl-tom-tat").inner_text()
     assert "Máy đang tìm chỗ logo cũ · đã 14 phút" in p.locator("#tl-dang-lam").inner_text()
     _anh(p, "khung-1280.png")
-    p.locator("#tl-tabs [role=tab]").nth(2).click()  # tab chưa có API ⇒ "sắp có", không dữ liệu giả
-    assert "Sắp có" in p.locator("#tl-vung").inner_text()
+    p.locator("#tl-tabs [role=tab]").nth(3).click()  # tab "Dán link" có module nhưng chưa dán gì ⇒ không dữ liệu giả
+    assert "Chưa kiểm link nào" in p.locator("#tl-vung").inner_text()
+    assert p.locator("#tl-tabs [role=tab]").nth(2).is_hidden()  # "Tải từ máy": cờ TL_TAI_TU_MAY tắt ⇒ tab ẩn hẳn
 
 
 def test_thu_gon_va_mo_khoi_nhap(may_chu, trinh_duyet):
@@ -336,7 +337,7 @@ def test_khong_con_chu_ky_su_trong_van_ban_member_thay(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     p.wait_for_function("document.querySelector('#tl-duyet .tl-phu')")
     p.locator(".tl-hong-nut").click()
-    for tab in range(4):
+    for tab in (0, 1, 3):  # tab "Tải từ máy" (2) ẩn khi cờ tắt
         p.locator("#tl-tabs [role=tab]").nth(tab).click()
         bat = re.findall(r"agy|khung|box|%\s*khung", _chu_trang(p).lower())
         assert bat == [], f"chữ kỹ sư còn trên trang (tab {tab}): {bat}"
@@ -352,7 +353,7 @@ def test_pct_render_doi_ra_phan_so(may_chu, trinh_duyet, pct, mong):
 
 
 def test_cho_gan_nguon_nhap_cua_dot_sau(may_chu, trinh_duyet):
-    """Module đăng ký vào TL_TAB_NGUON được vẽ vào container riêng của tab; tab chưa có module vẫn 'Sắp có'."""
+    """Module đăng ký vào TL_TAB_NGUON được vẽ vào container riêng của tab; tab đổi qua lại thì container của tab kia ẩn."""
     ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
     p = ctx.new_page()
     p.add_init_script("window.TL_TAB_NGUON = [{ id: 'link', giai: 'Giải thích của module', ve(hop, T) { hop.append(T.el('p', 'x', 'MODULE-LINK-DA-VE')); } }];")
@@ -361,8 +362,8 @@ def test_cho_gan_nguon_nhap_cua_dot_sau(may_chu, trinh_duyet):
     p.locator("#tl-tabs [role=tab]").nth(3).click()
     assert "MODULE-LINK-DA-VE" in p.locator("#tl-tab-link").inner_text() and p.locator("#tl-tab-thu-vien").is_hidden()
     assert "Giải thích của module" in p.locator("#tl-tab-giai").inner_text()
-    p.locator("#tl-tabs [role=tab]").nth(2).click()
-    assert "Sắp có" in p.locator("#tl-tab-may").inner_text() and p.locator("#tl-tab-link").is_hidden()
+    p.locator("#tl-tabs [role=tab]").nth(1).click()
+    assert p.locator("#tl-tab-link").is_hidden() and p.locator("#tl-tab-thu-vien").is_hidden()
 
 
 # ---------------------------------------------------------------- sửa gom lượt cuối: đánh giá trùng, lớp chắn lời lỗi, lỗi tải, race lọc, CSS, XSS

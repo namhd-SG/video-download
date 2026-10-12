@@ -18,6 +18,7 @@ class DriveGiaTL:
         self.cau_hinh = True
         self.loi: dict[tuple[str, str], Exception] = {}
         self.goi: list[tuple[str, str]] = []
+        self.ngan: dict[tuple[str, str], bool] = {}  # (hàm, cha) ⇒ lời gọi có xin timeout ngắn không
         self.da_tai_len: list[tuple[str, str]] = []  # (tên file, id thư mục cha)
         self.khong_quyen: set[str] = set()  # id mà tài khoản máy KHÔNG được chia sẻ ⇒ 403 như Drive thật
         self.email = "may@du-an.iam.gserviceaccount.com"
@@ -76,14 +77,16 @@ class DriveGiaTL:
             raise DriveTLKhongThay(file_id)
         return copy.deepcopy(self.muc[file_id])
 
-    def tim_con_theo_ten(self, cha_id, ten):
+    def tim_con_theo_ten(self, cha_id, ten, *, ngan=False):
         self.goi.append(("tim_con_theo_ten", cha_id))
+        self.ngan[("tim_con_theo_ten", cha_id)] = ngan
         self._loi("tim_con_theo_ten", cha_id)
         return [copy.deepcopy(m) for m in self.muc.values()
                 if cha_id in m["parents"] and m["name"] == ten and m["mimeType"] == MIME_THU_MUC and not m["trashed"]]
 
-    def tao_thu_muc(self, ten, cha_id):
+    def tao_thu_muc(self, ten, cha_id, *, ngan=False):
         self.goi.append(("tao_thu_muc", cha_id))
+        self.ngan[("tao_thu_muc", cha_id)] = ngan
         self._loi("tao_thu_muc", cha_id)
         self._so += 1
         cha = self.muc.get(cha_id)

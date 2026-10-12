@@ -132,7 +132,7 @@
     gui.addEventListener("click", () => danhGia(v, { ket_qua: "hong", loai_loi: sel.value, ghi_chu: note.value }));
     const lk = el("div", "tl-link-phu");
     if (v.drive_file_id_ra) lk.append(T.linkDrive(v.drive_file_id_ra, "▶ Xem cả video đã thay"));
-    try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g) lk.append(T.linkDrive(g, ng.kieu === "vao_bo" ? "Bản trong bộ" : "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
+    try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, ng.kieu === "vao_bo" ? "Bản trong bộ" : "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
     ct.append(lk);
     body.append(trai, ct); hop.append(body);
     const phim = el("div", "tl-phim"); phim.append(el("span", "lbl", "Hàng duyệt"));

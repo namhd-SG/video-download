@@ -60,12 +60,14 @@ class DriveTL(Protocol):
     def email_dich_vu(self) -> str | None:
         """Email service account đang dùng (để member chia sẻ file/thư mục cho nó). Không đọc được ⇒ None."""
 
-    def tim_con_theo_ten(self, cha_id: str, ten: str) -> list[dict]:
-        # Không đặt timeout ngắn cho tìm/tạo thư mục (chạy trong lượt upload của worker, không ở lifespan): cố ý để mặc định.
+    def tim_con_theo_ten(self, cha_id: str, ten: str, *, ngan: bool = False) -> list[dict]:
+        # Mặc định KHÔNG đặt timeout ngắn (chạy trong lượt upload của worker / thread `tl-ap`, không ở lifespan): cố ý để mặc định.
+        # `ngan=True` (timeout `TIMEOUT_LAY_MUC_GIAY`) cho lời gọi nằm TRONG request web (tạo phiên "Tải từ máy"): Drive treo không được
+        # giữ một thread uvicorn.
         """THƯ MỤC con trực tiếp của `cha_id` mang đúng tên `ten`, chưa vào thùng rác (mỗi phần tử có `TRUONG_MUC`)."""
 
-    def tao_thu_muc(self, ten: str, cha_id: str) -> str:
-        """Tạo thư mục, trả id. Không nằm trong Shared Drive ⇒ `RuntimeError`."""
+    def tao_thu_muc(self, ten: str, cha_id: str, *, ngan: bool = False) -> str:
+        """Tạo thư mục, trả id. Không nằm trong Shared Drive ⇒ `RuntimeError`. `ngan` như `tim_con_theo_ten`."""
 
     def tai_len(self, duong_dan: Path, cha_id: str) -> str:
         """Tải file vào thư mục `cha_id`, trả id file. Trượt ⇒ `RuntimeError` (không im lặng)."""
@@ -86,6 +88,9 @@ class DriveTL(Protocol):
 
     def vao_thung_rac(self, file_id: str) -> None:
         """Bỏ file vào Thùng rác (KHÔNG xoá vĩnh viễn — SA chỉ là Content manager)."""
+
+    def session_http(self):
+        """`AuthorizedSession` (requests) mang credentials service account của chính adapter này — dùng để xin URL phiên resumable."""
 
 
 def duong_dan_ten(drive: DriveTL, file_id: str) -> list[str]:
@@ -200,6 +205,11 @@ class DriveTLThat:
             raise loi from exc
         return out[:toi_da]
 
+    def session_http(self):
+        from google.auth.transport.requests import AuthorizedSession
+
+        return AuthorizedSession(self._up._get_credentials())
+
     def email_dich_vu(self) -> str | None:
         try:  # đọc từ file credential (không gọi mạng); không phải bí mật — là địa chỉ để member chia sẻ
             return getattr(self._up._get_credentials(), "service_account_email", None) or None
@@ -207,9 +217,9 @@ class DriveTLThat:
             log.warning("thay logo: không đọc được email service account (%s)", type(e).__name__)
             return None
 
-    def tim_con_theo_ten(self, cha_id: str, ten: str) -> list[dict]:
+    def tim_con_theo_ten(self, cha_id: str, ten: str, *, ngan: bool = False) -> list[dict]:
         esc = ten.replace("\\", "\\\\").replace("'", "\\'")
-        r = self._svc().files().list(
+        r = (self._svc_ngan() if ngan else self._svc()).files().list(
             q=f"name = '{esc}' and '{cha_id}' in parents and mimeType = '{MIME_THU_MUC}' and trashed = false",
             fields=f"files({TRUONG_MUC})", pageSize=10, corpora="allDrives",
             supportsAllDrives=True, includeItemsFromAllDrives=True).execute()
@@ -218,8 +228,8 @@ class DriveTLThat:
             log.warning("thay logo: %d thư mục trùng tên dưới %s — dùng cái đầu tiên", len(fs), cha_id)
         return fs
 
-    def tao_thu_muc(self, ten: str, cha_id: str) -> str:
-        r = self._svc().files().create(body={"name": ten, "mimeType": MIME_THU_MUC, "parents": [cha_id]},
+    def tao_thu_muc(self, ten: str, cha_id: str, *, ngan: bool = False) -> str:
+        r = (self._svc_ngan() if ngan else self._svc()).files().create(body={"name": ten, "mimeType": MIME_THU_MUC, "parents": [cha_id]},
                                        fields="id,driveId", supportsAllDrives=True).execute()
         if not r.get("driveId") or not r.get("id"):  # rơi vào "My Drive" của service account
             raise RuntimeError("thư mục tạo xong nhưng không thuộc Shared Drive")

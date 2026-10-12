@@ -1,5 +1,6 @@
 """Route member trang Thay logo: chỉ người tạo hoặc admin thấy/đánh giá; đánh giá chỉ khi đã thay xong; trạng thái worker chỉ admin."""
 import json
+import logging
 
 import pytest
 
@@ -668,3 +669,288 @@ def test_bo_da_ap_video_dat_moi_bi_chan_dem_rieng(ap):
     assert (g["trang_thai"], g["so_du_dieu_kien"], g["so_moi_bi_chan"]) == ("xong", 0, 1)
     r = ap.post(f"/api/thay-logo/bo/{j}/ap", headers=_h("a@x"))
     assert r.status_code == 409 and "hoàn tác trước" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------- đợt 4: Tải từ máy (cờ TL_TAI_TU_MAY) — Google/Drive GIẢ, không mạng
+RA_TAI = "RAFOLDER0000000000001"
+ORIGIN_ENV = "https://Video.Nobidigital.asia/"  # cố ý hoa + `/` cuối: so Origin thô sẽ 403 nhầm
+ORIGIN_CHUAN = "https://video.nobidigital.asia"
+
+
+@pytest.fixture
+def tai(tmp_path, monkeypatch, capfd):
+    """`capfd` đứng TRƯỚC: uvicorn gắn handler log vào stderr lúc dựng máy chủ ⇒ phải dựng SAU khi capfd đã bắt fd 2."""
+    import types
+
+    from drive_gia_thay_logo import DriveGiaTL
+    from phien_http_gia_thay_logo import SessionGia
+
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+
+    monkeypatch.setenv(tai_len_phien.ENV_BAT, "1")
+    monkeypatch.setenv(tai_len_phien.ENV_ORIGIN, ORIGIN_ENV)
+    monkeypatch.setenv(tai_len_phien.ENV_THU_MUC_RA, RA_TAI)
+    drive = DriveGiaTL()
+    drive.them_thu_muc(RA_TAI, "Thay logo - đầu ra")
+    ss = SessionGia()
+    db = tmp_path / "tl.db"
+    _jobs_db(db)
+
+    def require_user(request: Request) -> str:
+        return request.headers["x-user"]
+
+    app = FastAPI()
+    box = {"w": types.SimpleNamespace(drive_tl=drive, ly_do_khong_nhan=None)}
+    thay_logo_routes.dang_ky_route_member(app, lambda: db, require_user, lambda e: e == ADMIN, lambda: box["w"],
+                                          lambda email, ids: set(), lay_jobs_db=lambda: db.parent / "jobs.db",
+                                          lay_session_tai=lambda d: ss)
+    mc = MayChu(app)
+    c = _Client(mc)
+    c.drive, c.ss, c.db, c.box, c.capfd = drive, ss, db, box, capfd
+    yield c
+    mc.dung()
+
+
+PHIEN = "/api/thay-logo/tai-len/phien"
+
+
+def _khai(**kw):
+    return {"ten": "clip.mp4", "size": 1000, "mime": "video/mp4", **kw}
+
+
+def _len(tai, token, **kw):
+    """Mô phỏng trình duyệt PUT xong ở Google: file có trên Drive, mang thẻ phiên."""
+    conn = nhat_ky.mo(tai.db)
+    r = conn.execute("SELECT * FROM tl_phien_tai WHERE token=?", (token,)).fetchone()
+    conn.close()
+    fid = f"UP{len(tai.drive.muc):018d}"
+    tai.drive.them_file(fid, r["ten"], r["thu_muc_id"], size=kw.get("size", r["size"]), mime=r["mime"], md5="MD5X",
+                        app_properties={"tl_phien": kw.get("the", token)})
+    return fid
+
+
+def _phien_xong(tai, nguoi="a@x"):
+    r = tai.post(PHIEN, headers=_h(nguoi), json=_khai())
+    assert r.status_code == 201, r.content
+    token = r.json()["token"]
+    fid = _len(tai, token)
+    assert tai.post(f"/api/thay-logo/tai-len/{token}/xong", headers=_h(nguoi), json={"file_id": fid}).status_code == 200
+    return token, fid
+
+
+def test_tai_len_co_tat_thi_ca_ba_route_va_may_file_ids_deu_404(tai, monkeypatch):
+    """Đột biến: bỏ cổng cờ ở một route ⇒ ĐỎ. Cờ tắt ⇒ không đụng Drive, không gọi Google, không tạo DB."""
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    monkeypatch.delenv(tai_len_phien.ENV_BAT)
+    assert tai.get("/api/thay-logo/tai-len/bat", headers=_h("a@x")).status_code == 404
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 404
+    assert tai.post("/api/thay-logo/tai-len/" + "T" * 43 + "/xong", headers=_h("a@x"), json={"file_id": "F" * 20}).status_code == 404
+    assert tai.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"may_file_ids": ["F" * 20], "ten_bo": "Bộ"}).status_code == 404
+    assert tai.ss.goi == [] and tai.drive.goi == [] and not tai.db.exists()
+
+
+def test_tai_len_bat_200_khi_bat_cho_moi_nguoi_dung(tai):
+    r = tai.get("/api/thay-logo/tai-len/bat", headers=_h("a@x"))
+    assert r.status_code == 200 and r.json() == {}
+
+
+def test_tao_phien_201_origin_gui_google_la_env_chuan_hoa(tai):
+    r = tai.post(PHIEN, headers={**_h("a@x"), "Origin": "https://VIDEO.nobidigital.asia"}, json=_khai())
+    assert r.status_code == 201, r.content  # env có `/` cuối + hoa, request khác hoa ⇒ KHÔNG 403 nhầm (đột biến "so thô" ⇒ ĐỎ)
+    assert set(r.json()) == {"token", "url_phien"} and r.json()["url_phien"].startswith("https://www.googleapis.com/")
+    assert tai.ss.goi[0]["headers"]["Origin"] == ORIGIN_CHUAN  # header gửi Google LUÔN = env chuẩn hoá
+
+
+def test_tao_phien_origin_la_403_va_khong_goi_google(tai):
+    """Đột biến: lấy Origin từ header request thay vì env ⇒ ĐỎ (201 + header lạ gửi Google)."""
+    r = tai.post(PHIEN, headers={**_h("a@x"), "Origin": "https://evil.example"}, json=_khai())
+    assert r.status_code == 403 and ORIGIN_CHUAN in r.json()["detail"]
+    assert tai.ss.goi == [] and tai.drive.goi == []
+
+
+def test_tao_phien_khong_co_origin_van_qua_va_van_gui_origin_cho_google(tai):
+    """Đột biến: tạo phiên không gửi Origin ⇒ ĐỎ (Google nhận file nhưng trình duyệt không đọc được 200 cuối — hỏng âm thầm)."""
+    r = tai.post(PHIEN, headers=_h("a@x"), json=_khai())  # urllib không tự gắn Origin
+    assert r.status_code == 201 and tai.ss.goi[0]["headers"]["Origin"] == ORIGIN_CHUAN
+
+
+@pytest.mark.parametrize("env", [None, "", "https://x.asia/duong-dan", "ftp://x.asia", "x.asia"])
+def test_tao_phien_env_origin_thieu_hoac_sai_thi_503(tai, monkeypatch, env):
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    if env is None:
+        monkeypatch.delenv(tai_len_phien.ENV_ORIGIN)
+    else:
+        monkeypatch.setenv(tai_len_phien.ENV_ORIGIN, env)
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 503
+    assert tai.ss.goi == []
+
+
+@pytest.mark.parametrize("sai", [{"size": 0}, {"size": -1}, {"size": "10"}, {"size": 500 * 1024 * 1024 + 1}, {"mime": "image/png"},
+                                 {"mime": None}, {"ten": ""}, {"ten": "x" * 201}])
+def test_tao_phien_khai_sai_thi_400(tai, sai):
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai(**sai)).status_code == 400
+    assert tai.ss.goi == []
+
+
+def test_tao_phien_drive_hoac_google_loi_thi_503_khong_ghi_phien(tai):
+    tai.ss.loi = ConnectionError("lỗi mạng")
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 503
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT count(*) FROM tl_phien_tai").fetchone()[0] == 0
+    tai.ss.loi = None
+    tai.box["w"].drive_tl = None
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 503
+    tai.box["w"] = None
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 409
+
+
+def test_tao_phien_tran_429_chung_tran_cho(tai, monkeypatch):
+    monkeypatch.setattr(thay_logo_routes, "TRAN_CHO_MOI_NGUOI", 2)
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 201
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 201
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 429
+    assert tai.post(PHIEN, headers=_h("b@x"), json=_khai()).status_code == 201
+
+
+def test_url_phien_khong_lot_stderr_log_hay_db_ke_ca_khi_loi_khong_boc(tai, caplog):
+    """Rò URL phiên kiểm ở CẢ `caplog` VÀ stderr tiến trình (`capfd`): traceback uvicorn đi stderr, `caplog` có thể xanh giả.
+    Đột biến: bỏ bọc exception ở `mo_phien` ⇒ 500 + traceback chứa `upload_id=` ⇒ ĐỎ."""
+    from phien_http_gia_thay_logo import SO_BI_MAT
+    caplog.set_level(logging.DEBUG)
+    tai.ss.loi = ConnectionError(f"HTTPSConnectionPool: url: /upload/drive/v3/files?uploadType=resumable&upload_id={SO_BI_MAT}")
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 503
+    tai.ss.loi = None
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 201  # đường thành công cũng không log URL
+    toan_bo = tai.capfd.readouterr()
+    for kenh in (caplog.text, toan_bo.out, toan_bo.err):
+        assert "upload_id=" not in kenh and SO_BI_MAT not in kenh
+    for f in tai.db.parent.glob("tl.db*"):
+        assert SO_BI_MAT.encode() not in f.read_bytes()
+
+
+def test_xong_chu_phien_200_va_lech_409_va_khong_co_404(tai):
+    r = tai.post(PHIEN, headers=_h("a@x"), json=_khai())
+    token = r.json()["token"]
+    duong = f"/api/thay-logo/tai-len/{token}/xong"
+    assert tai.post(duong, headers=_h("a@x"), json={"file_id": _len(tai, token, size=999)}).status_code == 409  # đột biến "bỏ kiểm size" ⇒ ĐỎ
+    assert tai.post(duong, headers=_h("a@x"), json={"file_id": _len(tai, token, the="TOKEN-KHAC-00000000000")}).status_code == 409  # "bỏ kiểm tl_phien" ⇒ ĐỎ
+    assert tai.post(duong, headers=_h("a@x"), json={"file_id": "../x"}).status_code == 400
+    assert tai.post(duong, headers=_h("a@x"), json={}).status_code == 400
+    fid = _len(tai, token)
+    assert tai.post(duong, headers=_h("a@x"), json={"file_id": fid}).json() == {"file_id": fid}
+    assert tai.post(duong, headers=_h("a@x"), json={"file_id": fid}).status_code == 200  # thử lại cùng file
+    assert tai.post("/api/thay-logo/tai-len/" + "Z" * 43 + "/xong", headers=_h("a@x"), json={"file_id": fid}).status_code == 404
+    assert tai.post("/api/thay-logo/tai-len/ngan/xong", headers=_h("a@x"), json={"file_id": fid}).status_code == 404
+
+
+def test_xong_nguoi_khac_va_admin_deu_403(tai):
+    """Đột biến: bỏ kiểm chủ phiên ⇒ ĐỎ; admin chốt phiên người khác ⇒ ĐỎ."""
+    token = tai.post(PHIEN, headers=_h("a@x"), json=_khai()).json()["token"]
+    fid = _len(tai, token)
+    duong = f"/api/thay-logo/tai-len/{token}/xong"
+    assert tai.post(duong, headers=_h("b@x"), json={"file_id": fid}).status_code == 403
+    assert tai.post(duong, headers=_h(ADMIN), json={"file_id": fid}).status_code == 403
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()[0] == "mo"
+
+
+def _tao_job_may(tai, nguoi, fids, **kw):
+    return tai.post("/api/thay-logo/jobs", headers=_h(nguoi), json={"may_file_ids": fids, "ten_bo": "Bộ máy", **kw})
+
+
+def test_jobs_may_file_ids_server_tu_tra_ten_token_va_ghi_nguon_may(tai):
+    token, fid = _phien_xong(tai)
+    r = _tao_job_may(tai, "a@x", [fid, fid], may_ten="ten-gia-tu-fe", ten="ten-gia")  # trường lạ của FE bị bỏ; trùng id ⇒ một video
+    assert r.status_code == 201, r.content
+    conn = nhat_ky.mo(tai.db)
+    rows = [json.loads(x[0]) for x in conn.execute("SELECT nguon FROM tl_job_video")]
+    assert rows == [{"kieu": "may", "file_id": fid, "token": token, "ten": "clip.mp4"}]
+    assert conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()[0] == "da_dung"
+    v = tai.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"]
+    assert len(v) == 1 and v[0]["ten_video"] == "clip.mp4" and v[0]["da_don"] is False  # tên ưu tiên `nguon.ten`, không "Video không tên"
+    assert tai.get("/api/thay-logo/bo", headers=_h("a@x")).json()["bo"][0]["nguon_kieu"] == "may"
+
+
+def test_videos_tra_co_da_don_khi_nguon_da_don(tai):
+    token, fid = _phien_xong(tai)
+    _tao_job_may(tai, "a@x", [fid])
+    conn = nhat_ky.mo(tai.db)
+    conn.execute("UPDATE tl_job_video SET nguon=json_set(nguon, '$.da_don', json('true'))")
+    conn.commit()
+    assert tai.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"][0]["da_don"] is True
+
+
+def test_jobs_mot_file_khong_vao_hai_luot_409(tai):
+    """Đột biến: 1 `file_id` cho 2 lượt ⇒ ĐỎ."""
+    token, fid = _phien_xong(tai)
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 201
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 409
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT count(*) FROM tl_job_video").fetchone()[0] == 1 and conn.execute("SELECT count(*) FROM tl_job").fetchone()[0] == 1
+
+
+def test_jobs_dung_lai_file_khi_moi_lan_truoc_loi(tai):
+    token, fid = _phien_xong(tai)
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 201
+    conn = nhat_ky.mo(tai.db)
+    conn.execute("UPDATE tl_job_video SET trang_thai='loi'")
+    conn.commit()
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 201
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 409
+
+
+def test_jobs_may_file_cua_nguoi_khac_admin_hoac_chua_chot_deu_403(tai):
+    token_a, fid_a = _phien_xong(tai, "a@x")
+    token_mo = tai.post(PHIEN, headers=_h("a@x"), json=_khai()).json()["token"]
+    fid_mo = _len(tai, token_mo)  # đã lên Drive nhưng CHƯA `/xong`
+    assert _tao_job_may(tai, "b@x", [fid_a]).status_code == 403
+    assert _tao_job_may(tai, ADMIN, [fid_a]).status_code == 403  # admin cũng không dùng phiên người khác
+    assert _tao_job_may(tai, "a@x", [fid_mo]).status_code == 403
+    assert _tao_job_may(tai, "a@x", ["N" * 20]).status_code == 403
+    assert _tao_job_may(tai, "a@x", ["../x"]).status_code == 400
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT count(*) FROM tl_job").fetchone()[0] == 0
+    assert conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token_a,)).fetchone()[0] == "xong"  # 403 không đổi trạng thái
+
+
+def test_jobs_tron_may_va_link_roi_mot_loi_thi_khong_doi_trang_thai_phien(tai):
+    """Một mục sai ⇒ cả lượt bị từ chối VÀ phiên `xong` không bị đổi thành `da_dung` (cùng giao dịch)."""
+    token, fid = _phien_xong(tai)
+    r = tai.post("/api/thay-logo/jobs", headers=_h("a@x"), json={"drive_file_ids": ["Z" * 20], "may_file_ids": [fid], "ten_bo": "B"})
+    assert r.status_code == 403
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()[0] == "xong"
+
+
+def test_jobs_may_tinh_vao_tran_cho(tai, monkeypatch):
+    t1, f1 = _phien_xong(tai)
+    t2, f2 = _phien_xong(tai)
+    monkeypatch.setattr(thay_logo_routes, "TRAN_CHO_MOI_NGUOI", 1)
+    assert _tao_job_may(tai, "a@x", [f1, f2]).status_code == 429  # 2 video mới > trần 1
+    conn = nhat_ky.mo(tai.db)
+    assert conn.execute("SELECT count(*) FROM tl_phien_tai WHERE trang_thai='xong'").fetchone()[0] == 2  # 429 không đổi phiên
+    assert _tao_job_may(tai, "a@x", [f1]).status_code == 201
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 429  # video chờ + phiên mở chung một trần
+
+
+def test_tao_phien_drive_treo_luc_tim_thu_muc_vao_thi_503_nhanh(tai):
+    """Tìm/tạo thư mục đầu vào chạy TRONG request: phải xin timeout ngắn (`ngan=True`). Drive giả: lời gọi KHÔNG xin ngắn thì treo 15 s
+    (như `_svc()` không timeout gặp Drive treo); xin ngắn thì ném `TimeoutError` (như httplib2 hết `TIMEOUT_LAY_MUC_GIAY`).
+    ĐỘT BIẾN: bỏ `ngan=True` ở `thu_muc_vao_cua` ⇒ request treo 15 s rồi 201 ⇒ ĐỎ."""
+    import threading
+    import time
+
+    goc = tai.drive.tim_con_theo_ten
+
+    def tim(cha_id, ten, *, ngan=False):
+        if not ngan:
+            threading.Event().wait(15)
+            return goc(cha_id, ten)
+        raise TimeoutError("timed out")
+
+    tai.drive.tim_con_theo_ten = tim
+    t0 = time.monotonic()
+    r = tai.post(PHIEN, headers=_h("a@x"), json=_khai())
+    assert r.status_code == 503, r.content
+    assert time.monotonic() - t0 < 10
+    assert tai.ss.goi == []  # không tạo phiên Google khi chưa có thư mục
