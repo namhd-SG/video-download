@@ -145,6 +145,17 @@ def test_nhan_hop_le_duoc_chuan_hoa_lower_va_giu(client, hop):
     assert hop.doc_ket_qua(4)["items"][0]["watermarks"] == [{"box_2d": [1, 2, 3, 4], "label": "learna-ai v2.0_x"}, {"box_2d": [5, 6, 7, 8]}]
 
 
+def test_mini_moi_nhan_payload_relay_cu_khong_nhan_khong_luot(client, hop):
+    """Thứ tự deploy: mini trước, relay sau. Giữa hai bước, relay CŨ (không gửi `label`, không `?luot`, không gọi /loi) vẫn nộp
+    được vào mini MỚI — không có cửa sổ mà mọi lượt nộp bị 400."""
+    ids = hop.tao_viec(5, [JPEG, JPEG])
+    kq_cu = {"items": [{"anh": ids[0], "man_ket": False, "watermarks": [{"box_2d": [10, 20, 30, 40]}]},
+                       {"anh": ids[1], "man_ket": True, "watermarks": []}]}
+    assert client.get(R + "/viec", headers=H).json() == {"viec": [{"job_id": 5, "anh": ids, "luot": 1}]}
+    assert client.post(R + "/ket-qua/5", headers=H, json=kq_cu).status_code == 204
+    assert hop.doc_ket_qua(5)["items"] == kq_cu["items"]
+
+
 def test_nhieu_luot_moi_luot_khoa_rieng_chi_mot_lan_nop(client, hop):
     ids1 = hop.tao_viec(8, [JPEG])
     with pytest.raises(LoiHopThu) as e:
