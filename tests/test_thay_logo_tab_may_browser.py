@@ -81,12 +81,13 @@ class GoogleGia:
         return route.fulfill(status=308, headers={**cors, "Range": f"bytes=0-{s['da'] - 1}"}, body="")
 
 
-def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=None, rong=1280, xong_loi=()):
+def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=None, rong=1280, xong_loi=(), cua_toi=None, cua_toi_loi=False, giu_cua_toi=False, bo_loi=False):
     monkeypatch.setattr(app_mod, "worker_thay_logo", object())
     ctx = br.new_context(viewport={"width": rong, "height": 900})
     ctx.add_cookies([{"name": "phien_may_chu", "value": "COOKIE-BI-MAT", "domain": "upload.google.test", "path": "/", "secure": True, "sameSite": "None"}])  # có cookie cho host Google: gửi kèm là LỘ ngay
     p = ctx.new_page()
     p.phien, p.xong, p.jobs, p.loi_js, p.google = [], [], [], [], google or GoogleGia()
+    p.cua_toi, p.cua_toi_goi, p.cua_toi_giu, p.bo = list(cua_toi or []), [], [], []   # `cua_toi` = sổ phiên `xong` phía máy chủ giả
     p.on("pageerror", lambda e: p.loi_js.append(str(e)))
 
     def phien(r):
@@ -100,7 +101,25 @@ def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=
         p.xong.append({"url": r.request.url, "body": json.loads(r.request.post_data)})
         if len(p.xong) in xong_loi:
             return _tra_json(r, {"detail": "Drive chưa thấy file này — thử lại sau vài giây."}, status=503)
+        ten, size = p.phien[-1]["ten"], p.phien[-1]["size"]
+        p.cua_toi.append({"token": re.search(r"/tai-len/([^/]+)/xong", r.request.url).group(1), "file_id": FILE_ID, "ten": ten, "size": size, "cap_nhat_luc": 1.0})
         _tra_json(r, {"file_id": FILE_ID})
+
+    def cua(r):
+        p.cua_toi_goi.append(1)
+        if cua_toi_loi:
+            return _tra_json(r, {"detail": "lỗi"}, status=500)
+        if giu_cua_toi:
+            p.cua_toi_giu.append(r)   # giữ im: test tự trả lời sau (mô phỏng GET về muộn)
+            return None
+        _tra_json(r, {"phien": list(p.cua_toi)})
+
+    def bo(r):
+        p.bo.append(re.search(r"/tai-len/([^/]+)/bo", r.request.url).group(1))
+        if bo_loi:   # True ⇒ 503 (tạm); số nguyên ⇒ đúng mã đó
+            return _tra_json(r, {"detail": "Drive bận"}, status=503 if bo_loi is True else int(bo_loi))
+        p.cua_toi[:] = [x for x in p.cua_toi if x["token"] != p.bo[-1]]
+        _tra_json(r, {"trang_thai": "bo_do"})
 
     def jobs(r):
         if r.request.method != "POST":
@@ -111,6 +130,8 @@ def _trang(br, goc, monkeypatch, *, google=None, bat=True, phien_loi=(), videos=
     p.route("**/api/thay-logo/tai-len/bat", lambda r: _tra_json(r, {}) if bat else r.fulfill(status=404, body="{}", content_type="application/json"))
     p.route("**/api/thay-logo/tai-len/phien", phien)
     p.route("**/api/thay-logo/tai-len/*/xong", xong)
+    p.route("**/api/thay-logo/tai-len/cua-toi", cua)
+    p.route("**/api/thay-logo/tai-len/*/bo", bo)
     p.route("**/api/thay-logo/jobs", jobs)
     if videos is not None:
         p.route("**/api/thay-logo/videos*", lambda r: _tra_json(r, {"videos": videos, "con_nua": False, "truoc_tiep": None, "thu_vien_loi": False}))
@@ -324,3 +345,183 @@ def test_khuc_hong_mai_ma_hoi_size_van_308_cung_range_thi_bao_loi_huu_han(may_ch
     p.wait_for_selector("#tl-tab-may .tl-may-loi", timeout=20000)
     assert "Google không nhận thêm dữ liệu" in p.locator("#tl-tab-may").inner_text()
     assert p.get_by_role("button", name="↻ Thử lại").count() == 1 and not p.loi_js
+
+
+# ---------------------------------------------------------------- phiên của tôi: khôi phục sau tải lại trang, Bỏ/Huỷ nhả chỗ
+F2 = "1GoogleFileIdZzYyXxWw"
+KHOI_PHUC = [{"token": "tokenkhoiphuc" + "a" * 30, "file_id": FILE_ID, "ten": "clip-khoi-phuc-1.mp4", "size": 5 * MB, "cap_nhat_luc": 2.0},
+             {"token": "tokenkhoiphuc" + "b" * 30, "file_id": F2, "ten": "clip-khoi-phuc-2.mov", "size": 12 * MB, "cap_nhat_luc": 1.0}]
+
+
+def _mo_tab_may(p):
+    p.wait_for_function("document.body.classList.contains('tl-co-may')")
+    p.locator("#tl-tabs [role=tab]").nth(2).click()
+    p.wait_for_selector("#tl-may-input", state="attached")
+
+
+def test_tai_lai_trang_khoi_phuc_dong_xong_tick_san_roi_tao_luot_dung_may_file_ids(may_chu, trinh_duyet, monkeypatch):
+    """GET /cua-toi trả 2 phiên ⇒ tab dựng lại 2 dòng "Đã tải xong", tick sẵn; tạo lượt gửi đúng 2 `may_file_ids` (KHÔNG ten/token).
+    ĐỘT BIẾN: FE không gọi cua-toi / không dựng dòng ⇒ ĐỎ; dựng dòng mà không tick vào `nhapChon` ⇒ may_file_ids rỗng ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC)
+    _cho_xong(p, 2)
+    assert p.cua_toi_goi == [1] and p.phien == [] and p.google.puts == []
+    chu = p.locator("#tl-tab-may").inner_text()
+    assert "clip-khoi-phuc-1.mp4" in chu and "clip-khoi-phuc-2.mov" in chu and "Đã tải xong" in chu
+    assert p.locator("#tl-tab-may .tl-may-xong input:checked").count() == 2 and "Đã chọn 2 video" in p.locator("#tl-dem").inner_text()
+    assert p.locator("#tl-tab-may .tl-may-xong").get_by_role("button", name="Bỏ").count() == 2
+    p.evaluate("document.getElementById('tl-vung').style.height = 'auto'")
+    _anh(p, "dot4-4-khoi-phuc-sau-tai-lai-1280.png")
+    p.locator("#tl-tao").click()
+    for _ in range(40):
+        if p.jobs:
+            break
+        p.wait_for_timeout(50)
+    gui = p.jobs[0]
+    assert sorted(gui["may_file_ids"]) == sorted([FILE_ID, F2]) and gui["drive_file_ids"] == []
+    assert set(gui) == {"drive_file_ids", "ten_bo", "may_file_ids"} and not p.loi_js
+
+
+def test_tai_xong_roi_tai_lai_trang_van_con_dong_xong(may_chu, trinh_duyet, monkeypatch):
+    """Cả vòng: tải file (máy chủ giả ghi phiên `xong`) ⇒ `reload` (mất hết bộ nhớ JS) ⇒ dòng xong dựng lại từ máy chủ, tick sẵn."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch)
+    _file(p, "truoc-khi-tai-lai.mp4", 2 * MB)
+    _cho_xong(p)
+    p.reload()
+    p.wait_for_function("document.querySelectorAll('#tl-tabs [role=tab]').length === 4")
+    _mo_tab_may(p)
+    _cho_xong(p)
+    assert "truoc-khi-tai-lai.mp4" in p.locator("#tl-tab-may").inner_text() and len(p.cua_toi_goi) == 2
+    assert p.locator("#tl-tab-may .tl-may-xong input:checked").count() == 1 and not p.loi_js
+
+
+def test_khoi_phuc_khong_trung_dong_vua_tai_xong_trong_trang(may_chu, trinh_duyet, monkeypatch):
+    """GET /cua-toi về MUỘN (sau khi file vừa tải xong trong trang này) và chứa chính phiên đó ⇒ vẫn đúng 1 dòng. ĐỘT BIẾN: bỏ kiểm trùng token/file_id ⇒ 2 dòng ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, giu_cua_toi=True)
+    _file(p, "vua-tai-xong.mp4", 2 * MB)
+    _cho_xong(p)
+    (giu,) = p.cua_toi_giu
+    _tra_json(giu, {"phien": list(p.cua_toi) + [KHOI_PHUC[1]]})   # phiên vừa tải + một phiên cũ khác
+    _cho_xong(p, 2)
+    ten = p.locator("#tl-tab-may .tl-may-ten").all_inner_texts()
+    assert sorted(ten) == ["clip-khoi-phuc-2.mov", "vua-tai-xong.mp4"], ten
+
+
+def test_bo_tren_dong_khoi_phuc_goi_bo_va_go_dong(may_chu, trinh_duyet, monkeypatch):
+    """ĐỘT BIẾN: nút Bỏ chỉ gỡ dòng, không POST /bo ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC)
+    _cho_xong(p, 2)
+    p.locator("#tl-tab-may .tl-may-xong").first.get_by_role("button", name="Bỏ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-xong').length === 1")
+    p.wait_for_timeout(200)
+    assert p.bo == [KHOI_PHUC[0]["token"]] and "Đã chọn 1 video" in p.locator("#tl-dem").inner_text() and not p.loi_js
+
+
+def test_huy_dong_dang_tai_da_co_token_abort_xhr_roi_goi_bo(may_chu, trinh_duyet, monkeypatch):
+    """Khúc đầu bị giữ (đang bay) ⇒ bấm Huỷ ⇒ XHR bị abort (Google không nhận thêm khúc nào) VÀ POST /bo token của phiên. ĐỘT BIẾN: Huỷ không gọi /bo ⇒ ĐỎ; Huỷ không abort XHR ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch)
+    p.google.giu[f"{BI_MAT}1"] = 1
+    huy_mang = []
+    p.on("requestfailed", lambda r: huy_mang.append(r.url) if r.url.startswith(GOOGLE) else None)
+    _file(p, "se-huy-co-bo.mp4", 2 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-dang")
+    for _ in range(40):
+        if p.google.puts:
+            break
+        p.wait_for_timeout(50)
+    p.get_by_role("button", name="Huỷ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    for _ in range(40):
+        if p.bo:
+            break
+        p.wait_for_timeout(50)
+    assert p.bo == [f"{TOKEN}1"] and len(p.google.du_lieu) == 1 and p.xong == [] and not p.loi_js
+    assert len(huy_mang) == 1 and BI_MAT in huy_mang[0], huy_mang   # XHR đang bay bị abort thật (không chỉ dòng biến mất)
+
+
+def test_bo_truot_mang_thu_lai_mot_lan_roi_bao_chu_ngan_va_van_go_dong(may_chu, trinh_duyet, monkeypatch):
+    """/bo luôn 503 ⇒ thử đúng 2 lần, dòng vẫn gỡ, hiện chữ ngắn (không im lặng sai)."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC[:1], bo_loi=True)
+    _cho_xong(p)
+    p.locator("#tl-tab-may .tl-may-xong").get_by_role("button", name="Bỏ").click()
+    p.wait_for_selector("#tl-tab-may .tl-may-tb:not([hidden])", timeout=8000)
+    assert len(p.bo) == 2 and "Chưa báo được máy chủ bỏ file clip-khoi-phuc-1.mp4" in p.locator("#tl-tab-may .tl-may-tb").inner_text()
+    assert p.locator("#tl-tab-may .tl-may-the").count() == 0
+
+
+def test_cua_toi_loi_thi_bo_qua_yen_lang_khong_chan_tab_khong_lap(may_chu, trinh_duyet, monkeypatch):
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi_loi=True)
+    p.wait_for_timeout(500)
+    assert p.cua_toi_goi == [1] and p.locator("#tl-tab-may .tl-may-the").count() == 0 and not p.loi_js
+    _file(p, "van-tai-duoc.mp4", 2 * MB)   # tab vẫn dùng bình thường
+    _cho_xong(p)
+    assert p.cua_toi_goi == [1]
+
+
+@pytest.mark.parametrize("ma", [403, 404, 409])
+def test_bo_nhan_4xx_dut_khoat_thi_khong_thu_lai_khong_bao_chu(may_chu, trinh_duyet, monkeypatch, ma):
+    """`/bo` trả 403/404/409 = máy chủ đã trả lời dứt khoát ⇒ đúng 1 lần gọi, không hiện "Chưa báo được máy chủ…".
+    ĐỘT BIẾN: thử lại / báo chữ cả với 4xx (chỉ coi `r.ok` là xong) ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC[:1], bo_loi=ma)
+    _cho_xong(p)
+    p.locator("#tl-tab-may .tl-may-xong").get_by_role("button", name="Bỏ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    p.wait_for_timeout(2500)   # dài hơn nhịp thử lại (1 s) để một lần thử lại nếu có kịp xảy ra
+    assert len(p.bo) == 1 and "Chưa báo được" not in p.locator("#tl-tab-may").inner_text() and not p.loi_js
+
+
+def test_huy_luc_post_phien_con_chay_token_ve_sau_van_goi_bo(may_chu, trinh_duyet, monkeypatch):
+    """Huỷ khi `POST /tai-len/phien` chưa trả (chưa có token) ⇒ token về sau phải được báo bỏ, và không PUT dữ liệu nào lên Google.
+    ĐỘT BIẾN: bỏ `baoBo(m)` trong `catch` của `chay` ⇒ `/bo` không bao giờ được gọi ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch)
+    giu = []
+    p.unroute("**/api/thay-logo/tai-len/phien")
+    p.route("**/api/thay-logo/tai-len/phien", lambda r: giu.append(r))   # giữ im: phiên "đang được tạo"
+    _file(p, "huy-som.mp4", 2 * MB)
+    for _ in range(40):
+        if giu:
+            break
+        p.wait_for_timeout(50)
+    assert len(giu) == 1 and p.bo == []
+    p.get_by_role("button", name="Huỷ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    _tra_json(giu[0], {"token": f"{TOKEN}1", "url_phien": _url_phien(1)}, status=201)   # token về MUỘN, sau khi đã Huỷ
+    for _ in range(40):
+        if p.bo:
+            break
+        p.wait_for_timeout(50)
+    p.wait_for_timeout(300)
+    assert p.bo == [f"{TOKEN}1"] and p.google.puts == [] and p.xong == [] and not p.loi_js
+
+
+def test_thu_lai_tao_phien_moi_bao_bo_token_cu_dung_mot_lan(may_chu, trinh_duyet, monkeypatch):
+    """Google 404 giữa chừng (phiên chết) ⇒ Thử lại mở phiên MỚI ⇒ token cũ phải được `/bo` đúng 1 lần, token mới thì KHÔNG bị báo bỏ.
+    ĐỘT BIẾN: bỏ `baoBo` trước khi ghi đè token ⇒ `/bo` không được gọi cho token cũ ⇒ ĐỎ; không đặt lại `daBao` ⇒ token mới bị
+    bỏ qua khi Huỷ về sau (xem test kế)."""
+    gg = GoogleGia(hook=lambda g, s, info: (404, {}, "") if info["up"] == f"{BI_MAT}1" else None)
+    p = _trang(trinh_duyet, may_chu, monkeypatch, google=gg)
+    _file(p, "phien-chet.mp4", 2 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-loi")
+    assert p.bo == []
+    p.get_by_role("button", name="↻ Thử lại").click()
+    _cho_xong(p)
+    p.wait_for_timeout(300)
+    assert len(p.phien) == 2 and p.bo == [f"{TOKEN}1"], p.bo
+    assert p.xong[-1]["url"].endswith(f"/tai-len/{TOKEN}2/xong") and not p.loi_js
+
+
+def test_thu_lai_tao_phien_moi_roi_huy_thi_bao_bo_token_moi(may_chu, trinh_duyet, monkeypatch):
+    """Sau khi thay token, cờ đã-báo phải sạch: Huỷ phiên mới ⇒ `/bo` cho token MỚI. ĐỘT BIẾN: không đặt lại `m.daBao = false` ⇒ ĐỎ."""
+    gg = GoogleGia(hook=lambda g, s, info: (404, {}, "") if info["up"] == f"{BI_MAT}1" else None, giu={f"{BI_MAT}2": 1})
+    p = _trang(trinh_duyet, may_chu, monkeypatch, google=gg)
+    _file(p, "phien-chet-roi-huy.mp4", 2 * MB)
+    p.wait_for_selector("#tl-tab-may .tl-may-loi")
+    p.get_by_role("button", name="↻ Thử lại").click()
+    for _ in range(60):
+        if gg.da_giu:
+            break
+        p.wait_for_timeout(50)
+    assert gg.da_giu and len(p.phien) == 2
+    p.get_by_role("button", name="Huỷ").click()
+    p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
+    p.wait_for_timeout(400)
+    assert p.bo == [f"{TOKEN}1", f"{TOKEN}2"], p.bo

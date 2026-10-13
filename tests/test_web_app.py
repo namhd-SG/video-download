@@ -660,6 +660,10 @@ KHONG_CAN_KIEM_CHU = {
                                          "(tests/test_thay_logo_routes_member.py, có đột biến)",
     "POST /api/thay-logo/tai-len/{token}/xong": "`tai_len_phien.xac_nhan_xong`: CHỈ chủ phiên (admin cũng 403) + đối chiếu file trên Drive "
                                                 "(tests/test_thay_logo_routes_member.py, có đột biến)",
+    "GET /api/thay-logo/tai-len/cua-toi": "`tai_len_phien.liet_ke_cua_toi` lọc `email = require_user` NGAY trong SELECT (admin cũng chỉ thấy của mình) "
+                                          "(tests/test_thay_logo_routes_member.py, có đột biến)",
+    "POST /api/thay-logo/tai-len/{token}/bo": "`tai_len_phien.bo_phien`: CHỈ chủ phiên (admin cũng 403), UPDATE ràng `email` + trạng thái "
+                                              "(tests/test_thay_logo_routes_member.py, có đột biến)",
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",

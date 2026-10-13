@@ -954,3 +954,105 @@ def test_tao_phien_drive_treo_luc_tim_thu_muc_vao_thi_503_nhanh(tai):
     assert r.status_code == 503, r.content
     assert time.monotonic() - t0 < 10
     assert tai.ss.goi == []  # không tạo phiên Google khi chưa có thư mục
+
+
+# ---------------------------------------------------------------- phiên của tôi: liệt kê + bỏ
+CUA_TOI = "/api/thay-logo/tai-len/cua-toi"
+
+
+def _bo_phien(tai, nguoi, token):
+    return tai.post(f"/api/thay-logo/tai-len/{token}/bo", headers=_h(nguoi))
+
+
+def _tt(tai, token):
+    return nhat_ky.mo(tai.db).execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()[0]
+
+
+def test_cua_toi_va_bo_co_tat_thi_404(tai, monkeypatch):
+    """ĐỘT BIẾN: bỏ `_cong()` ở một trong hai route ⇒ ĐỎ."""
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    monkeypatch.delenv(tai_len_phien.ENV_BAT)
+    assert tai.get(CUA_TOI, headers=_h("a@x")).status_code == 404
+    assert _bo_phien(tai, "a@x", "T" * 43).status_code == 404
+    assert tai.drive.goi == [] and not tai.db.exists()
+
+
+def test_cua_toi_chi_phien_xong_cua_chinh_minh_khong_lo_url_hay_thu_muc(tai):
+    """ĐỘT BIẾN: liệt kê phiên người khác / phiên không phải `xong` ⇒ ĐỎ; thêm `url_phien`/`upload_id`/`thu_muc_id` vào response ⇒ ĐỎ."""
+    from phien_http_gia_thay_logo import SO_BI_MAT, URL_BI_MAT
+    t1, f1 = _phien_xong(tai, "a@x")
+    _phien_xong(tai, "b@x")
+    _phien_xong(tai, ADMIN)
+    t_mo = tai.post(PHIEN, headers=_h("a@x"), json=_khai()).json()["token"]   # `mo`
+    r = tai.get(CUA_TOI, headers=_h("a@x"))
+    assert r.status_code == 200
+    ds = r.json()["phien"]
+    assert [(d["token"], d["file_id"]) for d in ds] == [(t1, f1)] and t_mo not in r.content.decode()
+    assert set(ds[0]) == {"token", "file_id", "ten", "size", "cap_nhat_luc"} and ds[0]["ten"] == "clip.mp4" and ds[0]["size"] == 1000
+    for cam in ("url_phien", "upload_id", "thu_muc_id", "googleapis", SO_BI_MAT, URL_BI_MAT):
+        assert cam not in r.content.decode()
+    assert len(tai.get(CUA_TOI, headers=_h(ADMIN)).json()["phien"]) == 1   # admin cũng chỉ thấy của mình
+    assert tai.get(CUA_TOI, headers=_h("c@x")).json() == {"phien": []}
+
+
+def test_bo_phien_xong_va_mo_200_idempotent(tai):
+    t_xong, _ = _phien_xong(tai)
+    t_mo = tai.post(PHIEN, headers=_h("a@x"), json=_khai()).json()["token"]
+    for t in (t_xong, t_mo):
+        assert _bo_phien(tai, "a@x", t).json() == {"trang_thai": "bo_do"} and _tt(tai, t) == "bo_do"
+        assert _bo_phien(tai, "a@x", t).status_code == 200
+    assert tai.get(CUA_TOI, headers=_h("a@x")).json() == {"phien": []}   # bỏ rồi ⇒ không dựng lại sau tải lại trang
+
+
+def test_bo_phien_nguoi_khac_va_admin_403_khong_doi_trang_thai_404_khong_co(tai):
+    """ĐỘT BIẾN: bỏ kiểm email (B/admin bỏ phiên của A) ⇒ ĐỎ."""
+    token, _ = _phien_xong(tai, "a@x")
+    assert _bo_phien(tai, "b@x", token).status_code == 403
+    assert _bo_phien(tai, ADMIN, token).status_code == 403
+    assert _tt(tai, token) == "xong"
+    assert _bo_phien(tai, "a@x", "Z" * 43).status_code == 404
+    assert _bo_phien(tai, "a@x", "ngan").status_code == 404
+
+
+def test_bo_phien_da_dung_dang_don_da_don_409(tai):
+    """ĐỘT BIẾN: cho bỏ phiên `da_dung` (UPDATE không ràng trạng thái) ⇒ ĐỎ: file đang nằm trong một lượt sẽ bị dọn dưới chân lượt."""
+    token, fid = _phien_xong(tai)
+    assert _tao_job_may(tai, "a@x", [fid]).status_code == 201
+    assert _tt(tai, token) == "da_dung" and _bo_phien(tai, "a@x", token).status_code == 409 and _tt(tai, token) == "da_dung"
+    conn = nhat_ky.mo(tai.db)
+    for tt in ("dang_don", "da_don"):
+        conn.execute("UPDATE tl_phien_tai SET trang_thai=? WHERE token=?", (tt, token))
+        conn.commit()
+        assert _bo_phien(tai, "a@x", token).status_code == 409 and _tt(tai, token) == tt
+
+
+def test_bo_phien_nha_tran_429(tai, monkeypatch):
+    """ĐỘT BIẾN: `bo` không đổi trạng thái ⇒ vẫn 429 ⇒ ĐỎ."""
+    monkeypatch.setattr(thay_logo_routes, "TRAN_CHO_MOI_NGUOI", 2)
+    t1, _ = _phien_xong(tai)
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 201
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 429
+    assert _bo_phien(tai, "a@x", t1).status_code == 200
+    assert tai.post(PHIEN, headers=_h("a@x"), json=_khai()).status_code == 201
+
+
+def test_bo_phien_xong_roi_thread_don_trash_file(tai):
+    """Cả đường: bỏ phiên `xong` có file qua route ⇒ request không đụng Drive ⇒ một lượt `don_mot_luot` ⇒ file vào thùng rác."""
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    token, fid = _phien_xong(tai)
+    goi = len(tai.drive.goi)
+    assert _bo_phien(tai, "a@x", token).status_code == 200 and len(tai.drive.goi) == goi and tai.drive.muc[fid]["trashed"] is False
+    conn = nhat_ky.mo(tai.db)
+    assert tai_len_phien.don_mot_luot(conn, tai.drive)["bo_do_co_file"] == 1
+    assert tai.drive.muc[fid]["trashed"] is True and _tt(tai, token) == "da_don"
+    conn.close()
+
+
+def test_bo_phien_da_bo_do_cua_nguoi_khac_van_403_khong_phai_200_idempotent(tai):
+    """ĐỘT BIẾN: đưa lối tắt idempotent `bo_do ⇒ 200` lên TRƯỚC kiểm chủ phiên ⇒ B (và admin) thấy 200 trên token đã bỏ của A ⇒ ĐỎ."""
+    token, _ = _phien_xong(tai, "a@x")
+    assert _bo_phien(tai, "a@x", token).status_code == 200 and _tt(tai, token) == "bo_do"
+    assert _bo_phien(tai, "b@x", token).status_code == 403
+    assert _bo_phien(tai, ADMIN, token).status_code == 403
+    assert _tt(tai, token) == "bo_do"
+    assert _bo_phien(tai, "a@x", token).status_code == 200   # chủ phiên vẫn idempotent

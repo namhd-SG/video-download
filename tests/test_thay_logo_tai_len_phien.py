@@ -593,3 +593,162 @@ def test_dang_ky_route_log_loi_luc_khoi_dong_khi_co_bat_ma_origin_sai(monkeypatc
     r.dang_ky(FastAPI(), lay_log_db=lambda: None, require_user=lambda: "a", lay_worker=lambda: None, lay_tran_cho=lambda: 1,
               mau_file_id=re.compile("."))
     assert caplog.text == ""
+
+
+# ---------------------------------------------------------------- phiên của tôi: liệt kê + bỏ
+def test_liet_ke_cua_toi_chi_phien_xong_cua_chinh_minh_moi_nhat_truoc_co_tran(mt):
+    """ĐỘT BIẾN: bỏ `email=?` ⇒ thấy phiên người khác ⇒ ĐỎ; bỏ `trang_thai='xong'` ⇒ thấy phiên `mo`/`da_dung` ⇒ ĐỎ; bỏ ORDER/LIMIT ⇒ ĐỎ."""
+    t1, f1 = _phien_xong(mt, "a@x")
+    t2, f2 = _phien_xong(mt, "a@x")
+    t3, f3 = _phien_xong(mt, "a@x")
+    _phien_xong(mt, "b@x")                       # của người khác
+    _mo(mt, "a@x")                               # `mo`: chưa tải xong
+    t_dung, _ = _phien_xong(mt, "a@x")
+    mt.conn.execute("UPDATE tl_phien_tai SET trang_thai='da_dung' WHERE token=?", (t_dung,))
+    mt.conn.commit()
+    t_cu, _ = _phien_xong(mt, "a@x")
+    mt.conn.execute("UPDATE tl_phien_tai SET cap_nhat_luc=? WHERE token=?", (1_000_000_000 - 2 * NGAY, t_cu))   # quá 24 h: sắp bị dọn ⇒ không dựng lại
+    for i, t in enumerate((t1, t2, t3)):
+        mt.conn.execute("UPDATE tl_phien_tai SET cap_nhat_luc=? WHERE token=?", (1_000_000_000 + i, t))
+    mt.conn.commit()
+    ds = tl.liet_ke_cua_toi(mt.conn, "a@x", 10, bay_gio=1_000_000_000 + 100)
+    assert [d["token"] for d in ds] == [t3, t2, t1]
+    assert set(ds[0]) == {"token", "file_id", "ten", "size", "cap_nhat_luc"} and ds[0]["file_id"] == f3
+    assert [d["token"] for d in tl.liet_ke_cua_toi(mt.conn, "a@x", 2, bay_gio=1_000_000_000 + 100)] == [t3, t2]
+    assert tl.liet_ke_cua_toi(mt.conn, "nguoi-la@x", 10) == []
+
+
+def test_bo_phien_mo_va_xong_ve_bo_do_idempotent_va_chi_dong_cua_minh(mt):
+    """ĐỘT BIẾN: bỏ `AND trang_thai IN ('mo','xong')` khỏi UPDATE ⇒ `da_dung` bị đổi ⇒ ĐỎ (test 409)."""
+    t_mo = _mo(mt, "a@x")["token"]
+    t_xong, _ = _phien_xong(mt, "a@x")
+    assert tl.bo_phien(mt.conn, "a@x", t_mo) == "bo_do" and tl.bo_phien(mt.conn, "a@x", t_xong) == "bo_do"
+    assert tl.bo_phien(mt.conn, "a@x", t_xong) == "bo_do"                      # idempotent
+    assert _hang(mt, t_mo)["trang_thai"] == _hang(mt, t_xong)["trang_thai"] == "bo_do"
+
+
+def test_bo_phien_404_403_409(mt):
+    token, _ = _phien_xong(mt, "a@x")
+    with pytest.raises(tl.LoiPhien) as e:
+        tl.bo_phien(mt.conn, "a@x", "khong-co-token-nay-0000")
+    assert e.value.ma == 404
+    with pytest.raises(tl.LoiPhien) as e:
+        tl.bo_phien(mt.conn, "b@x", token)
+    assert e.value.ma == 403 and _hang(mt, token)["trang_thai"] == "xong"
+    for tt in ("da_dung", "dang_don", "da_don"):
+        mt.conn.execute("UPDATE tl_phien_tai SET trang_thai=? WHERE token=?", (tt, token))
+        mt.conn.commit()
+        with pytest.raises(tl.LoiPhien) as e:
+            tl.bo_phien(mt.conn, "a@x", token)
+        assert e.value.ma == 409 and _hang(mt, token)["trang_thai"] == tt
+
+
+def test_bo_phien_nha_tran_429_ngay(mt):
+    """ĐỘT BIẾN: `bo_phien` không đổi trạng thái (hoặc đổi sang trạng thái vẫn tính giữ chỗ) ⇒ vẫn 429 ⇒ ĐỎ."""
+    t1, _ = _phien_xong(mt, "a@x")
+    t2 = _mo(mt, "a@x", tran=2)["token"]
+    with pytest.raises(tl.LoiPhien) as e:
+        _mo(mt, "a@x", tran=2)
+    assert e.value.ma == 429
+    tl.bo_phien(mt.conn, "a@x", t1)
+    assert tl.dem_phien_giu_cho(mt.conn, "a@x", __import__("time").time()) == 1
+    assert _mo(mt, "a@x", tran=2)["token"]
+    tl.bo_phien(mt.conn, "a@x", t2)
+
+
+def test_bo_phien_xong_co_file_thi_mot_luot_don_dua_file_vao_thung_rac(mt):
+    """Không gọi Drive trong request `bo`; thread dọn trash THẲNG theo `file_id` của phiên `bo_do` rồi ghi `da_don`."""
+    token, fid = _phien_xong(mt, "a@x")
+    goi_truoc = len(mt.drive.goi)
+    tl.bo_phien(mt.conn, "a@x", token)
+    assert len(mt.drive.goi) == goi_truoc and mt.drive.muc[fid]["trashed"] is False   # request bo không đụng Drive
+    kq = tl.don_mot_luot(mt.conn, mt.drive)
+    assert kq["bo_do_co_file"] == 1 and mt.drive.muc[fid]["trashed"] is True
+    assert _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def _bo_do_nam_ngoai_lan_doc(mt, monkeypatch):
+    """Thư mục vào có nhiều file hơn trần liệt kê (hạ còn 2); file của phiên `bo_do` nằm NGOÀI lần đọc (các file khác xếp trước)."""
+    monkeypatch.setattr(tl, "TRAN_LIET_KE_THE", 2)
+    token, fid = _phien_xong(mt, "a@x")
+    tren = [_phien_xong(mt, "a@x")[1] for _ in range(2)]      # cùng người ⇒ cùng thư mục; 2 file xếp trước ⇒ lần đọc 2 con không chạm tới `fid`
+    mt.drive.muc[fid] = mt.drive.muc.pop(fid)                  # dời `fid` xuống cuối thứ tự duyệt
+    assert [m["id"] for m in mt.drive.liet_ke_con(_hang(mt, token)["thu_muc_id"], 2)] == tren
+    tl.bo_phien(mt.conn, "a@x", token)
+    return token, fid
+
+
+def test_phien_bo_do_co_file_ngoai_tran_liet_ke_van_bi_trash_theo_file_id(mt, monkeypatch):
+    """ĐỘT BIẾN: bỏ `_don_bo_do_co_file` khỏi `don_mot_luot` ⇒ quét theo thẻ không thấy file ⇒ ĐỎ."""
+    token, fid = _bo_do_nam_ngoai_lan_doc(mt, monkeypatch)
+    tl.don_mot_luot(mt.conn, mt.drive)
+    assert mt.drive.muc[fid]["trashed"] is True and _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def test_phien_bo_do_trash_truot_thi_ve_bo_do_roi_thu_lai_khong_ghi_da_don_truoc(mt, monkeypatch):
+    """ĐỘT BIẾN: ghi `da_don` TRƯỚC trash (trash trượt vẫn đánh dấu) ⇒ ĐỎ."""
+    token, fid = _bo_do_nam_ngoai_lan_doc(mt, monkeypatch)
+    mt.drive.loi[("vao_thung_rac", "*")] = RuntimeError("Drive 500")
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 0
+    assert _hang(mt, token)["trang_thai"] == "bo_do" and mt.drive.muc[fid]["trashed"] is False
+    del mt.drive.loi[("vao_thung_rac", "*")]
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 1
+    assert _hang(mt, token)["trang_thai"] == "da_don" and mt.drive.muc[fid]["trashed"] is True
+
+
+def test_phien_bo_do_file_da_mat_404_coi_nhu_da_don(mt):
+    token, fid = _phien_xong(mt, "a@x")
+    tl.bo_phien(mt.conn, "a@x", token)
+    del mt.drive.muc[fid]
+    assert tl.don_mot_luot(mt.conn, mt.drive)["bo_do_co_file"] == 1
+    assert _hang(mt, token)["trang_thai"] == "da_don"
+
+
+def test_khoa_dang_don_cu_cua_phien_bo_do_tra_ve_bo_do_khong_song_lai_thanh_xong(mt):
+    """ĐỘT BIẾN: `_phuc_hoi_khoa_cu` trả `xong` cho khoá bắt đầu từ `bo_do` ⇒ phiên đã bỏ sống lại ⇒ ĐỎ."""
+    token, _ = _phien_xong(mt, "a@x")
+    tl.bo_phien(mt.conn, "a@x", token)
+    assert tl._giu(mt.conn, token, "bo_do", 1000.0)
+    assert _hang(mt, token)["trang_thai"] == "dang_don"
+    kq = tl._phuc_hoi_khoa_cu(mt.conn, 1000.0 + 3600)
+    assert kq == 1 and _hang(mt, token)["trang_thai"] == "bo_do"
+
+
+def test_khoi_tao_them_cot_dang_don_tu_vao_db_cu(tmp_path):
+    conn = nhat_ky.mo(tmp_path / "cu.db")
+    conn.executescript("CREATE TABLE tl_phien_tai (token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, "
+                       "mime TEXT NOT NULL, md5 TEXT, thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT, "
+                       "trang_thai TEXT NOT NULL DEFAULT 'mo' CHECK (trang_thai IN ('mo','xong','da_dung','da_don','bo_do','dang_don')));")
+    tl.khoi_tao(conn)
+    tl.khoi_tao(conn)  # chạy lại không lỗi
+    assert "dang_don_tu" in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)")}
+    conn.close()
+
+
+def test_khoi_tao_hai_ket_noi_cung_them_cot_khong_loi(tmp_path):
+    """Khởi động đầu sau deploy: thread dọn và một request cùng thấy thiếu `dang_don_tu` rồi cùng ALTER ⇒ bên chậm gặp "duplicate column".
+    Chen tất định: B đọc PRAGMA (thiếu cột) ⇒ A thêm cột ⇒ B mới ALTER. Đột biến: bỏ bắt "duplicate column" ⇒ OperationalError ⇒ ĐỎ."""
+    db = tmp_path / "cu.db"
+    a = nhat_ky.mo(db)
+    a.executescript("CREATE TABLE tl_phien_tai (token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, "
+                    "mime TEXT NOT NULL, md5 TEXT, thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT, "
+                    "trang_thai TEXT NOT NULL DEFAULT 'mo' CHECK (trang_thai IN ('mo','xong','da_dung','da_don','bo_do','dang_don')));")
+    b = nhat_ky.mo(db)
+
+    class BCham:
+        """Kết nối B: trả kết quả PRAGMA đọc TRƯỚC khi A kịp thêm cột (cửa sổ giữa kiểm và ALTER)."""
+
+        def __getattr__(self, ten):
+            return getattr(b, ten)
+
+        def execute(self, sql, *args):
+            if sql.startswith("PRAGMA table_info"):
+                cu = b.execute(sql, *args).fetchall()
+                tl.khoi_tao(a)  # A thêm cột đúng lúc này
+                return type("KQ", (), {"fetchall": staticmethod(lambda: cu)})()
+            return b.execute(sql, *args)
+
+    tl.khoi_tao(BCham())
+    assert "dang_don_tu" in {r[1] for r in b.execute("PRAGMA table_info(tl_phien_tai)")}
+    a.close()
+    b.close()

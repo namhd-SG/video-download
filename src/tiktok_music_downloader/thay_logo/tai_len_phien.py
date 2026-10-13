@@ -10,8 +10,10 @@ Mọi exception trên đường gọi Google chỉ được log bằng `mo_ta_lo
 
 Máy trạng thái phiên (CHECK ở schema):
   mo → xong → da_dung → da_don          (da_dung → xong KHÔNG có; dùng lại file sau lỗi giữ nguyên da_dung)
-  mo → bo_do · xong → bo_do             (quá 24 h chưa thành lượt)
-  dang_don: khoá của tác vụ dọn trong lúc trash (từ mo | xong | da_dung); trash trượt ⇒ trả về trạng thái cũ.
+  mo → bo_do · xong → bo_do             (quá 24 h chưa thành lượt, hoặc người dùng bỏ)
+  bo_do (đã có file_id) → dang_don → da_don   (trash THẲNG theo file_id; không phụ thuộc quét theo thẻ bị chặn bởi trần liệt kê)
+  dang_don: khoá của tác vụ dọn trong lúc trash (từ mo | xong | da_dung | bo_do); trash trượt ⇒ trả về trạng thái cũ
+  (cột `dang_don_tu` ghi trạng thái trước khoá để khoá chết giữa chừng trả đúng chỗ).
 Dọn LUÔN: khoá `dang_don` (UPDATE có điều kiện) ⇒ trash ⇒ ghi trạng thái cuối. Ghi mốc SAU việc nó khẳng định.
 """
 from __future__ import annotations
@@ -21,6 +23,7 @@ import logging
 import os
 import re
 import secrets
+import sqlite3
 import time
 from urllib.parse import urlsplit
 
@@ -49,7 +52,7 @@ CREATE TABLE IF NOT EXISTS tl_phien_tai (
   token TEXT PRIMARY KEY, email TEXT NOT NULL, ten TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL, md5 TEXT,
   thu_muc_id TEXT NOT NULL, tao_luc REAL NOT NULL, cap_nhat_luc REAL NOT NULL, file_id TEXT,
   trang_thai TEXT NOT NULL DEFAULT 'mo'
-    CHECK (trang_thai IN ('mo', 'xong', 'da_dung', 'da_don', 'bo_do', 'dang_don')));
+    CHECK (trang_thai IN ('mo', 'xong', 'da_dung', 'da_don', 'bo_do', 'dang_don')), dang_don_tu TEXT);
 CREATE INDEX IF NOT EXISTS ix_tl_phien_tai_email ON tl_phien_tai(email, trang_thai);
 CREATE INDEX IF NOT EXISTS ix_tl_phien_tai_file ON tl_phien_tai(file_id);
 """
@@ -69,6 +72,12 @@ def dang_bat() -> bool:
 
 def khoi_tao(conn) -> None:
     conn.executescript(SCHEMA)
+    if "dang_don_tu" not in {r[1] for r in conn.execute("PRAGMA table_info(tl_phien_tai)").fetchall()}:  # DB tạo trước khi có cột
+        try:
+            conn.execute("ALTER TABLE tl_phien_tai ADD COLUMN dang_don_tu TEXT")
+        except sqlite3.OperationalError as e:  # thread dọn và một request cùng thấy thiếu cột rồi cùng ALTER (khởi động đầu sau deploy)
+            if "duplicate column" not in str(e).lower():
+                raise
     conn.commit()
 
 
@@ -273,6 +282,41 @@ def xac_nhan_xong(conn, drive, email: str, token: str, file_id: str) -> str:
     raise LoiPhien(409, "Phiên tải này không còn nhận chốt — tải lại file.")
 
 
+# ============================================================================ phiên của tôi (khôi phục sau tải lại trang + nhả chỗ)
+def liet_ke_cua_toi(conn, email: str, gioi_han: int, bay_gio: float | None = None) -> list[dict]:
+    """Phiên `xong` (chưa thành lượt, còn trong hạn 24 h như `dem_phien_giu_cho`) của CHÍNH `email`, mới nhất trước. Admin cũng chỉ thấy của mình.
+    Chỉ trả cái FE cần dựng lại dòng: KHÔNG có `thu_muc_id`, KHÔNG có URL phiên (không lưu ở đâu cả)."""
+    han = (bay_gio or time.time()) - HAN_BO_DO_GIAY
+    rows = conn.execute("SELECT token, file_id, ten, size, cap_nhat_luc FROM tl_phien_tai "
+                        "WHERE email=? AND trang_thai='xong' AND cap_nhat_luc > ? ORDER BY cap_nhat_luc DESC, token LIMIT ?",
+                        (email, han, max(0, int(gioi_han)))).fetchall()
+    return [{"token": r["token"], "file_id": r["file_id"], "ten": r["ten"], "size": r["size"], "cap_nhat_luc": r["cap_nhat_luc"]} for r in rows]
+
+
+def bo_phien(conn, email: str, token: str, bay_gio: float | None = None) -> str:
+    """Người dùng bỏ phiên CỦA MÌNH (`mo` | `xong` → `bo_do`) bằng MỘT UPDATE có điều kiện; KHÔNG gọi Drive trong request. Thread `tl-don-phien`
+    trash file của phiên `bo_do` theo `file_id` (`_don_bo_do_co_file`, rồi `da_don`) và file xuất hiện muộn theo thẻ (`_quet_theo_the`).
+    Trả `bo_do` (đã `bo_do` ⇒ vẫn trả); thread đã dọn xong (`da_don`) ⇒ 409, FE coi là trả lời dứt khoát.
+    Thứ tự quyền như `xac_nhan_xong`: 404 (không có) → 403 (của người khác, admin cũng vậy) → 409 (`da_dung`/`dang_don`/`da_don`)."""
+    bay_gio = bay_gio or time.time()
+    r = conn.execute("SELECT email, trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()
+    if r is None:
+        raise LoiPhien(404, "Không có phiên tải này.")
+    if r["email"] != email:
+        raise LoiPhien(403, "Phiên tải này không phải của bạn.")
+    if r["trang_thai"] == "bo_do":
+        return "bo_do"
+    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='bo_do', cap_nhat_luc=? WHERE token=? AND email=? AND trang_thai IN ('mo', 'xong')",
+                       (bay_gio, token, email))
+    conn.commit()
+    if cur.rowcount == 1:
+        return "bo_do"
+    r2 = conn.execute("SELECT trang_thai FROM tl_phien_tai WHERE token=?", (token,)).fetchone()
+    if r2 is not None and r2["trang_thai"] == "bo_do":  # hai lần bỏ cùng lúc
+        return "bo_do"
+    raise LoiPhien(409, "Phiên tải này không còn bỏ được (file đã nằm trong một lượt hoặc đang được dọn).")
+
+
 # ============================================================================ cấp file cho lượt (gọi TRONG BEGIN IMMEDIATE của POST /jobs)
 def _chi_con_video_loi(conn, file_id: str) -> bool:
     """Mọi video đã dùng `file_id` đều đang `loi` (cùng ngữ nghĩa `_nguon_dang_trong_luot`: `trang_thai != 'loi'` mới giữ nguồn)."""
@@ -314,21 +358,26 @@ def _rac(drive, file_id: str) -> None:
 
 
 def _giu(conn, token: str, tu: str, bay_gio: float) -> bool:
-    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='dang_don', cap_nhat_luc=? WHERE token=? AND trang_thai=?", (bay_gio, token, tu))
+    cur = conn.execute("UPDATE tl_phien_tai SET trang_thai='dang_don', dang_don_tu=?, cap_nhat_luc=? WHERE token=? AND trang_thai=?",
+                       (tu, bay_gio, token, tu))
     conn.commit()
     return cur.rowcount == 1
 
 
 def _tra(conn, token: str, ve: str, cap_nhat_luc: float) -> None:
-    conn.execute("UPDATE tl_phien_tai SET trang_thai=?, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (ve, cap_nhat_luc, token))
+    conn.execute("UPDATE tl_phien_tai SET trang_thai=?, dang_don_tu=NULL, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (ve, cap_nhat_luc, token))
     conn.commit()
 
 
 def _phuc_hoi_khoa_cu(conn, bay_gio: float) -> int:
-    """Khoá `dang_don` quá cũ (tiến trình chết giữa trash) ⇒ trả về trạng thái trước: không file ⇒ `mo`; file đã vào lượt ⇒ `da_dung`; còn lại `xong`."""
+    """Khoá `dang_don` quá cũ (tiến trình chết giữa trash) ⇒ trả về trạng thái trước: khoá từ `bo_do` ⇒ `bo_do` (không được sống lại thành `xong`); không file ⇒ `mo`; file đã vào lượt ⇒ `da_dung`; còn lại `xong`."""
     n = 0
-    for r in conn.execute("SELECT token, file_id, tao_luc FROM tl_phien_tai WHERE trang_thai='dang_don' AND cap_nhat_luc < ?",
+    for r in conn.execute("SELECT token, file_id, tao_luc, dang_don_tu FROM tl_phien_tai WHERE trang_thai='dang_don' AND cap_nhat_luc < ?",
                           (bay_gio - HAN_DANG_DON_GIAY,)).fetchall():
+        if r["dang_don_tu"] == "bo_do":
+            _tra(conn, r["token"], "bo_do", bay_gio)
+            n += 1
+            continue
         if not r["file_id"]:
             ve = "mo"
         elif conn.execute("SELECT 1 FROM tl_job_video WHERE json_extract(nguon, '$.kieu') = 'may' AND json_extract(nguon, '$.file_id') = ? LIMIT 1",
@@ -379,6 +428,25 @@ def _don_xong_chua_dung(conn, drive, bay_gio: float) -> int:
     return n
 
 
+def _don_bo_do_co_file(conn, drive, bay_gio: float) -> int:
+    """Phiên `bo_do` đã biết `file_id`: trash THẲNG theo `file_id` rồi mới ghi `da_don` (không dựa vào quét theo thẻ: nó chỉ đọc tối đa
+    `TRAN_LIET_KE_THE` con mỗi thư mục, không sắp thứ tự ⇒ file có thể nằm ngoài lần đọc mãi mãi). Khoá `dang_don` trước; trash trượt ⇒ về
+    `bo_do`, lượt sau thử lại; file đã mất (404) ⇒ `_rac` coi như đã dọn."""
+    n = 0
+    for r in conn.execute("SELECT token, file_id, cap_nhat_luc FROM tl_phien_tai WHERE trang_thai='bo_do' AND file_id IS NOT NULL").fetchall():
+        if not _giu(conn, r["token"], "bo_do", bay_gio):
+            continue
+        try:
+            _rac(drive, r["file_id"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("thay logo tải từ máy: dọn file của phiên đã bỏ lỗi (%s) — giữ nguyên, thử lại lượt sau", mo_ta_loi(e))
+            _tra(conn, r["token"], "bo_do", r["cap_nhat_luc"])
+            continue
+        _tra(conn, r["token"], "da_don", bay_gio)
+        n += 1
+    return n
+
+
 def _het_han_giu(conn, file_id: str, bay_gio: float) -> bool:
     """Mọi video dùng file đã ở trạng thái cuối VÀ quá hạn giữ cùng luật với khung/ảnh soi cục bộ (`nhat_ky`): 60 ngày; có video đánh giá
     MỚI NHẤT là `hong` ⇒ 180 ngày. Tuổi tính từ lần cập nhật trạng thái cuối muộn nhất."""
@@ -393,7 +461,7 @@ def _het_han_giu(conn, file_id: str, bay_gio: float) -> bool:
 
 def _ghi_da_don(conn, token: str, file_id: str, bay_gio: float) -> None:
     """SAU khi trash thành công: phiên `da_don` + cờ `da_don:true` trong JSON `nguon` của mọi video dùng file (FE ẩn "Bản gốc"). Một commit."""
-    conn.execute("UPDATE tl_phien_tai SET trang_thai='da_don', cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (bay_gio, token))
+    conn.execute("UPDATE tl_phien_tai SET trang_thai='da_don', dang_don_tu=NULL, cap_nhat_luc=? WHERE token=? AND trang_thai='dang_don'", (bay_gio, token))
     for r in conn.execute("SELECT id, nguon FROM tl_job_video WHERE json_extract(nguon, '$.kieu') = 'may' AND json_extract(nguon, '$.file_id') = ?",
                           (file_id,)).fetchall():
         d = json.loads(r["nguon"])
@@ -447,10 +515,11 @@ def _quet_theo_the(conn, drive) -> dict:
 
 
 def don_mot_luot(conn, drive, bay_gio: float | None = None) -> dict:
-    """Một lượt dọn đủ 4 việc (khoá cũ · bỏ dở · đã chốt chưa dùng · file nhập đã dùng) + quét theo thẻ. Thread `tl-don-phien` gọi mỗi giờ."""
+    """Một lượt dọn đủ 5 việc (khoá cũ · file của phiên đã bỏ · bỏ dở · đã chốt chưa dùng · file nhập đã dùng) + quét theo thẻ. Thread `tl-don-phien` gọi mỗi giờ."""
     khoi_tao(conn)
     bay_gio = bay_gio or time.time()
-    kq = {"phuc_hoi": _phuc_hoi_khoa_cu(conn, bay_gio), "bo_do": _don_bo_do(conn, drive, bay_gio),
+    kq = {"phuc_hoi": _phuc_hoi_khoa_cu(conn, bay_gio), "bo_do_co_file": _don_bo_do_co_file(conn, drive, bay_gio),
+          "bo_do": _don_bo_do(conn, drive, bay_gio),
           "xong_qua_han": _don_xong_chua_dung(conn, drive, bay_gio), "da_dung": _don_file_da_dung(conn, drive, bay_gio)}
     kq["quet_the"] = _quet_theo_the(conn, drive)
     return kq

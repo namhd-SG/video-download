@@ -3,6 +3,8 @@
 // Đăng ký vào window.TL_TAB_NGUON theo hợp đồng ở thay-logo-chung.js: `ve(hop, T)` idempotent, tự đọc T.tat. Cờ tính năng: GET /tai-len/bat —
 // 404 ⇒ tab ẩn hẳn (giống cách tab "Đã vào bộ" đọc cờ ở thay-logo-the-bo.js); lỗi tạm ⇒ hỏi lại sau.
 // URL phiên = quyền ghi vào thư mục đầu vào ⇒ chỉ nằm trong biến của closure này: không storage, không console, không vào chữ hiện cho người dùng.
+// Phiên của tôi: khi cờ bật, GET /tai-len/cua-toi dựng lại các dòng "Đã tải xong" sau khi tải lại trang (tick sẵn); Bỏ / Huỷ báo máy chủ
+// (POST /tai-len/{token}/bo) để nhả chỗ chờ — không báo thì phiên giữ chỗ tới 24 giờ.
 // Mọi chữ từ máy chủ / tên file vào bằng textContent — không innerHTML.
 (() => {
   "use strict";
@@ -29,7 +31,9 @@
   T.goi("/tinh-nang").then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.thay_logo_video_mot_luot > 0) tran = j.thay_logo_video_mot_luot; }).catch(() => {});
 
   function datCo(v) {
+    const lanDau = v === true && co !== true;
     co = v;
+    if (lanDau) khoiPhuc();
     document.body.classList.toggle("tl-co-may", v === true);   // CSS ẩn nhãn tab khi chưa bật (khối nhập vẽ lại nhãn tab nên không tự gắn thuộc tính lên nút)
     veTat();
   }
@@ -42,6 +46,47 @@
     if (lan < 6) setTimeout(() => hoiCo(lan + 1), 5000 * (lan + 1));   // lỗi tạm ⇒ thử lại sau (tab vẫn ẩn)
   }
   hoiCo();
+
+  // ---------------------------------------------------------------- phiên của tôi: bỏ (nhả chỗ) + khôi phục sau tải lại trang
+  const daBo = new Set();                // token đã báo bỏ trong trang này: GET cua-toi về muộn cũng không dựng lại
+  // POST /bo: 2xx = xong; 403/404/409 = máy chủ đã trả lời dứt khoát (phiên không còn của ta / đã vào lượt) ⇒ không thử lại, không báo;
+  // đứt mạng / 5xx / 429 ⇒ thử lại MỘT lần sau 1 giây, vẫn trượt ⇒ hiện chữ ngắn (dòng vẫn được gỡ, nhưng không im lặng sai).
+  async function baoBo(m) {
+    if (!m.token || m.daBao) return;
+    m.daBao = true; daBo.add(m.token);
+    const duong = `/api/thay-logo/tai-len/${encodeURIComponent(m.token)}/bo`;
+    for (let lan = 0; lan < 2; lan++) {
+      if (lan) await new Promise((xong) => setTimeout(xong, 1000));
+      try {
+        const r = await T.goi(duong, { method: "POST" });
+        if (r.ok || (r.status >= 400 && r.status < 500 && r.status !== 429 && r.status !== 408)) return;
+      } catch (e) { if (e && e.message === "het_phien") return; }
+    }
+    thongBao = `Chưa báo được máy chủ bỏ file ${m.ten} — file vẫn giữ chỗ trong danh sách chờ tối đa 24 giờ rồi tự dọn.`;
+    dat();
+  }
+
+  let daKhoiPhuc = false;
+  async function khoiPhuc() {            // một lần mỗi lần tải trang; lỗi ⇒ bỏ qua yên lặng, không chặn tab, không lặp
+    if (daKhoiPhuc) return;
+    daKhoiPhuc = true;
+    let ds;
+    try {
+      const r = await T.goi("/api/thay-logo/tai-len/cua-toi");
+      if (!r.ok) return;
+      ds = (await r.json()).phien;
+    } catch (_) { return; }
+    if (!Array.isArray(ds)) return;
+    for (const p of ds) {
+      if (!p || typeof p.token !== "string" || typeof p.file_id !== "string" || !T.IDRE.test(p.file_id)) continue;
+      if (daBo.has(p.token) || muc.some((m) => m.token === p.token || m.fileId === p.file_id)) continue;   // vừa tải xong trong trang này / vừa bỏ ⇒ không trùng
+      const ten = typeof p.ten === "string" ? p.ten : "(không tên)", size = Number(p.size) > 0 ? Number(p.size) : 0;
+      const m = { id: ++tuSo, file: null, size, ten, mime: "", tt: "xong", loi: "", thuLai: false, ke: size, dangGui: 0, url: null, token: p.token, fileId: p.file_id, tick: false, huy: false, xhr: null, canHoi: false, daBao: false };
+      muc.push(m);
+      tick(m);
+    }
+    dat();
+  }
 
   // ---------------------------------------------------------------- kiểm file ở trình duyệt (máy chủ vẫn là cổng thật)
   const duoiTen = (ten) => (String(ten).split(".").pop() || "").toLowerCase();
@@ -173,7 +218,11 @@
     m.tt = "dang"; m.loi = ""; m.thuLai = false; dat();
     try {
       if (!m.fileId) {
-        if (!m.url) await taoPhien(m);
+        if (!m.url) {
+          // Tạo phiên MỚI để thử lại: phiên cũ (nếu có) bị bỏ rơi ⇒ báo máy chủ bỏ nó TRƯỚC khi ghi đè token; token mới bắt đầu với cờ đã-báo sạch.
+          if (m.token) { baoBo(m); m.token = null; m.daBao = false; }
+          await taoPhien(m);
+        }
         if (m.huy) throw new LoiHuy();
         m.fileId = await dayLen(m);
         m.url = null;   // xong dữ liệu: không giữ quyền ghi lâu hơn cần thiết
@@ -181,7 +230,7 @@
       await chot(m);
       m.tt = "xong"; tick(m);
     } catch (e) {
-      if (e instanceof LoiHuy || m.huy) { m.tt = "huy"; }
+      if (e instanceof LoiHuy || m.huy) { m.tt = "huy"; baoBo(m); }   // Huỷ lúc phiên đang được tạo: token về sau go() ⇒ báo bỏ ở đây
       else {
         const hien = e instanceof LoiHien;
         m.tt = "loi"; m.thuLai = hien ? e.thuLai : true;
@@ -204,7 +253,7 @@
   function tick(m) {
     if (!m.fileId || T.tat) return;
     if (T.nhapChon.has(m.fileId)) { m.tick = true; return; }
-    if (T.nhapChon.size >= tran) { thongBao = `Một lượt tối đa ${tran} video — file ${m.file.name} chưa được tick, bỏ bớt video khác rồi tick lại.`; m.tick = false; return; }
+    if (T.nhapChon.size >= tran) { thongBao = `Một lượt tối đa ${tran} video — file ${m.ten} chưa được tick, bỏ bớt video khác rồi tick lại.`; m.tick = false; return; }
     T.nhapChon.add(m.fileId); m.tick = true;
     if (T.capNhatChan) T.capNhatChan();
   }
@@ -225,13 +274,13 @@
   function them(files) {
     thongBao = "";
     const goc = [...files];
-    const cu = new Set(muc.map((m) => `${m.file.name}|${m.file.size}|${m.file.lastModified}`));
+    const cu = new Set(muc.filter((m) => m.file).map((m) => `${m.file.name}|${m.file.size}|${m.file.lastModified}`));
     let bo = 0;
     for (const f of goc) {
       const khoa = `${f.name}|${f.size}|${f.lastModified}`;
       if (cu.has(khoa)) { bo++; continue; }
       cu.add(khoa);
-      const m = { id: ++tuSo, file: f, size: f.size, ten: f.name, mime: mimeCua(f), tt: "cho", loi: "", thuLai: false, ke: 0, dangGui: 0, url: null, token: null, fileId: null, tick: false, huy: false, xhr: null, canHoi: false };
+      const m = { id: ++tuSo, file: f, size: f.size, ten: f.name, mime: mimeCua(f), tt: "cho", loi: "", thuLai: false, ke: 0, dangGui: 0, url: null, token: null, fileId: null, tick: false, huy: false, xhr: null, canHoi: false, daBao: false };
       const sai = kiemFile(f);
       if (sai) { m.tt = "loi"; m.loi = sai; m.thuLai = false; }
       else if (muc.length >= tran) { m.tt = "loi"; m.loi = `Một lượt tối đa ${tran} video — bỏ bớt file rồi chọn lại.`; }
@@ -242,7 +291,8 @@
   }
   function go(m) {
     m.huy = true;
-    if (m.xhr) m.xhr.abort();
+    if (m.xhr) m.xhr.abort();   // Huỷ: ngắt XHR TRƯỚC rồi mới báo máy chủ bỏ
+    baoBo(m);
     if (m.fileId) { T.nhapChon.delete(m.fileId); if (T.capNhatChan) T.capNhatChan(); }
     const i = muc.indexOf(m); if (i >= 0) muc.splice(i, 1);
     dat(); kich();
