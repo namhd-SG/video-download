@@ -38,7 +38,8 @@ AGY = os.path.expanduser("~/.local/bin/agy")
 # 3.7 đã bị gỡ khỏi agy (13/10) ⇒ mặc định cũ làm việc kẹt `cho_agy` vô hạn. Tên model mang hậu tố effort; đổi bằng env.
 MODEL = os.environ.get("THAY_LOGO_AGY_MODEL", "gemini-3.8-flash-low")
 TOKEN_TOI_THIEU = 32  # khớp `web/thay_logo_routes.TOKEN_TOI_THIEU`: token ngắn hơn ⇒ mini coi như chưa cấu hình, 503 mãi
-_DAU_HIEU_MODEL_SAI = ("not recognized", "invalid model", "unknown model")
+# Hẹp có chủ ý: "not recognized" trần quá rộng (lỗi khác của agy cũng có thể mang cụm đó) ⇒ phải đi với chữ "model".
+_DAU_HIEU_MODEL_SAI = re.compile(r"model\b[^\n]{0,80}\bnot recognized|invalid model|unknown model")
 LO_TOI_DA = 36  # ảnh/lượt agy — gộp lô xuyên video (P0b: sàn thời gian cố định lớn mỗi lượt)
 _UUID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -90,7 +91,7 @@ def goi_agy(anh: list[Path]) -> dict:
     vet = f"{proc.stdout or ''}\n{proc.stderr or ''}".lower()
     # Dò chữ "model sai" CHỈ khi đầu ra không phải kết quả hợp lệ — stdout thành công có nội dung trả lời (chữ trong ảnh…) mà chứa
     # cụm đó thì không được thành lỗi cứng.
-    sai_model = any(d in vet for d in _DAU_HIEU_MODEL_SAI)
+    sai_model = bool(_DAU_HIEU_MODEL_SAI.search(vet))
     try:
         payload = json.loads(proc.stdout)
     except json.JSONDecodeError:
@@ -262,6 +263,8 @@ def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy, le: dict | None 
                 le.pop(k, None)
             else:  # agy bỏ sót ảnh của job này
                 mini.nop_loi(v["job_id"], "thieu_anh", luot_cua[v["job_id"]])
+                if len(lo) == 1:  # đã chạy lẻ mà vẫn thiếu ảnh ⇒ xếp sau, kẻo `_chon_lo` chọn lại nó mãi và các job khác đói
+                    le[k] = next(_dem_le)
     finally:
         shutil.rmtree(d, ignore_errors=True)
     return so

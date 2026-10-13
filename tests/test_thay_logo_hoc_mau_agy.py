@@ -380,3 +380,32 @@ def test_doc_ket_qua_luot_2_dung_khung_json_rieng_cua_luot(tmp_path):
     hop.nop_ket_qua(7, {"items": [{"anh": u2, "man_ket": False, "watermarks": [{"box_2d": [10, 10, 60, 60], "cum": 3}]}]}, 2)
     boxes, _, cum = hoc_mau_agy.doc_ket_qua_co_cum(clip.nguon, hop, 7, luot=2)
     assert len(boxes) == 1 and cum == [3] and boxes[0].khung == 4
+
+
+def test_chay_le_ma_agy_bo_sot_anh_thi_xep_sau_khong_lam_doi_job_khac(tmp_path):
+    hop = HopThu(tmp_path / "hop")
+    u1 = hop.tao_viec(1, [b"\xff\xd8\xff0"])[0]
+    u2 = hop.tao_viec(2, [b"\xff\xd8\xff1"])[0]
+    mini = MiniGia(hop)
+    assert relay_may_dev.mot_vong(mini, _agy_loi("het_gio")) == 0  # lô gộp trượt ⇒ cả hai vào hàng chạy lẻ
+    cac_lo = []
+
+    def agy(anh):  # job 1 chạy lẻ: agy trả kết quả nhưng bỏ sót ảnh của nó; job 2 chạy lẻ: xong
+        cac_lo.append([p.stem for p in anh])
+        return {"items": [] if anh[0].stem == u1 else [{"file": str(anh[0]), "endcard": False, "watermarks": []}]}
+    relay_may_dev.mot_vong(mini, agy)
+    relay_may_dev.mot_vong(mini, agy)
+    assert cac_lo == [[u1], [u2]] and mini.da_nop == [2] and mini.da_loi == [(1, "thieu_anh", 1)]
+
+
+@pytest.mark.parametrize("stderr,ma", [
+    ("model gemini-x is not recognized", "model_khong_nhan"),
+    ("tool read_file is not recognized", "agy_loi_chay"),  # "not recognized" không đi với "model" ⇒ không phải lỗi cứng
+])
+def test_dau_hieu_model_sai_phai_di_voi_chu_model(monkeypatch, tmp_path, stderr, ma):
+    p = tmp_path / "a.jpg"
+    p.write_bytes(b"\xff\xd8\xff")
+    monkeypatch.setattr(relay_may_dev.subprocess, "run", lambda cmd, **k: relay_may_dev.subprocess.CompletedProcess(cmd, 1, "", stderr))
+    with pytest.raises(relay_may_dev.LoiAgy) as e:
+        relay_may_dev.goi_agy([p])
+    assert e.value.ma == ma
