@@ -3,8 +3,8 @@
 Luật an toàn §3e cài ở đây:
 - agy gọi KHÔNG có `--dangerously-skip-permissions`; `--add-dir` CHỈ thư mục hộp thư cục bộ chứa ảnh của lượt này.
 - Ảnh tải về đặt tên bằng UUID mini cấp (kiểm regex) — không tên file nào khác chạm đĩa máy dev.
-- Kết quả gửi về đã lọc còn TOẠ ĐỘ + `label` chỉ khi khớp whitelist ngắn (`hop_thu.kiem_nhan`; sai ⇒ bỏ nhãn, giữ box) và qua đúng bộ
-  kiểm schema phía mini trước khi gửi.
+- Kết quả gửi về đã lọc còn TOẠ ĐỘ SỐ (bỏ `label` agy trả; chữ đó chỉ ở log máy dev) + `cum` là số nguyên đã kiểm (relay đổi nhãn
+  đã whitelist thành số cụm theo từng job), và qua đúng bộ kiểm schema phía mini trước khi gửi.
 - Hai ca KHÁC NHAU, không trả cùng một giá trị (guard-marker vế 2):
   · CHƯA CẤU HÌNH (thiếu token / token ngắn hơn trần / URL mini hỏng / không có binary agy) ⇒ `kiem_cau_hinh` trả lý do, `main` thoát mã 2
     ngay lúc khởi động — không treo im lặng.
@@ -31,7 +31,7 @@ import urllib.request
 from pathlib import Path
 from typing import Callable
 
-from .hop_thu import MA_LOI_AGY, TRAN_ANH_BYTE, TRAN_ANH_MOT_VIEC, LoiHopThu, kiem_ket_qua, kiem_nhan
+from .hop_thu import MA_LOI_AGY, TRAN_ANH_BYTE, TRAN_ANH_MOT_VIEC, TRAN_CUM, kiem_ket_qua
 
 log = logging.getLogger("thay_logo.relay")
 AGY = os.path.expanduser("~/.local/bin/agy")
@@ -88,38 +88,51 @@ def goi_agy(anh: list[Path]) -> dict:
     except OSError:
         raise LoiAgy("agy_loi_chay") from None
     vet = f"{proc.stdout or ''}\n{proc.stderr or ''}".lower()
-    if any(d in vet for d in _DAU_HIEU_MODEL_SAI):  # model bị gỡ: agy báo bằng chữ (rc có khi 0) — kiểm TRƯỚC khi phân tích JSON
-        raise LoiAgy("model_khong_nhan")
+    # Dò chữ "model sai" CHỈ khi đầu ra không phải kết quả hợp lệ — stdout thành công có nội dung trả lời (chữ trong ảnh…) mà chứa
+    # cụm đó thì không được thành lỗi cứng.
+    sai_model = any(d in vet for d in _DAU_HIEU_MODEL_SAI)
     try:
         payload = json.loads(proc.stdout)
     except json.JSONDecodeError:
-        raise LoiAgy("agy_loi_chay" if proc.returncode else "khong_phai_json") from None
+        raise LoiAgy("model_khong_nhan" if sai_model else "agy_loi_chay" if proc.returncode else "khong_phai_json") from None
     if not isinstance(payload, dict):
-        raise LoiAgy("khong_phai_json")
+        raise LoiAgy("model_khong_nhan" if sai_model else "khong_phai_json")
     if payload.get("status") != "SUCCESS":
         log.warning("agy status=%s", payload.get("status"))
-        raise LoiAgy("trang_thai_khac")
+        raise LoiAgy("model_khong_nhan" if sai_model else "trang_thai_khac")
     ra = payload.get("structured_output") or payload.get("response")
     if not isinstance(ra, dict):
         raise LoiAgy("khong_ket_qua")
     return ra
 
 
-def _nhan_sach(w: dict) -> dict:
-    """`{"label": nhãn đã chuẩn hoá}` nếu nhãn agy qua whitelist, ngược lại `{}` (bỏ nhãn, giữ box — nhãn hỏng không được làm mini từ chối cả lượt)."""
-    try:
-        return {"label": kiem_nhan(w["label"])} if "label" in w else {}
-    except LoiHopThu:
-        return {}
+_NHAN = re.compile(r"^[a-z0-9 ._-]{1,40}$")  # whitelist CHỈ ở relay: nhãn lạ/dài/ký tự lạ ⇒ không thành cụm (giữ box)
+
+
+def _nhan_chuan(w: dict) -> str | None:
+    n = w.get("label")
+    n = n.strip().lower() if isinstance(n, str) else ""
+    return n if _NHAN.match(n) else None
 
 
 def ghep_ket_qua(viec: list[dict], ra_agy: dict) -> dict[int, dict]:
-    """Ánh xạ đầu ra agy (theo tên file = UUID) về từng job; chỉ giữ toạ độ + nhãn whitelist + cờ màn kết; ảnh agy bỏ sót ⇒ KHÔNG nộp job đó."""
+    """Ánh xạ đầu ra agy (theo tên file = UUID) về từng job; chỉ giữ toạ độ + số cụm (từ nhãn whitelist) + cờ màn kết; ảnh agy bỏ sót ⇒ KHÔNG nộp job đó."""
     theo_anh: dict[str, dict] = {}
+    anh_cua_job = {a: v["job_id"] for v in viec for a in v["anh"]}
+    cum_cua_job: dict[int, dict[str, int]] = {}  # job → {nhãn chuẩn hoá → số cụm}; số theo thứ tự gặp đầu tiên, ổn định trong lượt
     for it in (ra_agy or {}).get("items") or []:
         ten = Path(str(it.get("file", ""))).stem
         if _UUID.match(ten):
-            wms = [{"box_2d": [int(v) for v in w["box_2d"]], **_nhan_sach(w)} for w in it.get("watermarks") or []
+            def _cum(w, job=anh_cua_job.get(ten)):
+                n = _nhan_chuan(w)
+                if n is None or job is None:
+                    return {}
+                bang = cum_cua_job.setdefault(job, {})
+                if n not in bang and len(bang) >= TRAN_CUM:
+                    return {}
+                log.info("job %s: nhãn agy %r ⇒ cụm %d", job, n, bang.setdefault(n, len(bang)))  # chữ nhãn CHỈ ở log máy dev
+                return {"cum": bang[n]}
+            wms = [{"box_2d": [int(v) for v in w["box_2d"]], **_cum(w)} for w in it.get("watermarks") or []
                    if isinstance(w, dict) and isinstance(w.get("box_2d"), list) and len(w["box_2d"]) == 4
                    and all(isinstance(v, (int, float)) and 0 <= v <= 1000 for v in w["box_2d"])]
             theo_anh[ten] = {"anh": ten, "man_ket": bool(it.get("endcard")), "watermarks": wms[:8]}
@@ -151,8 +164,16 @@ class _Mini:
             raise ValueError("ảnh từ mini quá trần hoặc không phải JPEG")
         return du_lieu
 
-    def nop(self, job_id, kq, luot: int = 1):
-        self._req(f"/ket-qua/{int(job_id)}?luot={int(luot)}", json.dumps(kq).encode())
+    def nop(self, job_id, kq, luot: int = 1) -> bool:
+        """False ⇒ mini không nhận (404/409: việc đã xong / bị mini chốt quá hạn) — một job như vậy không được làm hỏng cả vòng."""
+        try:
+            self._req(f"/ket-qua/{int(job_id)}?luot={int(luot)}", json.dumps(kq).encode())
+        except urllib.error.HTTPError as e:
+            if e.code not in (404, 409):
+                raise
+            log.info("job %s lượt %s không nhận kết quả (HTTP %s) — bỏ qua", job_id, luot, e.code)
+            return False
+        return True
 
     def nop_loi(self, job_id, ma: str, luot: int = 1):
         """Báo agy trượt. `ma` ∈ MA_LOI_AGY — kiểm ở đây VÀ ở mini; không chữ tự do rời máy dev."""
@@ -166,14 +187,45 @@ class _Mini:
             log.info("job %s lượt %s không nhận lỗi (HTTP %s) — bỏ qua", job_id, luot, e.code)
 
 
-def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy) -> int:
-    """Một lượt kéo–định vị–nộp. Trả số job đã nộp KẾT QUẢ. agy trượt ⇒ nộp LỖI (`nop_loi`) cho từng job trong lô, không tính vào số trả."""
-    viec, lo, so = mini.viec(), [], 0
-    for v in viec:  # gộp nguyên job vào lô, không tách ảnh của một job qua 2 lượt agy
-        if lo and sum(len(x["anh"]) for x in lo) + len(v["anh"]) > LO_TOI_DA:
+# Job (job_id, luot) từng nằm trong một lô >1 video bị agy trượt: chưa biết video nào là thủ phạm ⇒ KHÔNG đổ lỗi cho ai, đánh dấu để chạy LẺ.
+# Giá trị = thứ tự lần chạy lẻ gần nhất (0 = chưa chạy lẻ lần nào). Chỉ ở bộ nhớ relay: relay khởi động lại ⇒ mất dấu ⇒ lô lại gộp,
+# an toàn (tối đa tốn một lượt agy), không bao giờ gây `loi` oan.
+_CHAY_LE: dict[tuple[int, int], int] = {}
+_dem_le = iter(range(1, 1 << 60))
+
+
+def _chon_lo(viec: list[dict], le: dict) -> list[dict]:
+    hop_le = [v for v in viec if 1 <= len(v["anh"]) <= TRAN_ANH_MOT_VIEC and all(_UUID.match(a) for a in v["anh"])]
+    khoa = lambda v: (v["job_id"], int(v.get("luot", 1)))  # noqa: E731
+    chua_le = [v for v in hop_le if le.get(khoa(v)) == 0]
+    if chua_le:  # có job vừa bị nghi ⇒ chạy lẻ nó TRƯỚC
+        return chua_le[:1]
+    lo, so_anh = [], 0
+    for v in hop_le:  # gộp nguyên job vào lô (không tách ảnh một job qua 2 lượt agy); job đã chạy lẻ xong-mà-trượt không vào lô gộp
+        if khoa(v) in le:
+            continue
+        if lo and so_anh + len(v["anh"]) > LO_TOI_DA:
             break
-        if 1 <= len(v["anh"]) <= TRAN_ANH_MOT_VIEC and all(_UUID.match(a) for a in v["anh"]):
-            lo.append(v)
+        lo.append(v)
+        so_anh += len(v["anh"])
+    if lo:
+        return lo
+    da_le = sorted((v for v in hop_le if khoa(v) in le), key=lambda v: le[khoa(v)])
+    return da_le[:1]  # chỉ còn job đã nghi: thử lại lẻ, job cũ nhất trước (không để một job độc chặn các job khác)
+
+
+def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy, le: dict | None = None) -> int:
+    """Một lượt kéo–định vị–nộp. Trả số job đã nộp KẾT QUẢ.
+    agy trượt:
+      · `model_khong_nhan` ⇒ nộp lỗi ngay cho cả lô (không phụ thuộc video);
+      · lô >1 video, lỗi khác ⇒ KHÔNG nộp lỗi, đánh dấu các job để vòng sau chạy lẻ (một video độc không kéo video đi kèm ra `loi`);
+      · chạy lẻ (1 video) mà trượt ⇒ nộp lỗi cho video đó."""
+    le = _CHAY_LE if le is None else le
+    viec = mini.viec()
+    ton_tai = {(v["job_id"], int(v.get("luot", 1))) for v in viec}
+    for k in [k for k in le if k not in ton_tai]:  # mini đã chốt/xoá việc ⇒ bỏ dấu
+        del le[k]
+    lo, so = _chon_lo(viec, le), 0
     if not lo:
         return 0
     luot_cua = {v["job_id"]: int(v.get("luot", 1)) for v in lo}
@@ -190,15 +242,24 @@ def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy) -> int:
             if not isinstance(ra, dict):
                 raise LoiAgy("khong_ket_qua")
         except LoiAgy as e:
-            for v in lo:  # nộp SAU khi agy đã trượt thật; nộp hỏng (mạng) ⇒ ngoại lệ nổi lên, lượt sau chạy lại cả lô
+            if len(lo) > 1 and e.ma != "model_khong_nhan":
+                for v in lo:
+                    le.setdefault((v["job_id"], luot_cua[v["job_id"]]), 0)
+                log.warning("agy trượt (%s) ở lô %d video — chưa đổ lỗi cho ai, vòng sau chạy lẻ", e.ma, len(lo))
+                return 0
+            for v in lo:  # nộp SAU khi agy đã trượt thật; nộp hỏng (mạng) ⇒ ngoại lệ nổi lên, lượt sau chạy lại
                 mini.nop_loi(v["job_id"], e.ma, luot_cua[v["job_id"]])
+                if len(lo) == 1:
+                    le[(v["job_id"], luot_cua[v["job_id"]])] = next(_dem_le)  # đã chạy lẻ lần này ⇒ xếp sau các job khác
             log.warning("agy trượt (%s) — đã báo mini %d job", e.ma, len(lo))
             return 0
         kq = ghep_ket_qua(lo, ra)
         for v in lo:
+            k = (v["job_id"], luot_cua[v["job_id"]])
             if v["job_id"] in kq:
-                mini.nop(v["job_id"], kq[v["job_id"]], luot_cua[v["job_id"]])
-                so += 1
+                if mini.nop(v["job_id"], kq[v["job_id"]], luot_cua[v["job_id"]]) is not False:
+                    so += 1
+                le.pop(k, None)
             else:  # agy bỏ sót ảnh của job này
                 mini.nop_loi(v["job_id"], "thieu_anh", luot_cua[v["job_id"]])
     finally:

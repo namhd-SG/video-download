@@ -57,7 +57,7 @@ def test_dau_cuoi_dat_viec_relay_doc_ket_qua_render(tmp_path):
     assert hoc_mau_agy.doc_ket_qua(clip.nguon, hop, 5) is None  # chưa nộp ⇒ job vẫn chờ agy
     mini = MiniGia(hop)
     assert relay_may_dev.mot_vong(mini, _agy_that_tu_ground_truth(clip, hop, 5)) == 1
-    assert "IGNORE" not in (hop.goc / "5" / "ket_qua.json").read_text()  # nhãn về mini đã lower + whitelist (không còn chữ hoa/ký tự lạ)
+    assert "IGNORE" not in (hop.goc / "5" / "ket_qua.json").read_text()  # chữ nhãn KHÔNG về mini
     boxes, man_ket = hoc_mau_agy.doc_ket_qua(clip.nguon, hop, 5)
     assert len(boxes) == 6 and man_ket is False and all(b.nguon == "agy" for b in boxes)
     kq = xu_ly_video(clip.nguon, boxes)
@@ -94,7 +94,7 @@ def test_ghep_ket_qua_bo_ten_file_la_va_box_sai():
                                     {"label": "z", "box_2d": [1, 2, 3, 2000]}]},
                     {"file": "/x/../../etc/passwd", "endcard": True, "watermarks": []}]}
     kq = relay_may_dev.ghep_ket_qua([{"job_id": 1, "anh": [u]}], ra)
-    assert kq == {1: {"items": [{"anh": u, "man_ket": False, "watermarks": [{"box_2d": [1, 2, 3, 4], "label": "x"}]}]}}
+    assert kq == {1: {"items": [{"anh": u, "man_ket": False, "watermarks": [{"box_2d": [1, 2, 3, 4], "cum": 0}]}]}}
 
 
 # ---------------------------------------------------------------- phía máy dev (kongming 09/10 lỗ 6–8)
@@ -171,17 +171,123 @@ def test_goi_agy_phan_loai_moi_ca_truot_thanh_ma_enum(monkeypatch, tmp_path, kwa
     assert ma in relay_may_dev.MA_LOI_AGY
 
 
-def test_agy_truot_thi_nop_loi_cho_moi_job_trong_lo_va_khong_nop_ket_qua(tmp_path):
+@pytest.fixture(autouse=True)
+def _sach_dau_chay_le():
+    relay_may_dev._CHAY_LE.clear()
+    yield
+    relay_may_dev._CHAY_LE.clear()
+
+
+def _agy_loi(ma):
+    def agy(anh):
+        raise relay_may_dev.LoiAgy(ma)
+    return agy
+
+
+def test_lo_nhieu_video_truot_thi_khong_job_nao_bi_dem_loi_roi_vong_sau_chay_le(tmp_path):
+    hop = HopThu(tmp_path / "hop")
+    u1 = hop.tao_viec(1, [b"\xff\xd8\xff0"])[0]
+    u2 = hop.tao_viec(2, [b"\xff\xd8\xff1"])[0]
+    mini = MiniGia(hop)
+    assert relay_may_dev.mot_vong(mini, _agy_loi("het_gio")) == 0
+    assert mini.da_loi == [] and hop.so_loi(1) == hop.so_loi(2) == 0  # lô gộp trượt ⇒ chưa đổ lỗi cho ai
+    assert set(relay_may_dev._CHAY_LE) == {(1, 1), (2, 1)}
+    cac_lo = []
+
+    def agy(anh):  # video 1 là thủ phạm: chạy lẻ nó thì trượt, video 2 chạy lẻ thì xong
+        cac_lo.append([p.stem for p in anh])
+        if anh[0].stem == u1:
+            raise relay_may_dev.LoiAgy("het_gio")
+        return {"items": [{"file": str(anh[0]), "endcard": False, "watermarks": []}]}
+    relay_may_dev.mot_vong(mini, agy)   # chạy lẻ video 1 (đầu hàng, chưa chạy lẻ)
+    relay_may_dev.mot_vong(mini, agy)   # video 2 chạy lẻ
+    assert cac_lo == [[u1], [u2]] and mini.da_loi == [(1, "het_gio", 1)] and mini.da_nop == [2]
+    assert hop.so_loi(1) == 1 and hop.so_loi(2) == 0  # chỉ thủ phạm bị đếm
+
+
+def test_job_doc_da_chay_le_khong_chan_job_khac_va_khong_bi_goi_lien_tuc(tmp_path):
+    hop = HopThu(tmp_path / "hop")
+    u1 = hop.tao_viec(1, [b"\xff\xd8\xff0"])[0]
+    hop.tao_viec(2, [b"\xff\xd8\xff1"])
+    hop.tao_viec(3, [b"\xff\xd8\xff2"])
+    mini, goi = MiniGia(hop), []
+
+    def agy(anh):
+        goi.append(len(anh))
+        if u1 in [p.stem for p in anh]:
+            raise relay_may_dev.LoiAgy("het_gio")
+        return {"items": [{"file": str(p), "endcard": False, "watermarks": []} for p in anh]}
+    relay_may_dev.mot_vong(mini, agy)   # lô 3 video: có thủ phạm ⇒ trượt, đánh dấu cả 3
+    for _ in range(4):
+        relay_may_dev.mot_vong(mini, agy)
+    assert goi == [3, 1, 1, 1, 1] and sorted(mini.da_nop) == [2, 3]  # lô gộp, rồi lẻ: 1 (trượt), 2, 3 (xong) — job độc không chặn job khác
+    relay_may_dev.mot_vong(mini, agy)  # chỉ còn job độc ⇒ thử lại lẻ, vẫn được báo lỗi mỗi lần chạy lẻ
+    assert mini.da_loi == [(1, "het_gio", 1)] * 3
+
+
+def test_model_khong_nhan_nop_ngay_cho_ca_lo_khong_can_chay_le(tmp_path):
     hop = HopThu(tmp_path / "hop")
     hop.tao_viec(1, [b"\xff\xd8\xff0"])
     hop.tao_viec(2, [b"\xff\xd8\xff1"])
     mini = MiniGia(hop)
+    assert relay_may_dev.mot_vong(mini, _agy_loi("model_khong_nhan")) == 0
+    assert sorted(mini.da_loi) == [(1, "model_khong_nhan", 1), (2, "model_khong_nhan", 1)] and not relay_may_dev._CHAY_LE
 
-    def agy(anh):
-        raise relay_may_dev.LoiAgy("het_gio")
-    assert relay_may_dev.mot_vong(mini, agy) == 0
-    assert sorted(mini.da_loi) == [(1, "het_gio", 1), (2, "het_gio", 1)] and mini.da_nop == []
-    assert hop.so_loi(1) == hop.so_loi(2) == 1
+
+def test_dau_chay_le_bi_don_khi_mini_da_chot_viec(tmp_path):
+    hop = HopThu(tmp_path / "hop")
+    hop.tao_viec(1, [b"\xff\xd8\xff0"])
+    hop.tao_viec(2, [b"\xff\xd8\xff1"])
+    mini = MiniGia(hop)
+    relay_may_dev.mot_vong(mini, _agy_loi("het_gio"))
+    hop.xoa_viec(1)  # mini chốt `loi` rồi dọn hộp thư
+    relay_may_dev.mot_vong(mini, _agy_loi("het_gio"))
+    assert (1, 1) not in relay_may_dev._CHAY_LE
+
+
+def test_nop_ket_qua_404_409_khong_lam_hong_ca_vong(tmp_path, monkeypatch):
+    import io
+    import urllib.error
+    mini = relay_may_dev._Mini("http://127.0.0.1:1", "t" * 40)
+    ma = {"v": 409}
+
+    def req(path, data=None, tran=0):
+        raise urllib.error.HTTPError("u", ma["v"], "x", {}, io.BytesIO(b""))
+    monkeypatch.setattr(mini, "_req", req)
+    assert mini.nop(1, {"items": []}) is False  # mini đã chốt/xoá việc ⇒ bỏ qua
+    ma["v"] = 404
+    assert mini.nop(1, {"items": []}) is False
+    ma["v"] = 500
+    with pytest.raises(urllib.error.HTTPError):
+        mini.nop(1, {"items": []})
+    # mot_vong: job đầu không được nhận, job sau vẫn nộp, số trả đếm đúng
+    hop = HopThu(tmp_path / "hop")
+    hop.tao_viec(1, [b"\xff\xd8\xff0"])
+    hop.tao_viec(2, [b"\xff\xd8\xff1"])
+
+    class M(MiniGia):
+        def nop(self, job_id, kq, luot=1):
+            if job_id == 1:
+                return False
+            return super().nop(job_id, kq, luot)
+    m = M(hop)
+    assert relay_may_dev.mot_vong(m, lambda anh: {"items": [{"file": str(p), "endcard": False, "watermarks": []} for p in anh]}) == 1
+    assert m.da_nop == [2]
+
+
+def test_chu_model_sai_trong_noi_dung_tra_loi_thanh_cong_khong_thanh_loi_cung(monkeypatch, tmp_path):
+    import subprocess
+    out = json.dumps({"status": "SUCCESS", "structured_output": {"items": [{"file": "x", "endcard": False, "watermarks": [],
+                                                                            "ghi_chu": "model is not recognized"}]}})
+    monkeypatch.setattr(relay_may_dev.subprocess, "run", lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, out, ""))
+    p = tmp_path / ("c" * 32 + ".jpg")
+    p.write_bytes(b"\xff\xd8\xff")
+    assert relay_may_dev.goi_agy([p])["items"]  # không ném
+    monkeypatch.setattr(relay_may_dev.subprocess, "run",
+                        lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, '{"status": "ERROR", "error": "model x is not recognized"}', ""))
+    with pytest.raises(relay_may_dev.LoiAgy) as e:  # status≠SUCCESS mà có dấu hiệu model sai ⇒ lỗi cứng
+        relay_may_dev.goi_agy([p])
+    assert e.value.ma == "model_khong_nhan"
 
 
 def test_agy_bo_sot_anh_cua_mot_job_thi_chi_job_do_nhan_loi_thieu_anh(tmp_path):
@@ -230,7 +336,7 @@ def test_main_thoat_ma_khac_0_khi_chua_cau_hinh_va_khong_vao_vong(monkeypatch, c
     assert relay_may_dev.main() == 2
 
 
-def test_nhan_xuyen_tu_agy_den_doc_ket_qua_co_nhan_song_song_voi_box(tmp_path):
+def test_cum_xuyen_tu_agy_den_doc_ket_qua_co_cum_song_song_voi_box(tmp_path):
     clip = tao_clip(n=20)
     hop = HopThu(tmp_path / "hop")
     hoc_mau_agy.dat_viec(clip.nguon, hop, 5)
@@ -239,15 +345,27 @@ def test_nhan_xuyen_tu_agy_den_doc_ket_qua_co_nhan_song_song_voi_box(tmp_path):
     def agy(anh):
         items = []
         for i, p in enumerate(anh):
-            nhan = {0: "Learna", 1: "bad\nlabel"}.get(i)  # nhãn xấu bị bỏ, box vẫn giữ
+            nhan = {0: "Learna", 1: "bad\nlabel", 2: " LEARNA ", 3: "Ai"}.get(i)  # 0,2 cùng chữ ⇒ cùng cụm; nhãn xấu ⇒ bỏ cụm, giữ box
             wm = {"box_2d": [100, 100, 200, 200], **({"label": nhan} if nhan else {})}
             items.append({"file": str(p), "endcard": False, "watermarks": [wm] if bang[p.stem]["vai"] == "hoc_mau" else []})
         return {"items": items}
-    assert relay_may_dev.mot_vong(MiniGia(hop), agy) == 1
-    boxes, man_ket, nhan = hoc_mau_agy.doc_ket_qua_co_nhan(clip.nguon, hop, 5)
-    assert len(boxes) == len(nhan) == 6 and nhan[0] == "learna" and nhan[1] is None and all(n is None for n in nhan[2:])
+    assert relay_may_dev.mot_vong(MiniGia(hop), agy, le={}) == 1
+    assert "learna" not in (hop.goc / "5" / "ket_qua.json").read_text().lower()  # không chữ nào về mini
+    boxes, man_ket, cum = hoc_mau_agy.doc_ket_qua_co_cum(clip.nguon, hop, 5)
+    assert len(boxes) == len(cum) == 6 and cum[:4] == [0, None, 0, 1] and all(c is None for c in cum[4:])
     b2, m2 = hoc_mau_agy.doc_ket_qua(clip.nguon, hop, 5)  # hàm cũ giữ nguyên chữ ký/giá trị trả
     assert [b.__dict__ for b in b2] == [b.__dict__ for b in boxes] and m2 == man_ket
+
+
+def test_cum_danh_so_rieng_tung_job_va_on_dinh_trong_luot():
+    u1, u2, u3 = "a" * 32, "b" * 32, "c" * 32
+    wm = lambda t: [{"label": t, "box_2d": [1, 2, 3, 4]}]  # noqa: E731
+    ra = {"items": [{"file": f"/x/{u1}.jpg", "endcard": False, "watermarks": wm("Ai") + wm("Pic")},
+                    {"file": f"/x/{u2}.jpg", "endcard": False, "watermarks": wm("pic") + wm("AI")},
+                    {"file": f"/x/{u3}.jpg", "endcard": False, "watermarks": wm("Pic")}]}
+    kq = relay_may_dev.ghep_ket_qua([{"job_id": 1, "anh": [u1, u2]}, {"job_id": 2, "anh": [u3]}], ra)
+    cum = lambda j, i: [w.get("cum") for w in kq[j]["items"][i]["watermarks"]]  # noqa: E731
+    assert cum(1, 0) == [0, 1] and cum(1, 1) == [1, 0] and cum(2, 0) == [0]
 
 
 def test_doc_ket_qua_luot_2_dung_khung_json_rieng_cua_luot(tmp_path):
@@ -258,7 +376,7 @@ def test_doc_ket_qua_luot_2_dung_khung_json_rieng_cua_luot(tmp_path):
     u2 = hop.tao_viec(7, [b"\xff\xd8\xff1"], luot=2)[0]
     (hop.thu_muc_luot(7, 1)).joinpath("khung.json").write_text(json.dumps({u1: {"khung": 1, "vai": "hoc_mau"}}))
     (hop.thu_muc_luot(7, 2)).joinpath("khung.json").write_text(json.dumps({u2: {"khung": 4, "vai": "hoc_mau"}}))
-    assert hoc_mau_agy.doc_ket_qua_co_nhan(clip.nguon, hop, 7, luot=2) is None  # lượt 2 chưa nộp
-    hop.nop_ket_qua(7, {"items": [{"anh": u2, "man_ket": False, "watermarks": [{"box_2d": [10, 10, 60, 60], "label": "dau"}]}]}, 2)
-    boxes, _, nhan = hoc_mau_agy.doc_ket_qua_co_nhan(clip.nguon, hop, 7, luot=2)
-    assert len(boxes) == 1 and nhan == ["dau"] and boxes[0].khung == 4
+    assert hoc_mau_agy.doc_ket_qua_co_cum(clip.nguon, hop, 7, luot=2) is None  # lượt 2 chưa nộp
+    hop.nop_ket_qua(7, {"items": [{"anh": u2, "man_ket": False, "watermarks": [{"box_2d": [10, 10, 60, 60], "cum": 3}]}]}, 2)
+    boxes, _, cum = hoc_mau_agy.doc_ket_qua_co_cum(clip.nguon, hop, 7, luot=2)
+    assert len(boxes) == 1 and cum == [3] and boxes[0].khung == 4

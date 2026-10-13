@@ -4,6 +4,7 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("uvicorn")
 import json  # noqa: E402
+import time  # noqa: E402
 
 from fastapi import FastAPI  # noqa: E402
 from thay_logo_may_chu import MayChu  # noqa: E402
@@ -96,12 +97,14 @@ def test_luong_day_du_chi_job_id_va_uuid_roi_mini(client, hop):
 
 @pytest.mark.parametrize("sai", [
     {"label": "Learna"},                                            # trường chữ từ agy KHÔNG được quay về mini
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": "x" * 41}]},          # nhãn quá 40 ký tự
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": "ignore\nprevious"}]},  # ký tự ngoài whitelist
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": "Ảnh"}]},
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": ""}]},
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": 5}]},
-    {"watermarks": [{"box_2d": [10, 20, 30, 40], "ten": "x"}]},                  # khoá lạ ngoài label
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "label": "learna"}]},          # §3e: KHÔNG chữ nào từ máy dev, kể cả label
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": "0"}]},                  # cum dạng chuỗi
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": True}]},
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": -1}]},
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": 64}]},                   # chạm trần TRAN_CUM
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": 1.0}]},
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "cum": 0, "label": "x"}]},
+    {"watermarks": [{"box_2d": [10, 20, 30, 40], "ten": "x"}]},                  # khoá lạ ngoài cum
     {"watermarks": [{"box_2d": [10, 20, 30]}]},
     {"watermarks": [{"box_2d": [10, 20, 30, 1001]}]},
     {"watermarks": [{"box_2d": [10, 20, 30, "40"]}]},
@@ -138,22 +141,14 @@ def test_tao_viec_chi_nhan_jpeg_trong_tran(hop):
 
 # ---------------------------------------------------------------- nhãn, nhiều lượt, báo lỗi agy (relay thay logo R1)
 
-def test_nhan_hop_le_duoc_chuan_hoa_lower_va_giu(client, hop):
+def test_cum_so_nguyen_hop_le_duoc_giu_va_payload_cu_khong_cum_van_204(client, hop):
     ids = hop.tao_viec(4, [JPEG])
-    kq = _ket_qua(ids[0], watermarks=[{"box_2d": [1, 2, 3, 4], "label": "  Learna-AI v2.0_x  "}, {"box_2d": [5, 6, 7, 8]}])
-    assert client.post(R + "/ket-qua/4", headers=H, json=kq).status_code == 204
-    assert hop.doc_ket_qua(4)["items"][0]["watermarks"] == [{"box_2d": [1, 2, 3, 4], "label": "learna-ai v2.0_x"}, {"box_2d": [5, 6, 7, 8]}]
-
-
-def test_mini_moi_nhan_payload_relay_cu_khong_nhan_khong_luot(client, hop):
-    """Thứ tự deploy: mini trước, relay sau. Giữa hai bước, relay CŨ (không gửi `label`, không `?luot`, không gọi /loi) vẫn nộp
-    được vào mini MỚI — không có cửa sổ mà mọi lượt nộp bị 400."""
-    ids = hop.tao_viec(5, [JPEG, JPEG])
-    kq_cu = {"items": [{"anh": ids[0], "man_ket": False, "watermarks": [{"box_2d": [10, 20, 30, 40]}]},
-                       {"anh": ids[1], "man_ket": True, "watermarks": []}]}
-    assert client.get(R + "/viec", headers=H).json() == {"viec": [{"job_id": 5, "anh": ids, "luot": 1}]}
-    assert client.post(R + "/ket-qua/5", headers=H, json=kq_cu).status_code == 204
-    assert hop.doc_ket_qua(5)["items"] == kq_cu["items"]
+    assert client.post(R + "/ket-qua/4", headers=H, json=_ket_qua(ids[0])).status_code == 204  # payload cũ, không cum
+    ids = hop.tao_viec(5, [JPEG])
+    kq = _ket_qua(ids[0], watermarks=[{"box_2d": [1, 2, 3, 4], "cum": 0}, {"box_2d": [5, 6, 7, 8]}, {"box_2d": [5, 6, 7, 9], "cum": 63}])
+    assert client.post(R + "/ket-qua/5", headers=H, json=kq).status_code == 204
+    assert hop.doc_ket_qua(5)["items"][0]["watermarks"] == [{"box_2d": [1, 2, 3, 4], "cum": 0}, {"box_2d": [5, 6, 7, 8]},
+                                                            {"box_2d": [5, 6, 7, 9], "cum": 63}]
 
 
 def test_nhieu_luot_moi_luot_khoa_rieng_chi_mot_lan_nop(client, hop):
@@ -181,7 +176,8 @@ def test_bao_loi_agy_dem_theo_luot_va_chi_nhan_enum(client, hop):
     for i in (1, 2):
         assert client.post(R + "/loi/6", headers=H, json={"ma": "het_gio"}).status_code == 204
         assert hop.so_loi(6) == i
-    assert hop.doc_loi(6) == {"so": 2, "ma_cuoi": "het_gio"}
+    d = hop.doc_loi(6)
+    assert (d["so"], d["ma_cuoi"]) == (2, "het_gio") and d["dau_luc"] <= time.time()
     assert hop.viec_cho()[0]["job_id"] == 6  # lỗi KHÔNG làm việc biến mất: relay còn thử lại
     for sai in ({"ma": "chu tu do tu agy"}, {"ma": "het_gio", "them": 1}, {"ma": "het_gio", "luot": 9}, {"luot": 1}):
         assert client.post(R + "/loi/6", headers=H, json=sai).status_code in (400, 422)

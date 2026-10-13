@@ -43,18 +43,21 @@ TRAN_DIA_GB = 5.0
 RAM_FREE_TOI_THIEU_PCT, SWAP_TRONG_TOI_THIEU_MB = 30, 1024
 NICE = 10
 TRAN_CHO_AGY = 5  # pha 1 chỉ tải trước khi số video đang chờ agy < trần này — relay tắt thì không dồn file gốc vào đĩa
-# agy trượt: relay nộp lỗi (mã enum) về hộp thư, mini đếm. 3 lần: đủ để một lần chớp mạng/timeout đơn lẻ tự lành (relay thử lại mỗi ~20 s),
-# nhưng lỗi cứng (model bị gỡ, binary hỏng) ra lỗi trong ~1 phút thay vì kẹt `cho_agy` mãi.
+# agy trượt: relay nộp lỗi (mã enum) về hộp thư, mini đếm. Lỗi TẠM THỜI (agy 503, hết quota, mạng chớp) trên main chỉ làm video chờ rồi tự lành,
+# nên KHÔNG được phán `loi` sớm: cần ĐỦ TRAN_LOI_AGY lỗi VÀ lỗi đầu đã cách ≥ GIAN_CACH_LOI_AGY_GIAY (relay thử lại mỗi ~20 s nên
+# riêng số lần thì chỉ ~1 phút). Ngoại lệ: `model_khong_nhan` (model bị gỡ) là lỗi cứng không phụ thuộc video/thời điểm ⇒ `loi` ngay lần 1.
 TRAN_LOI_AGY = 3
+GIAN_CACH_LOI_AGY_GIAY = 15 * 60
+MA_LOI_CUNG = "model_khong_nhan"
 # Video đứng `cho_agy` quá hạn này mà chưa có kết quả ⇒ relay chết / không chạy. 3 giờ: dài hơn nhiều so với 2 lô agy nối tiếp
 # (trần 900 s mỗi lô + hàng chờ ≤ TRAN_CHO_AGY), nên không giết nhầm hàng đang xếp; đủ ngắn để sáng hôm sau người dùng thấy lỗi rõ.
 HAN_CHO_AGY_GIAY = 3 * 3600
 LY_DO_HET_HAN_AGY = "Máy nhận diện logo (relay) không phản hồi — hãy tạo lượt mới sau khi máy đó chạy lại."
 LY_DO_LOI_AGY = {  # câu cố định cho từng mã lỗi (mã lạ ⇒ câu chung); chi tiết chỉ ở log máy chủ
     "model_khong_nhan": "Máy nhận diện logo báo model không còn dùng được — cần quản trị đổi cấu hình.",
-    "het_gio": "Máy nhận diện logo xử lý quá lâu nhiều lần liên tiếp.",
+    "het_gio": "Máy nhận diện logo xử lý quá lâu (hết giờ) và vẫn lỗi sau hơn 15 phút thử lại.",
 }
-LY_DO_LOI_AGY_CHUNG = "Máy nhận diện logo (agy) lỗi nhiều lần liên tiếp."
+LY_DO_LOI_AGY_CHUNG = "Máy nhận diện logo (agy) vẫn lỗi sau hơn 15 phút thử lại."
 TRAN_GIAY_PHA_1 = 180
 CHU_KY_DON_GIAY = 600
 CHU_KY_DON_PHIEN_GIAY = 3600  # thread `tl-don-phien` (nguồn "Tải từ máy"): dọn phiên bỏ dở + file nhập đã dùng
@@ -318,20 +321,27 @@ class ThayLogoWorker:
 
     def _quet_cho_agy(self, conn) -> None:
         """Video `cho_agy` không được kẹt vô hạn. Có kết quả ⇒ để pha 2 xử lý (kết quả thắng lỗi). Chưa có kết quả:
-          · relay đã nộp ≥ TRAN_LOI_AGY lỗi (agy trượt) ⇒ `loi` kèm lý do theo mã lỗi cuối;
+          · lỗi cứng `model_khong_nhan` ⇒ `loi` ngay; các lỗi khác ⇒ `loi` khi đủ TRAN_LOI_AGY lần VÀ cách lỗi đầu ≥ GIAN_CACH_LOI_AGY_GIAY;
           · đứng quá HAN_CHO_AGY_GIAY (relay không phản hồi) ⇒ `loi` với lý do khác.
         Dùng trạng thái `loi` sẵn có; trạng thái chỉ đổi qua `_ket_thuc` (ghi DB xong mới dọn hộp thư)."""
+        bay_gio = time.time()
         for r in hang_doi.danh_sach(conn, "cho_agy"):
             try:
                 if self.hop.doc_ket_qua(r["id"]) is not None:
                     continue
-                loi = self.hop.doc_loi(r["id"])
-                if loi and loi["so"] >= TRAN_LOI_AGY:
+                loi, ly_do = self.hop.doc_loi(r["id"]), None
+                if loi and (loi["ma_cuoi"] == MA_LOI_CUNG
+                            or (loi["so"] >= TRAN_LOI_AGY and bay_gio - loi["dau_luc"] >= GIAN_CACH_LOI_AGY_GIAY)):
                     log.warning("thay logo: video %s — agy trượt %d lần (mã cuối %s)", r["id"], loi["so"], loi["ma_cuoi"])
-                    self._ket_thuc(conn, r["id"], "loi", loi_text=LY_DO_LOI_AGY.get(loi["ma_cuoi"], LY_DO_LOI_AGY_CHUNG))
-                elif r["cho_agy_tu"] is not None and time.time() - r["cho_agy_tu"] > HAN_CHO_AGY_GIAY:
+                    ly_do = LY_DO_LOI_AGY.get(loi["ma_cuoi"], LY_DO_LOI_AGY_CHUNG)
+                elif r["cho_agy_tu"] is not None and bay_gio - r["cho_agy_tu"] > HAN_CHO_AGY_GIAY:
                     log.warning("thay logo: video %s đứng cho_agy quá %d giây — relay không phản hồi", r["id"], HAN_CHO_AGY_GIAY)
-                    self._ket_thuc(conn, r["id"], "loi", loi_text=LY_DO_HET_HAN_AGY)
+                    ly_do = LY_DO_HET_HAN_AGY
+                if ly_do is None:
+                    continue
+                if self.hop.doc_ket_qua(r["id"]) is not None:  # đọc lại ngay trước khi chốt: thu hẹp race với relay vừa nộp kết quả
+                    continue
+                self._ket_thuc(conn, r["id"], "loi", loi_text=ly_do)
             except Exception as e:  # một dòng hỏng không chặn các dòng sau
                 log.warning("thay logo: quét cho_agy video %s lỗi (%s): %s", r["id"], type(e).__name__, e)
 

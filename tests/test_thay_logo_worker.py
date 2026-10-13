@@ -474,25 +474,71 @@ def _den_cho_agy(w):
     return vid
 
 
-def test_agy_bao_loi_du_so_lan_thi_video_ra_loi_co_ly_do_theo_ma(worker):
+def _lui_loi_dau(w, vid, giay):
+    """Giả lập lỗi ĐẦU TIÊN đã xảy ra cách đây `giay` giây (hộp thư ghi giờ thật nên phải lùi tay)."""
+    p = w.hop.thu_muc_luot(vid) / "loi_agy.json"
+    d = json.loads(p.read_text())
+    d["dau_luc"] = time.time() - giay
+    p.write_text(json.dumps(d))
+
+
+def test_loi_tam_thoi_3_lan_trong_1_phut_chua_ra_loi_du_thoi_gian_moi_ra_loi(worker):
+    vid = _den_cho_agy(worker)
+    for _ in range(tw.TRAN_LOI_AGY + 2):  # nhiều hơn 3 lần, nhưng dồn trong vài giây (relay nghỉ ~20 s/vòng)
+        worker.hop.nop_loi(vid, "het_gio")
+    worker.mot_luot()
+    assert _trang_thai(worker, vid)["trang_thai"] == "cho_agy"  # lỗi tạm: video chờ rồi tự lành như trên main
+    _lui_loi_dau(worker, vid, tw.GIAN_CACH_LOI_AGY_GIAY - 60)
+    worker.mot_luot()
+    assert _trang_thai(worker, vid)["trang_thai"] == "cho_agy"  # chưa đủ khoảng cách
+    _lui_loi_dau(worker, vid, tw.GIAN_CACH_LOI_AGY_GIAY + 1)
+    worker.mot_luot()
+    r = _trang_thai(worker, vid)
+    assert (r["trang_thai"], r["loi_text"]) == ("loi", tw.LY_DO_LOI_AGY["het_gio"])
+    assert not (worker.hop.goc / str(vid)).exists()  # hộp thư dọn như mọi trạng thái cuối
+
+
+def test_du_thoi_gian_ma_chua_du_so_lan_thi_chua_ra_loi(worker):
     vid = _den_cho_agy(worker)
     for _ in range(tw.TRAN_LOI_AGY - 1):
-        worker.hop.nop_loi(vid, "model_khong_nhan")
+        worker.hop.nop_loi(vid, "het_gio")
+    _lui_loi_dau(worker, vid, tw.GIAN_CACH_LOI_AGY_GIAY * 4)
     worker.mot_luot()
-    assert _trang_thai(worker, vid)["trang_thai"] == "cho_agy"  # chưa đủ số lần ⇒ còn thử lại
+    assert _trang_thai(worker, vid)["trang_thai"] == "cho_agy"
+
+
+def test_model_khong_nhan_ra_loi_ngay_lan_dau(worker):
+    vid = _den_cho_agy(worker)
     worker.hop.nop_loi(vid, "model_khong_nhan")
     worker.mot_luot()
     r = _trang_thai(worker, vid)
     assert (r["trang_thai"], r["loi_text"]) == ("loi", tw.LY_DO_LOI_AGY["model_khong_nhan"])
-    assert not (worker.hop.goc / str(vid)).exists()  # hộp thư dọn như mọi trạng thái cuối
 
 
 def test_ma_loi_la_ngoai_bang_ly_do_thi_dung_cau_chung(worker):
     vid = _den_cho_agy(worker)
     for _ in range(tw.TRAN_LOI_AGY):
         worker.hop.nop_loi(vid, "thieu_anh")
+    _lui_loi_dau(worker, vid, tw.GIAN_CACH_LOI_AGY_GIAY + 1)
     worker.mot_luot()
-    assert _trang_thai(worker, vid)["loi_text"] == tw.LY_DO_LOI_AGY_CHUNG
+    assert _trang_thai(worker, vid)["trang_thai"] == "loi" and _trang_thai(worker, vid)["loi_text"] == tw.LY_DO_LOI_AGY_CHUNG
+
+
+def test_ket_qua_den_sat_luc_chot_loi_thi_ket_qua_thang(worker, clip_file, monkeypatch):
+    """Race: lúc quét chưa có kết quả, ngay trước `_ket_thuc` relay nộp xong ⇒ KHÔNG được ra `loi`."""
+    clip, _ = clip_file
+    vid = _den_cho_agy(worker)
+    worker.hop.nop_loi(vid, "model_khong_nhan")
+    that, so_lan = worker.hop.doc_ket_qua, []
+
+    def doc(job_id, luot=1):
+        so_lan.append(1)
+        if len(so_lan) == 2:  # lần đọc lại ngay trước chốt: kết quả vừa tới
+            relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid), le={})
+        return that(job_id, luot)
+    monkeypatch.setattr(worker.hop, "doc_ket_qua", doc)
+    worker.mot_luot()
+    assert _trang_thai(worker, vid)["trang_thai"] != "loi"
 
 
 def test_video_dung_cho_agy_qua_han_ra_loi_relay_khong_phan_hoi_khac_ly_do_loi_agy(worker):

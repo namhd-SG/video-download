@@ -3,10 +3,10 @@
 Luật §3e được cài thành KIỂM ở đây, không phải lời hứa:
 - Mini → máy dev chỉ có `job_id` (số nguyên) + ảnh JPEG tên UUID do mini sinh. KHÔNG một trường chữ nào (tên file, tiêu đề, mô tả)
   rời mini — chữ trong ảnh/tên file video người ngoài có thể là prompt injection.
-- Máy dev → mini chỉ có TOẠ ĐỘ số đúng schema; khoá lạ, kiểu sai, giá trị ngoài 0–1000 ⇒ từ chối cả lượt nộp.
+- Máy dev → mini chỉ có TOẠ ĐỘ số đúng schema (thêm `cum`: số nguyên đã kiểm, xem dưới); khoá lạ, kiểu sai, giá trị ngoài 0–1000 ⇒ từ chối cả lượt nộp.
+  KHÔNG một chuỗi chữ nào từ máy dev vào mini — kể cả `label` của agy: relay đổi chữ đó thành số cụm `cum` (cùng chữ trong cùng job ⇒ cùng số).
 - Ảnh có trần cỡ + trần số lượng; một LƯỢT của một việc chỉ nhận MỘT lần nộp kết quả.
-- Máy dev báo agy trượt bằng `ma` thuộc danh sách CỐ ĐỊNH `MA_LOI_AGY` (enum, không chữ tự do); nhãn `label` của watermark chỉ qua khi khớp
-  whitelist ASCII ngắn (`kiem_nhan`).
+- Máy dev báo agy trượt bằng `ma` thuộc danh sách CỐ ĐỊNH `MA_LOI_AGY` (enum, không chữ tự do).
 Không phụ thuộc FastAPI — route mỏng ở `web/thay_logo_routes.py`.
 
 API NHIỀU LƯỢT (cho lane lõi dùng sau). Một việc (`job_id` = id video trong hàng đợi) có tối đa `TRAN_LUOT` lượt:
@@ -35,9 +35,8 @@ TRAN_ANH_BYTE = 2_000_000
 TRAN_ANH_MOT_VIEC = 64
 TRAN_WATERMARK_MOT_ANH = 8
 TRAN_LUOT = 3  # 1 = tìm, 2..3 = kiểm sau render
-TRAN_NHAN_KY_TU = 40
+TRAN_CUM = 64  # số cụm tối đa mỗi việc (≤ 8 watermark × 64 ảnh vẫn là số nguyên nhỏ; chặn số khổng lồ)
 _UUID = re.compile(r"^[0-9a-f]{32}$")
-_NHAN = re.compile(r"^[a-z0-9 ._-]{1,%d}$" % TRAN_NHAN_KY_TU)
 # Lý do agy trượt — enum CỐ ĐỊNH (§3e: dev→mini chỉ số/enum đã kiểm, không chữ tự do). Thêm mã = sửa ở đây rồi cả relay lẫn worker mini theo.
 MA_LOI_AGY = ("het_gio", "agy_loi_chay", "khong_phai_json", "trang_thai_khac", "model_khong_nhan", "thieu_anh", "khong_ket_qua")
 
@@ -139,16 +138,19 @@ class HopThu:
         with self._khoa_loi:
             if (d / "ket_qua.json").exists():
                 raise LoiHopThu(409, "việc đã có kết quả")
-            so = self.so_loi(job_id, luot) + 1
-            _ghi_nguyen_tu(d / "loi_agy.json", json.dumps({"so": so, "ma_cuoi": ma, "luc": time.time()}).encode())
+            cu = self.doc_loi(job_id, luot)
+            so, bay_gio = (cu["so"] if cu else 0) + 1, time.time()
+            _ghi_nguyen_tu(d / "loi_agy.json", json.dumps(
+                {"so": so, "ma_cuoi": ma, "luc": bay_gio, "dau_luc": cu["dau_luc"] if cu else bay_gio}).encode())
             return so
 
     def doc_loi(self, job_id: int, luot: int = 1) -> dict | None:
-        """`{"so": tổng lần lỗi, "ma_cuoi": mã lỗi gần nhất}` hoặc None nếu chưa có lỗi nào."""
+        """`{"so": tổng lần lỗi, "ma_cuoi": mã lỗi gần nhất, "dau_luc": giờ lỗi ĐẦU TIÊN}` hoặc None nếu chưa có lỗi nào."""
         p = self.thu_muc_luot(job_id, luot) / "loi_agy.json"
         try:
             d = json.loads(p.read_text())
-            return {"so": int(d["so"]), "ma_cuoi": d["ma_cuoi"] if d["ma_cuoi"] in MA_LOI_AGY else "khong_ket_qua"}
+            return {"so": int(d["so"]), "ma_cuoi": d["ma_cuoi"] if d["ma_cuoi"] in MA_LOI_AGY else "khong_ket_qua",
+                    "dau_luc": float(d.get("dau_luc", d["luc"]))}
         except (FileNotFoundError, json.JSONDecodeError, KeyError, ValueError, TypeError):
             return None
 
@@ -166,19 +168,9 @@ class HopThu:
         return json.loads(p.read_text()) if p.exists() else None
 
 
-def kiem_nhan(nhan) -> str:
-    """Nhãn watermark: chuỗi, chuẩn hoá strip + lower, 1–40 ký tự trong [a-z0-9 ._-]. Sai ⇒ LoiHopThu(400). Trả nhãn đã chuẩn hoá."""
-    if not isinstance(nhan, str):
-        raise LoiHopThu(400, "label phải là chuỗi")
-    n = nhan.strip().lower()
-    if not _NHAN.match(n):
-        raise LoiHopThu(400, f"label chỉ gồm a-z 0-9 khoảng trắng . - _ và 1–{TRAN_NHAN_KY_TU} ký tự")
-    return n
-
-
 def kiem_ket_qua(du_lieu, anh_hop_le: set[str]) -> list[dict]:
-    """`{"items": [{"anh": uuid, "man_ket": bool, "watermarks": [{"box_2d": [4 số nguyên 0–1000], "label"?: str}]}]}` — không khoá thừa.
-    `label` tuỳ chọn, qua `kiem_nhan`; sai ⇒ từ chối CẢ lượt nộp."""
+    """`{"items": [{"anh": uuid, "man_ket": bool, "watermarks": [{"box_2d": [4 số nguyên 0–1000], "cum"?: int}]}]}` — không khoá thừa.
+    `cum` tuỳ chọn: số nguyên (không bool) 0 ≤ cum < TRAN_CUM; mọi thứ khác (chuỗi, `label`…) ⇒ từ chối CẢ lượt nộp."""
     if not isinstance(du_lieu, dict) or set(du_lieu) != {"items"} or not isinstance(du_lieu["items"], list):
         raise LoiHopThu(400, "gốc phải đúng một khoá 'items' kiểu danh sách")
     out, da_thay = [], set()
@@ -193,11 +185,13 @@ def kiem_ket_qua(du_lieu, anh_hop_le: set[str]) -> list[dict]:
             raise LoiHopThu(400, "quá nhiều watermark trong một ảnh")
         wms = []
         for wm in it["watermarks"]:
-            b = wm.get("box_2d") if isinstance(wm, dict) and set(wm) in ({"box_2d"}, {"box_2d", "label"}) else None
+            b = wm.get("box_2d") if isinstance(wm, dict) and set(wm) in ({"box_2d"}, {"box_2d", "cum"}) else None
             if not (isinstance(b, list) and len(b) == 4
                     and all(isinstance(x, int) and not isinstance(x, bool) and 0 <= x <= 1000 for x in b)):
-                raise LoiHopThu(400, "box_2d phải đúng 4 số nguyên 0–1000, chỉ thêm được khoá label")
-            wms.append({"box_2d": b, **({"label": kiem_nhan(wm["label"])} if "label" in wm else {})})
+                raise LoiHopThu(400, "box_2d phải đúng 4 số nguyên 0–1000, chỉ thêm được khoá cum")
+            if "cum" in wm and not (isinstance(wm["cum"], int) and not isinstance(wm["cum"], bool) and 0 <= wm["cum"] < TRAN_CUM):
+                raise LoiHopThu(400, f"cum phải là số nguyên 0–{TRAN_CUM - 1}")
+            wms.append({"box_2d": b, **({"cum": wm["cum"]} if "cum" in wm else {})})
         da_thay.add(it["anh"])
         out.append({"anh": it["anh"], "man_ket": it["man_ket"], "watermarks": wms})
     return out
