@@ -45,6 +45,12 @@ def _kiem_token(authorization: str | None = Header(default=None)) -> None:
         raise HTTPException(401, "sai token relay")
 
 
+class LoiRelay(BaseModel):
+    model_config = {"extra": "forbid"}  # không khoá thừa: không đường nào cho chữ tự do từ máy dev lọt vào mini
+    ma: str = Field(max_length=32)
+    luot: int = 1
+
+
 def _http(loi: LoiHopThu) -> HTTPException:
     return HTTPException(loi.ma, str(loi))
 
@@ -67,9 +73,17 @@ def dang_ky_route(app: FastAPI, lay_hop_thu: Callable[[], HopThu]) -> None:
         return Response(du_lieu, media_type="image/jpeg")
 
     @app.post(f"{TIEN_TO}/ket-qua/{{job_id}}", status_code=204, response_model=None, dependencies=[Depends(_kiem_token)])
-    def relay_ket_qua(job_id: int, du_lieu=Body(...)) -> None:
+    def relay_ket_qua(job_id: int, du_lieu=Body(...), luot: int = Query(1)) -> None:
         try:
-            lay_hop_thu().nop_ket_qua(job_id, du_lieu)
+            lay_hop_thu().nop_ket_qua(job_id, du_lieu, luot)
+        except LoiHopThu as e:
+            raise _http(e) from None
+
+    @app.post(f"{TIEN_TO}/loi/{{job_id}}", status_code=204, response_model=None, dependencies=[Depends(_kiem_token)])
+    def relay_loi(job_id: int, du_lieu: LoiRelay) -> None:
+        """Máy dev báo agy trượt. `ma` chỉ nhận enum `hop_thu.MA_LOI_AGY` (ngoài ra ⇒ 400); mini đếm và tự quyết bỏ cuộc."""
+        try:
+            lay_hop_thu().nop_loi(job_id, du_lieu.ma, du_lieu.luot)
         except LoiHopThu as e:
             raise _http(e) from None
 

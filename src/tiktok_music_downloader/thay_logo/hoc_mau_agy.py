@@ -46,13 +46,21 @@ def dat_viec(nguon: NguonKhung, hop: HopThu, job_id: int) -> int:
     return len(ids)
 
 
-def doc_ket_qua(nguon: NguonKhung, hop: HopThu, job_id: int) -> tuple[list[BoxMoi], bool | None] | None:
+def doc_ket_qua(nguon: NguonKhung, hop: HopThu, job_id: int, luot: int = 1) -> tuple[list[BoxMoi], bool | None] | None:
     """Pha 2. None ⇒ máy dev chưa nộp (job vẫn `cho_agy`). Trả (box mồi, cờ màn kết agy | None nếu không có ảnh cuối)."""
-    kq = hop.doc_ket_qua(job_id)
+    kq = doc_ket_qua_co_nhan(nguon, hop, job_id, luot)
+    return None if kq is None else (kq[0], kq[1])
+
+
+def doc_ket_qua_co_nhan(nguon: NguonKhung, hop: HopThu, job_id: int,
+                        luot: int = 1) -> tuple[list[BoxMoi], bool | None, list[str | None]] | None:
+    """Như `doc_ket_qua` + `nhan`: danh sách SONG SONG với `boxes` (cùng độ dài, cùng thứ tự); nhãn agy gán cho watermark đó
+    (đã qua whitelist ở hộp thư) hoặc None nếu agy không trả. `BoxMoi` KHÔNG đổi — nhãn đi riêng."""
+    kq = hop.doc_ket_qua(job_id, luot)
     if kq is None:
         return None
-    bang = json.loads((hop.goc / str(job_id) / "khung.json").read_text())
-    boxes, man_ket = [], None
+    bang = json.loads((hop.thu_muc_luot(job_id, luot) / "khung.json").read_text())
+    boxes, nhan, man_ket = [], [], None
     for it in kq["items"]:
         k = bang.get(it["anh"])
         if k is None:
@@ -66,4 +74,5 @@ def doc_ket_qua(nguon: NguonKhung, hop: HopThu, job_id: int) -> tuple[list[BoxMo
             b = box_tu_box_2d(wm["box_2d"], k["khung"], nguon.rong, nguon.cao, "agy")
             if b:
                 boxes.append(b)
-    return boxes, man_ket
+                nhan.append(wm.get("label"))
+    return boxes, man_ket, nhan
