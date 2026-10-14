@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from . import cong
+from .bam_hai_chieu import bam_lai_doan_mat
 from .box_moi import BoxMoi, chon_moi_dong_thuan, gom_vet
 from .dinh_vi import dinh_vi, ti_le_phu_de
 from .kiem_hinh import CHAN_HINH, kiem_hinh_truoc_dan, san_hinh
@@ -199,12 +200,13 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
     uv = dinh_vi(nguon, mau, neo, 1, not mau_giong_phu_de(mau))
     n = len(uv)
     det, tt = theo_vet([u for u, _ in uv], mau.shape[::-1], khung_moi)
-    che, doan = lap_va_lam_muot(det, n)
+    det_bam, bam = bam_lai_doan_mat(nguon, det, mau)  # `det` gốc giữ cho _bang_chung: khung bám lại không làm vết "có thật" hơn
+    che, doan = lap_va_lam_muot(det_bam, n)
     che = _kep_vao_khung(che, nguon.rong, nguon.cao)
     track = _track_day_du(n, che, uv)
     hinh = kiem_hinh_truoc_dan(nguon, track, mau)
     kq = ap_moi_cong(nguon, track, mau, cum)
-    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh)
+    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh, bam_hai_chieu=bam)
     ly_do = _bang_chung(det, khung_moi, len(cum), tt)
     if ly_do:
         kq.trang_thai, kq.khung_render, kq.ly_do = "cho_nguoi", [], ly_do

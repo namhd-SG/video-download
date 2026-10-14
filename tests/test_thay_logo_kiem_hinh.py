@@ -65,3 +65,27 @@ def test_doan_chan_khong_go_duoc_khung_nao_van_theo_go_chan_le_cu():
     tr = [_e(0, "detected"), _e(1, cong.CHAN_VANH, 0.1), _e(2, cong.CHAN_VANH, 0.1), _e(3, "detected")]
     assert cong.go_chan_theo_hinh(tr, {1: 0.0, 2: 0.0}, san=0.6) == 0
     assert cong.go_chan_le(tr) == 2
+
+
+MO = set(range(30, 60))
+
+
+def _clip_mo():
+    """Logo trôi đều, giữa đường MỜ hẳn 30 khung (alpha 0,05): lõi cũ mất dấu, lấp lỗ di chuyển thì kiểm hình bác (hình quá yếu)."""
+    return tao_clip(n=90, duong_di=lambda i: (40 + 2 * i, 300 + i), mo_khung=MO, alpha_mo=0.05)
+
+
+def test_logo_mo_troi_qua_doan_kho_duoc_bam_lai_hai_chieu():
+    """v04 Test3: logo bán trong suốt qua nền sáng/rối, điểm từng khung ≈ nhiễu. Hai bộ bám xuôi/ngược gặp nhau ⇒ nhận, đúng chỗ."""
+    clip = _clip_mo()
+    v = _vet(clip, khung=(5, 15, 75))
+    ren = {e["frame"]: e for e in v.khung_render}
+    assert MO <= set(ren)
+    assert max(abs(ren[i]["x"] - clip.hop_that[i][0]) + abs(ren[i]["y"] - clip.hop_that[i][1]) for i in MO) <= 8
+    assert v.thong_tin["bam_hai_chieu"]["khung_nhan"] >= len(MO)
+
+
+def test_dot_bien_tat_bam_hai_chieu_thi_doan_mo_lo(monkeypatch):
+    monkeypatch.setattr(duong_ong, "bam_lai_doan_mat", lambda nguon, det, mau: (det, {}))
+    v = _vet(_clip_mo(), khung=(5, 15, 75))
+    assert not MO & {e["frame"] for e in v.khung_render}

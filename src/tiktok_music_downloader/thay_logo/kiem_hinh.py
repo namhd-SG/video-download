@@ -14,7 +14,10 @@ Phạm vi — đo 14/10 trên mốc 9124eeb: áp sàn cho MỌI khung detected s
 chấm ĐẠT; đa số là logo mờ thật trên nền rối — điểm thấp nhưng đúng chỗ). Vì vậy:
 - khung detected: chỉ hạ đoạn điểm dưới sàn DÀI hơn `GO_NGAN_TOI_DA` VÀ bắt đầu bằng BƯỚC NHẢY (vết nhảy sang chỗ khác rồi bám đó:
   v10 k372–402 điểm 0,51–0,62, sàn 0,64); đoạn điểm thấp liền mạch giữ nguyên;
-- khung lấp: chỉ kiểm đoạn mà hai đầu lệch > `LAP_TINH_PX` (test_2: đoạn lấp sai lệch 28–118 px, đoạn lấp đúng 6–10 px).
+- khung lấp: chỉ kiểm đoạn ĐI NHANH — hai đầu (khung có toạ độ gần nhất) lệch > `LAP_TINH_PX` VÀ tốc độ > `LAP_CHAM_PX` px/khung.
+  Đo: đoạn lấp sai ở test_2 chạy 4,6–27 px/khung; logo Learna trôi chậm ở v13 (~1 px/khung, lệch 16–25 px) lấp ĐÚNG.
+- vết YẾU (trung vị điểm detected < `VET_MANH`: logo trong suốt) ⇒ không kiểm khung lấp: điểm từng khung không phân định — đo test_1
+  (trung vị 0,36): khung lấp đúng `hinh` trung vị 0,13 trong khi khung lấp SAI của test_2 (vết mạnh) là 0,32.
 """
 from __future__ import annotations
 
@@ -29,6 +32,8 @@ K_MAD = 2.5
 BIEN_TOI_THIEU = 0.15
 GO_NGAN_TOI_DA = 3  # đoạn detected hụt sàn ≤ 3 khung = logo nhoè thoáng qua ⇒ vẫn che (chống nháy)
 LAP_TINH_PX = 12  # đoạn lấp có hai đầu lệch ≤ chừng này = logo đứng yên, nội suy đáng tin ⇒ không kiểm
+LAP_CHAM_PX = 2.0  # … hoặc đi chậm ≤ chừng này px/khung (logo trôi chậm) ⇒ không kiểm
+VET_MANH = 0.5  # trung vị điểm detected dưới mức này ⇒ vết yếu, không kiểm khung lấp
 NHAY_PX_MOI_KHUNG = 25.0  # cùng ngưỡng TOC_DO_NHAY của lam_muot_vet: vượt ⇒ coi là bước nhảy
 CHAN_HINH = "hidden_hinh"
 
@@ -119,11 +124,18 @@ def kiem_hinh_truoc_dan(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -
                 e["state"], e["hinh_hut"] = CHAN_HINH, round(float(e["score"]), 3)
             dem["detected_hut"] += j - i
     lap: dict[int, dict] = {}
+    d = [e["score"] for e in track if e.get("state") == "detected" and e.get("score") is not None]
+    vet_manh = bool(d) and float(np.median(d)) >= VET_MANH
     for i, j in _doan(track, lambda e: e.get("state") == "filled"):
-        a = track[i - 1] if i > 0 and "x" in track[i - 1] else None
-        b = track[j] if j < len(track) and "x" in track[j] else None
-        if a is not None and b is not None and float(np.hypot(*np.subtract(_tam(a), _tam(b)))) <= LAP_TINH_PX:
-            dem["filled_tinh"] += j - i
+        a = next((k for k in range(i - 1, -1, -1) if "x" in track[k]), None)
+        b = next((k for k in range(j, len(track)) if "x" in track[k]), None)
+        if a is not None and b is not None:
+            lech = float(np.hypot(*np.subtract(_tam(track[a]), _tam(track[b]))))
+            if lech <= LAP_TINH_PX or lech / (b - a) <= LAP_CHAM_PX:
+                dem["filled_tinh"] += j - i
+                continue
+        if not vet_manh:
+            dem["filled_vet_yeu"] = dem.get("filled_vet_yeu", 0) + j - i
             continue
         lap.update({k: track[k] for k in range(i, j)})
     if not lap:
