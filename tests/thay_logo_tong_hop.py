@@ -56,9 +56,11 @@ def _dan(g: np.ndarray, m: np.ndarray, x: int, y: int, mau: float, alpha: float)
 
 def tao_clip(n: int = 60, *, phu_de_vien_den: range | None = None, phu_de_bong_mo: range | None = None,
              icon_dac: bool = False, icon_nen: float = 220.0, icon_tam: float = 120.0, seed: int = 7,
-             duong_di: Callable[[int], tuple[int, int]] | None = None, che_khung: set[int] | None = None) -> ClipTongHop:
+             duong_di: Callable[[int], tuple[int, int]] | None = None, che_khung: set[int] | None = None,
+             vang_khung: set[int] | None = None) -> ClipTongHop:
     """`duong_di(i)` = vị trí (x, y) watermark chữ ở khung i (mặc định trôi chậm). `che_khung` = khung mà một miếng đặc phủ kín
-    watermark (logo còn đó nhưng dò không thấy ⇒ lõi phải LẤP lỗ); `hop_that` vẫn ghi vị trí thật ở khung đó."""
+    watermark (logo còn đó nhưng dò không thấy ⇒ lõi phải LẤP lỗ); `hop_that` vẫn ghi vị trí thật ở khung đó.
+    `vang_khung` = khung KHÔNG có watermark (logo tắt giữa hai lần hiện, kiểu nhảy chỗ) — dán vào đó là dán sai."""
     rng = np.random.default_rng(seed)
     if icon_dac:  # logo đặc tương phản cao (kiểu icon app góc cố định): ô màu `icon_nen` + chấm tròn `icon_tam`
         wm = np.zeros((40, 40), np.float32)
@@ -76,6 +78,8 @@ def tao_clip(n: int = 60, *, phu_de_vien_den: range | None = None, phu_de_bong_m
         if icon_dac:
             _dan(g, wm, x, y, icon_nen, 1.0)
             _dan(g, wm_sang, x, y, icon_tam, 1.0)
+        elif vang_khung and i in vang_khung:
+            pass  # logo tắt: không dán gì
         elif che_khung and i in che_khung:
             _dan(g, np.ones((h + 12, w + 12), np.float32), max(0, x - 6), max(0, y - 6), 100.0, 1.0)  # miếng đặc xám phủ kín vùng logo: ứng viên không còn
         else:

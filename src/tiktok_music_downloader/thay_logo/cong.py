@@ -140,6 +140,41 @@ def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> di
 
 
 CHAN_RUN_LE = 3  # khung bị chặn lẻ loi (≤ 3 khung liền) = báo động giả: phụ đề thật nằm lại ≥ nửa giây
+# Khung bị KIỂM HÌNH bác (`kiem_hinh.CHAN_HINH`) không thuộc diện gỡ: đó là chỗ không có logo (khung lấp sai chỗ, vết trượt), gỡ là
+# dán logo lên nền trống (kiểm hình đã chừa đoạn ngắn ≤ 3 khung).
+KHONG_GO = ("hidden_hinh",)
+# Gỡ chặn THEO HÌNH (đo 14/10, agy KHÉP R4b): khung bị cổng TƯƠNG PHẢN hoặc VÀNH chặn mà hình khớp watermark (điểm ≥ sàn hình của
+# vết) VÀ trong tấm nền không có nét lạ (phần dư sau trừ mẫu ≤ NET_LA_SAN, sàn TUYỆT ĐỐI — ngưỡng theo video bị kéo lên khi chữ nằm
+# lâu trong box) ⇒ đó là watermark, không phải nội dung ⇒ che lại với tấm nền ép hẹp (box +PAD_CHAT, chỗ logo cũ đã che sẵn).
+# Đo: khung bị tương phản chặn ở v01/v04/v05 có điểm trung vị 0,66–0,83, 91–100% ≥ sàn (logo trắng mờ trên nền TỐI, chênh 66–98);
+# đối chứng α bị bác (chữ phụ đề thật đo theo mặt nạ logo có α THẤP hơn logo). Cổng PHỤ ĐỀ và NÉT LẠ không gỡ.
+CO_THE_GO_THEO_HINH = (CHAN_TUONG_PHAN, CHAN_VANH)
+
+
+def go_chan_theo_hinh(track: list[dict], net: dict[int, float], san: float | None) -> int:
+    """Gỡ khung bị cổng tương phản / vành chặn khi hình khớp + không nét lạ (xem trên); khung gỡ gắn `go_hinh`. Trong một đoạn chặn
+    bị gỡ MỘT PHẦN, khung còn lại gắn `giu_chan` để `go_chan_le` không gỡ ăn theo các mẩu ≤ 3 khung vừa bị cắt ra (chúng đã bị xét và
+    trượt). Đoạn chặn không có khung nào được gỡ thì giữ nguyên hành vi cũ của `go_chan_le`. Trả số khung gỡ."""
+    if san is None:
+        return 0
+    go, i, n = 0, 0, len(track)
+    while i < n:
+        if track[i].get("state") not in CO_THE_GO_THEO_HINH:
+            i += 1
+            continue
+        j = i
+        while j < n and track[j].get("state") in CO_THE_GO_THEO_HINH:
+            j += 1
+        dat = [e for e in track[i:j] if e.get("score") is not None and e["score"] >= san and net.get(e["frame"], 1.0) <= NET_LA_SAN]
+        for e in dat:
+            e["chan_cu"], e["state"], e["plate_pad"], e["go_hinh"] = e["state"], "detected", PAD_CHAT, True
+        if dat:
+            for e in track[i:j]:
+                if not e.get("go_hinh"):
+                    e["giu_chan"] = True
+        go += len(dat)
+        i = j
+    return go
 
 
 def go_chan_le(track: list[dict], toi_da: int | None = None) -> int:
@@ -148,12 +183,16 @@ def go_chan_le(track: list[dict], toi_da: int | None = None) -> int:
     chặn oan là một khung LỘ watermark giữa hai khung đã che = nháy. Phụ đề/nội dung thật kéo dài ⇒ vẫn bị chặn. Trả số khung gỡ."""
     toi_da = CHAN_RUN_LE if toi_da is None else toi_da
     go, i, n = 0, 0, len(track)
+    def chan(e: dict) -> bool:
+        st = str(e.get("state", ""))
+        return st.startswith("hidden_") and st not in KHONG_GO and not e.get("giu_chan") and "x" in e
+
     while i < n:
-        if not str(track[i].get("state", "")).startswith("hidden_") or "x" not in track[i]:
+        if not chan(track[i]):
             i += 1
             continue
         j = i
-        while j < n and str(track[j].get("state", "")).startswith("hidden_") and "x" in track[j]:
+        while j < n and chan(track[j]):
             j += 1
         if j - i <= toi_da:
             for e in track[i:j]:

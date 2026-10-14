@@ -17,6 +17,7 @@ import numpy as np
 from . import cong
 from .box_moi import BoxMoi, chon_moi_dong_thuan, gom_vet
 from .dinh_vi import dinh_vi, ti_le_phu_de
+from .kiem_hinh import CHAN_HINH, kiem_hinh_truoc_dan, san_hinh
 from .lam_muot_vet import TOC_DO_NHAY, lap_va_lam_muot
 from .mau import dung_mau_sach, mat_na_va_tuong_phan, tu_hoc_mau
 from .nguon_khung import NguonKhung
@@ -95,6 +96,7 @@ def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mau: np.ndarray, bo_phu
     khung, đo vành ngang + nét lạ (ghi vào khung để tune offline), rồi áp ngưỡng theo video. Trả True nếu nét lạ phổ biến (cờ)."""
     mask, tcon = mat_na_va_tuong_phan(mau)
     nguong = cong.nguong_tuong_phan(tcon)
+    san = san_hinh(track)
     by = {e["frame"]: e for e in track if e.get("state") in cong.DA_CHAC}
     vanh: dict[int, float] = {}
     net: dict[int, float] = {}
@@ -109,11 +111,14 @@ def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mau: np.ndarray, bo_phu
                     cong.cong_tuong_phan(g, e, mask, nguong)
                 if e["state"] in cong.DA_CHAC:
                     vanh[i] = e["vanh"] = round(cong.ti_le_vanh(g, e), 4)
+                if e["state"] in cong.DA_CHAC or e["state"] == cong.CHAN_TUONG_PHAN:  # khung bị tương phản chặn cũng cần đo để xét gỡ
                     net[i] = e["net_la"] = round(cong.ti_le_net_la(g, e, mau), 4)
             if i >= cuoi:
                 break
     cong.cong_vanh_ngang(track, vanh)
-    return cong.cong_net_la(track, net)
+    pho_bien = cong.cong_net_la(track, net)
+    cong.go_chan_theo_hinh(track, net, san)
+    return pho_bien
 
 
 def _kep_vao_khung(che: dict[int, dict], rong: int, cao: int) -> dict[int, dict]:
@@ -197,8 +202,9 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
     che, doan = lap_va_lam_muot(det, n)
     che = _kep_vao_khung(che, nguon.rong, nguon.cao)
     track = _track_day_du(n, che, uv)
+    hinh = kiem_hinh_truoc_dan(nguon, track, mau)
     kq = ap_moi_cong(nguon, track, mau, cum)
-    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, tt
+    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh)
     ly_do = _bang_chung(det, khung_moi, len(cum), tt)
     if ly_do:
         kq.trang_thai, kq.khung_render, kq.ly_do = "cho_nguoi", [], ly_do
@@ -220,8 +226,10 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
-    dem = {s: sum(1 for e in track if e.get("state") == s) for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e)
+    dem = {s: sum(1 for e in track if e.get("state") == s)
+           for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh"))
+    dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]

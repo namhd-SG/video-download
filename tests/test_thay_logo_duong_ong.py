@@ -179,6 +179,7 @@ def test_icon_dac_tuong_phan_cao_van_duoc_render():
 def test_dot_bien_nguong_tuong_phan_co_dinh_65_giet_icon_dac(monkeypatch):
     clip = tao_clip(icon_dac=True)
     monkeypatch.setattr(cong, "nguong_tuong_phan", lambda tcon: 65.0)
+    monkeypatch.setattr(cong, "go_chan_theo_hinh", lambda track, net, san: 0)  # cô lập ngưỡng học: gỡ theo hình có test riêng
     v = _vet(clip)
     assert v.khung_render == []
 
