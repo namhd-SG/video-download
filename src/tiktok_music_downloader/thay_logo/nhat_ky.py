@@ -100,8 +100,9 @@ def cap_nhat_video(conn, video_id: int, **truong) -> None:
 
 
 def ghi_box_moi(conn, video_id: int, boxes, cum_cua: dict | None = None) -> None:
+    # `nhan_agy` giữ SỐ cụm agy gán (`BoxMoi.cum`): chữ nhãn không rời máy dev (§3e). `cum` là cụm do lõi gom (`cum_cua`).
     conn.executemany("INSERT INTO tl_box_moi (video_id, khung, x, y, w, h, nguon, nhan_agy, cum) VALUES (?,?,?,?,?,?,?,?,?)",
-                     [(video_id, b.khung, b.x, b.y, b.w, b.h, b.nguon, getattr(b, "nhan", None), (cum_cua or {}).get(b))
+                     [(video_id, b.khung, b.x, b.y, b.w, b.h, b.nguon, b.cum, (cum_cua or {}).get(b))
                       for b in boxes])
     conn.commit()
 

@@ -8,7 +8,7 @@ pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless (
 
 from thay_logo_tong_hop import tao_clip  # noqa: E402
 
-from tiktok_music_downloader.thay_logo import hoc_mau_agy, relay_may_dev  # noqa: E402
+from tiktok_music_downloader.thay_logo import hoc_mau_agy, nhat_ky, relay_may_dev  # noqa: E402
 from tiktok_music_downloader.thay_logo.duong_ong import xu_ly_video  # noqa: E402
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu  # noqa: E402
 
@@ -355,6 +355,12 @@ def test_cum_xuyen_tu_agy_den_doc_ket_qua_co_cum_song_song_voi_box(tmp_path):
     assert len(boxes) == len(cum) == 6 and cum[:4] == [0, None, 0, 1] and all(c is None for c in cum[4:])
     b2, m2 = hoc_mau_agy.doc_ket_qua(clip.nguon, hop, 5)  # hàm cũ giữ nguyên chữ ký/giá trị trả
     assert [b.__dict__ for b in b2] == [b.__dict__ for b in boxes] and m2 == man_ket
+    assert [b.cum for b in b2] == cum  # worker đọc qua `doc_ket_qua`: số cụm phải tới được lõi trong BoxMoi
+    conn = nhat_ky.mo(tmp_path / "log.db")
+    vid = nhat_ky.bat_dau_video(conn, nguon_video="v.mp4")
+    nhat_ky.ghi_box_moi(conn, vid, b2)
+    assert [r[0] for r in conn.execute("SELECT nhan_agy FROM tl_box_moi WHERE video_id=? ORDER BY rowid", (vid,))][:4] == \
+        ["0", None, "0", "1"]
 
 
 def test_cum_danh_so_rieng_tung_job_va_on_dinh_trong_luot():

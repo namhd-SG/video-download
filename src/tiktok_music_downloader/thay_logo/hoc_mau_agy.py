@@ -55,7 +55,7 @@ def doc_ket_qua(nguon: NguonKhung, hop: HopThu, job_id: int, luot: int = 1) -> t
 def doc_ket_qua_co_cum(nguon: NguonKhung, hop: HopThu, job_id: int,
                         luot: int = 1) -> tuple[list[BoxMoi], bool | None, list[int | None]] | None:
     """Như `doc_ket_qua` + `cum`: danh sách SONG SONG với `boxes` (cùng độ dài, cùng thứ tự); số cụm relay gán cho watermark đó
-    (cùng chữ nhãn trong cùng job ⇒ cùng số) hoặc None nếu agy không trả nhãn. `BoxMoi` KHÔNG đổi — cụm đi riêng."""
+    (cùng chữ nhãn trong cùng job ⇒ cùng số) hoặc None nếu agy không trả nhãn. Số cụm cũng nằm trong `BoxMoi.cum` để lõi gom theo nó."""
     kq = hop.doc_ket_qua(job_id, luot)
     if kq is None:
         return None
@@ -71,7 +71,7 @@ def doc_ket_qua_co_cum(nguon: NguonKhung, hop: HopThu, job_id: int,
         if it["man_ket"]:  # agy nói khung này là màn kết ⇒ box trên đó không phải watermark trên nội dung
             continue
         for wm in it["watermarks"]:
-            b = box_tu_box_2d(wm["box_2d"], k["khung"], nguon.rong, nguon.cao, "agy")
+            b = box_tu_box_2d(wm["box_2d"], k["khung"], nguon.rong, nguon.cao, "agy", wm.get("cum"))
             if b:
                 boxes.append(b)
                 cum.append(wm.get("cum"))
