@@ -39,13 +39,39 @@ def test_render_ghi_file_ra_va_nhat_ky_day_du(clip_file, tmp_path):
     assert conn.execute("SELECT so_render FROM tl_vet WHERE video_id=?", (kq["video_log_id"],)).fetchone()[0] > 0
 
 
-def test_cho_nguoi_khong_ghi_file_ra(clip_file, tmp_path):
+def test_cho_nguoi_khong_ghi_file_ra_va_noi_ly_do(clip_file, tmp_path):
     clip, p = clip_file
     conn = nhat_ky.mo(tmp_path / "log.db")
-    kq = xu_ly_video.xu_ly(str(p), clip.box_moi(khung=(5,)), str(tmp_path / "ra.mp4"), conn, tmp_path / "f",
+    kq = xu_ly_video.xu_ly(str(p), [clip.box_gia(5, cum=2)], str(tmp_path / "ra.mp4"), conn, tmp_path / "f",
                            nguon_video="drive:y", ffmpeg=FFMPEG)
-    assert kq == {"video_log_id": kq["video_log_id"], "trang_thai": "cho_nguoi", "dau_ra": None}
+    assert (kq["trang_thai"], kq["dau_ra"]) == ("cho_nguoi", None)
+    assert "cụm 2" in kq["ly_do"] and kq["vet_bi_bo"][0]["nhan"] == "cụm 2"
     assert not (tmp_path / "ra.mp4").exists()
+    r = conn.execute("SELECT trang_thai, loi_text FROM tl_video WHERE id=?", (kq["video_log_id"],)).fetchone()
+    assert r["trang_thai"] == "cho_nguoi" and "cụm 2" in r["loi_text"]  # lý do nằm trong nhật ký cho người duyệt
+
+
+def test_con_mot_cum_bi_bo_thi_ca_video_cho_nguoi_khong_render_im_lang(clip_file, tmp_path):
+    """Lỗ ca 03_9: một watermark thay được + một watermark KHÔNG thay được ⇒ trước đây cả video `render`, watermark sót không ai biết."""
+    clip, p = clip_file
+    conn = nhat_ky.mo(tmp_path / "log.db")
+    boxes = clip.box_moi(khung=(5, 12, 20, 28, 35), cum=1) + [clip.box_gia(8, cum=2)]
+    kq = xu_ly_video.xu_ly(str(p), boxes, str(tmp_path / "ra.mp4"), conn, tmp_path / "f", nguon_video="drive:w", ffmpeg=FFMPEG)
+    assert kq["trang_thai"] == "cho_nguoi" and kq["dau_ra"] is None and not (tmp_path / "ra.mp4").exists()
+    assert len(kq["vet_bi_bo"]) == 1 and kq["nhay"][0]["pct_nhay"] <= 2
+
+
+def test_goi_lai_voi_box_bo_sung_render_mot_luot_voi_hop_mat_na(clip_file, tmp_path):
+    """API cho vòng kiểm: lượt 1 chỉ có box giả (cho_nguoi); lượt 2 đưa box thật + vet_cu ⇒ vết cũ giữ, vết mới thêm, render từ gốc."""
+    from tiktok_music_downloader.thay_logo import duong_ong
+    from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungVideo
+    clip, p = clip_file
+    luot1 = duong_ong.xu_ly_video(NguonKhungVideo(str(p)), [clip.box_gia(8, cum=2)])
+    assert luot1.trang_thai == "cho_nguoi"
+    conn = nhat_ky.mo(tmp_path / "log.db")
+    kq = xu_ly_video.xu_ly(str(p), clip.box_moi(khung=(5, 12, 20, 28, 35), cum=1), str(tmp_path / "ra.mp4"), conn,
+                           tmp_path / "f", nguon_video="drive:l2", ffmpeg=FFMPEG, vet_cu=luot1.vet)
+    assert len(kq["vet_bi_bo"]) == 1 and kq["trang_thai"] == "cho_nguoi"  # vết cũ (giả) vẫn bị báo, không rơi mất
 
 
 def test_loi_duoc_ghi_vao_nhat_ky_roi_nem_lai(clip_file, tmp_path, monkeypatch):

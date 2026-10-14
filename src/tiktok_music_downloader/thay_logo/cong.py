@@ -16,10 +16,15 @@ from .dinh_vi import ti_le_phu_de
 PHU_DE_TI_LE, PAD_TAM_NEN, PAD_CHAT = 0.03, 4, 2
 # Cổng tương phản HỌC theo video: nét chênh nền > max(65, 1,5 × tương phản của chính mẫu) ⇒ không phải watermark mờ.
 TUONG_PHAN_SAN, TUONG_PHAN_HE_SO = 65.0, 1.5
-# Cổng vành ngang (ĐP-1488 chọn (b) cho pilot): phụ đề tràn ngang ra ngoài box, watermark thì không.
-VANH_RONG, VANH_SANG, VANH_THONG_CAO, VANH_SAN, VANH_K_MAD = 0.8, 180, 35, 0.01, 4.0
-# Cổng khớp v2: chỉ xét box mồi mà track đang chắc (±1 khung); qua ⟺ khớp ≥ CAN_KHOP VÀ lệch = 0.
-CAN_KHOP = 3
+# Cổng vành ngang (ĐP-1488 chọn (b) cho pilot): phụ đề tràn ngang ra ngoài box, watermark thì không. Sàn 0,04 (trước 0,01): đo ở
+# PhotoRevive (Test 03_40) video gần như không có nét sáng ⇒ MAD ≈ 0 ⇒ ngưỡng rơi về sàn, dải sáng tĩnh 0,031 chặn oan 307/710 khung;
+# phụ đề bóng mờ tổng hợp đo 0,054.
+VANH_RONG, VANH_SANG, VANH_THONG_CAO, VANH_SAN, VANH_K_MAD = 0.8, 180, 35, 0.04, 4.0
+# Cổng khớp: chỉ xét box mồi mà vết đang phủ (±1 khung); qua ⟺ khớp ≥ CAN_KHOP VÀ khớp > lệch. Không còn đòi "lệch = 0": một box mồi
+# sai (agy gọi nhầm UI) từng giết cả vết đúng; mẫu học từ mồi sai thì lệch ĐA SỐ box ⇒ vẫn bị chặn.
+CAN_KHOP = 1
+# Khung của vết còn watermark thật (detected) hoặc đã lấp lỗ (filled) — cả hai đều được che; khung bị cổng chặn thì KHÔNG.
+DA_CHAC = ("detected", "filled")
 # Cổng NÉT LẠ (plan p1 §5c.2): nội dung lạ (khối chữ, phụ đề màu) nằm GỌN trong tấm nền (box ±PAD_TAM_NEN) mà C vẫn "chắc".
 # Đo = PHẦN DƯ sau khi trừ mẫu: thông cao σ3 của khung − a × thông cao của mẫu (a khớp bình phương tối thiểu); điểm "nét lạ" =
 # |dư| > NET_LA_THONG_CAO VÀ lệch trung vị vùng > NET_LA_LECH. Không dùng "loại trừ mặt nạ mẫu" (đề xuất kongming): đo trên clip
@@ -73,13 +78,13 @@ def ti_le_vanh(g: np.ndarray, e: dict) -> float:
 
 def _chan_theo_video(track: list[dict], ti_le: dict[int, float], san: float, k_mad: float, trang_thai: str) -> float | None:
     """Ngưỡng theo VIDEO = max(sàn, trung vị + K × MAD) trên các khung chắc; vượt ⇒ chặn. Trả trung vị (None nếu không có)."""
-    v = np.array([ti_le[e["frame"]] for e in track if e.get("state") == "detected" and e["frame"] in ti_le])
+    v = np.array([ti_le[e["frame"]] for e in track if e.get("state") in DA_CHAC and e["frame"] in ti_le])
     if not v.size:
         return None
     med = float(np.median(v))
     nguong = max(san, med + k_mad * (float(np.median(np.abs(v - med))) + 1e-4))
     for e in track:
-        if e.get("state") == "detected" and ti_le.get(e["frame"], 0.0) > nguong:
+        if e.get("state") in DA_CHAC and ti_le.get(e["frame"], 0.0) > nguong:
             e["state"] = trang_thai
     return med
 
@@ -115,14 +120,14 @@ def cong_net_la(track: list[dict], ti_le: dict[int, float]) -> bool:
 
 
 def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> dict:
-    """Track cuối phải trùng box mồi ĐỘC LẬP: khớp = tâm lệch ≤ 0,5 × cạnh dài box mồi, xét ở khung box (±1).
+    """Vết cuối phải trùng box mồi ĐỘC LẬP: khớp = tâm lệch ≤ 0,5 × cạnh dài box mồi, xét ở khung box (±1).
 
-    Bắt mẫu học từ mồi sai: mẫu sai tự nhất quán nên C vẫn "chắc", chỉ đối chiếu ngoài mới lộ (Test 02: 5/5 vết sai lệch ≥2,
-    mọi vết đúng lệch 0). Box mà track không chắc tại đó tính `track_vang`, không tính lệch."""
+    Bắt mẫu học từ mồi sai: mẫu sai tự nhất quán nên dò vẫn "chắc", chỉ đối chiếu ngoài mới lộ (Test 02: 5/5 vết sai lệch ≥2).
+    Box mà vết không phủ tại đó tính `track_vang`, không tính lệch. Qua ⟺ khớp ≥ `can` và khớp > lệch."""
     by = {e["frame"]: e for e in track}
     khop = lech = vang = 0
     for b in boxes:
-        e = next((by[f] for f in (b.khung, b.khung - 1, b.khung + 1) if by.get(f, {}).get("state") == "detected"), None)
+        e = next((by[f] for f in (b.khung, b.khung - 1, b.khung + 1) if by.get(f, {}).get("state") in DA_CHAC), None)
         if e is None:
             vang += 1
             continue
@@ -131,11 +136,26 @@ def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> di
             khop += 1
         else:
             lech += 1
-    return {"khop": khop, "lech": lech, "track_vang": vang, "qua_cong": khop >= can and lech == 0}
+    return {"khop": khop, "lech": lech, "track_vang": vang, "qua_cong": khop >= can and khop > lech}
 
 
 def khung_duoc_render(track: list[dict], qua_cong_khop: bool) -> list[dict]:
-    """CỔNG CỨNG: chỉ khung `detected` của vết đã qua cổng khớp. Mọi thứ khác giữ nguyên watermark."""
+    """CỔNG CỨNG: khung detected + filled (đã lấp lỗ) của vết đã qua cổng khớp. Khung bị cổng khác chặn giữ nguyên watermark."""
     if not qua_cong_khop:
         return []
-    return [e for e in track if e.get("state") == "detected"]
+    return [e for e in track if e.get("state") in DA_CHAC]
+
+
+def khung_con_watermark_khong_thay(track: list[dict]) -> list[dict]:
+    """Khung vết còn watermark thật nhưng bị cổng chặn (không thay): nguồn tô lấp của khung KHÁC không được lấy từ đây."""
+    return [e for e in track if str(e.get("state", "")).startswith("hidden_") and "x" in e]
+
+
+def chuan_pad_vet(track: list[dict]) -> None:
+    """Pad tấm nền CỐ ĐỊNH theo vết: ≥20% khung phủ cần pad hẹp (phụ đề sát) ⇒ cả vết dùng pad hẹp; ít hơn ⇒ pad rộng, chỉ các khung
+    thật sự bị phụ đề sát mới hẹp (nội dung được bảo vệ trước, cố định pad sau)."""
+    phu = [e for e in track if e.get("state") in DA_CHAC]
+    hep = [e for e in phu if e.get("plate_pad") == PAD_CHAT]
+    if phu and len(hep) >= 0.2 * len(phu):
+        for e in phu:
+            e["plate_pad"] = PAD_CHAT

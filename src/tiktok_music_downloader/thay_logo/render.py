@@ -126,16 +126,21 @@ def gom_khung_render(cac_vet: list[list[dict]]) -> dict[int, list[dict]]:
 
 
 def render_video(video: str, khung_render: dict[int, list[dict]], dau_ra: str, ffmpeg: str,
-                 logo: tuple[np.ndarray, np.ndarray] | None = None, luong: int = 2, crf: int = 18) -> dict:
+                 logo: tuple[np.ndarray, np.ndarray] | None = None, luong: int = 2, crf: int = 18,
+                 khung_chan: dict[int, list[dict]] | None = None) -> dict:
     """Ghi `dau_ra` (H.264 + tiếng gốc copy). Khung không có trong `khung_render` giữ nguyên từng điểm ảnh trước mã hoá.
-    Trả số đếm cho nhật ký. ffmpeg lỗi ⇒ RuntimeError (không để file dở được coi là xong)."""
+    `khung_chan` = khung còn watermark thật nhưng KHÔNG thay (bị cổng nội dung chặn): chỉ để loại khỏi nguồn tô lấp của khung khác
+    (nguồn nền không được mang watermark theo track). Trả số đếm cho nhật ký. ffmpeg lỗi ⇒ RuntimeError."""
     logo = logo or doc_logo()
     cap = cv2.VideoCapture(video)
     if not cap.isOpened():
         raise ValueError(f"không mở được video: {video}")
     W, H = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    che = {i: [(e["x"], e["y"], e["w"], e["h"]) for e in es] for i, es in khung_render.items()}
+    che: dict[int, list[tuple]] = {}
+    for nguon_che in (khung_render, khung_chan or {}):
+        for i, es in nguon_che.items():
+            che.setdefault(i, []).extend((e["x"], e["y"], e["w"], e["h"]) for e in es)
     r = max(1, min(CUA_SO_THOI_GIAN, int(RAM_CUA_SO / (W * H * 3) - 1) // 2))
     cmd = [ffmpeg, "-nostdin", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgr24", "-s", f"{W}x{H}",
            "-r", f"{fps}", "-i", "pipe:0", "-i", video, "-map", "0:v:0", "-map", "1:a?", "-c:v", "libx264",
