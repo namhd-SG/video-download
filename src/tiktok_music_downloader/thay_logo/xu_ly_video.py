@@ -141,8 +141,13 @@ def tao_cap_truoc_sau(video_goc: str, video_ra: str | None, khung_render: dict[i
 
 
 def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path, *, nguon_video: str,
-          ffmpeg: str, job_id: int | None = None, token_agy: int | None = None, man_ket_agy: bool | None = None) -> dict:
-    """Trả {"video_log_id", "trang_thai", "dau_ra" | None}. `cho_nguoi` ⇒ KHÔNG ghi file ra (giữ nguyên gốc)."""
+          ffmpeg: str, job_id: int | None = None, token_agy: int | None = None, man_ket_agy: bool | None = None,
+          vet_cu: list | None = None) -> dict:
+    """Trả {"video_log_id", "trang_thai", "dau_ra" | None, "ly_do", "vet_bi_bo", "nhay"}. `cho_nguoi` ⇒ KHÔNG ghi file ra (giữ nguyên
+    gốc) và `ly_do` (cũng ghi vào `tl_video.loi_text`) nói vì sao: cụm nào không thành vết. `render` ⟺ MỌI cụm box thành vết.
+
+    Gọi lại được với box bổ sung (vòng kiểm kết quả): đưa `boxes` = box mới và `vet_cu` = `KetQuaVideo.vet` của lượt trước; lõi giữ
+    vết cũ, thêm vết mới, và render MỘT lượt từ video gốc với HỢP mặt nạ cũ + mới."""
     cv2.setNumThreads(LUONG_OPENCV)
     nguon = NguonKhungVideo(video)
     vid = nhat_ky.bat_dau_video(conn, nguon_video=nguon_video, job_id=job_id, sha256_goc=nhat_ky.sha256_file(video),
@@ -152,13 +157,14 @@ def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path
     t0 = time.time()
     try:
         nhat_ky.ghi_box_moi(conn, vid, boxes)
-        kq = chay_loi(nguon, boxes)
+        kq = chay_loi(nguon, boxes, vet_cu)
         for k, v in enumerate(kq.vet):
             nhat_ky.ghi_vet(conn, vid, k, v)
         khung = render.gom_khung_render([v.khung_render for v in kq.vet])
         ra = None
         if kq.trang_thai == "render" and khung:
-            render.render_video(video, khung, dau_ra, ffmpeg, luong=LUONG_OPENCV)
+            render.render_video(video, khung, dau_ra, ffmpeg, luong=LUONG_OPENCV,
+                                khung_chan=render.gom_khung_render([v.khung_chan for v in kq.vet]))
             ra = dau_ra
         d = Path(thu_muc_file) / str(vid)
         cap_anh: dict = {}
@@ -170,9 +176,10 @@ def xu_ly(video: str, boxes: list[BoxMoi], dau_ra: str, conn, thu_muc_file: Path
             log.warning("thay logo: không tạo được ảnh trước/sau video %s (%s): %s", vid, type(e).__name__, e)
         nhat_ky.cap_nhat_video(
             conn, vid, trang_thai=kq.trang_thai, ket_thuc=time.time(), giay_xu_ly=round(time.time() - t0, 1),
-            rss_dinh_mb=_rss_dinh_mb(), duong_dan_track=nhat_ky.luu_track(thu_muc_file, vid, [v.track for v in kq.vet]),
+            rss_dinh_mb=_rss_dinh_mb(), loi_text=kq.ly_do[:2000] or None, duong_dan_track=nhat_ky.luu_track(thu_muc_file, vid, [v.track for v in kq.vet]),
             duong_dan_sheet=tao_anh_soi(video, ra, kq, d / "sheet.jpg", hat=vid), **cap_anh)
-        return {"video_log_id": vid, "trang_thai": kq.trang_thai, "dau_ra": ra}
+        return {"video_log_id": vid, "trang_thai": kq.trang_thai, "dau_ra": ra, "ly_do": kq.ly_do,
+                "vet_bi_bo": kq.vet_bi_bo, "nhay": [v.nhay for v in kq.vet]}
     except Exception as e:
         nhat_ky.cap_nhat_video(conn, vid, trang_thai="loi", loi_text=f"{type(e).__name__}: {e}"[:2000],
                                ket_thuc=time.time(), giay_xu_ly=round(time.time() - t0, 1))

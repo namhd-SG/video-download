@@ -1,9 +1,9 @@
-"""Định vị C nhanh: dò mẫu sạch mỗi khung (thô ½ + tinh tỉ lệ 0,01) rồi Viterbi nối vết qua thời gian.
+"""Ứng viên mỗi khung cho một mẫu sạch: dò mẫu TOÀN KHUNG (thô ½ + tinh tỉ lệ 0,01) lấy top-K đỉnh, thêm dò CỤC BỘ quanh các
+vị trí neo (box mồi). Không còn Viterbi / trần vận tốc: việc nối ứng viên qua thời gian là của `theo_vet`.
 
-Chép từ `p0b_c_locate_fast.py` với hai cờ đã bật cố định như lượt Test 02 v2: LỌC ứng viên nằm trên phụ đề và BIÊN CỤC BỘ
-(chỉ so với ứng viên gần ≤2 cạnh box — hai bản watermark giống hệt ở xa không bị coi là mơ hồ).
-Đầu ra: mỗi khung một dict `{"frame", "state", "diem_tot", "loc_pd", [x, y, w, h, score]}`; state ∈ detected | predicted | hidden.
-CHỈ `detected` (biên ≥0,2) mới có thể được render — `predicted` là khung Viterbi nối qua, không đủ chắc.
+Giữ hai cờ đã bật cố định từ lượt Test 02 v2: LỌC ứng viên nằm trên phụ đề (chữ trắng viền đen) và đo điểm trên ảnh THÔNG CAO.
+Đầu ra: danh sách theo khung, mỗi phần tử `(ung_vien, loc_pd)`; ung_vien = [(x, y, điểm NCC, w, h)] điểm giảm dần (chỉ ứng viên thật,
+không độn), loc_pd = số ứng viên bị bộ lọc phụ đề loại ở khung đó. Bộ nhớ: vài chục số mỗi khung, KHÔNG giữ ảnh.
 """
 from __future__ import annotations
 
@@ -12,11 +12,11 @@ import numpy as np
 
 from .nguon_khung import NguonKhung
 
-K, TAU, VMAX, JUMP, SWITCH = 6, 0.33, 8.0, 0.5, 0.6
+K = 6
 SIGMA = 2.0
 TI_LE_THO = (0.95, 1.05, 1.15)
 TINH_KHOANG, TINH_BUOC, CUA_SO = 0.05, 0.01, 6
-BIEN_CHAC = 0.2
+CUA_SO_NEO = 0.6  # dò cục bộ quanh neo: ±(0,6 × cạnh dài + 10) px
 NGUONG_PHU_DE_UNG_VIEN = 0.03  # 137/137 ứng viên bị bỏ ở R9b đều là "Learna AI" trong phụ đề
 
 
@@ -44,7 +44,7 @@ def _dinh_nms(m: np.ndarray, k: int, h: int, w: int) -> list[tuple[int, int, flo
     return out
 
 
-def _ung_vien_khung(g, tho, tinh, ti_le_tinh):
+def _ung_vien_khung(g, tho, tinh, ti_le_tinh, loc_phu_de=True):
     """K ứng viên (x, y, điểm, w, h) của một khung, điểm giảm dần; thiếu thì độn ứng viên điểm −1."""
     H, W = g.shape
     gh = _hp(cv2.resize(g, (W // 2, H // 2), interpolation=cv2.INTER_AREA), SIGMA / 2)
@@ -78,62 +78,54 @@ def _ung_vien_khung(g, tho, tinh, ti_le_tinh):
         if best:
             uv.append(best)
     truoc_loc = len(uv)
-    uv = [c for c in uv if ti_le_phu_de(g, c[0], c[1], c[3], c[4], 2) <= NGUONG_PHU_DE_UNG_VIEN]
+    if loc_phu_de:
+        uv = [c for c in uv if ti_le_phu_de(g, c[0], c[1], c[3], c[4], 2) <= NGUONG_PHU_DE_UNG_VIEN]
     bi_loc = truoc_loc - len(uv)
     uv.sort(key=lambda c: -c[2])
-    while len(uv) < K:
-        uv.append(uv[-1][:2] + (-1.0,) + uv[-1][3:] if uv else (0, 0, -1.0, 1, 1))
     return uv[:K], bi_loc
 
 
-def _viterbi(cands: list[list[tuple]]) -> list[int]:
-    """Đường trạng thái tốt nhất; trạng thái K = 'ẩn'. Chép nguyên từ bench."""
-    score = np.array([[c[2] for c in cands[0]] + [TAU]])
-    back = []
-    for i in range(1, len(cands)):
-        prev, cur = cands[i - 1], cands[i]
-        trans = np.zeros((K + 1, K + 1))
-        for a in range(K):
-            for b in range(K):
-                d = np.hypot(cur[b][0] - prev[a][0], cur[b][1] - prev[a][1])
-                trans[a, b] = 0.0 if d <= VMAX else -JUMP
-        trans[:K, K] = trans[K, :K] = -SWITCH
-        tot = score[-1][:, None] + trans
-        back.append(tot.argmax(0))
-        emit = np.array([c[2] for c in cur] + [TAU])
-        score = np.vstack([score, tot.max(0) + emit])
-    st = int(score[-1].argmax())
-    path = [st]
-    for b in reversed(back):
-        st = int(b[st])
-        path.append(st)
-    path.reverse()
-    return path
+def _ung_vien_neo(g, gf, tinh, neo, uv, loc_phu_de=True, khung=0):
+    """Thêm ứng viên dò cục bộ quanh mỗi neo (x, y, w, h) bằng mẫu tỉ lệ 1,0 — bắt logo yếu mà top-K toàn khung bỏ lọt.
+    Ứng viên trùng vị trí (≤ 0,3 cạnh) với ứng viên có sẵn thì giữ cái điểm cao hơn."""
+    H, W = g.shape
+    t = tinh[1.0]
+    th, tw = t.shape
+    for nx, ny, nw, nh, f0, f1 in neo:
+        if not f0 <= khung <= f1:
+            continue
+        r = int(CUA_SO_NEO * max(nw, nh)) + 10
+        x0, y0, x1, y1 = max(0, nx - r), max(0, ny - r), min(W, nx + tw + r), min(H, ny + th + r)
+        if x1 - x0 < tw or y1 - y0 < th:
+            continue
+        _, sc, _, (lx, ly) = cv2.minMaxLoc(cv2.matchTemplate(gf[y0:y1, x0:x1], t, cv2.TM_CCOEFF_NORMED))
+        c = (x0 + lx, y0 + ly, float(sc), tw, th)
+        if loc_phu_de and ti_le_phu_de(g, c[0], c[1], tw, th, 2) > NGUONG_PHU_DE_UNG_VIEN:
+            continue
+        gan = [k for k, u in enumerate(uv) if abs(u[0] - c[0]) <= 0.3 * tw and abs(u[1] - c[1]) <= 0.3 * th]
+        if not gan:
+            uv.append(c)
+        elif uv[gan[0]][2] < c[2]:
+            uv[gan[0]] = c
+    uv.sort(key=lambda c: -c[2])
 
 
-def dinh_vi(nguon: NguonKhung, mau: np.ndarray) -> list[dict]:
-    """Track mỗi khung cho một mẫu (ảnh xám). Video rỗng ⇒ []."""
+def dinh_vi(nguon: NguonKhung, mau: np.ndarray, neo: list[tuple[int, int, int, int, int, int]] = (),
+            buoc: int = 1, loc_phu_de: bool = True) -> list[tuple[list[tuple], int]]:
+    """Ứng viên mỗi khung cho một mẫu (ảnh xám). `neo` = (x, y, w, h, khung đầu, khung cuối): dò cục bộ thêm quanh vị trí đó khi khung nằm trong đoạn. Video rỗng ⇒ [].
+    `loc_phu_de=False` ⇒ không loại ứng viên giống phụ đề (mẫu chính nó đã giống phụ đề: chữ trắng viền đen).
+    `buoc` > 1 ⇒ chỉ dò khung 0, buoc, 2·buoc… (phần tử i ứng khung i·buoc): lượt tự học mẫu chỉ cần mẫu thưa, rẻ gấp `buoc` lần."""
     med = np.clip(mau, 0, 255).astype(np.uint8)
     half = cv2.resize(med, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
     tho = [(s, _hp(cv2.resize(half, None, fx=s, fy=s, interpolation=cv2.INTER_LINEAR), SIGMA / 2)) for s in TI_LE_THO]
     ti_le_tinh = np.round(np.arange(0.90, 1.2001, TINH_BUOC), 2)
     tinh = {float(s): _hp(cv2.resize(med, None, fx=s, fy=s, interpolation=cv2.INTER_LINEAR), SIGMA) for s in ti_le_tinh}
-    moi_khung = [_ung_vien_khung(g, tho, tinh, ti_le_tinh) for g in nguon.doc_tuan_tu()]
-    if not moi_khung:
-        return []
-    cands = [c for c, _ in moi_khung]
-    track = []
-    for i, s in enumerate(_viterbi(cands)):
-        # Cho nhật ký tune: điểm ứng viên tốt nhất (phân định "C mù" với "C thấy nhưng mơ hồ") và số ứng viên bị bộ lọc
-        # phụ đề loại (đếm tần suất thật của watermark trắng-trên-nền-đen bị coi là phụ đề).
-        e: dict = {"frame": i, "diem_tot": round(float(cands[i][0][2]), 3), "loc_pd": moi_khung[i][1]}
-        if s < K:
-            x, y, sc, cw, ch = cands[i][s]
-            gan = [c[2] for j, c in enumerate(cands[i]) if j != s and abs(c[0] - x) <= 2 * cw and abs(c[1] - y) <= 2 * ch]
-            bien = sc - (max(gan) if gan else -1.0)
-            e.update(x=int(x), y=int(y), w=int(cw), h=int(ch), score=round(float(sc), 3),
-                     state="detected" if bien >= BIEN_CHAC else "predicted")
-        else:
-            e["state"] = "hidden"
-        track.append(e)
-    return track
+    out = []
+    for i, g in enumerate(nguon.doc_tuan_tu()):
+        if i % buoc:
+            continue
+        uv, bi_loc = _ung_vien_khung(g, tho, tinh, ti_le_tinh, loc_phu_de)
+        if neo:
+            _ung_vien_neo(g, _hp(g, SIGMA), tinh, neo, uv, loc_phu_de, i)
+        out.append((uv, bi_loc))
+    return out

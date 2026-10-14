@@ -59,11 +59,13 @@ def test_render_xuat_cap_anh_cung_khung_va_box_dung_cho(clip_file, tmp_path):
 
 def test_cho_nguoi_chi_co_anh_truoc_va_box_may_thay(clip_file, tmp_path):
     clip, p = clip_file
-    kq, v = _chay(clip, p, tmp_path, (5,))
+    conn = nhat_ky.mo(tmp_path / "log.db")
+    kq = xu_ly_video.xu_ly(str(p), [clip.box_gia(5)], str(tmp_path / "ra.mp4"), conn, tmp_path / "f", nguon_video="drive:x", ffmpeg=FFMPEG)
+    v = dict(conn.execute("SELECT * FROM tl_video WHERE id=?", (kq["video_log_id"],)).fetchone())
     assert kq["trang_thai"] == "cho_nguoi"
     assert cv2.imread(v["duong_dan_truoc"]) is not None and v["duong_dan_sau"] is None
-    b = json.loads(v["box_logo"])  # box mồi duy nhất ở khung 5: x=65, y=420+1
-    assert abs(b["x"] * 360 - 65) < 1 and abs(b["y"] * 640 - 421) < 1
+    b = json.loads(v["box_logo"])  # box mồi duy nhất ở khung 5 (box giả của fixture): x=220, y=100
+    assert abs(b["x"] * 360 - 220) < 1 and abs(b["y"] * 640 - 100) < 1
 
 
 def test_khong_co_box_thi_chi_anh_truoc_khung_giua_va_khong_box(clip_file, tmp_path):
