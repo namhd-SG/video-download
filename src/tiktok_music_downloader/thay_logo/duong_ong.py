@@ -216,11 +216,12 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ)."""
     _, tcon = mat_na_va_tuong_phan(mau)
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
+    cong.go_chan_le(track)
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
-    dem = {s: sum(1 for e in track if e.get("state") == s)
-           for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET)}
+    dem = {s: sum(1 for e in track if e.get("state") == s) for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET)}
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e)
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]

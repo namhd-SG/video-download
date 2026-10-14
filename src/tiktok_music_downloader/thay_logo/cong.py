@@ -139,6 +139,31 @@ def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> di
     return {"khop": khop, "lech": lech, "track_vang": vang, "qua_cong": khop >= can and khop > lech}
 
 
+CHAN_RUN_LE = 3  # khung bị chặn lẻ loi (≤ 3 khung liền) = báo động giả: phụ đề thật nằm lại ≥ nửa giây
+
+
+def go_chan_le(track: list[dict], toi_da: int | None = None) -> int:
+    """Gỡ chặn cho đoạn khung bị cổng chặn NGẮN (≤ `toi_da` khung liền): trả về trạng thái trước khi chặn (detected nếu có điểm, filled
+    nếu là khung lấp). Cổng theo khung có tỉ lệ báo giả đáng kể (nét lạ trên logo sạch, vành ngang trên dải sáng tĩnh); mỗi khung
+    chặn oan là một khung LỘ watermark giữa hai khung đã che = nháy. Phụ đề/nội dung thật kéo dài ⇒ vẫn bị chặn. Trả số khung gỡ."""
+    toi_da = CHAN_RUN_LE if toi_da is None else toi_da
+    go, i, n = 0, 0, len(track)
+    while i < n:
+        if not str(track[i].get("state", "")).startswith("hidden_") or "x" not in track[i]:
+            i += 1
+            continue
+        j = i
+        while j < n and str(track[j].get("state", "")).startswith("hidden_") and "x" in track[j]:
+            j += 1
+        if j - i <= toi_da:
+            for e in track[i:j]:
+                e["chan_cu"] = e["state"]
+                e["state"] = "detected" if e.get("score") is not None else "filled"
+                go += 1
+        i = j
+    return go
+
+
 def khung_duoc_render(track: list[dict], qua_cong_khop: bool) -> list[dict]:
     """CỔNG CỨNG: khung detected + filled (đã lấp lỗ) của vết đã qua cổng khớp. Khung bị cổng khác chặn giữ nguyên watermark."""
     if not qua_cong_khop:

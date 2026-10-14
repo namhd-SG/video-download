@@ -117,3 +117,37 @@ def test_mat_na_chi_lay_vet_render_va_nhan_pad():
     mn = mat_na_vet.mat_na_theo_khung([V(), X()])
     assert mn == {3: [(7, 17, 43, 33)]}  # nới max(PAD_TO=3, pad=2)
     assert mat_na_vet.diem_trong_mat_na(mn, 3, 44, 20, dung_sai=2) and not mat_na_vet.diem_trong_mat_na(mn, 4, 20, 20)
+
+
+def test_go_chan_le_chi_go_doan_ngan_giu_doan_dai():
+    """Báo động giả lẻ loi (≤3 khung) không được tạo nháy; phụ đề/nội dung thật kéo dài vẫn bị chặn."""
+    track = [{"frame": i, "state": "detected", "score": 0.9, "x": 1, "y": 1, "w": 5, "h": 5} for i in range(30)]
+    track[4]["state"] = cong.CHAN_NET                       # lẻ 1 khung
+    for i in (10, 11, 12):
+        track[i]["state"] = cong.CHAN_VANH                  # 3 khung liền (ngưỡng)
+    for i in range(20, 28):
+        track[i]["state"] = cong.CHAN_PHU_DE                # 8 khung = phụ đề thật
+    track[15] = {"frame": 15, "state": cong.CHAN_NET, "score": None, "x": 1, "y": 1, "w": 5, "h": 5}  # khung lấp bị chặn lẻ
+    assert cong.go_chan_le(track) == 5
+    assert [e["state"] for e in track[:5]] == ["detected"] * 5 and track[15]["state"] == "filled"
+    assert all(e["state"] == cong.CHAN_PHU_DE for e in track[20:28])
+    assert cong.khung_con_watermark_khong_thay(track) == track[20:28]
+
+
+def test_dot_bien_go_chan_le_tat_thi_khung_bi_chan_lo_ra(monkeypatch):
+    """Cổng chặn oan một khung giữa vết: có gỡ chặn lẻ ⇒ khung vẫn được che; không có ⇒ nháy."""
+    clip = tao_clip(n=70)
+    monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
+    orig = cong.cong_vanh_ngang
+
+    def chan_oan(track, ti_le):
+        orig(track, ti_le)
+        for e in track:
+            if e["frame"] in (30, 31) and e["state"] in cong.DA_CHAC:
+                e["state"] = cong.CHAN_VANH
+    monkeypatch.setattr(cong, "cong_vanh_ngang", chan_oan)
+    _, v = _chay(clip)
+    assert {30, 31} <= {e["frame"] for e in v.khung_render} and v.nhay["pct_nhay"] == 0
+    monkeypatch.setattr(cong, "go_chan_le", lambda track, toi_da=None: 0)
+    _, v = _chay(clip)
+    assert not {30, 31} & {e["frame"] for e in v.khung_render} and v.nhay["so_lan_doi"] == 2
