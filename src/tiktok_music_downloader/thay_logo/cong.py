@@ -194,7 +194,10 @@ def go_chan_le(track: list[dict], toi_da: int | None = None) -> int:
         j = i
         while j < n and chan(track[j]):
             j += 1
-        if j - i <= toi_da:
+        # Cạnh là khung bị kiểm hình bác ⇒ đoạn ngắn này KHÔNG kẹp giữa hai khung đang che, không phải nháy: giữ chặn. (v05 k921:
+        # khung lấp dời lên CHỮ "Learna AI" trong phụ đề, cổng phụ đề chặn đúng, hai bên là hidden_hinh ⇒ thành đoạn 1 khung ⇒ bị gỡ.)
+        canh = [track[k].get("state") for k in (i - 1, j) if 0 <= k < n]
+        if j - i <= toi_da and not any(st in KHONG_GO for st in canh):
             for e in track[i:j]:
                 e["chan_cu"] = e["state"]
                 e["state"] = "detected" if e.get("score") is not None else "filled"

@@ -89,3 +89,16 @@ def test_dot_bien_tat_bam_hai_chieu_thi_doan_mo_lo(monkeypatch):
     monkeypatch.setattr(duong_ong, "bam_lai_doan_mat", lambda nguon, det, mau: (det, {}))
     v = _vet(_clip_mo(), khung=(5, 15, 75))
     assert not MO & {e["frame"] for e in v.khung_render}
+
+
+def test_go_chan_le_khong_go_doan_ngan_canh_khung_kiem_hinh_bac():
+    """v05 k921: khung lấp dời lên chữ phụ đề trùng tên logo, cổng phụ đề chặn đúng; hai bên là khung kiểm hình bác ⇒ không phải
+    'chặn lẻ giữa hai khung che' ⇒ go_chan_le KHÔNG được gỡ (gỡ là dán logo đè phụ đề)."""
+    tr = [_e(0, "detected"), _e(1, "hidden_hinh"), _e(2, cong.CHAN_PHU_DE), _e(3, "hidden_hinh"), _e(4, "detected")]
+    cong.go_chan_le(tr)
+    assert tr[2]["state"] == cong.CHAN_PHU_DE
+
+
+def test_go_chan_le_van_go_chan_le_kep_giua_hai_khung_che():
+    tr = [_e(0, "detected"), _e(1, cong.CHAN_PHU_DE), _e(2, "detected")]
+    assert cong.go_chan_le(tr) == 1 and tr[1]["state"] == "detected"
