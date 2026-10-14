@@ -293,3 +293,28 @@ def test_net_la_pho_bien_chi_gan_co_khong_tu_nang_trang_thai():
     ti_le = {i: 0.2 for i in range(11)}
     assert cong.cong_net_la(track, ti_le) is True
     assert track[10]["state"] == "hidden_ring"  # cổng chỉ HẠ khung detected, không bao giờ nâng
+
+
+def test_vet_vong_hai_tu_box_sot_khong_tu_render_va_khong_box_nao_roi_mat(monkeypatch):
+    """Box mà vết vòng một không phủ ⇒ vòng hai dò lại. Vết vòng hai học mẫu từ 1–2 box, dễ bám nền tĩnh (đo v24 L2: logo dán lên
+    chân người cả video, video vẫn `render`) ⇒ phải ra `cho_nguoi` kèm lý do, và box đó phải có dấu vết trong `vet_bi_bo`."""
+    a = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 5, 10)]
+    sot = BoxMoi(15, 300, 200, 40, 20, cum=0)  # cùng số cụm nhưng ở chỗ khác: vết của cụm 0 không phủ
+    goi = []
+
+    def gom_gia(boxes, nguon):
+        return [list(boxes)]
+
+    def vet_gia(nguon, cl):
+        goi.append(list(cl))
+        dau = cl[0]
+        return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(20)],
+                                   khung_render=[{"frame": f} for f in range(20)])
+    monkeypatch.setattr(duong_ong, "gom_vet", gom_gia)
+    monkeypatch.setattr(duong_ong, "xu_ly_vet", vet_gia)
+    kq = duong_ong.xu_ly_video(object(), a + [sot])
+    assert [len(c) for c in goi] == [4, 1]  # vòng hai chạy đúng trên box sót
+    assert kq.trang_thai == "cho_nguoi" and duong_ong.LY_DO_VONG_HAI in kq.ly_do
+    vong_hai = kq.vet[1]
+    assert vong_hai.trang_thai == "cho_nguoi" and vong_hai.khung_render == []  # không một khung nào được dán logo
+    assert len(kq.vet) == 2 and vong_hai.box_cum == 1  # box sót có dấu vết riêng, không rơi mất

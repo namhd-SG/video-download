@@ -248,8 +248,16 @@ def _vet_da_giai_thich(vet: list[KetQuaVet], cum: list[BoxMoi]) -> KetQuaVet | N
     return None
 
 
-def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaVet]) -> list[BoxMoi]:
-    """Xử lý từng cụm, thêm vào `vet`. Trả các box của cụm render mà vết KHÔNG phủ (số cụm agy gán nhầm, hoặc box giả lẫn vào)."""
+LY_DO_VONG_HAI = ("box agy không được vết nào phủ; vết dò lại từ box này có thể bám vào nền/nội dung (mẫu học từ ít box) — "
+                  "cần người kiểm, máy không tự thay")
+
+
+def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaVet], tu_render: bool = True) -> list[BoxMoi]:
+    """Xử lý từng cụm, thêm vào `vet`. Trả các box của cụm render mà vết KHÔNG phủ (số cụm agy gán nhầm, hoặc box giả lẫn vào).
+
+    `tu_render=False` (vòng hai): vết MỚI dò từ box sót không được tự render. Mẫu học từ 1–2 box mà phần lớn crop là nền thì vết bám
+    nền tĩnh, qua mọi cổng (khớp mồi đúng chỗ, dò được hàng trăm khung) và dán logo lên nội dung cả video — đo được ở v24 L2 (chân
+    người) và v05 L2 (phụ đề). Cụm vòng hai trùng vết vòng một thì vẫn gộp như thường."""
     chua: list[BoxMoi] = []
     for cl in cum:
         trung = _vet_da_giai_thich(vet, cl)
@@ -262,6 +270,8 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
             trung.thong_tin["cum_gop"] = trung.thong_tin.get("cum_gop", 0) + 1
             continue
         v = xu_ly_vet(nguon, cl)
+        if v.trang_thai == "render" and not tu_render:
+            v.trang_thai, v.khung_render, v.ly_do = "cho_nguoi", [], LY_DO_VONG_HAI
         vet.append(v)
         if v.trang_thai == "render":
             chua += [b for b in cl if not _box_duoc_phu(v, b)]
@@ -273,11 +283,12 @@ def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi], vet_cu: list[KetQuaVet] 
     gọi lại với box bổ sung (xem docstring module). Cụm không thành vết KHÔNG biến mất: nằm trong `vet` với trạng thái ≠ render.
 
     Vòng hai: box thuộc cụm đã thành vết nhưng vết không phủ (số cụm agy nhập nhầm hai watermark, hoặc box giả) KHÔNG được lặng lẽ
-    rơi mất — gom lại BỎ số cụm (chỉ hình + vị trí) và xử lý như cụm mới; không thành vết thì nằm trong `vet_bi_bo`."""
+    rơi mất — gom lại BỎ số cụm (chỉ hình + vị trí) và xử lý như cụm mới; cụm mới đó KHÔNG tự render (xem `_xu_ly_cac_cum`) mà nằm
+    trong `vet_bi_bo` ⇒ video `cho_nguoi`. Mọi box sót vì thế đều có dấu vết, không rơi mất sau vòng hai."""
     cum = gom_vet(boxes, nguon)
     vet = list(vet_cu or [])
     box_cu = sum(v.box_cum for v in vet)
     chua = _xu_ly_cac_cum(nguon, cum, vet)
     if chua:
-        _xu_ly_cac_cum(nguon, gom_vet([replace(b, cum=None) for b in chua], nguon), vet)
+        _xu_ly_cac_cum(nguon, gom_vet([replace(b, cum=None) for b in chua], nguon), vet, tu_render=False)
     return KetQuaVideo(vet, len(boxes) + box_cu, len(cum) + len(vet_cu or []))
