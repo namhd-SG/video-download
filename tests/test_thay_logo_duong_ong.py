@@ -29,15 +29,18 @@ def test_watermark_chu_troi_duoc_dinh_vi_va_render_dung_cho():
     assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in v.khung_render) <= 3
 
 
-def test_hat_giong_hai_box_van_thanh_vet_va_render_dung_cho():
-    """Cụm 1–2 box (trước đây vứt theo MIN_BOX=3) là HẠT GIỐNG: dựng mẫu từ box có, dò các khung còn lại."""
+def test_hat_giong_hai_box_van_thanh_vet_dung_cho_nhung_cho_nguoi_duyet():
+    """Cụm 1–2 box (trước đây vứt theo MIN_BOX=3) là HẠT GIỐNG: dựng mẫu từ box có, dò các khung còn lại — vết hiện cho người duyệt.
+    Nhưng KHÔNG tự render: mẫu 1–2 crop có thể là nền (dán sai chỗ tệ hơn sót, ĐP 14/10)."""
     clip = tao_clip()
     for khung in ((5, 15), (30,)):
         kq = duong_ong.xu_ly_video(clip.nguon, clip.box_moi(khung=khung))
-        assert kq.trang_thai == "render" and len(kq.vet) == 1, khung
+        assert kq.trang_thai == "cho_nguoi" and len(kq.vet) == 1, khung
         v = kq.vet[0]
-        assert len(v.khung_render) >= 50
-        assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in v.khung_render) <= 3
+        assert v.khung_render == [] and f"{len(khung)} box" in v.ly_do
+        dinh = [e for e in v.track if "x" in e]
+        assert len(dinh) >= 50
+        assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in dinh) <= 3
 
 
 def test_dot_bien_bo_hat_giong_thi_cum_nho_bi_bo(monkeypatch):
@@ -318,3 +321,21 @@ def test_vet_vong_hai_tu_box_sot_khong_tu_render_va_khong_box_nao_roi_mat(monkey
     vong_hai = kq.vet[1]
     assert vong_hai.trang_thai == "cho_nguoi" and vong_hai.khung_render == []  # không một khung nào được dán logo
     assert len(kq.vet) == 2 and vong_hai.box_cum == 1  # box sót có dấu vết riêng, không rơi mất
+
+
+def test_cum_hat_giong_duoi_cum_lon_o_vong_mot_duoc_do_nhung_khong_tu_render(monkeypatch):
+    """Cụm 1 box mang số cụm riêng (agy gán nhãn không ổn định) ⇒ mẫu từ 1 crop có thể là nền; tái hiện v24 L2: logo dán lên chân
+    người cả video. Phải ra `cho_nguoi` kèm lý do; cụm đủ `CUM_LON` box vẫn render."""
+    lon = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 5, 10)]
+    nho = [BoxMoi(32, 300, 200, 40, 20, cum=1)]
+
+    def vet_gia(nguon, cl):
+        dau = cl[0]
+        return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(40)],
+                                   khung_render=[{"frame": f} for f in range(40)])
+    monkeypatch.setattr(duong_ong, "gom_vet", lambda boxes, nguon: [lon, nho])
+    monkeypatch.setattr(duong_ong, "xu_ly_vet", vet_gia)
+    kq = duong_ong.xu_ly_video(object(), lon + nho)
+    assert [v.trang_thai for v in kq.vet] == ["render", "cho_nguoi"]
+    assert kq.vet[1].khung_render == [] and "1 box" in kq.vet[1].ly_do
+    assert kq.trang_thai == "cho_nguoi"

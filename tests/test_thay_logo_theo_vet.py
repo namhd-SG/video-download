@@ -13,7 +13,7 @@ from tiktok_music_downloader.thay_logo import cong, duong_ong, lam_muot_vet, mat
 TRONG_BOX = 3  # tâm watermark thật nằm trong ô che nới tối đa vài px
 
 
-def _chay(clip, khung=(5, 25)):
+def _chay(clip, khung=(5, 15, 25)):  # ≥ CUM_LON box: cụm nhỏ hơn không tự render (test riêng ở test_thay_logo_duong_ong)
     kq = duong_ong.xu_ly_video(clip.nguon, clip.box_moi(khung=khung))
     assert len(kq.vet) == 1, [v.ly_do for v in kq.vet]
     return kq, kq.vet[0]
@@ -41,7 +41,7 @@ def test_vet_tinh_che_moi_khung_va_vi_tri_on_dinh():
 def test_vet_troi_nhanh_hon_8px_moi_khung_khong_bi_ep_vao_tran_van_toc():
     """Viterbi cũ trần 8 px/khung bỏ logo này; tracker mới theo kịp 12 px/khung (P90 đo ở ca 03_9)."""
     clip = tao_clip(n=45, duong_di=lambda i: (120, 30 + 12 * i))
-    kq, v = _chay(clip, khung=(3, 30))
+    kq, v = _chay(clip, khung=(3, 16, 30))
     assert _tam_thua_mat_na(kq, clip, range(45)) == []
     assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in v.khung_render) <= 4
 
@@ -49,7 +49,7 @@ def test_vet_troi_nhanh_hon_8px_moi_khung_khong_bi_ep_vao_tran_van_toc():
 def test_nhay_goc_ca_hai_vi_tri_deu_duoc_che():
     """Logo đứng ở góc A rồi NHẢY sang góc B: bước nhảy lớn được nhận (ứng viên mạnh) và mặt nạ không kéo ô qua màn hình."""
     clip = tao_clip(n=70, duong_di=lambda i: (30, 60) if i < 35 else (230, 520))
-    kq, v = _chay(clip, khung=(5, 50))
+    kq, v = _chay(clip, khung=(5, 27, 50))
     assert _tam_thua_mat_na(kq, clip, [i for i in range(70) if abs(i - 35) > 2]) == []
     mn = mat_na_vet.mat_na_theo_khung(kq.vet)
     for i in (10, 20, 60):  # ô không bao giờ nằm lơ lửng giữa hai góc

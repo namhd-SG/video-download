@@ -248,6 +248,11 @@ def _vet_da_giai_thich(vet: list[KetQuaVet], cum: list[BoxMoi]) -> KetQuaVet | N
     return None
 
 
+# Dán logo SAI CHỖ (lên người, phụ đề) tệ hơn SÓT: video sai đi thẳng tới khách, `cho_nguoi` chỉ tốn công người xem lại (ĐP 14/10).
+# Hạt giống 1–2 box vẫn được DÒ (vết + lý do hiện cho người duyệt) nhưng không tự render: mẫu từ 1–2 crop có thể là nền, vết bám nền
+# tĩnh qua mọi cổng — tái hiện ở v24 L2 khi agy gán box BR một số cụm riêng.
+LY_DO_HAT_GIONG_NHO = ("vết dựng từ {n} box agy (dưới " + str(CUM_LON) + "): mẫu ít crop có thể là nền/nội dung — cần người kiểm, "
+                       "máy không tự thay")
 LY_DO_VONG_HAI = ("box agy không được vết nào phủ; vết dò lại từ box này có thể bám vào nền/nội dung (mẫu học từ ít box) — "
                   "cần người kiểm, máy không tự thay")
 
@@ -272,6 +277,8 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
         v = xu_ly_vet(nguon, cl)
         if v.trang_thai == "render" and not tu_render:
             v.trang_thai, v.khung_render, v.ly_do = "cho_nguoi", [], LY_DO_VONG_HAI
+        elif v.trang_thai == "render" and len(cl) < CUM_LON:
+            v.trang_thai, v.khung_render, v.ly_do = "cho_nguoi", [], LY_DO_HAT_GIONG_NHO.format(n=len(cl))
         vet.append(v)
         if v.trang_thai == "render":
             chua += [b for b in cl if not _box_duoc_phu(v, b)]
