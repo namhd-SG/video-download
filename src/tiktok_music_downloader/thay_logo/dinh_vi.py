@@ -110,8 +110,36 @@ def _ung_vien_neo(g, gf, tinh, neo, uv, loc_phu_de=True, khung=0):
     uv.sort(key=lambda c: -c[2])
 
 
+def _ung_vien_neo_ai(g, tinh, neo_ai, uv, khung):
+    """Ứng viên quanh box AI vòng hai (AI nhìn ảnh chỉ chỗ logo ở đoạn máy mất dấu): dò cục bộ trên thông cao ĐÃ XOÁ CHỮ, KHÔNG lọc phụ
+    đề. Chỉ CỘNG ứng viên, không xoá ứng viên lượt một (xoá ⇒ kq15 làm tụt mốc đã đúng v17 k476, v38 k241). Không dùng làm mẫu/khớp mồi;
+    quyết dùng hay không ở `ai_vong_hai.gan_moc_ai` (có kiểm hình + quỹ đạo)."""
+    from .chu_phu_de import thong_cao_xoa_chu  # import muộn: chu_phu_de import dinh_vi
+    H, W = g.shape
+    t = tinh[1.0]
+    th, tw = t.shape
+    gx = None
+    for nx, ny, nw, nh, f0, f1 in neo_ai:
+        if not f0 <= khung <= f1:
+            continue
+        gx = thong_cao_xoa_chu(g) if gx is None else gx
+        r = int(CUA_SO_NEO * max(nw, nh)) + 10
+        cx, cy = nx + nw // 2 - tw // 2, ny + nh // 2 - th // 2  # box AI lệch cỡ mẫu ⇒ dò quanh TÂM box AI
+        x0, y0, x1, y1 = max(0, cx - r), max(0, cy - r), min(W, cx + tw + r), min(H, cy + th + r)
+        if x1 - x0 < tw or y1 - y0 < th:
+            continue
+        _, sc, _, (lx, ly) = cv2.minMaxLoc(cv2.matchTemplate(gx[y0:y1, x0:x1], t, cv2.TM_CCOEFF_NORMED))
+        c = (x0 + lx, y0 + ly, float(sc), tw, th)
+        gan = [k for k, u in enumerate(uv) if abs(u[0] - c[0]) <= 0.3 * tw and abs(u[1] - c[1]) <= 0.3 * th]
+        if not gan:
+            uv.append(c)
+        elif uv[gan[0]][2] < c[2]:
+            uv[gan[0]] = c
+    uv.sort(key=lambda c: -c[2])
+
+
 def dinh_vi(nguon: NguonKhung, mau: np.ndarray, neo: list[tuple[int, int, int, int, int, int]] = (),
-            buoc: int = 1, loc_phu_de: bool = True) -> list[tuple[list[tuple], int]]:
+            buoc: int = 1, loc_phu_de: bool = True, neo_ai: list[tuple[int, int, int, int, int, int]] = ()) -> list[tuple[list[tuple], int]]:
     """Ứng viên mỗi khung cho một mẫu (ảnh xám). `neo` = (x, y, w, h, khung đầu, khung cuối): dò cục bộ thêm quanh vị trí đó khi khung nằm trong đoạn. Video rỗng ⇒ [].
     `loc_phu_de=False` ⇒ không loại ứng viên giống phụ đề (mẫu chính nó đã giống phụ đề: chữ trắng viền đen).
     `buoc` > 1 ⇒ chỉ dò khung 0, buoc, 2·buoc… (phần tử i ứng khung i·buoc): lượt tự học mẫu chỉ cần mẫu thưa, rẻ gấp `buoc` lần."""
@@ -127,5 +155,7 @@ def dinh_vi(nguon: NguonKhung, mau: np.ndarray, neo: list[tuple[int, int, int, i
         uv, bi_loc = _ung_vien_khung(g, tho, tinh, ti_le_tinh, loc_phu_de)
         if neo:
             _ung_vien_neo(g, _hp(g, SIGMA), tinh, neo, uv, loc_phu_de, i)
+        if neo_ai:
+            _ung_vien_neo_ai(g, tinh, neo_ai, uv, i)
         out.append((uv, bi_loc))
     return out

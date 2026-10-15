@@ -18,12 +18,18 @@ chấm ĐẠT; đa số là logo mờ thật trên nền rối — điểm thấ
   Đo: đoạn lấp sai ở test_2 chạy 4,6–27 px/khung; logo Learna trôi chậm ở v13 (~1 px/khung, lệch 16–25 px) lấp ĐÚNG.
 - vết YẾU (trung vị điểm detected < `VET_MANH`: logo trong suốt) ⇒ không kiểm khung lấp: điểm từng khung không phân định — đo test_1
   (trung vị 0,36): khung lấp đúng `hinh` trung vị 0,13 trong khi khung lấp SAI của test_2 (vết mạnh) là 0,32.
+
+Qua chữ phụ đề (15/10, `chu_phu_de`): chấm khung lấp trên thông cao đã XOÁ CHỮ (nét chữ trong box làm tụt điểm logo thật, và chữ giống
+logo làm khung lấp bám nhầm chữ); khung detected hụt sàn mà nằm gần chữ được chấm lại sau xoá chữ — qua sàn VÀ không tụt ⇒ giữ (v05
+k924 logo thật sát đáy hộp phụ đề). Khung `quy_dao` (bám hai chiều qua chữ, đã có bằng chứng hai bộ bám gặp nhau) không vào sàn, không bị
+hạ, và được dùng làm mốc vị trí kề.
 """
 from __future__ import annotations
 
 import cv2
 import numpy as np
 
+from .chu_phu_de import cham_qua_chu, chu_trong_tam_nen, la_logo_qua_chu, thong_cao_xoa_chu
 from .dinh_vi import CUA_SO, SIGMA, _hp
 from .nguon_khung import NguonKhung
 
@@ -40,7 +46,8 @@ CHAN_HINH = "hidden_hinh"
 
 def san_hinh(track: list[dict]) -> float | None:
     """Sàn điểm hình của một vết; None nếu vết không có khung detected nào có điểm."""
-    d = np.array([e["score"] for e in track if e.get("state") == "detected" and e.get("score") is not None], dtype=np.float64)
+    d = np.array([e["score"] for e in track if e.get("state") == "detected" and e.get("score") is not None and not e.get("quy_dao")],
+                 dtype=np.float64)
     if not d.size:
         return None
     med = float(np.median(d))
@@ -97,13 +104,13 @@ def _vi_tri_ke(track: list[dict], san: float) -> tuple[list, list]:
     cur = None
     for i, e in enumerate(track):
         truoc[i] = cur
-        if e.get("state") == "detected" and (e.get("score") or 0) >= san:
+        if e.get("state") == "detected" and ((e.get("score") or 0) >= san or e.get("quy_dao")):
             cur = (e["x"], e["y"], e["w"], e["h"])
     cur = None
     for i in range(n - 1, -1, -1):
         e = track[i]
         sau[i] = cur
-        if e.get("state") == "detected" and (e.get("score") or 0) >= san:
+        if e.get("state") == "detected" and ((e.get("score") or 0) >= san or e.get("quy_dao")):
             cur = (e["x"], e["y"], e["w"], e["h"])
     return truoc, sau
 
@@ -118,15 +125,15 @@ def kiem_hinh_truoc_dan(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -
            "filled_bo": 0}
     if san is None:
         return dem
-    for i, j in _doan(track, lambda e: e.get("state") == "detected" and e.get("score") is not None and e["score"] < san):
+    hut: dict[int, dict] = {}  # khung detected sắp bị hạ — chấm lại sau xoá chữ trước khi hạ
+    for i, j in _doan(track, lambda e: e.get("state") == "detected" and e.get("score") is not None and e["score"] < san
+                      and not e.get("quy_dao")):
         if j - i > GO_NGAN_TOI_DA and _bat_dau_bang_nhay(track, i):
-            for e in track[i:j]:
-                e["state"], e["hinh_hut"] = CHAN_HINH, round(float(e["score"]), 3)
-            dem["detected_hut"] += j - i
+            hut.update({k: track[k] for k in range(i, j)})
     lap: dict[int, dict] = {}
     d = [e["score"] for e in track if e.get("state") == "detected" and e.get("score") is not None]
     vet_manh = bool(d) and float(np.median(d)) >= VET_MANH
-    for i, j in _doan(track, lambda e: e.get("state") == "filled"):
+    for i, j in _doan(track, lambda e: e.get("state") == "filled" and not e.get("quy_dao")):
         a = next((k for k in range(i - 1, -1, -1) if "x" in track[k]), None)
         b = next((k for k in range(j, len(track)) if "x" in track[k]), None)
         if a is not None and b is not None:
@@ -138,17 +145,35 @@ def kiem_hinh_truoc_dan(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -
             dem["filled_vet_yeu"] = dem.get("filled_vet_yeu", 0) + j - i
             continue
         lap.update({k: track[k] for k in range(i, j)})
-    if not lap:
+    if not lap and not hut:
         return dem
     truoc, sau = _vi_tri_ke(track, san)
     mau_u8 = np.clip(mau, 0, 255).astype(np.uint8)
-    cuoi = max(lap)
+    dem["detected_qua_chu"] = 0
+    cuoi = max(set(lap) | set(hut))
     for i, g in enumerate(nguon.doc_tuan_tu()):
+        e = hut.get(i)
+        if e is not None:
+            t, x = cham_qua_chu(g, mau_u8, e) if chu_trong_tam_nen(g, e) else (-1.0, -1.0)
+            if x >= san and la_logo_qua_chu(t, x):
+                e["diem_xoa_chu"] = round(x, 3)
+                dem["detected_qua_chu"] += 1
+            else:
+                e["state"], e["hinh_hut"] = CHAN_HINH, round(float(e["score"]), 3)
+                dem["detected_hut"] += 1
         e = lap.get(i)
         if e is not None:
-            gf = _hp(g, SIGMA)
+            gf, gx = _hp(g, SIGMA), None
             cho = [(e["x"], e["y"], e["w"], e["h"])] + [p for p in (truoc[i], sau[i]) if p is not None]
-            tot = max((diem_tai(gf, mau_u8, *p) + (p[2], p[3]) for p in cho), key=lambda r: r[0])
+            ket = []
+            for p in cho:
+                r = diem_tai(gf, mau_u8, *p)
+                if chu_trong_tam_nen(g, {"x": p[0], "y": p[1], "w": p[2], "h": p[3]}):  # chỉ xoá chữ khi có chữ: logo trắng trên
+                    gx = thong_cao_xoa_chu(g) if gx is None else gx                      # nền tối tự nó trông như "chữ"
+                    rx = diem_tai(gx, mau_u8, *p)
+                    r = rx if la_logo_qua_chu(r[0], rx[0]) and rx[0] > r[0] else r
+                ket.append(r + (p[2], p[3]))
+            tot = max(ket, key=lambda r: r[0])
             e["hinh"] = round(tot[0], 3)
             if tot[0] < san:
                 e["state"] = CHAN_HINH

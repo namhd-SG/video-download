@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 
 from .box_moi import BoxMoi
+from .chu_phu_de import mat_na_chu
 from .dinh_vi import ti_le_phu_de
 
 # Cổng phụ đề cũ (ĐP-1437): tấm nền A2 nới 4px chồng chữ trắng viền đen >3% ⇒ thử co về box chữ cũ +2px; vẫn chồng ⇒ bỏ.
@@ -76,26 +77,30 @@ def ti_le_vanh(g: np.ndarray, e: dict) -> float:
     return float(np.concatenate(parts).mean()) if parts else 0.0
 
 
-def _chan_theo_video(track: list[dict], ti_le: dict[int, float], san: float, k_mad: float, trang_thai: str) -> float | None:
+def _chan_theo_video(track: list[dict], ti_le: dict[int, float], san: float, k_mad: float, trang_thai: str,
+                     mien=lambda e: False) -> float | None:
     """Ngưỡng theo VIDEO = max(sàn, trung vị + K × MAD) trên các khung chắc; vượt ⇒ chặn. Trả trung vị (None nếu không có)."""
     v = np.array([ti_le[e["frame"]] for e in track if e.get("state") in DA_CHAC and e["frame"] in ti_le])
     if not v.size:
         return None
     med = float(np.median(v))
     nguong = max(san, med + k_mad * (float(np.median(np.abs(v - med))) + 1e-4))
-    for e in track:
-        if e.get("state") in DA_CHAC and ti_le.get(e["frame"], 0.0) > nguong:
+    for e in track:  # khung `mien` vẫn VÀO thống kê ngưỡng nhưng không bị chặn — bỏ khỏi thống kê làm trung vị video tụt và chặn oan
+        # khung khác (đo kq16: v17 k470 detected → hidden_ring)
+        if e.get("state") in DA_CHAC and ti_le.get(e["frame"], 0.0) > nguong and not mien(e):
             e["state"] = trang_thai
     return med
 
 
 def cong_vanh_ngang(track: list[dict], ti_le: dict[int, float]) -> None:
     """Đo Test 02: bắt 50/58 khung phụ đề bóng mờ của _3, nhưng precision cờ ~40% (cờ oan trên giày/tóc/vạch sáng)."""
-    _chan_theo_video(track, ti_le, VANH_SAN, VANH_K_MAD, CHAN_VANH)
+    _chan_theo_video(track, ti_le, VANH_SAN, VANH_K_MAD, CHAN_VANH, lambda e: e.get("de_chu") or e.get("ai"))  # chữ tràn cạnh logo đè
 
 
-def ti_le_net_la(g: np.ndarray, e: dict, mau: np.ndarray) -> float:
-    """Tỉ lệ điểm 'nét lạ' trong tấm nền: phần dư sau khi trừ mẫu watermark (đã co về cỡ box) khỏi thông cao của khung."""
+def ti_le_net_la(g: np.ndarray, e: dict, mau: np.ndarray, bo_chu: bool = False) -> float:
+    """Tỉ lệ điểm 'nét lạ' trong tấm nền: phần dư sau khi trừ mẫu watermark (đã co về cỡ box) khỏi thông cao của khung. `bo_chu` ⇒ nét
+    chữ phụ đề trắng viền đen KHÔNG tính — CHỈ cho khung đã xác nhận là logo đè chữ (user cho đè chữ 15/10; chữ đè logo từng chặn cả khung
+    logo thật — v05 k886, test_2 k124–k128). Khung chưa xác nhận vẫn tính chữ: đó là lớp chặn phụ đề dự phòng."""
     H, W = g.shape
     p = PAD_TAM_NEN
     x0, y0, x1, y1 = max(0, e["x"] - p), max(0, e["y"] - p), min(W, e["x"] + e["w"] + p), min(H, e["y"] + e["h"] + p)
@@ -110,12 +115,15 @@ def ti_le_net_la(g: np.ndarray, e: dict, mau: np.ndarray) -> float:
     ht = tt - cv2.GaussianBlur(tt, (0, 0), 3)
     a = float((hc * ht).sum() / max(float((ht * ht).sum()), 1e-6))
     du = np.abs(hc - a * ht)
-    return float(((du > NET_LA_THONG_CAO) & (np.abs(vung - np.median(vung)) > NET_LA_LECH)).mean())
+    la = (du > NET_LA_THONG_CAO) & (np.abs(vung - np.median(vung)) > NET_LA_LECH)
+    if bo_chu:
+        la &= ~mat_na_chu(g[y0:y1, x0:x1])
+    return float(la.mean())
 
 
 def cong_net_la(track: list[dict], ti_le: dict[int, float]) -> bool:
     """Chặn khung có nét lạ vượt ngưỡng theo video. Trả True nếu nét lạ PHỔ BIẾN (trung vị > NET_LA_PHO_BIEN) ⇒ cờ cho member."""
-    med = _chan_theo_video(track, ti_le, NET_LA_SAN, NET_LA_K_MAD, CHAN_NET)
+    med = _chan_theo_video(track, ti_le, NET_LA_SAN, NET_LA_K_MAD, CHAN_NET, lambda e: e.get("ai"))  # khung AI: user cho đè vật
     return med is not None and med > NET_LA_PHO_BIEN
 
 
@@ -165,7 +173,8 @@ def go_chan_theo_hinh(track: list[dict], net: dict[int, float], san: float | Non
         j = i
         while j < n and track[j].get("state") in CO_THE_GO_THEO_HINH:
             j += 1
-        dat = [e for e in track[i:j] if e.get("score") is not None and e["score"] >= san and net.get(e["frame"], 1.0) <= NET_LA_SAN]
+        dat = [e for e in track[i:j] if (e.get("quy_dao") or max(e.get("score") or -1.0, e.get("diem_xoa_chu") or -1.0) >= san)
+               and net.get(e["frame"], 1.0) <= NET_LA_SAN]  # điểm sau xoá chữ: khung đè chữ bị cổng tương phản chặn vẫn gỡ được
         for e in dat:
             e["chan_cu"], e["state"], e["plate_pad"], e["go_hinh"] = e["state"], "detected", PAD_CHAT, True
         if dat:
