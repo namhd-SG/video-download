@@ -61,6 +61,17 @@ def test_go_mot_phan_doan_chan_thi_go_chan_le_khong_go_an_theo_manh_con_lai():
     assert tr[3]["state"] == cong.CHAN_VANH and tr[4]["state"] == cong.CHAN_VANH
 
 
+def test_go_theo_hinh_khong_cat_khung_phu_de_lien_ke_thanh_doan_le_cho_go_chan_le():
+    """Đoạn chặn liền: 2 khung phụ đề + 10 khung tương phản gỡ được theo hình. Trước khi có gỡ theo hình, go_chan_le thấy đoạn 12 khung
+    ⇒ giữ chặn. Gỡ 10 khung tương phản không được biến 2 khung phụ đề thành đoạn lẻ ≤3 rồi bị gỡ ăn theo (dán đè chữ chưa xác nhận)."""
+    tr = [_e(0, "detected"), _e(1, cong.CHAN_PHU_DE), _e(2, cong.CHAN_PHU_DE)] + \
+         [_e(i, cong.CHAN_TUONG_PHAN) for i in range(3, 13)] + [_e(13, "detected")]
+    net = {i: 0.0 for i in range(1, 13)}
+    assert cong.go_chan_theo_hinh(tr, net, san=0.6) == 10
+    cong.go_chan_le(tr)
+    assert tr[1]["state"] == cong.CHAN_PHU_DE and tr[2]["state"] == cong.CHAN_PHU_DE
+
+
 def test_doan_chan_khong_go_duoc_khung_nao_van_theo_go_chan_le_cu():
     tr = [_e(0, "detected"), _e(1, cong.CHAN_VANH, 0.1), _e(2, cong.CHAN_VANH, 0.1), _e(3, "detected")]
     assert cong.go_chan_theo_hinh(tr, {1: 0.0, 2: 0.0}, san=0.6) == 0

@@ -178,7 +178,14 @@ def go_chan_theo_hinh(track: list[dict], net: dict[int, float], san: float | Non
         for e in dat:
             e["chan_cu"], e["state"], e["plate_pad"], e["go_hinh"] = e["state"], "detected", PAD_CHAT, True
         if dat:
-            for e in track[i:j]:
+            # Giữ chặn cả khung bị cổng KHÁC (phụ đề / nét lạ) liền kề trong cùng đoạn chặn: gỡ phần tương phản/vành không được cắt
+            # chúng thành mẩu ≤ 3 khung cho go_chan_le gỡ ăn theo (đoạn chặn dài trước đó vẫn là chặn thật).
+            a, b = i, j
+            while a > 0 and str(track[a - 1].get("state", "")).startswith("hidden_"):
+                a -= 1
+            while b < n and str(track[b].get("state", "")).startswith("hidden_"):
+                b += 1
+            for e in track[a:b]:
                 if not e.get("go_hinh"):
                     e["giu_chan"] = True
         go += len(dat)
