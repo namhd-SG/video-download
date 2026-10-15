@@ -138,6 +138,7 @@ def test_dot_bien_go_chan_le_tat_thi_khung_bi_chan_lo_ra(monkeypatch):
     """Cổng chặn oan một khung giữa vết: có gỡ chặn lẻ ⇒ khung vẫn được che; không có ⇒ nháy."""
     clip = tao_clip(n=70)
     monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
+    monkeypatch.setattr(cong, "go_chan_theo_hinh", lambda track, net, san: 0)  # cô lập gỡ chặn lẻ: gỡ theo hình có test riêng
     orig = cong.cong_vanh_ngang
 
     def chan_oan(track, ti_le):

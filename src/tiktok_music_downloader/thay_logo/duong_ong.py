@@ -15,9 +15,14 @@ from dataclasses import dataclass, field, replace
 import numpy as np
 
 from . import cong
+from .ai_vong_hai import gan_moc_ai
+from .bam_hai_chieu import bam_lai_doan_mat
 from .box_moi import BoxMoi, chon_moi_dong_thuan, gom_vet
+from .chu_phu_de import bo_moi_chu, cham_qua_chu, gan_chu, la_logo_qua_chu
 from .dinh_vi import dinh_vi, ti_le_phu_de
+from .kiem_hinh import CHAN_HINH, kiem_hinh_truoc_dan, san_hinh
 from .lam_muot_vet import TOC_DO_NHAY, lap_va_lam_muot
+from .lo_trinh import theo_lo_trinh
 from .mau import dung_mau_sach, mat_na_va_tuong_phan, tu_hoc_mau
 from .nguon_khung import NguonKhung
 from .nhay import do_nhay
@@ -95,6 +100,8 @@ def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mau: np.ndarray, bo_phu
     khung, đo vành ngang + nét lạ (ghi vào khung để tune offline), rồi áp ngưỡng theo video. Trả True nếu nét lạ phổ biến (cờ)."""
     mask, tcon = mat_na_va_tuong_phan(mau)
     nguong = cong.nguong_tuong_phan(tcon)
+    san = san_hinh(track)
+    mau_u8 = np.clip(mau, 0, 255).astype(np.uint8)
     by = {e["frame"]: e for e in track if e.get("state") in cong.DA_CHAC}
     vanh: dict[int, float] = {}
     net: dict[int, float] = {}
@@ -103,17 +110,36 @@ def _ap_cong_khung(nguon: NguonKhung, track: list[dict], mau: np.ndarray, bo_phu
         for i, g in enumerate(nguon.doc_tuan_tu()):
             e = by.get(i)
             if e is not None:
-                if not bo_phu_de:
+                if e.get("ai"):
+                    e["plate_pad"] = cong.PAD_CHAT  # khung AI được đè chữ/vật: tấm nền ép sát logo cũ
+                if not bo_phu_de and gan_chu(g, e) and _logo_de_chu(g, e, mau_u8, san):
+                    e["de_chu"], e["plate_pad"] = True, cong.PAD_CHAT  # user cho đè chữ: bỏ cổng phụ đề + vành, nét lạ không tính chữ
+                if not bo_phu_de and not e.get("de_chu") and not e.get("ai"):
                     cong.cong_phu_de(g, e)
-                if e["state"] in cong.DA_CHAC:
+                if e["state"] in cong.DA_CHAC and not e.get("ai"):  # AI đã xác nhận logo ⇒ được đè cả vật/chữ (user chốt 15/10 12:46)
                     cong.cong_tuong_phan(g, e, mask, nguong)
-                if e["state"] in cong.DA_CHAC:
+                if e["state"] in cong.DA_CHAC:  # đo cả khung đè chữ/AI cho thống kê ngưỡng; chúng được miễn chặn ở _chan_theo_video
                     vanh[i] = e["vanh"] = round(cong.ti_le_vanh(g, e), 4)
-                    net[i] = e["net_la"] = round(cong.ti_le_net_la(g, e, mau), 4)
+                if e["state"] in cong.DA_CHAC or e["state"] == cong.CHAN_TUONG_PHAN:  # khung bị tương phản chặn cũng cần đo để xét gỡ
+                    net[i] = e["net_la"] = round(cong.ti_le_net_la(g, e, mau, bool(e.get("de_chu"))), 4)
             if i >= cuoi:
                 break
     cong.cong_vanh_ngang(track, vanh)
-    return cong.cong_net_la(track, net)
+    pho_bien = cong.cong_net_la(track, net)
+    cong.go_chan_theo_hinh(track, net, san)
+    return pho_bien
+
+
+def _logo_de_chu(g: np.ndarray, e: dict, mau_u8: np.ndarray, san: float | None) -> bool:
+    """Khung gần chữ phụ đề là LOGO THẬT đè chữ (được dán đè, user chốt 15/10) ⟺ đã có bằng chứng bám hai chiều (`quy_dao`) HOẶC điểm sau
+    xoá chữ qua sàn hình của vết VÀ không tụt so với trước xoá (chữ phụ đề giống logo thì tụt — xem chu_phu_de)."""
+    if e.get("quy_dao"):
+        return True
+    if san is None:
+        return False
+    t, x = cham_qua_chu(g, mau_u8, e)
+    e["diem_xoa_chu"] = round(x, 3)
+    return x >= san and la_logo_qua_chu(t, x)
 
 
 def _kep_vao_khung(che: dict[int, dict], rong: int, cao: int) -> dict[int, dict]:
@@ -173,7 +199,7 @@ def _bang_chung(det: dict[int, dict], khung_moi: set[int], so_box: int, tt: dict
     return ""
 
 
-def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
+def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = ()) -> KetQuaVet:
     nhan = _ten_cum(cum)
     moi, ncc = chon_moi_dong_thuan(nguon, cum)
     mau = dung_mau_sach(nguon, moi, cum)
@@ -191,14 +217,23 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi]) -> KetQuaVet:
             med = float(np.median([e["score"] for e in det.values()]))
             mau, nhan_ok = tu_hoc_mau(nguon, [dict(e, frame=t * BUOC_TU_HOC) for t, e in det.items() if e["score"] >= med], mau)
             tu_choi += 0 if nhan_ok else 1
-    uv = dinh_vi(nguon, mau, neo, 1, not mau_giong_phu_de(mau))
+    uv = dinh_vi(nguon, mau, neo, 1, not mau_giong_phu_de(mau),
+                 [(b.x, b.y, b.w, b.h, b.khung - NEO_KHUNG, b.khung + NEO_KHUNG) for b in neo_ai])
     n = len(uv)
     det, tt = theo_vet([u for u, _ in uv], mau.shape[::-1], khung_moi)
-    che, doan = lap_va_lam_muot(det, n)
+    det_sach, moi_chu = (det, 0) if mau_giong_phu_de(mau) else bo_moi_chu(nguon, det, mau)  # vết khoá nhầm chữ phụ đề ⇒ thành lỗ
+    ai = {}
+    if neo_ai:  # lộ trình chỉ chạy ở lượt có AI: không mốc AI thì mồi đứng yên dày đặc (test_2 k371–k403) chiếm đa số cửa sổ khớp
+        det_sach, ai = gan_moc_ai(nguon, det_sach, uv, mau, neo_ai)
+        det_sach, ai["lo_trinh"] = theo_lo_trinh(nguon, det_sach, mau, list(neo_ai), len(uv))
+    det_bam, bam = bam_lai_doan_mat(nguon, det_sach, mau)  # `det` gốc giữ cho _bang_chung: khung bám lại không làm vết "có thật" hơn
+    bam["moi_chu"] = moi_chu
+    che, doan = lap_va_lam_muot(det_bam, n)
     che = _kep_vao_khung(che, nguon.rong, nguon.cao)
     track = _track_day_du(n, che, uv)
+    hinh = kiem_hinh_truoc_dan(nguon, track, mau)
     kq = ap_moi_cong(nguon, track, mau, cum)
-    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, tt
+    kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh, bam_hai_chieu=bam, ai_vong_hai=ai)
     ly_do = _bang_chung(det, khung_moi, len(cum), tt)
     if ly_do:
         kq.trang_thai, kq.khung_render, kq.ly_do = "cho_nguoi", [], ly_do
@@ -220,8 +255,11 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
-    dem = {s: sum(1 for e in track if e.get("state") == s) for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e)
+    dem = {s: sum(1 for e in track if e.get("state") == s)
+           for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh"))
+    dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
+    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC)
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]
@@ -257,7 +295,8 @@ LY_DO_VONG_HAI = ("box agy không được vết nào phủ; vết dò lại t�
                   "cần người kiểm, máy không tự thay")
 
 
-def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaVet], tu_render: bool = True) -> list[BoxMoi]:
+def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaVet], tu_render: bool = True,
+                   neo_ai: list[BoxMoi] = ()) -> list[BoxMoi]:
     """Xử lý từng cụm, thêm vào `vet`. Trả các box của cụm render mà vết KHÔNG phủ (số cụm agy gán nhầm, hoặc box giả lẫn vào).
 
     `tu_render=False` (vòng hai): vết MỚI dò từ box sót không được tự render. Mẫu học từ 1–2 box mà phần lớn crop là nền thì vết bám
@@ -274,7 +313,9 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
             trung.box_cum += len(cl)
             trung.thong_tin["cum_gop"] = trung.thong_tin.get("cum_gop", 0) + 1
             continue
-        v = xu_ly_vet(nguon, cl)
+        so_cum = {b.cum for b in cl}
+        ai = [b for b in neo_ai if b.cum in so_cum]
+        v = xu_ly_vet(nguon, cl, ai) if ai else xu_ly_vet(nguon, cl)
         if v.trang_thai == "render" and not tu_render:
             v.trang_thai, v.khung_render, v.ly_do = "cho_nguoi", [], LY_DO_VONG_HAI
         elif v.trang_thai == "render" and len(cl) < CUM_LON:
@@ -285,7 +326,8 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
     return chua
 
 
-def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi], vet_cu: list[KetQuaVet] | None = None) -> KetQuaVideo:
+def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi], vet_cu: list[KetQuaVet] | None = None,
+                neo_ai: list[BoxMoi] = ()) -> KetQuaVideo:
     """Mỗi cụm box (số cụm agy + hình + vị trí) là một watermark riêng, kể cả cụm 1–2 box (hạt giống). `vet_cu` = vết của lượt trước khi
     gọi lại với box bổ sung (xem docstring module). Cụm không thành vết KHÔNG biến mất: nằm trong `vet` với trạng thái ≠ render.
 
@@ -295,7 +337,7 @@ def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi], vet_cu: list[KetQuaVet] 
     cum = gom_vet(boxes, nguon)
     vet = list(vet_cu or [])
     box_cu = sum(v.box_cum for v in vet)
-    chua = _xu_ly_cac_cum(nguon, cum, vet)
+    chua = _xu_ly_cac_cum(nguon, cum, vet, neo_ai=neo_ai)  # neo_ai: box AI vòng hai — CHỈ làm mốc dò cục bộ, không vào mẫu/khớp mồi
     if chua:
         _xu_ly_cac_cum(nguon, gom_vet([replace(b, cum=None) for b in chua], nguon), vet, tu_render=False)
     return KetQuaVideo(vet, len(boxes) + box_cu, len(cum) + len(vet_cu or []))
