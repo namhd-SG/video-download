@@ -492,6 +492,10 @@ def test_anh_trang_that_khong_cuon_ngang(may_chu, trinh_duyet, rong, theme):
     p.wait_for_selector("#tl-tab-bo .tl-vb-nhom")
     _chon_ca(p, "N.1AAAA").click()
     assert p.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"cuộn ngang ở {rong}px"
+    # Mọi tab nằm TRỌN trong hàng tab (không bị cắt "Dá…" ở mép phải khổ 390). ĐỘT BIẾN: bỏ flex-wrap ⇒ tab cuối tràn ⇒ ĐỎ.
+    assert p.evaluate("""(() => { const h = document.getElementById('tl-tabs').getBoundingClientRect();
+        return [...document.querySelectorAll('#tl-tabs .tl-tab')].filter(t => t.offsetParent).every(t => {
+          const r = t.getBoundingClientRect(); return r.left >= h.left - 1 && r.right <= h.right + 1; }); })()"""), f"tab bị cắt ở {rong}px"
     _chup(p, f"ux-trang-{rong}-{theme}.png")
 
 

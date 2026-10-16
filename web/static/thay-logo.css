@@ -354,6 +354,9 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
   .tl-vb-dau { display: none; }
   .tl-vb-phai { align-items: stretch; }
   .tl-vung { height: auto; max-height: 70vh; }
+  /* Khổ hẹp: tab xuống dòng thay vì bị cắt ở mép phải (cuộn ngang ẩn không có dấu hiệu nào cho người dùng biết còn tab). */
+  .tl-tabs { flex-wrap: wrap; overflow-x: visible; margin: 10px 12px 0; }
+  .tl-tab { padding: .5rem .7rem .55rem; }
 }
 .tl-bo-dich { font-size: .74rem; font-weight: 600; color: var(--accent); }
 .tl-bo-tao { margin: 0 14px 10px; min-height: 40px; }
