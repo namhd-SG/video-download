@@ -796,3 +796,63 @@ def test_link_thay_logo_chi_hien_khi_tinh_nang_bat(may_chu, trinh_duyet, monkeyp
         const cs = getComputedStyle(e); return e.getBoundingClientRect().height / parseFloat(cs.lineHeight === 'normal'
         ? parseFloat(cs.fontSize) * 1.3 : cs.lineHeight); })""")
     assert max(cao) < 1.6, f"thanh trên gãy dòng ở {rong}px khi link {'hiện' if bat else 'ẩn'}: {cao}"
+
+
+# ---------------------------------------------------------------- Lượt của bạn (16/10): dải tiến độ + nơi nhận + tự trả về bộ
+def _luot(job_id, ten, **kw):
+    return {**_bo_mo(job_id, ten), **kw}
+
+
+def test_luot_cua_ban_dai_tien_do_va_hen_gio_tra_ve_bo(may_chu, trinh_duyet, monkeypatch):
+    """Lượt từ bộ đủ điều kiện ⇒ "Sẽ tự trả vào bộ lúc HH:MM" + "Trả ngay" (POST …/ap); đã trả ⇒ "✓ Đã trả n video vào bộ";
+    máy định vị im ≥15 phút ⇒ chữ đỏ; lượt Drive ⇒ "Thư mục Drive riêng"."""
+    bo = [
+        _luot(1, "N.1510C", nguon_kieu="vao_bo", tong=3, xong=3, dat=3, tu_ap_luc=time.time() + 240, da_tra_bo=0),
+        _luot(2, "N.1210B", nguon_kieu="vao_bo", tong=2, xong=2, dat=2, da_tra_bo=2),
+        _luot(3, "16/10-1", nguon_kieu="drive", dich_khac="drive", tong=4, xong=1, cho_duyet=1, cho_dinh_vi_giay=1500),
+    ]
+    # /videos khớp /bo: lượt 3 có đúng 1 video xong chưa chấm (cùng nguồn đếm với "Chờ bạn duyệt 1" trên dòng lượt và đầu trang).
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([_dong_mo(31, job_id=3, ten_bo="16/10-1")])), bo=bo)
+    goi_ap = []
+    p.route("**/api/thay-logo/bo/*/ap", lambda r: (goi_ap.append(r.request.url), r.fulfill(status=202, content_type="application/json",
+                                                                                          body="{}")) if r.request.method == "POST" else r.fulfill(status=404))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 3")
+    the = p.locator("#tl-bo-list .tl-bo-the")
+    t1, t2, t3 = (the.nth(i).inner_text() for i in range(3))
+    assert "Nhận 3" in t1 and "Máy xong 3/3" in t1 and "Sẽ tự trả vào bộ lúc" in t1
+    assert "✓ Đã trả 2 video vào bộ" in t2 and "Trả ngay" not in t2
+    assert "Máy đang làm 1/4" in t3 and "Máy định vị logo chưa phản hồi 25 phút" in t3 and "Chờ bạn duyệt 1" in t3 and "Thư mục Drive riêng" in t3
+    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ duyệt')")  # đầu trang cùng số với dòng lượt
+    _anh(p, "ux-luot-cua-ban-1280.png")
+    the.nth(0).get_by_role("button", name="Trả ngay").click()
+    p.wait_for_function("1")
+    p.wait_for_timeout(300)
+    assert [u for u in goi_ap if u.endswith("/api/thay-logo/bo/1/ap")]
+
+
+def test_cho_dinh_vi_duoi_15_phut_khong_bao_do(may_chu, trinh_duyet, monkeypatch):
+    bo = [_luot(1, "Lượt A", tong=2, cho_dinh_vi_giay=600)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 1")
+    assert "chưa phản hồi" not in p.locator("#tl-bo-list").inner_text()
+
+
+def test_tra_ngay_loi_hien_duoi_dung_luot_va_khoa_khi_dang_gui(may_chu, trinh_duyet, monkeypatch):
+    """M3 (review PR2): lỗi "Trả ngay" hiện dưới ĐÚNG lượt bấm (không dùng ô lỗi chung của thẻ mở rộng); đang gửi thì nút khoá.
+    ĐỘT BIẾN: quay về `bam()` dùng `apLoi` chung ⇒ không có lỗi dưới dòng lượt ⇒ ĐỎ."""
+    import json
+    bo = [_luot(1, "N.1510C", nguon_kieu="vao_bo", tong=1, xong=1, dat=1, tu_ap_luc=time.time() + 240),
+          _luot(2, "N.1610", nguon_kieu="vao_bo", tong=1, xong=1, dat=1, tu_ap_luc=time.time() + 240)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.route("**/api/thay-logo/bo/*/ap", lambda r: r.fulfill(status=409, content_type="application/json",
+                                                           body=json.dumps({"detail": "Bộ này đang có một lượt áp/hoàn tác khác chạy — đợi xong rồi thử lại."}))
+            if r.request.method == "POST" else r.fulfill(status=404))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    the = p.locator("#tl-bo-list .tl-bo-the")
+    the.nth(1).get_by_role("button", name="Trả ngay").click()
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-tra-loi').length === 1")
+    assert "đang có một lượt áp" in the.nth(1).locator(".tl-bo-tra-loi").inner_text()
+    assert the.nth(0).locator(".tl-bo-tra-loi").count() == 0

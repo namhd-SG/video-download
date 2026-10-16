@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky, tai_len_phien
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky, tai_len_phien, tu_ap_vao_bo
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -273,12 +273,35 @@ class ThayLogoWorker:
             if not self._cho_cong():
                 self._dung.wait(self.nghi)
                 continue
+            self._tu_ap()  # TRƯỚC cổng đĩa / nhường lane tải: chỉ gọi Drive, không tốn CPU — đĩa đầy không được hoãn việc trả về bộ
             try:
                 self._lan_cuoi = self.mot_luot()
             except Exception:  # một video hỏng không được giết worker
                 log.exception("thay logo: lượt lỗi")
                 self._lan_cuoi = "loi_luot"
             self._dung.wait(self.nghi)
+
+    # ---------------------------------------------------------------- tự trả video Đạt về bộ gốc
+    def _chu_cua(self, video_ids: list[str]) -> dict:
+        from web.thay_logo_routes import chu_video_vao_bo  # nạp muộn: routes không import worker, nhưng giữ worker nạp nhẹ
+        r = chu_video_vao_bo(self.jobs_db, video_ids)
+        if r is None:  # jobs.db tạm không đọc được ⇒ lỗi TẠM, vòng sau thử lại
+            raise ap_vao_bo.LoiAp(503, "Chưa kiểm được chủ video — thử lại sau.")
+        return r
+
+    def _tu_ap(self) -> None:
+        """Một lượt quét `tu_ap_vao_bo` (cờ `TL_AP_VAO_BO` tắt hoặc Drive chưa cấu hình ⇒ không làm gì). Không bao giờ ném."""
+        drive = self.drive_tl
+        if not ap_vao_bo.dang_bat() or drive is None or not drive.dang_cau_hinh():
+            return
+        try:
+            conn = self._mo()
+            try:
+                tu_ap_vao_bo.thu_tu_ap(conn, self._chu_cua, self.bat_dau_ap)
+            finally:
+                conn.close()
+        except Exception:
+            log.exception("thay logo: vòng tự áp vào bộ lỗi")
 
     # ---------------------------------------------------------------- một lượt
     def ram_du(self) -> bool:

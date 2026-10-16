@@ -13,6 +13,7 @@ import math
 import os
 import re as _re
 import sqlite3 as _sqlite3
+import time
 from datetime import datetime as _datetime, timedelta as _timedelta, timezone as _timezone
 from zoneinfo import ZoneInfo as _ZoneInfo
 from contextlib import closing
@@ -23,7 +24,7 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Respon
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky, tai_len_phien
+from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky, tai_len_phien, tu_ap_vao_bo
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 from web import thay_logo_tai_len_routes
@@ -358,13 +359,38 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                     k = None
                 cac_kieu.setdefault(r["job_id"], set()).add(k)
             kieu = {j: (next(iter(ks)) if len(ks) == 1 else "nhieu") for j, ks in cac_kieu.items()}
+            # Tự trả về bộ (P4): lượt đủ điều kiện ⇒ giờ máy sẽ trả (`tu_ap_luc`, epoch); số video đã trả vào bộ (`da_tra_bo`).
+            tu_ap, da_tra = {}, {}
+            if ap_vao_bo.dang_bat():
+                # Chỉ hẹn giờ với CHÍNH chủ lượt (admin xem lượt người khác: máy sẽ không áp thay, không hứa, không có nút).
+                tu_ap = {j: moc + tu_ap_vao_bo.CHO_GIAY for j, (chu, moc) in tu_ap_vao_bo.moc_cac_luot(conn, ids_trang).items()
+                         if chu == email}
+                for j, n in conn.execute(f"SELECT job_id, count(*) FROM tl_ap_bo WHERE chieu='ap' AND buoc='xong' AND job_id IN "
+                                         f"({','.join('?' * len(ids_trang))}) GROUP BY job_id", ids_trang):
+                    da_tra[j] = n
+            # "Máy định vị chưa phản hồi": CHỈ video `cho_agy` mà hộp thư CHƯA có kết quả (đã có kết quả mà chờ render ⇒ đang xếp hàng,
+            # không phải relay im — agy R1b PB3). Tuổi = giây kể từ `cho_agy_tu` của video chờ lâu nhất mỗi lượt.
+            cho_dinh_vi: dict[int, float] = {}
+            w = lay_worker()
+            hop = getattr(w, "hop", None) if w is not None else None
+            if hop is not None:
+                bay_gio = time.time()
+                for r in conn.execute(f"SELECT id, job_id, cho_agy_tu FROM tl_job_video WHERE trang_thai='cho_agy' AND job_id IN "
+                                      f"({','.join('?' * len(ids_trang))})", ids_trang):
+                    try:
+                        chua_co = hop.doc_ket_qua(r["id"]) is None
+                    except Exception:  # hộp thư hỏng một việc: không đoán, bỏ qua dòng đó
+                        continue
+                    if chua_co and r["cho_agy_tu"]:
+                        cho_dinh_vi[r["job_id"]] = max(cho_dinh_vi.get(r["job_id"], 0.0), bay_gio - float(r["cho_agy_tu"]))
         finally:
             conn.close()
         return {"bo": [{"job_id": r["job_id"], "ten_bo": hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"]),
                         "nguon_kieu": kieu.get(r["job_id"]), "tao_luc": r["tao_luc"], "tong": r["tong"], "xong": r["xong"],
                         "cho_duyet": r["cho_duyet"], "cho_nguoi": r["cho_nguoi"], "loi": r["loi"], "dat": r["dat"],
                         "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"],
-                        "dich_khac": r["dich_khac"]} for r in rows]}
+                        "dich_khac": r["dich_khac"], "tu_ap_luc": tu_ap.get(r["job_id"]), "da_tra_bo": da_tra.get(r["job_id"], 0),
+                        "cho_dinh_vi_giay": round(cho_dinh_vi[r["job_id"]]) if r["job_id"] in cho_dinh_vi else None} for r in rows]}
 
     def _ten_tu_link(lo: list[dict], tv: dict) -> dict[tuple[str, str], str | None]:
         """{(email người tạo lượt, file_id): tên} cho dòng KHÔNG có trong thư viện CỦA người tạo lượt nhưng CHÍNH người tạo đã kiểm qua `kiem-link`."""
@@ -682,6 +708,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             kq = ap_vao_bo.dat_lich_ap(conn, job_id, email, _chu_cua)
+            tu_ap_vao_bo.danh_dau(conn, job_id, "ap_tay")  # người dùng đã áp tay ⇒ máy không bao giờ tự áp lượt này nữa
         except ap_vao_bo.LoiAp as e:
             raise HTTPException(e.ma, str(e)) from None
         finally:
@@ -697,6 +724,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             kq = ap_vao_bo.dat_lich_hoan_tac(conn, job_id, email)
+            tu_ap_vao_bo.danh_dau(conn, job_id, "hoan_tac")  # Hoàn tác phải có hiệu lực: máy không tự áp lại lượt này
         except ap_vao_bo.LoiAp as e:
             raise HTTPException(e.ma, str(e)) from None
         finally:
