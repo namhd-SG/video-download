@@ -41,9 +41,8 @@
     const ap = apCua[b.job_id];
     if (cls === "xong" && ap && ap.trang_thai === "xong") nut.append(el("span", "tl-bo-tiep ok", `✓ Đã áp vào bộ ${gio(ap.xong_luc)}`));
     else if (cls === "xong" && ap && ap.la_chu && ap.so_du_dieu_kien) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
-    if (noiNhan(b)) nut.append(el("span", "tl-bo-dich", noiNhan(b)));
     nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
-    the.append(nut);
+    the.append(nut, dongTienDo(b), dongNoiNhan(b));
     // Lượt nguồn khác chọn "Tạo bộ tự tìm mới": có video Đạt ⇒ MỘT cú bấm bàn giao sang Creative Desk (như trang Tải video).
     if (b.dich_khac === "tao_bo" && b.nguon_kieu !== "vao_bo" && b.dat > 0 && typeof T.taoBoTuTim === "function") {
       const dang = banGiaoDang.has(b.job_id);
@@ -64,6 +63,39 @@
       the.append(a);
     }
     return the;
+  }
+
+  // Dải tiến độ của lượt: Nhận → Máy làm → Chờ duyệt. Nhìn là biết lượt đang ở bước nào; chờ máy định vị quá ngưỡng thì nói thẳng.
+  const NGUONG_CHO_DINH_VI_GIAY = 15 * 60;  // cùng mốc báo động relay (plan P6, M = 15 phút)
+  function dongTienDo(b) {
+    const d = el("div", "tl-bo-pipe"), lam = b.xong + b.cho_nguoi + b.loi, dang = b.tong - lam;
+    const chip = (chu, cls) => el("span", "tl-pipe-o" + (cls ? " " + cls : ""), chu);
+    const mui = () => el("span", "tl-pipe-mui", "→");
+    d.append(chip(`Nhận ${b.tong}`, "xong"), mui(), chip(dang > 0 ? `Máy đang làm ${lam}/${b.tong}` : `Máy xong ${lam}/${b.tong}`, dang > 0 ? "dang" : "xong"));
+    if (b.cho_dinh_vi_giay != null && b.cho_dinh_vi_giay >= NGUONG_CHO_DINH_VI_GIAY) {
+      d.append(chip(`Máy định vị logo chưa phản hồi ${T.phut(b.cho_dinh_vi_giay)} phút — máy vẫn chờ, không cần tạo lại lượt`, "do"));
+    }
+    d.append(mui());
+    if (b.cho_duyet > 0) {
+      const n = el("button", "tl-pipe-o can", `Chờ bạn duyệt ${b.cho_duyet} ▸`); n.type = "button";
+      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-duyet"); if (h) h.scrollIntoView({ block: "start" }); });
+      d.append(n);
+    } else d.append(chip(b.dat + b.hong ? `Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng` : "Chờ duyệt", b.dat + b.hong ? "xong" : ""));
+    return d;
+  }
+
+  // Nơi nhận + việc kế tiếp. Lượt từ bộ: hẹn giờ tự trả (máy chủ tính `tu_ap_luc`) + "Trả ngay"; đã trả ⇒ báo số.
+  function dongNoiNhan(b) {
+    const d = el("div", "tl-bo-dich-hang");
+    const chu = noiNhan(b);
+    if (b.nguon_kieu === "vao_bo" && b.da_tra_bo > 0) d.append(el("span", "tl-bo-dich ok", `✓ Đã trả ${b.da_tra_bo} video vào bộ`));
+    else if (b.nguon_kieu === "vao_bo" && b.tu_ap_luc) {
+      d.append(el("span", "tl-bo-dich", `↩ Sẽ tự trả vào bộ ${gio(b.tu_ap_luc)}`));
+      const n = el("button", "btn tl-bo-tra-ngay", "Trả ngay"); n.type = "button";
+      n.addEventListener("click", () => { n.disabled = true; bam(b.job_id, "ap"); });
+      d.append(n);
+    } else if (chu) d.append(el("span", "tl-bo-dich", chu));
+    return d;
   }
 
   function veBo() {
