@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky, tai_len_phien, tu_ap_vao_bo
+from tiktok_music_downloader.thay_logo import ap_vao_bo, canh_relay, hang_doi, nhat_ky, nhip_relay, tai_len_phien, tu_ap_vao_bo
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -270,6 +270,7 @@ class ThayLogoWorker:
 
     def _chay(self) -> None:
         while not self._dung.is_set():
+            self._canh_relay()  # TRƯỚC MỌI cổng (cả cổng cấu hình Drive): canh không cần Drive, cổng nào cũng không được làm nó câm
             if not self._cho_cong():
                 self._dung.wait(self.nghi)
                 continue
@@ -302,6 +303,19 @@ class ThayLogoWorker:
                 conn.close()
         except Exception:
             log.exception("thay logo: vòng tự áp vào bộ lỗi")
+
+    def _canh_relay(self) -> None:
+        """Báo Discord khi có video chờ máy định vị quá lâu mà chưa có kết quả. Chỉ khi worker có relay listener (mini). Không ném."""
+        if self.relay_bind is None:
+            return
+        try:
+            conn = self._mo()
+            try:
+                canh_relay.thu_canh(conn, self.hop, nhip_relay.NHIP.tuoi())
+            finally:
+                conn.close()
+        except Exception:
+            log.exception("thay logo: vòng canh relay lỗi")
 
     # ---------------------------------------------------------------- một lượt
     def ram_du(self) -> bool:
