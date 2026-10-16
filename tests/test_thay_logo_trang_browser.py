@@ -907,6 +907,23 @@ def test_khong_con_gi_de_thu_thi_khong_co_nut_thu_gon_va_ve_mac_dinh(may_chu, tr
     assert p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Xem thêm 1 lượt")
 
 
+def test_luot_xong_con_nut_hanh_dong_van_luon_hien(may_chu, trinh_duyet, monkeypatch):
+    """USER CHỐT 16/10 17:1x ("Có, luôn hiện"): lượt Xong mà thẻ còn nút chờ bấm — "Tạo bộ tự tìm từ N video Đạt", "Trả ngay" — không
+    bị giấu sau "Xem thêm". ĐỘT BIẾN bỏ `coNutTaoBo(b)` hoặc `coNutTraNgay(b)` khỏi `conViec` ⇒ ĐỎ."""
+    xong = dict(tong=1, xong=1, dat=1)
+    bo = [_luot(5, "L5", **xong), _luot(4, "L4", **xong),
+          _luot(3, "L3-tao-bo", dich_khac="tao_bo", nguon_kieu="drive", **xong),
+          _luot(2, "L2-tra-ngay", nguon_kieu="vao_bo", tu_ap_luc=time.time() + 240, da_tra_bo=0, **xong),
+          _luot(1, "L1", **xong)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector("#tl-bo-list .tl-bo-xem-them")
+    ten = [t.split("\n")[0] for t in p.locator("#tl-bo-list .tl-bo-ten").all_inner_texts()]
+    assert ten == ["L5", "L4", "L3-tao-bo", "L2-tra-ngay"]
+    assert p.locator("#tl-bo-list .tl-bo-tao").count() == 1 and p.locator("#tl-bo-list .tl-bo-tra-ngay").count() == 1
+    assert p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Xem thêm 1 lượt")
+
+
 def test_it_luot_thi_khong_co_nut_xem_them(may_chu, trinh_duyet, monkeypatch):
     bo = [_luot(2, "A", tong=1, xong=1), _luot(1, "B", tong=1, xong=1)]
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
