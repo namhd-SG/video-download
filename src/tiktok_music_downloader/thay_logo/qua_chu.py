@@ -9,10 +9,11 @@ Chạy SAU mọi cổng, TRƯỚC `cong.go_chan_le`. Mỗi đoạn khung bị ch
    phải khung kiểm hình bác) nằm ≤ `GAN_DET` quanh đường ⇒ giữ vị trí vết dò.
 2. DÒ HAI ĐẦU (CHỈ đường có AI): hai đầu xa hơn ngưỡng ⇒ mỗi khung lấy ≤ `K` đỉnh khớp mẫu trên ảnh đã xoá chữ trong vùng bao box a, b
    (+`PAD`), cộng vết dò sẵn có; quy hoạch động chọn đường nối tâm a → tâm b (bước ≤ `BUOC_DP`) tối đa Σ điểm − `PHAT`·Σ bước/`BUOC_DP`;
-   dán khung trên đường có điểm ≥ `SAN_DAN`. Đường không AI KHÔNG dò hai đầu: đo được dán lên má em bé (03_10) / tháp (03_4).
+   dán khung trên đường có điểm ≥ `SAN_DAN`; không có đường trọn đoạn ⇒ dò từ mỗi đầu đi vào (bước ≤ `BUOC_DP`, dừng ở khung đầu tiên
+   không đạt sàn), hai phía không vượt nhau. Đường không AI KHÔNG dò hai đầu: đo được dán lên má em bé (03_10) / tháp (03_4).
 Không lấp khung có box mồi ±1 (đổi chỗ ở đó làm `_box_duoc_phu` coi box mồi "không được phủ" ⇒ cả video thành chờ người — 03_38), và
 không nội suy chéo qua box mồi khi đường lệch tâm box. Khung còn sót trong một đoạn đã lấp một phần ⇒ `giu_chan` (không để `go_chan_le`
-gỡ ăn theo mẩu ≤ 3 khung). Khung lấp: `filled`, `de_chu`, tấm nền hẹp, cờ `qua_chu` (kiểu "noi" | "dp").
+gỡ ăn theo mẩu ≤ 3 khung) — trừ khung box mồi: chúng được go_chan_le gỡ tại chính vị trí vết dò (Test 03_40 k294–296, mốc user k295). Khung lấp: `filled`, `de_chu`, tấm nền hẹp, cờ `qua_chu` (kiểu "noi" | "dp").
 
 HẰNG SỐ CHƯA HIỆU CHỈNH ngoài 12 video Test3: GAP_MAX, LECH_PX/GIA_TOC_PX, GAN_DET, PAD, K, BUOC_DP, PHAT, SAN_DAN. SAN_DAN 0,165 đặt giữa
 điểm cao nhất của khung dán sai (0,159) và thấp nhất của khung đúng (0,171) trên 66 khung đã soi mắt — phân tách hẹp.
@@ -98,6 +99,19 @@ def _duong_tot_nhat(pa, pb, tang: list[list]) -> list | None:
     return duong[::-1]
 
 
+def _do_tu_dau(p0, tang: list[list], chi_so) -> dict[int, tuple]:
+    """Đi từ tâm p0 vào các tầng theo thứ tự `chi_so`, mỗi tầng lấy ứng viên điểm cao nhất trong bán kính BUOC_DP của bước trước; dừng
+    ở tầng đầu tiên không có ứng viên đủ gần đạt SAN_DAN. Trả {chỉ số tầng: (tâm, điểm)}."""
+    out, p = {}, p0
+    for q in chi_so:
+        gan = [(pc, s) for pc, s in tang[q] if math.dist(pc, p) <= BUOC_DP and s >= SAN_DAN]
+        if not gan:
+            break
+        out[q] = max(gan, key=lambda c: c[1])
+        p = out[q][0]
+    return out
+
+
 def lap_qua_chu(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi], co_ai: bool = False) -> dict:
     """Lấp tại chỗ trên `track` (sau cổng, trước go_chan_le). Trả số khung lấp theo kiểu."""
     dem = {"noi": 0, "dp": 0}
@@ -144,14 +158,20 @@ def lap_qua_chu(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
                     tang.append(_ung_vien(g, vung, t, w, h, _tam(e) if _vet_that(e) else None) if g is not None else [])
                 duong_dp = _duong_tot_nhat(pa, pb, tang)
                 if duong_dp is not None:
-                    for k, (p, s) in zip(range(i, j), duong_dp):
-                        if track[k]["frame"] in box or s < SAN_DAN:
-                            continue
-                        _dat(track[k], p[0] - w / 2, p[1] - h / 2, w, h, rong, cao, "dp")
-                        dem["dp"] += 1
+                    chon = dict(enumerate(duong_dp))
+                else:  # không có đường trọn đoạn (khoảng giữa không có logo / nhảy quá xa): dò từ hai đầu vào, không vượt nhau
+                    trai = _do_tu_dau(pa, tang, range(len(tang)))
+                    phai = _do_tu_dau(pb, tang, range(len(tang) - 1, max(trai, default=-1), -1))
+                    chon = {**trai, **phai}
+                for q, (p, s) in chon.items():
+                    k = i + q
+                    if track[k]["frame"] in box or s < SAN_DAN:
+                        continue
+                    _dat(track[k], p[0] - w / 2, p[1] - h / 2, w, h, rong, cao, "dp")
+                    dem["dp"] += 1
         if any(track[k].get("qua_chu") for k in range(i, j)):
-            for k in range(i, j):
-                if not track[k].get("qua_chu"):
+            for k in range(i, j):  # khung box mồi bị bỏ qua có chủ ý: để go_chan_le gỡ tại chỗ (vị trí vết dò, không dời)
+                if not track[k].get("qua_chu") and track[k]["frame"] not in box:
                     track[k]["giu_chan"] = True
         i = j
     return dem
