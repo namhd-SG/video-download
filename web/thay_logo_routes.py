@@ -13,7 +13,8 @@ import math
 import os
 import re as _re
 import sqlite3 as _sqlite3
-from datetime import datetime as _datetime, timedelta as _timedelta
+from datetime import datetime as _datetime, timedelta as _timedelta, timezone as _timezone
+from zoneinfo import ZoneInfo as _ZoneInfo
 from contextlib import closing
 from pathlib import Path
 from typing import Callable
@@ -123,10 +124,10 @@ def thong_tin_thu_vien(jobs_db, ids: list[str]) -> dict[str, dict] | None:
         with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
             for i in range(0, len(ids), 500):
                 lo = ids[i:i + 500]
-                for fid, vid, title, nen_tang, chu in c.execute(
-                        "SELECT v.drive_file_id, v.video_id, v.title, j.nen_tang, j.nguoi_tao FROM videos v LEFT JOIN jobs j "
+                for fid, vid, title, nen_tang, chu, url in c.execute(
+                        "SELECT v.drive_file_id, v.video_id, v.title, j.nen_tang, j.nguoi_tao, v.url FROM videos v LEFT JOIN jobs j "
                         f"ON j.id = v.job_id WHERE v.drive_file_id IN ({','.join('?' * len(lo))})", lo):
-                    out[fid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "chu": chu}
+                    out[fid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "chu": chu, "url": url}
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được thư viện %s (%s)", jobs_db, type(e).__name__)
         return None
@@ -162,6 +163,7 @@ def _moc_thoi_gian(gia_tri: str | None, ten: str, cuoi_ngay: bool = False) -> fl
 
 
 TEN_BO_TOI_DA = 80
+VN_TIMEZONE = _ZoneInfo("Asia/Saigon")  # cùng múi với `web/models_vao_bo.VN_TIMEZONE` (ngày "vào bộ" người dùng thấy)
 _DRIVE_ID = _re.compile(r"^[A-Za-z0-9_-]{10,120}$")
 
 
@@ -177,6 +179,8 @@ class TaoJobThayLogo(BaseModel):
     may_file_ids: list[str] = Field(default_factory=list, max_length=TRAN_VIDEO_MOT_JOB)  # file của phiên "Tải từ máy" đã `xong` (cờ TL_TAI_TU_MAY)
     ghi_chu: str = Field(default="", max_length=500)
     ten_bo: str | None = None  # bắt buộc, nhưng kiểm tay để thiếu/sai đều trả 400 cùng một khuôn
+    # Nơi nhận của video NGUỒN KHÁC (thư viện / link / máy); thiếu ⇒ "drive" (hành vi cũ). Video "Đã vào bộ" luôn trả về bộ gốc.
+    dich_khac: str | None = None
 
 
 def _kiem_ten_bo(ten: str | None) -> str:
@@ -247,6 +251,8 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                 or not all(_DRIVE_ID.match(f) for f in body.may_file_ids)):
             raise HTTPException(400, "mã file Drive sai khuôn")
         ten_bo = _kiem_ten_bo(body.ten_bo)
+        if body.dich_khac is not None and body.dich_khac not in hang_doi.DICH_KHAC:
+            raise HTTPException(400, "nơi nhận không hợp lệ")
         ids = list(dict.fromkeys(body.drive_file_ids))
         vao_bo = list({m.ban_copy_id: m for m in body.vao_bo}.values())
         may = list(dict.fromkeys(body.may_file_ids))
@@ -297,11 +303,27 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             except tai_len_phien.LoiPhien as e:
                 conn.rollback()
                 raise HTTPException(e.ma, str(e)) from None
-            nguon = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids] + chup_vao_bo + nguon_may
-            jid = hang_doi.tao_job(conn, email, nguon, body.ghi_chu, ten_bo)
+            nguon_khac = [{"kieu": "drive" if f in trong else "link", "file_id": f} for f in ids] + nguon_may
+            dich = body.dich_khac or "drive"
+            # Giỏ TRỘN (bản trong bộ + nguồn khác) ⇒ HAI lượt, tạo trong CÙNG giao dịch này rồi commit một lần: một lượt một loại
+            # nơi nhận (lượt "Đã vào bộ" trả về bộ gốc; lượt kia theo `dich_khac`). Tách ở FE bằng hai POST thì POST 2 trượt sẽ để
+            # lượt 1 nằm lại và lần bấm lại nổ 409 "đã nằm trong lượt khác".
+            if chup_vao_bo and nguon_khac:
+                cac_ma = {n.get("ma_bo") for n in chup_vao_bo if n.get("ma_bo")}
+                ten_vb = next(iter(cac_ma)) if len(cac_ma) == 1 else ten_bo
+                try:
+                    j1 = hang_doi.tao_job(conn, email, chup_vao_bo, body.ghi_chu, ten_vb[:TEN_BO_TOI_DA], commit=False)
+                    j2 = hang_doi.tao_job(conn, email, nguon_khac, body.ghi_chu, ten_bo, dich_khac=dich, commit=False)
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                return {"job_id": j1, "job_ids": [j1, j2]}
+            jid = hang_doi.tao_job(conn, email, chup_vao_bo or nguon_khac, body.ghi_chu, ten_bo,
+                                   dich_khac=None if chup_vao_bo else dich)
         finally:
             conn.close()
-        return {"job_id": jid}
+        return {"job_id": jid, "job_ids": [jid]}
 
     def _jobs_db():
         return Path(lay_jobs_db()) if lay_jobs_db else Path(lay_log_db()).parent / "jobs.db"
@@ -315,7 +337,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             rows = conn.execute(
-                "SELECT j.id AS job_id, j.ten_bo, j.tao_luc, j.thu_muc_ra_id, j.nguoi_tao, count(v.id) AS tong, "
+                "SELECT j.id AS job_id, j.ten_bo, j.tao_luc, j.thu_muc_ra_id, j.dich_khac, j.nguoi_tao, count(v.id) AS tong, "
                 "coalesce(sum(v.trang_thai = 'xong'), 0) AS xong, coalesce(sum(v.trang_thai = 'cho_nguoi'), 0) AS cho_nguoi, "
                 "coalesce(sum(v.trang_thai = 'loi'), 0) AS loi, "
                 "coalesce(sum(v.trang_thai = 'xong' AND v.dg IS NULL), 0) AS cho_duyet, "
@@ -341,7 +363,8 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         return {"bo": [{"job_id": r["job_id"], "ten_bo": hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"]),
                         "nguon_kieu": kieu.get(r["job_id"]), "tao_luc": r["tao_luc"], "tong": r["tong"], "xong": r["xong"],
                         "cho_duyet": r["cho_duyet"], "cho_nguoi": r["cho_nguoi"], "loi": r["loi"], "dat": r["dat"],
-                        "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"]} for r in rows]}
+                        "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"],
+                        "dich_khac": r["dich_khac"]} for r in rows]}
 
     def _ten_tu_link(lo: list[dict], tv: dict) -> dict[tuple[str, str], str | None]:
         """{(email người tạo lượt, file_id): tên} cho dòng KHÔNG có trong thư viện CỦA người tạo lượt nhưng CHÍNH người tạo đã kiểm qua `kiem-link`."""
@@ -434,6 +457,9 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
                     d["ten_video"] = ten_may
                 d["anh_bia"] = f"/thumbs/{t['video_id']}" if t.get("video_id") else None
                 d["nen_tang"] = t.get("nen_tang")
+                # Link gốc (TikTok/FB…) để hand-off "Tạo bộ tự tìm" ghi làm link nguồn; chỉ có khi video thuộc thư viện CỦA người tạo
+                # lượt (đã lọc chủ ở trên). Không có ⇒ FE dùng link Drive của file ra.
+                d["url"] = t.get("url") if isinstance(t.get("url"), str) else None
                 if not nen_tang or d["nen_tang"] == nen_tang:
                     out.append(d)
             da_quet += len(rows)
@@ -564,12 +590,16 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(404, "chưa có ảnh trước/sau") from None
 
     @app.get("/api/thay-logo/da-vao-bo")
-    def da_vao_bo(email: str = Depends(require_user)) -> dict:
+    def da_vao_bo(email: str = Depends(require_user), q: str = Query("", max_length=80),
+                  tu: str | None = Query(None), den: str | None = Query(None)) -> dict:
         """Video ĐÃ VÀO BỘ của chính người gọi (admin: tất cả), nhóm theo bộ. Chủ = `jobs.nguoi_tao` của video (không dùng
-        `video_vao_bo.chu`). `da_trong_luot` = video này đã có trong một lượt thay logo còn hiệu lực (chưa lỗi)."""
+        `video_vao_bo.chu`). `da_trong_luot` = video này đã có trong một lượt thay logo còn hiệu lực (chưa lỗi).
+        Tìm: `q` = chuỗi con của mã bộ (không phân biệt hoa thường); `tu`/`den` = ngày VN `YYYY-MM-DD` (gồm cả ngày `den`) so với
+        ngày VÀO BỘ của bộ (bản sao sớm nhất). Lọc ở mức BỘ: bộ khớp thì trả ĐỦ mọi video của bộ."""
         chu = None if la_admin(email) else email
+        tu_iso, den_iso = _moc_ngay_vn(tu, "tu"), _moc_ngay_vn(den, "den", het_ngay=True)
         try:
-            hang = _doc_da_vao_bo(_jobs_db(), chu)
+            hang = _doc_da_vao_bo(_jobs_db(), chu, q.strip(), tu_iso, den_iso)
             bi_cat = len(hang) > TRAN_DONG_DA_VAO_BO  # đọc dư 1 dòng để biết danh sách còn dài hơn trần
             hang = hang[:TRAN_DONG_DA_VAO_BO]
         except _sqlite3.Error as e:
@@ -737,25 +767,62 @@ def thong_tin_theo_video(jobs_db, video_ids: list[str]) -> dict[str, dict] | Non
         with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
             for i in range(0, len(video_ids), 500):
                 lo = video_ids[i:i + 500]
-                for vid, title, nen_tang in c.execute(
-                        "SELECT v.video_id, v.title, j.nen_tang FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
+                for vid, title, nen_tang, url in c.execute(
+                        "SELECT v.video_id, v.title, j.nen_tang, v.url FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
                         f"WHERE v.video_id IN ({','.join('?' * len(lo))})", lo):
-                    out[vid] = {"video_id": vid, "title": title, "nen_tang": nen_tang}
+                    out[vid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "url": url}
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được thư viện theo video_id %s (%s)", jobs_db, type(e).__name__)
         return None
     return out
 
 
-def _doc_da_vao_bo(jobs_db, nguoi_tao: str | None) -> list[dict]:
-    """Bản sao trong bộ của các video thuộc `nguoi_tao` (None = mọi người). `jobs.db` mở CHỈ ĐỌC; lỗi sqlite ném lên."""
-    dk, tham = ("", []) if nguoi_tao is None else (" WHERE j.nguoi_tao = ?", [nguoi_tao])
+def _moc_ngay_vn(gia_tri: str | None, ten: str, het_ngay: bool = False) -> str | None:
+    """Ngày VN `YYYY-MM-DD` ⇒ mốc UTC dạng chuỗi `YYYY-MM-DDTHH:MM:SS` để so với `video_vao_bo_ban.thay_luc` (chuỗi ISO UTC, KHÔNG phải
+    số epoch — so chuỗi với số trong SQLite luôn lệch). `het_ngay` ⇒ đầu ngày HÔM SAU (mốc loại trừ). Sai khuôn ⇒ 400."""
+    if not gia_tri:
+        return None
+    try:
+        d = _datetime.strptime(gia_tri, "%Y-%m-%d").replace(tzinfo=VN_TIMEZONE)
+    except ValueError:
+        raise HTTPException(400, f"{ten} phải là YYYY-MM-DD") from None
+    if het_ngay:
+        d += _timedelta(days=1)
+    return d.astimezone(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _thoat_like(chuoi: str) -> str:
+    return chuoi.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _doc_da_vao_bo(jobs_db, nguoi_tao: str | None, q: str = "", tu_iso: str | None = None,
+                   den_iso: str | None = None) -> list[dict]:
+    """Bản sao trong bộ của các video thuộc `nguoi_tao` (None = mọi người). `jobs.db` mở CHỈ ĐỌC; lỗi sqlite ném lên.
+    `q`/`tu_iso`/`den_iso` lọc theo BỘ (`folder_id`): mã bộ chứa `q`, ngày vào bộ = bản sao SỚM NHẤT của bộ (trong phạm vi chủ).
+    Lọc TRƯỚC trần dòng ⇒ tìm ra cả bộ cũ mà danh sách không lọc đã cắt mất."""
+    dk_chu, tham_chu = ("", []) if nguoi_tao is None else (" AND j.nguoi_tao = ?", [nguoi_tao])
+    nen = "FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id WHERE 1=1"
+    loc_bo, tham_bo = "", []
+    if q or tu_iso or den_iso:
+        co_bo = []
+        if q:
+            co_bo.append("lower(b.ma_bo) LIKE ? ESCAPE '\\'")
+            tham_bo.append(f"%{_thoat_like(q.lower())}%")
+        having = []
+        if tu_iso:
+            having.append("min(b.thay_luc) >= ?")
+        if den_iso:
+            having.append("min(b.thay_luc) < ?")
+        loc_bo = (f" AND b.folder_id IN (SELECT b.folder_id {nen}{dk_chu}"
+                  + "".join(f" AND {x}" for x in co_bo)
+                  + " GROUP BY b.folder_id" + (" HAVING " + " AND ".join(having) if having else "") + ")")
+        tham_bo = [*tham_chu, *tham_bo, *([tu_iso] if tu_iso else []), *([den_iso] if den_iso else [])]
     with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
         c.row_factory = _sqlite3.Row
         rows = c.execute(
             "SELECT b.video_id, b.ban_copy_id, b.folder_id, b.ma_bo, b.thay_luc, v.title, v.drive_file_id, j.nen_tang "
-            "FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id"
-            f"{dk} ORDER BY b.thay_luc DESC, b.ban_copy_id LIMIT ?", [*tham, TRAN_DONG_DA_VAO_BO + 1]).fetchall()
+            f"{nen}{dk_chu}{loc_bo} ORDER BY b.thay_luc DESC, b.ban_copy_id LIMIT ?",
+            [*tham_chu, *tham_bo, TRAN_DONG_DA_VAO_BO + 1]).fetchall()
     return [dict(r) for r in rows]
 
 

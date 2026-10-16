@@ -391,9 +391,9 @@ def test_videos_link_toi_file_thu_vien_nguoi_khac_khong_lo_title_nen_tang_video_
     import sqlite3
     with sqlite3.connect(ctx.db.parent / "jobs.db") as c:
         c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT, nen_tang TEXT)")
-        c.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT)")
+        c.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT, url TEXT NOT NULL)")
         c.execute("INSERT INTO jobs VALUES (1, 'b@x', 'tiktok')")
-        c.execute("INSERT INTO videos VALUES ('7777777', 1, 'Bí mật của B', ?)", (ID("1"),))
+        c.execute("INSERT INTO videos VALUES ('7777777', 1, 'Bí mật của B', ?, 'https://www.tiktok.com/@b/video/7777777')", (ID("1"),))
     ctx.post("/api/thay-logo/kiem-link", headers=_h("a@x"), json={"links": [_link("1")]})
     assert _tao(ctx, "a@x", [ID("1")]).status_code == 201
     conn = nhat_ky.mo(ctx.db)
@@ -403,12 +403,13 @@ def test_videos_link_toi_file_thu_vien_nguoi_khac_khong_lo_title_nen_tang_video_
 
     r_a = ctx.get("/api/thay-logo/videos", headers=_h("a@x"))
     (v,) = r_a.json()["videos"]
-    assert (v["ten_video"], v["anh_bia"], v["nen_tang"]) == ("b.mp4", None, None)
+    assert (v["ten_video"], v["anh_bia"], v["nen_tang"], v["url"]) == ("b.mp4", None, None, None)  # link gốc của B cũng không lộ
     than = r_a.content.decode()
     assert "Bí mật của B" not in than and "7777777" not in than and "tiktok" not in than
 
     (vb,) = ctx.get("/api/thay-logo/videos", headers=_h("b@x")).json()["videos"]
-    assert (vb["ten_video"], vb["anh_bia"], vb["nen_tang"]) == ("Bí mật của B", "/thumbs/7777777", "tiktok")
+    assert (vb["ten_video"], vb["anh_bia"], vb["nen_tang"], vb["url"]) == (
+        "Bí mật của B", "/thumbs/7777777", "tiktok", "https://www.tiktok.com/@b/video/7777777")
     theo_nguoi = {x["nguoi_tao"]: x["ten_video"] for x in ctx.get("/api/thay-logo/videos", headers=_h("sep@x")).json()["videos"]}
     assert theo_nguoi == {"a@x": "b.mp4", "b@x": "Bí mật của B"}  # admin: tên theo NGƯỜI TẠO từng lượt
 
