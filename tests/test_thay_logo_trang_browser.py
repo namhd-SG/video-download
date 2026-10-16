@@ -856,3 +856,30 @@ def test_tra_ngay_loi_hien_duoi_dung_luot_va_khoa_khi_dang_gui(may_chu, trinh_du
     p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-tra-loi').length === 1")
     assert "đang có một lượt áp" in the.nth(1).locator(".tl-bo-tra-loi").inner_text()
     assert the.nth(0).locator(".tl-bo-tra-loi").count() == 0
+
+
+def test_luot_cua_ban_chi_hien_2_luot_gan_nhat_va_luot_con_viec(may_chu, trinh_duyet, monkeypatch):
+    """USER CHỐT 16/10: chỉ hiện 2 lượt gần nhất, còn lại thu sau "Xem thêm N lượt"; lượt còn việc (chờ duyệt / máy đang làm) LUÔN hiện.
+    ĐỘT BIẾN: bỏ điều kiện `conViec` ⇒ lượt cũ đang chờ duyệt bị giấu ⇒ ĐỎ."""
+    xong = dict(tong=1, xong=1, dat=1)
+    bo = [_luot(6, "L6", **xong), _luot(5, "L5", **xong), _luot(4, "L4", **xong), _luot(3, "L3", **xong),
+          _luot(2, "L2-cho-duyet", tong=1, xong=1, cho_duyet=1), _luot(1, "L1", **xong)]  # /bo trả mới nhất trước
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector("#tl-bo-list .tl-bo-the")
+    ten = lambda: [t.split("\n")[0] for t in p.locator("#tl-bo-list .tl-bo-ten").all_inner_texts()]  # noqa: E731
+    assert ten() == ["L6", "L5", "L2-cho-duyet"]
+    nut = p.locator("#tl-bo-list .tl-bo-xem-them")
+    assert nut.inner_text().startswith("Xem thêm 3 lượt")
+    nut.click()
+    assert ten() == ["L6", "L5", "L4", "L3", "L2-cho-duyet", "L1"] and p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Thu gọn")
+    p.locator("#tl-bo-list .tl-bo-xem-them").click()
+    assert len(ten()) == 3
+
+
+def test_it_luot_thi_khong_co_nut_xem_them(may_chu, trinh_duyet, monkeypatch):
+    bo = [_luot(2, "A", tong=1, xong=1), _luot(1, "B", tong=1, xong=1)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    assert p.locator("#tl-bo-list .tl-bo-xem-them").count() == 0

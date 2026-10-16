@@ -119,10 +119,23 @@
     veBo();
   }
 
+  // USER CHỐT 16/10 ("chỉ hiện 2 task gần nhất còn lại ẩn hết đi"): hiện 2 lượt MỚI NHẤT + mọi lượt còn việc (máy đang làm / chờ bạn
+  // duyệt) + lượt đang được chọn lọc; phần còn lại thu sau nút "Xem thêm N lượt". `/bo` trả lượt mới nhất trước (ORDER BY id DESC).
+  const SO_LUOT_GAN_NHAT = 2;
+  let hienHetLuot = false;
+  const conViec = (b) => trangThaiBo(b)[1] !== "xong";
   function veBo() {
     const l = $("tl-bo-list"); l.replaceChildren();
-    if (!T.bo.length) { l.append(el("div", "tl-bo-rong", "Chưa có bộ nào. Chọn video ở trên, đặt tên bộ rồi bấm “Thay logo” — bộ sẽ hiện ở đây cùng tiến độ.")); return; }
-    for (const b of T.bo) l.append(theBo(b));
+    if (!T.bo.length) { l.append(el("div", "tl-bo-rong", "Chưa có lượt nào. Chọn video ở trên rồi bấm “Thay logo” — lượt sẽ hiện ở đây cùng tiến độ và nơi nhận.")); return; }
+    const hien = T.bo.filter((b, i) => hienHetLuot || i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id);
+    for (const b of hien) l.append(theBo(b));
+    const an = T.bo.length - hien.length;
+    if (an > 0 || (hienHetLuot && T.bo.length > SO_LUOT_GAN_NHAT)) {
+      const n = el("button", "btn ghost tl-bo-xem-them", hienHetLuot ? "Thu gọn ▴" : `Xem thêm ${an} lượt ▾`); n.type = "button";
+      n.setAttribute("aria-expanded", String(hienHetLuot));
+      n.addEventListener("click", () => { hienHetLuot = !hienHetLuot; veBo(); });
+      l.append(n);
+    }
   }
 
   function chipLoc(chu, bat, khiBam, extra) {
