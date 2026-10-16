@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -40,6 +41,7 @@ MODEL = os.environ.get("THAY_LOGO_AGY_MODEL", "gemini-3.8-flash-low")
 TOKEN_TOI_THIEU = 32  # khớp `web/thay_logo_routes.TOKEN_TOI_THIEU`: token ngắn hơn ⇒ mini coi như chưa cấu hình, 503 mãi
 # Hẹp có chủ ý: "not recognized" trần quá rộng (lỗi khác của agy cũng có thể mang cụm đó) ⇒ phải đi với chữ "model".
 _DAU_HIEU_MODEL_SAI = re.compile(r"model\b[^\n]{0,80}\bnot recognized|invalid model|unknown model")
+NHIP_GIAY = 60.0  # relay CHÍNH hỏi lại /viec mỗi chừng này trong lúc chờ agy — nhịp sống để mini không giao việc cho relay dự phòng
 LO_TOI_DA = 36  # ảnh/lượt agy — gộp lô xuyên video (P0b: sàn thời gian cố định lớn mỗi lượt)
 _UUID = re.compile(r"^[0-9a-f]{32}$")
 
@@ -147,8 +149,11 @@ def ghep_ket_qua(viec: list[dict], ra_agy: dict) -> dict[int, dict]:
 
 
 class _Mini:
-    def __init__(self, goc: str, token: str):
+    def __init__(self, goc: str, token: str, du_phong: bool = False):
+        """`du_phong=True`: relay DỰ PHÒNG — hỏi việc với `?du_phong=1` (mini trả rỗng khi relay chính còn sống) và KHÔNG BAO GIỜ nộp lỗi
+        (lỗi agy đếm CHUNG mọi relay; `model_khong_nhan` ⇒ mini đánh `loi` ngay — một máy dự phòng cấu hình sai không được giết việc)."""
         self.goc, self.h = goc.rstrip("/") + "/api/thay-logo/relay", {"Authorization": f"Bearer {token}"}
+        self.du_phong = du_phong
 
     def _req(self, path, data=None, tran: int = 1_000_000):
         req = urllib.request.Request(self.goc + path, data=data, headers={**self.h, **(
@@ -157,7 +162,7 @@ class _Mini:
             return r.read(tran)  # không đọc vô hạn từ mini
 
     def viec(self):
-        return json.loads(self._req("/viec"))["viec"]
+        return json.loads(self._req("/viec?du_phong=1" if self.du_phong else "/viec"))["viec"]
 
     def anh(self, u):
         du_lieu = self._req(f"/anh/{u}", tran=TRAN_ANH_BYTE + 1)
@@ -180,6 +185,9 @@ class _Mini:
         """Báo agy trượt. `ma` ∈ MA_LOI_AGY — kiểm ở đây VÀ ở mini; không chữ tự do rời máy dev."""
         if ma not in MA_LOI_AGY:
             raise ValueError("mã lỗi ngoài danh sách")
+        if self.du_phong:  # chặn ở ĐÂY phủ mọi chỗ gọi (lỗi agy lẫn `thieu_anh`); lỗi chỉ ghi log máy dự phòng
+            log.warning("relay dự phòng: không nộp lỗi %s cho job %s lượt %s (chỉ ghi log)", ma, job_id, luot)
+            return
         try:
             self._req(f"/loi/{int(job_id)}", json.dumps({"ma": ma, "luot": int(luot)}).encode())
         except urllib.error.HTTPError as e:
@@ -215,6 +223,29 @@ def _chon_lo(viec: list[dict], le: dict) -> list[dict]:
     return da_le[:1]  # chỉ còn job đã nghi: thử lại lẻ, job cũ nhất trước (không để một job độc chặn các job khác)
 
 
+def _goi_agy_co_nhip(mini, agy: Callable[[list[Path]], dict], anh: list[Path]) -> dict:
+    """Relay CHÍNH: trong lúc chờ agy (tới 900 s), một luồng phụ hỏi lại /viec mỗi `NHIP_GIAY` làm nhịp sống. Luồng sống ĐÚNG trong
+    phạm vi lời gọi này (try/finally): ngoài lúc chờ agy, nhịp đến từ chính vòng hỏi việc — relay treo ở chỗ khác thì nhịp tắt theo và dự
+    phòng tiếp quản (luồng nhịp toàn cục sẽ báo "còn sống" giả). Relay dự phòng không cần nhịp."""
+    if getattr(mini, "du_phong", False):
+        return agy(anh)
+    dung = threading.Event()
+
+    def nhip():
+        while not dung.wait(NHIP_GIAY):
+            try:
+                mini.viec()
+            except Exception as e:  # mạng chớp: lần nhịp sau thử lại; không được làm hỏng lời gọi agy
+                log.debug("nhịp sống lỗi: %s", type(e).__name__)
+    t = threading.Thread(target=nhip, name="relay-nhip", daemon=True)
+    t.start()
+    try:
+        return agy(anh)
+    finally:
+        dung.set()
+        t.join(timeout=5)
+
+
 def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy, le: dict | None = None) -> int:
     """Một lượt kéo–định vị–nộp. Trả số job đã nộp KẾT QUẢ.
     agy trượt:
@@ -239,7 +270,7 @@ def mot_vong(mini, agy: Callable[[list[Path]], dict] = goi_agy, le: dict | None 
                 p.write_bytes(mini.anh(a))
                 anh.append(p)
         try:
-            ra = agy(anh)
+            ra = _goi_agy_co_nhip(mini, agy, anh)
             if not isinstance(ra, dict):
                 raise LoiAgy("khong_ket_qua")
         except LoiAgy as e:
@@ -295,6 +326,8 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--mini", required=True)
     ap.add_argument("--nghi", type=float, default=20.0)
+    ap.add_argument("--du-phong", action="store_true",
+                    help="relay DỰ PHÒNG: chỉ nhận việc khi relay chính im quá 5 phút, không bao giờ nộp lỗi")
     a = ap.parse_args()
     token = os.environ.get("THAY_LOGO_RELAY_TOKEN", "")
     agy_bin = _chon_agy()
@@ -304,7 +337,9 @@ def main() -> int:
         return 2
     AGY = agy_bin
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
-    mini = _Mini(a.mini, token)
+    mini = _Mini(a.mini, token, du_phong=a.du_phong)
+    if a.du_phong:
+        log.info("chạy ở chế độ DỰ PHÒNG")
     while True:
         try:
             n = mot_vong(mini)

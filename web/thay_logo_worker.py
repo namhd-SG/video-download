@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, nhat_ky, tai_len_phien, tu_ap_vao_bo
+from tiktok_music_downloader.thay_logo import ap_vao_bo, canh_relay, hang_doi, nhat_ky, nhip_relay, tai_len_phien, tu_ap_vao_bo
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -274,6 +274,7 @@ class ThayLogoWorker:
                 self._dung.wait(self.nghi)
                 continue
             self._tu_ap()  # TRƯỚC cổng đĩa / nhường lane tải: chỉ gọi Drive, không tốn CPU — đĩa đầy không được hoãn việc trả về bộ
+            self._canh_relay()  # cũng TRƯỚC cổng: đĩa đầy / đang nhường tải không được làm canh câm (agy R2b L2)
             try:
                 self._lan_cuoi = self.mot_luot()
             except Exception:  # một video hỏng không được giết worker
@@ -302,6 +303,19 @@ class ThayLogoWorker:
                 conn.close()
         except Exception:
             log.exception("thay logo: vòng tự áp vào bộ lỗi")
+
+    def _canh_relay(self) -> None:
+        """Báo Discord khi có video chờ máy định vị quá lâu mà chưa có kết quả. Chỉ khi worker có relay listener (mini). Không ném."""
+        if self.relay_bind is None:
+            return
+        try:
+            conn = self._mo()
+            try:
+                canh_relay.thu_canh(conn, self.hop, nhip_relay.NHIP.tuoi())
+            finally:
+                conn.close()
+        except Exception:
+            log.exception("thay logo: vòng canh relay lỗi")
 
     # ---------------------------------------------------------------- một lượt
     def ram_du(self) -> bool:

@@ -24,7 +24,8 @@ from fastapi import Body, Depends, FastAPI, Header, HTTPException, Query, Respon
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky, tai_len_phien, tu_ap_vao_bo
+from tiktok_music_downloader.thay_logo import (ap_vao_bo, hang_doi, link_da_kiem, nguon_drive, nhat_ky, nhip_relay, tai_len_phien,
+                                               tu_ap_vao_bo)
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 from web import thay_logo_tai_len_routes
@@ -61,7 +62,11 @@ def dang_ky_route(app: FastAPI, lay_hop_thu: Callable[[], HopThu]) -> None:
     """`lay_hop_thu` trả hộp thư LÚC GỌI (test và app có thể đổi thư mục dữ liệu)."""
 
     @app.get(f"{TIEN_TO}/viec", dependencies=[Depends(_kiem_token)])
-    def relay_viec() -> dict:
+    def relay_viec(du_phong: int = Query(0, ge=0, le=1)) -> dict:
+        """Relay dự phòng (`du_phong=1`) nhận danh sách RỖNG khi relay chính vừa hỏi trong `nhip_relay.DU_PHONG_SAU_GIAY`."""
+        nhip_relay.NHIP.ghi(bool(du_phong))
+        if du_phong and nhip_relay.NHIP.chinh_con_song():
+            return {"viec": []}
         return {"viec": lay_hop_thu().viec_cho()}
 
     @app.get(f"{TIEN_TO}/anh/{{anh}}", dependencies=[Depends(_kiem_token)])
