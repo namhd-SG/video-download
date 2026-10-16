@@ -875,6 +875,36 @@ def test_luot_cua_ban_chi_hien_2_luot_gan_nhat_va_luot_con_viec(may_chu, trinh_d
     assert ten() == ["L6", "L5", "L4", "L3", "L2-cho-duyet", "L1"] and p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Thu gọn")
     p.locator("#tl-bo-list .tl-bo-xem-them").click()
     assert len(ten()) == 3
+    # Bàn phím: Enter trên nút ⇒ vẽ lại xong focus vẫn ở nút mới. ĐỘT BIẾN bỏ `n.focus()` ⇒ ĐỎ.
+    p.locator("#tl-bo-list .tl-bo-xem-them").focus()
+    p.keyboard.press("Enter")
+    p.wait_for_function("document.querySelector('#tl-bo-list .tl-bo-xem-them').textContent.startsWith('Thu gọn')")
+    assert p.evaluate("document.activeElement.classList.contains('tl-bo-xem-them')")
+    p.keyboard.press("Enter")
+    assert len(ten()) == 3
+    # Lượt đang lọc LUÔN hiện dù cũ: chọn L1 ở ô lọc "Bộ" khi đang thu gọn. ĐỘT BIẾN bỏ `T.loc.job === b.job_id` ⇒ ĐỎ.
+    p.select_option("#tl-loc-bo", "1")
+    p.wait_for_function("[...document.querySelectorAll('#tl-bo-list .tl-bo-ten')].some((e) => e.textContent.startsWith('L1'))")
+    assert ten() == ["L6", "L5", "L2-cho-duyet", "L1"]
+    assert p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Xem thêm 2 lượt")
+
+
+def test_khong_con_gi_de_thu_thi_khong_co_nut_thu_gon_va_ve_mac_dinh(may_chu, trinh_duyet, monkeypatch):
+    """3 lượt, mở rộng, rồi lọc lượt cũ nhất ⇒ thu gọn không ẩn được gì ⇒ không có nút "Thu gọn" vô tác dụng; bỏ lọc ⇒ bảng về THU GỌN,
+    không tự bung. ĐỘT BIẾN bỏ `if (!anKhiThu) hienHetLuot = false;` ⇒ ĐỎ."""
+    xong = dict(tong=1, xong=1, dat=1)
+    bo = [_luot(3, "C", **xong), _luot(2, "B", **xong), _luot(1, "A", **xong)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector("#tl-bo-list .tl-bo-xem-them")
+    p.locator("#tl-bo-list .tl-bo-xem-them").click()
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 3")
+    p.select_option("#tl-loc-bo", "1")
+    p.wait_for_function("document.querySelector('#tl-bo-list .tl-bo-the.on') && !document.querySelector('#tl-bo-list .tl-bo-xem-them')")
+    p.select_option("#tl-loc-bo", "")
+    p.wait_for_function("document.querySelector('#tl-bo-list .tl-bo-xem-them') && !document.querySelector('#tl-bo-list .tl-bo-the.on')")
+    assert p.locator("#tl-bo-list .tl-bo-the").count() == 2
+    assert p.locator("#tl-bo-list .tl-bo-xem-them").inner_text().startswith("Xem thêm 1 lượt")
 
 
 def test_it_luot_thi_khong_co_nut_xem_them(may_chu, trinh_duyet, monkeypatch):

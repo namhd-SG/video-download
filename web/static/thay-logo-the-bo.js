@@ -124,17 +124,24 @@
   const SO_LUOT_GAN_NHAT = 2;
   let hienHetLuot = false;
   const conViec = (b) => trangThaiBo(b)[1] !== "xong";
+  const giuKhiThu = (b, i) => i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id;
   function veBo() {
-    const l = $("tl-bo-list"); l.replaceChildren();
+    const l = $("tl-bo-list");
+    // Vẽ lại xoá cả nút vừa bấm (và lượt poll vẽ lại định kỳ) ⇒ nhớ focus để trả về nút mới, người dùng bàn phím khỏi Tab lại từ đầu.
+    const giuFocus = !!(document.activeElement && document.activeElement.classList.contains("tl-bo-xem-them"));
+    l.replaceChildren();
     if (!T.bo.length) { l.append(el("div", "tl-bo-rong", "Chưa có lượt nào. Chọn video ở trên rồi bấm “Thay logo” — lượt sẽ hiện ở đây cùng tiến độ và nơi nhận.")); return; }
-    const hien = T.bo.filter((b, i) => hienHetLuot || i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id);
-    for (const b of hien) l.append(theBo(b));
-    const an = T.bo.length - hien.length;
-    if (an > 0 || (hienHetLuot && T.bo.length > SO_LUOT_GAN_NHAT)) {
-      const n = el("button", "btn ghost tl-bo-xem-them", hienHetLuot ? "Thu gọn ▴" : `Xem thêm ${an} lượt ▾`); n.type = "button";
+    // Số lượt sẽ ẩn KHI THU — dùng cho cả điều kiện hiện nút lẫn chữ trên nút. Không còn gì để thu ⇒ không có nút "Thu gọn" vô tác dụng,
+    // và trạng thái mở rộng về mặc định để lượt mới đến sau không làm bảng tự bung hết.
+    const anKhiThu = T.bo.filter((b, i) => !giuKhiThu(b, i)).length;
+    if (!anKhiThu) hienHetLuot = false;
+    for (const b of (hienHetLuot ? T.bo : T.bo.filter(giuKhiThu))) l.append(theBo(b));
+    if (anKhiThu) {
+      const n = el("button", "btn ghost tl-bo-xem-them", hienHetLuot ? "Thu gọn ▴" : `Xem thêm ${anKhiThu} lượt ▾`); n.type = "button";
       n.setAttribute("aria-expanded", String(hienHetLuot));
       n.addEventListener("click", () => { hienHetLuot = !hienHetLuot; veBo(); });
       l.append(n);
+      if (giuFocus) n.focus();
     }
   }
 
