@@ -270,11 +270,11 @@ class ThayLogoWorker:
 
     def _chay(self) -> None:
         while not self._dung.is_set():
+            self._canh_relay()  # TRƯỚC MỌI cổng (cả cổng cấu hình Drive): canh không cần Drive, cổng nào cũng không được làm nó câm
             if not self._cho_cong():
                 self._dung.wait(self.nghi)
                 continue
             self._tu_ap()  # TRƯỚC cổng đĩa / nhường lane tải: chỉ gọi Drive, không tốn CPU — đĩa đầy không được hoãn việc trả về bộ
-            self._canh_relay()  # cũng TRƯỚC cổng: đĩa đầy / đang nhường tải không được làm canh câm (agy R2b L2)
             try:
                 self._lan_cuoi = self.mot_luot()
             except Exception:  # một video hỏng không được giết worker

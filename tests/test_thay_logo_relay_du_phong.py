@@ -157,6 +157,13 @@ def ctx(tmp_path):
     c.close()
 
 
+@pytest.fixture(autouse=True)
+def _lui_sach(monkeypatch):
+    """Giãn cách sau gửi trượt là trạng thái MỨC MODULE: mỗi test bắt đầu sạch."""
+    monkeypatch.setattr(canh_relay, "_lui", {"den": 0.0, "giay": canh_relay.LUI_DAU_GIAY})
+    monkeypatch.setattr(canh_relay, "_da_bao_chua_cau_hinh", False)
+
+
 def _cho(conn, vid, phut):
     hang_doi.dat(conn, vid, "cho_agy", cho_agy_tu=time.time() - phut * 60)
 
@@ -198,14 +205,19 @@ def test_canh_van_bao_khi_relay_con_hoi_viec_moi_20_giay(ctx):
     assert canh_relay.thu_canh(conn, _HopGia(), {"chinh": 20.0, "du_phong": 15.0}, gui) is True
 
 
-def test_gui_truot_khong_ghi_moc_vong_sau_bao_lai(ctx):
-    """Mốc SAU khi gửi được. ĐỘT BIẾN: ghi mốc trước khi gửi ⇒ vòng sau im ⇒ ĐỎ."""
+def test_gui_truot_khong_ghi_moc_va_gian_cach_roi_bao_lai(ctx):
+    """Mốc SAU khi gửi được; trượt ⇒ giãn cách (60 s, gấp đôi) rồi báo lại. ĐỘT BIẾN: ghi mốc trước khi gửi ⇒ lần sau im ⇒ ĐỎ;
+    bỏ giãn cách ⇒ gửi lại ngay vòng kế ⇒ ĐỎ."""
     conn, vids = ctx.conn, ctx.vids
     _cho(conn, vids[0], 30)
+    t0 = time.time()
     truot = _gui_ghi(False)
-    assert canh_relay.thu_canh(conn, _HopGia(), {}, truot) is False
+    assert canh_relay.thu_canh(conn, _HopGia(), {}, truot, bay_gio=t0) is False
+    assert canh_relay.thu_canh(conn, _HopGia(), {}, truot, bay_gio=t0 + 10) is None and len(truot.ghi) == 1  # đang giãn cách
+    assert canh_relay.thu_canh(conn, _HopGia(), {}, truot, bay_gio=t0 + 61) is False  # hết 60 s ⇒ thử lại; lần sau giãn 120 s
+    assert canh_relay.thu_canh(conn, _HopGia(), {}, truot, bay_gio=t0 + 61 + 100) is None and len(truot.ghi) == 2
     duoc = _gui_ghi(True)
-    assert canh_relay.thu_canh(conn, _HopGia(), {}, duoc) is True and len(duoc.ghi) == 1
+    assert canh_relay.thu_canh(conn, _HopGia(), {}, duoc, bay_gio=t0 + 61 + 121) is True and len(duoc.ghi) == 1
 
 
 def test_chua_cau_hinh_webhook_khac_gui_truot(ctx, monkeypatch):
@@ -215,6 +227,45 @@ def test_chua_cau_hinh_webhook_khac_gui_truot(ctx, monkeypatch):
     assert canh_relay.gui_webhook("x") is None
     assert canh_relay.thu_canh(conn, _HopGia(), {}, canh_relay.gui_webhook) is None
     assert conn.execute("SELECT count(*) FROM tl_canh_relay").fetchone()[0] == 0  # chưa cấu hình ⇒ không ghi mốc
+
+
+def test_tin_bao_dem_ca_video_da_bao_truoc_do(ctx):
+    """L4 review: video A đã báo 30 phút trước, video B mới kẹt ⇒ tin đếm CẢ HAI (không nói thiếu số video đang kẹt)."""
+    conn, vids = ctx.conn, ctx.vids
+    t0 = time.time()
+    _cho(conn, vids[0], 30)
+    canh_relay.thu_canh(conn, _HopGia(), {}, _gui_ghi(True), bay_gio=t0)
+    hang_doi.dat(conn, vids[1], "cho_agy", cho_agy_tu=t0 - 16 * 60)
+    gui = _gui_ghi(True)
+    canh_relay.thu_canh(conn, _HopGia(), {}, gui, bay_gio=t0 + 1800)
+    assert len(gui.ghi) == 1 and "2 video" in gui.ghi[0]
+
+
+def test_gui_that_qua_http_mang_user_agent_khong_bi_chan(monkeypatch):
+    """H1 review PR3 (đo thật: Cloudflare trả 403 "error code: 1010" cho UA `Python-urllib`). Máy chủ HTTP nội bộ giả hành vi đó.
+    ĐỘT BIẾN: bỏ header User-Agent ⇒ 403 ⇒ False ⇒ ĐỎ."""
+    import http.server
+    nhan = []
+
+    class XuLy(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            ua = self.headers.get("User-Agent", "")
+            nhan.append(ua)
+            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            self.send_response(403 if ua.startswith("Python-urllib") else 204)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+    sv = http.server.HTTPServer(("127.0.0.1", 0), XuLy)
+    t = threading.Thread(target=sv.handle_request, daemon=True)
+    t.start()
+    try:
+        assert canh_relay.gui_webhook("thử", url=f"http://127.0.0.1:{sv.server_port}/api/webhooks/x/y") is True
+    finally:
+        t.join(timeout=5)
+        sv.server_close()
+    assert nhan and nhan[0].startswith("DiscordBot (")
 
 
 def test_van_ket_sau_1_gio_thi_bao_lai(ctx):
