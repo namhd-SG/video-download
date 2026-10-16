@@ -811,7 +811,8 @@ def test_luot_cua_ban_dai_tien_do_va_hen_gio_tra_ve_bo(may_chu, trinh_duyet, mon
         _luot(2, "N.1210B", nguon_kieu="vao_bo", tong=2, xong=2, dat=2, da_tra_bo=2),
         _luot(3, "16/10-1", nguon_kieu="drive", dich_khac="drive", tong=4, xong=1, cho_duyet=1, cho_dinh_vi_giay=1500),
     ]
-    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    # /videos khớp /bo: lượt 3 có đúng 1 video xong chưa chấm (cùng nguồn đếm với "Chờ bạn duyệt 1" trên dòng lượt và đầu trang).
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([_dong_mo(31, job_id=3, ten_bo="16/10-1")])), bo=bo)
     goi_ap = []
     p.route("**/api/thay-logo/bo/*/ap", lambda r: (goi_ap.append(r.request.url), r.fulfill(status=202, content_type="application/json",
                                                                                           body="{}")) if r.request.method == "POST" else r.fulfill(status=404))
@@ -822,6 +823,7 @@ def test_luot_cua_ban_dai_tien_do_va_hen_gio_tra_ve_bo(may_chu, trinh_duyet, mon
     assert "Nhận 3" in t1 and "Máy xong 3/3" in t1 and "Sẽ tự trả vào bộ lúc" in t1
     assert "✓ Đã trả 2 video vào bộ" in t2 and "Trả ngay" not in t2
     assert "Máy đang làm 1/4" in t3 and "Máy định vị logo chưa phản hồi 25 phút" in t3 and "Chờ bạn duyệt 1" in t3 and "Thư mục Drive riêng" in t3
+    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ duyệt')")  # đầu trang cùng số với dòng lượt
     _anh(p, "ux-luot-cua-ban-1280.png")
     the.nth(0).get_by_role("button", name="Trả ngay").click()
     p.wait_for_function("1")
