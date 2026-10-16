@@ -869,6 +869,19 @@ def test_luot_cua_ban_chi_hien_2_luot_gan_nhat_va_luot_con_viec(may_chu, trinh_d
     p.wait_for_selector("#tl-bo-list .tl-bo-the")
     ten = lambda: [t.split("\n")[0] for t in p.locator("#tl-bo-list .tl-bo-ten").all_inner_texts()]  # noqa: E731
     assert ten() == ["L6", "L5", "L2-cho-duyet"]
+    # Dấu "… 2 lượt ẩn" nằm giữa L5 và L2 (USER CHỐT 17:2x); bấm ⇒ L4, L3 hiện, focus sang "Thu gọn".
+    # ĐỘT BIẾN bỏ trình nghe click của dấu ⇒ ĐỎ.
+    dau = p.locator("#tl-bo-list .tl-bo-an-giua")
+    assert dau.count() == 1 and dau.inner_text() == "… 2 lượt ẩn"
+    thu_tu = p.evaluate("[...document.querySelectorAll('#tl-bo-list > *')].map((e) => e.classList.contains('tl-bo-an-giua') ? 'DAU' : (e.querySelector('.tl-bo-ten') || e).textContent.split('\\n')[0].trim().slice(0, 12))")
+    assert thu_tu[:4] == ["L6", "L5", "DAU", "L2-cho-duyet"], thu_tu
+    dau.click()
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 6")
+    assert ten() == ["L6", "L5", "L4", "L3", "L2-cho-duyet", "L1"]
+    assert p.locator("#tl-bo-list .tl-bo-an-giua").count() == 0
+    assert p.evaluate("document.activeElement.classList.contains('tl-bo-xem-them')")
+    p.locator("#tl-bo-list .tl-bo-xem-them").click()
+    assert ten() == ["L6", "L5", "L2-cho-duyet"]
     nut = p.locator("#tl-bo-list .tl-bo-xem-them")
     assert nut.inner_text().startswith("Xem thêm 3 lượt")
     nut.click()
