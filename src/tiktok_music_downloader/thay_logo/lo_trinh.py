@@ -14,6 +14,8 @@ cảnh — một phía là điểm lệch ⇒ không dự đoán, để nguyên)
 Khung vết nằm lệch dự đoán > `LECH_PX` (bám chỗ khác) hoặc thiếu ⇒ dò cục bộ ±`DO_PX` quanh dự đoán trên thông cao đã xoá chữ: đủ điểm
 ⇒ đặt ở đỉnh dò; không đủ (bị che) ⇒ đặt đúng dự đoán. Khung đặt gắn `ai` + `quy_dao` + `lo_trinh` (miễn cổng như khung AI — user cho
 đè chữ/vật).
+Box AI thô qua `loc_moc_ai` trước khi làm mốc (box lưới AI đã bác vẫn vào lộ trình ⇒ dán sai v13/v01, đo 15/10); khung mà bộ lọc bác vì
+det mạnh hơn (L5) thì det tại đúng khung đó cũng không làm mốc.
 """
 from __future__ import annotations
 
@@ -24,13 +26,12 @@ from .box_moi import BoxMoi
 from .chu_phu_de import thong_cao_xoa_chu
 from .dinh_vi import SIGMA, _hp
 from .kiem_hinh import san_hinh
+from .loc_moc_ai import HAI_PHIA, LECH_PX, loc_moc_ai
 from .nguon_khung import NguonKhung
 
 TRONG_SO_AI = 3.0
 CUA_SO = 15
-HAI_PHIA = 10
 MOC_TOI_THIEU = 4
-LECH_PX = 8.0
 DO_PX = 6
 DIEM_DO = 0.20
 
@@ -60,21 +61,27 @@ def _du_doan(moc: dict[int, tuple[float, float, float]], k: int) -> tuple[float,
     return None
 
 
-def theo_lo_trinh(nguon: NguonKhung, det: dict[int, dict], mau: np.ndarray, neo_ai: list[BoxMoi], n: int
+def theo_lo_trinh(nguon: NguonKhung, det: dict[int, dict], mau: np.ndarray, neo_ai: list[BoxMoi], n: int, uv=None
                   ) -> tuple[dict[int, dict], dict]:
-    """`det` ⇒ (det đã sửa theo lộ trình, số đếm). Không có mốc AI vẫn chạy (chỉ mốc dò đạt sàn)."""
+    """`det` ⇒ (det đã sửa theo lộ trình, số đếm). Không có mốc AI vẫn chạy (chỉ mốc dò đạt sàn). `uv` (ứng viên lõi theo khung) bật
+    bộ lọc mốc AI thô; thiếu `uv` thì mọi box AI làm mốc như cũ."""
     dem = {"thay_lech": 0, "dat_moi": 0, "do_thay": 0}
     if len(det) < MOC_TOI_THIEU:
         return det, dem
+    giu, bo_l5 = list(neo_ai), set()
+    if neo_ai and uv is not None:
+        giu, bo_l5, dem["loc"] = loc_moc_ai(nguon, det, mau, list(neo_ai), uv)
     san = san_hinh(list(det.values())) or 1.0
     w = int(np.median([e["w"] for e in det.values()]))
     h = int(np.median([e["h"] for e in det.values()]))
     moc: dict[int, tuple[float, float, float]] = {}
     for k, e in det.items():
-        if (e.get("score") or 0) >= san:
+        if (e.get("score") or 0) >= san and k not in bo_l5:
             moc[k] = (e["x"] + e["w"] / 2, e["y"] + e["h"] / 2, 1.0)
-    for b in neo_ai:
+    for b in giu:
         moc[b.khung] = (b.x + b.w / 2, b.y + b.h / 2, TRONG_SO_AI)  # AI đè mốc dò cùng khung (dò có thể đang bám chỗ giống logo)
+    if not moc:
+        return det, dem
     can: dict[int, tuple[float, float]] = {}
     lo, hi = min(moc), max(moc)
     for k in range(lo, hi + 1):

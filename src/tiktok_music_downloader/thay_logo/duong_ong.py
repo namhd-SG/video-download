@@ -225,7 +225,7 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = ()) -
     ai = {}
     if neo_ai:  # lộ trình chỉ chạy ở lượt có AI: không mốc AI thì mồi đứng yên dày đặc (test_2 k371–k403) chiếm đa số cửa sổ khớp
         det_sach, ai = gan_moc_ai(nguon, det_sach, uv, mau, neo_ai)
-        det_sach, ai["lo_trinh"] = theo_lo_trinh(nguon, det_sach, mau, list(neo_ai), len(uv))
+        det_sach, ai["lo_trinh"] = theo_lo_trinh(nguon, det_sach, mau, list(neo_ai), len(uv), uv)
     det_bam, bam = bam_lai_doan_mat(nguon, det_sach, mau)  # `det` gốc giữ cho _bang_chung: khung bám lại không làm vết "có thật" hơn
     bam["moi_chu"] = moi_chu
     che, doan = lap_va_lam_muot(det_bam, n)
