@@ -23,6 +23,11 @@
     return ["Xong", "xong"];
   }
 
+  // Nút hành động còn chờ người bấm trên thẻ — dùng CHUNG cho chỗ vẽ nút và cho `conViec` (bảng không giấu lượt còn nút chờ bấm).
+  const coNutTaoBo = (b) => b.dich_khac === "tao_bo" && b.nguon_kieu !== "vao_bo" && b.dat > 0 && typeof T.taoBoTuTim === "function";
+  const coNutTraNgay = (b) => b.nguon_kieu === "vao_bo" && !(b.da_tra_bo > 0) && !!b.tu_ap_luc;
+  const conApVaoBo = (b) => { const ap = apCua[b.job_id]; return !!(ap && ap.trang_thai !== "xong" && ap.la_chu && ap.so_du_dieu_kien); };
+
   function theBo(b) {
     const [chu, cls] = trangThaiBo(b);
     const the = el("div", "tl-bo-the " + cls + (T.loc.job === b.job_id ? " on" : ""));
@@ -40,11 +45,11 @@
     nut.append(h, nguon, bar, tien);
     const ap = apCua[b.job_id];
     if (cls === "xong" && ap && ap.trang_thai === "xong") nut.append(el("span", "tl-bo-tiep ok", `✓ Đã áp vào bộ ${gio(ap.xong_luc)}`));
-    else if (cls === "xong" && ap && ap.la_chu && ap.so_du_dieu_kien) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
+    else if (cls === "xong" && conApVaoBo(b)) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
     nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
     the.append(nut, dongTienDo(b), dongNoiNhan(b));
     // Lượt nguồn khác chọn "Tạo bộ tự tìm mới": có video Đạt ⇒ MỘT cú bấm bàn giao sang Creative Desk (như trang Tải video).
-    if (b.dich_khac === "tao_bo" && b.nguon_kieu !== "vao_bo" && b.dat > 0 && typeof T.taoBoTuTim === "function") {
+    if (coNutTaoBo(b)) {
       const dang = banGiaoDang.has(b.job_id);
       const tao = el("button", "btn primary tl-bo-tao", dang ? "Đang gửi sang Creative Desk…" : `Tạo bộ tự tìm từ ${b.dat} video Đạt`);
       tao.type = "button"; tao.disabled = dang;
@@ -89,7 +94,7 @@
     const d = el("div", "tl-bo-dich-hang");
     const chu = noiNhan(b);
     if (b.nguon_kieu === "vao_bo" && b.da_tra_bo > 0) d.append(el("span", "tl-bo-dich ok", `✓ Đã trả ${b.da_tra_bo} video vào bộ`));
-    else if (b.nguon_kieu === "vao_bo" && b.tu_ap_luc) {
+    else if (coNutTraNgay(b)) {
       const tn = traNgay[b.job_id] || {};
       d.append(el("span", "tl-bo-dich", `↩ Sẽ tự trả vào bộ ${gio(b.tu_ap_luc)}`));
       const n = el("button", "btn tl-bo-tra-ngay", tn.dang ? "Đang trả…" : "Trả ngay"); n.type = "button"; n.disabled = !!tn.dang;
@@ -119,10 +124,45 @@
     veBo();
   }
 
+  // USER CHỐT 16/10 ("chỉ hiện 2 task gần nhất còn lại ẩn hết đi"): hiện 2 lượt MỚI NHẤT + mọi lượt còn việc + lượt đang được chọn
+  // lọc; phần còn lại thu sau nút "Xem thêm N lượt". `/bo` trả lượt mới nhất trước (ORDER BY id DESC).
+  // "Còn việc" = máy đang làm / chờ bạn duyệt, HOẶC lượt Xong mà thẻ còn nút hành động chờ bấm (USER CHỐT 16/10 17:1x "Có, luôn hiện").
+  const SO_LUOT_GAN_NHAT = 2;
+  let hienHetLuot = false;
+  const conViec = (b) => trangThaiBo(b)[1] !== "xong" || coNutTaoBo(b) || coNutTraNgay(b) || conApVaoBo(b);
+  const giuKhiThu = (b, i) => i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id;
   function veBo() {
-    const l = $("tl-bo-list"); l.replaceChildren();
-    if (!T.bo.length) { l.append(el("div", "tl-bo-rong", "Chưa có bộ nào. Chọn video ở trên, đặt tên bộ rồi bấm “Thay logo” — bộ sẽ hiện ở đây cùng tiến độ.")); return; }
-    for (const b of T.bo) l.append(theBo(b));
+    const l = $("tl-bo-list");
+    // Vẽ lại xoá cả nút vừa bấm (và lượt poll vẽ lại định kỳ) ⇒ nhớ focus để trả về nút mới, người dùng bàn phím khỏi Tab lại từ đầu.
+    // Bấm dấu "… N lượt ẩn" thì dấu biến mất khi mở rộng ⇒ focus sang nút "Thu gọn".
+    const giuFocus = !!(document.activeElement && ["tl-bo-xem-them", "tl-bo-an-giua"].some((c) => document.activeElement.classList.contains(c)));
+    l.replaceChildren();
+    if (!T.bo.length) { l.append(el("div", "tl-bo-rong", "Chưa có lượt nào. Chọn video ở trên rồi bấm “Thay logo” — lượt sẽ hiện ở đây cùng tiến độ và nơi nhận.")); return; }
+    // Số lượt sẽ ẩn KHI THU — dùng cho cả điều kiện hiện nút lẫn chữ trên nút. Không còn gì để thu ⇒ không có nút "Thu gọn" vô tác dụng,
+    // và trạng thái mở rộng về mặc định để lượt mới đến sau không làm bảng tự bung hết.
+    const anKhiThu = T.bo.filter((b, i) => !giuKhiThu(b, i)).length;
+    if (!anKhiThu) hienHetLuot = false;
+    // Dấu lượt ẩn (USER CHỐT 16/10 17:2x): chỗ nào có lượt bị giấu NẰM GIỮA hai lượt đang hiện ⇒ một dòng nhỏ "… N lượt ẩn"; bấm thì
+    // mở rộng để xem đúng các lượt đó. Lượt ẩn ở cuối danh sách đã có nút "Xem thêm" nên không chèn dấu.
+    let anDon = 0;
+    T.bo.forEach((b, i) => {
+      if (hienHetLuot || giuKhiThu(b, i)) {
+        if (anDon) {
+          const d = el("button", "tl-bo-an-giua", `… ${anDon} lượt ẩn`); d.type = "button";
+          d.setAttribute("aria-label", `Mở ${anDon} lượt đang ẩn`);
+          d.addEventListener("click", () => { hienHetLuot = true; veBo(); });
+          l.append(d); anDon = 0;
+        }
+        l.append(theBo(b));
+      } else anDon++;
+    });
+    if (anKhiThu) {
+      const n = el("button", "btn ghost tl-bo-xem-them", hienHetLuot ? "Thu gọn ▴" : `Xem thêm ${anKhiThu} lượt ▾`); n.type = "button";
+      n.setAttribute("aria-expanded", String(hienHetLuot));
+      n.addEventListener("click", () => { hienHetLuot = !hienHetLuot; veBo(); });
+      l.append(n);
+      if (giuFocus) n.focus();
+    }
   }
 
   function chipLoc(chu, bat, khiBam, extra) {

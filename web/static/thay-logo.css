@@ -381,3 +381,5 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
   .tl-bo-pipe, .tl-bo-dich-hang { padding: 0 14px 8px; }
   .tl-bo-the > .tl-bo-tao, .tl-bo-the > .tl-bo-tb, .tl-bo-the > .tl-bo-thumuc { grid-column: 1; margin: 0 14px 10px; }
 }
+.tl-bo-xem-them { justify-self: start; min-height: 36px; }
+.tl-bo-an-giua { justify-self: start; min-height: 28px; background: none; border: 0; padding: 4px 14px; color: var(--muted, #6b7280); font-size: 12px; cursor: pointer; }
