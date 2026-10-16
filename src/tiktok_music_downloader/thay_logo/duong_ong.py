@@ -26,6 +26,7 @@ from .lo_trinh import theo_lo_trinh
 from .mau import dung_mau_sach, mat_na_va_tuong_phan, tu_hoc_mau
 from .nguon_khung import NguonKhung
 from .nhay import do_nhay
+from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
 
 SO_VONG_TU_HOC = 1
@@ -251,15 +252,17 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ)."""
     _, tcon = mat_na_va_tuong_phan(mau)
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
+    qua_chu = lap_qua_chu(nguon, track, cum)
     cong.go_chan_le(track)
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh"))
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh") and not e.get("qua_chu"))
     dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
-    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC)
+    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC and not e.get("qua_chu"))
+    dem["qua_chu"] = qua_chu
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]

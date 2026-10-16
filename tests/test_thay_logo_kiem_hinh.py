@@ -6,6 +6,7 @@ pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless")
 
 from thay_logo_tong_hop import tao_clip  # noqa: E402
 
+from tiktok_music_downloader.thay_logo import qua_chu as qua_chu_mod  # noqa: E402
 from tiktok_music_downloader.thay_logo import cong, duong_ong  # noqa: E402
 
 A, B = (30, 60), (230, 520)
@@ -97,6 +98,7 @@ def test_logo_mo_troi_qua_doan_kho_duoc_bam_lai_hai_chieu():
 
 
 def test_dot_bien_tat_bam_hai_chieu_thi_doan_mo_lo(monkeypatch):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     monkeypatch.setattr(duong_ong, "bam_lai_doan_mat", lambda nguon, det, mau: (det, {}))
     v = _vet(_clip_mo(), khung=(5, 15, 75))
     assert not MO & {e["frame"] for e in v.khung_render}
