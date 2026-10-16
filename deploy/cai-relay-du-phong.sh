@@ -2,7 +2,7 @@
 # Cài / gỡ relay agy DỰ PHÒNG trên máy ca-n (LaunchAgent trong domain gui/<uid> của mktmini).
 #
 # Chạy TRÊN MÁY DEV, từ một checkout SẠCH đã đẩy lên origin:
-#     bash deploy/cai-relay-du-phong.sh            # thử khô: chỉ in sẽ làm gì, không đụng ca-n
+#     bash deploy/cai-relay-du-phong.sh            # thử khô: chỉ ĐỌC ca-n (hostname, agy/python3, launchctl) rồi in sẽ làm gì
 #     bash deploy/cai-relay-du-phong.sh --yes      # cài / cập nhật thật
 #     bash deploy/cai-relay-du-phong.sh --go       # gỡ: bootout đúng label + xoá plist, mã, env
 #
@@ -44,10 +44,10 @@ nhan_hang_xom() {
   printf '%s\n' "$out" | awk -v me="$LABEL" '$NF ~ /astronex/ && $NF != me {print $NF}' | sort
 }
 
-# In "con" nếu label còn nạp trong gui/<uid> HOẶC plist còn trên đĩa, "het" nếu đã gỡ sạch. ssh trượt ⇒ rc≠0 (không in gì) —
+# In "con" nếu label còn nạp trong gui/<uid> HOẶC plist / thư mục mã / thư mục cấu hình còn trên đĩa, "het" nếu đã gỡ sạch. ssh trượt ⇒ rc≠0 (không in gì) —
 # để người gọi phân biệt "đã gỡ" với "không hỏi được".
 trang_thai_go() {
-  ssh_ca "U=\$(id -u); if launchctl print gui/\$U/$LABEL >/dev/null 2>&1 || test -e ~/Library/LaunchAgents/$LABEL.plist; then echo con; else echo het; fi"
+  ssh_ca "U=\$(id -u); if launchctl print gui/\$U/$LABEL >/dev/null 2>&1 || test -e ~/Library/LaunchAgents/$LABEL.plist || test -e ~/$DICH_MA || test -e ~/$DICH_CFG; then echo con; else echo het; fi"
 }
 
 # Số byte log hiện có (0 nếu chưa có tệp) — mốc để nghiệm thu chỉ đọc phần log của LẦN CÀI NÀY.
@@ -67,6 +67,11 @@ kiem_dang_chay() {
   printf '%s\n' "$moi" | tail -5 | sed 's/^/   log: /'
   # here-string, không pipe: với pipefail, `grep -q` thoát sớm làm printf nhận SIGPIPE ⇒ câu kiểm sai khi log dài.
   if grep -q 'relay chưa cấu hình' <<<"$moi"; then echo "TRƯỢT: log mới báo 'relay chưa cấu hình'." >&2; return 4; fi
+  # Relay bắt mọi lỗi gọi mini (401 token lệch, 403 listener không nhận IP ca-n, 503, mạng) rồi chạy tiếp ⇒ launchd vẫn "running".
+  # Dòng 'vòng lỗi' ngay sau khi khởi động = dự phòng sống mà không làm được việc ⇒ TRƯỢT (dòng đó chỉ có mã HTTP / tên lỗi, không bí mật).
+  if grep -q 'vòng lỗi' <<<"$moi"; then
+    echo "TRƯỢT: relay không gọi được mini: $(grep -m1 'vòng lỗi' <<<"$moi")" >&2; return 4
+  fi
   grep -q 'DỰ PHÒNG' <<<"$moi" || { echo "TRƯỢT: log mới chưa có dòng 'chạy ở chế độ DỰ PHÒNG'." >&2; return 4; }
   echo "   relay đang chạy: pid $pid"
 }
@@ -75,9 +80,6 @@ kiem_dang_chay() {
 if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 
 cd "$(git rev-parse --show-toplevel)"
-MINI_IP="$(mini_ip)" || { echo "DỪNG: không đọc được địa chỉ mini từ deploy/may-dich.sh." >&2; exit 7; }
-[ -n "$MINI_IP" ] || { echo "DỪNG: deploy/may-dich.sh trả địa chỉ mini rỗng." >&2; exit 7; }
-MINI_URL="http://$MINI_IP:$CONG_RELAY_MINI"
 
 say "0. Kiểm máy đích"
 ten="$(ssh_ca hostname 2>&1 | tail -1)" || { echo "DỪNG: không ssh được $HOST (nhận: '$ten')." >&2; exit 5; }
@@ -88,7 +90,7 @@ echo "   hostname: $ten (chuẩn hoá: $norm)"
 if [ "$CHE_DO" = "go" ]; then
   say "GỠ relay dự phòng"
   truoc="$(nhan_hang_xom)"
-  ssh_ca "U=\$(id -u); launchctl bootout gui/\$U/$LABEL 2>/dev/null || true; rm -f ~/Library/LaunchAgents/$LABEL.plist; rm -rf ~/$DICH_MA ~/$DICH_CFG"
+  ssh_ca "U=\$(id -u); launchctl bootout gui/\$U/$LABEL 2>/dev/null || true; rm -f ~/Library/LaunchAgents/$LABEL.plist; rm -rf ~/$DICH_MA ~/$DICH_CFG || true"  # rm trượt ⇒ để trang_thai_go phán và báo, không thoát im ở set -e
   sau="$(nhan_hang_xom)"
   [ "$truoc" = "$sau" ] || { echo "CẢNH BÁO: label hàng xóm đổi sau khi gỡ!" >&2; diff <(echo "$truoc") <(echo "$sau") >&2 || true; exit 4; }
   tt="$(trang_thai_go)" || { echo "TRƯỢT: không hỏi được ca-n sau khi gỡ — chưa biết đã gỡ hay chưa." >&2; exit 5; }
@@ -96,6 +98,11 @@ if [ "$CHE_DO" = "go" ]; then
   echo "   đã gỡ: label không còn, hàng xóm giữ nguyên"
   exit 0
 fi
+
+# Địa chỉ mini chỉ cần cho cài (gỡ không phụ thuộc bảng máy đích).
+MINI_IP="$(mini_ip)" || { echo "DỪNG: không đọc được địa chỉ mini từ deploy/may-dich.sh." >&2; exit 7; }
+[ -n "$MINI_IP" ] || { echo "DỪNG: deploy/may-dich.sh trả địa chỉ mini rỗng." >&2; exit 7; }
+MINI_URL="http://$MINI_IP:$CONG_RELAY_MINI"
 
 say "1. Kiểm cây mã nguồn"
 [ -z "$(git status --porcelain)" ] || { echo "DỪNG: cây còn thay đổi chưa commit." >&2; exit 2; }
@@ -159,7 +166,7 @@ ssh_ca "cat > ~/Library/LaunchAgents/$LABEL.plist" <<EOF
   <key>StandardErrorPath</key><string>/Users/mktmini/Library/Logs/$LABEL.log</string>
 </dict></plist>
 EOF
-moc="$(moc_log)"
+moc="$(moc_log)" || { echo "DỪNG: không ssh được để đọc mốc log." >&2; exit 5; }
 [[ "$moc" =~ ^[0-9]+$ ]] || { echo "DỪNG: không đọc được mốc log (nhận: '$moc')." >&2; exit 5; }
 ssh_ca "U=\$(id -u); launchctl bootout gui/\$U/$LABEL 2>/dev/null || true; launchctl bootstrap gui/\$U ~/Library/LaunchAgents/$LABEL.plist"
 
