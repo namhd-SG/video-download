@@ -221,8 +221,7 @@ def test_chu_member_thay_khong_co_chu_ky_su(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
     chu = p.evaluate("document.body.innerText")
     assert not re.search(r"\b(agy|khung|box)\b", chu, re.I), re.findall(r"\b(?:agy|khung|box)\b", chu, re.I)
-    p.locator("#tl-tabs [role=tab]").nth(1).click()
-    p.wait_for_selector("#tl-tab-bo .tl-vb-nhom")
+    _tab_bo(p)
     chu = p.evaluate("document.body.innerText")
     assert not re.search(r"\b(agy|khung|box)\b", chu, re.I) and "đã được dọn" not in chu
 
@@ -232,29 +231,35 @@ def _chon_ca(p, ma):
     return p.locator("#tl-tab-bo .tl-vb-nhom", has_text=ma).locator(".tl-vb-chon-ca")
 
 
-def _tab_bo(p):
-    p.locator("#tl-tabs [role=tab]").nth(1).click()
+def _tab_bo(p, mo_rong=False):
+    """Tab "Bộ tự tìm" đứng đầu và mở sẵn; mặc định lọc 7 ngày ⇒ bấm "Tất cả" (dữ liệu mẫu vào bộ từ 28/09–01/10)."""
+    p.locator('#tl-tabs [data-tab="bo"]').click()
+    p.wait_for_selector("#tl-tab-bo [data-ngay='']")
+    p.locator("#tl-tab-bo [data-ngay='']").click()
     p.wait_for_selector("#tl-tab-bo .tl-vb-nhom")
+    if mo_rong:  # "bỏ bớt / xem video" của mọi bộ ⇒ hiện thẻ từng video
+        for _ in range(p.locator("#tl-tab-bo .tl-vb-mo[aria-expanded=false]").count()):
+            p.locator("#tl-tab-bo .tl-vb-mo[aria-expanded=false]").first.click()
 
 
 def test_tab_da_vao_bo_nhom_theo_ma_bo_chi_video_cua_minh(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
-    _tab_bo(p)
+    _tab_bo(p, mo_rong=True)
     nhom = " | ".join(t.replace("\n", " ") for t in p.locator("#tl-tab-bo .tl-vb-nhom").all_inner_texts())
-    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 2 and "Chọn cả bộ N.1AAAA (3 video)" in nhom and "Chọn cả bộ N.2BBBB (1 video)" in nhom
+    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 2 and "+ Nạp cả bộ (3)" in nhom and "N.1AAAA" in nhom and "N.2BBBB" in nhom
+    assert "1 video đã thay logo trước đó" in nhom  # N.2BBBB: video duy nhất đã nằm trong lượt
     chu = p.locator("#tl-tab-bo").inner_text()
     assert "Máy dùng bản trong bộ." in chu and TEN[1] in chu and TEN[5] not in chu and "N.9OTHER" not in chu  # video của người khác: không thấy
     mo = p.locator("#tl-tab-bo .tl-the-v.mo")  # VID4 đã nằm trong một lượt ⇒ mờ + không chọn được
     assert mo.count() == 1 and TEN[4] in mo.inner_text() and mo.locator("input").is_disabled()
     assert _chon_ca(p, "N.2BBBB").is_disabled()  # cả bộ đã nằm trong lượt ⇒ không còn gì để chọn
     _chon_ca(p, "N.1AAAA").click()  # ảnh nghiệm thu: đã chọn cả bộ ⇒ tên bộ tự điền
-    p.locator("#tl-vung").evaluate("e => { e.scrollTop = 70; }")  # thẻ đầu hiện trọn, không bị cắt mép dưới
     _chup(p, "1b-da-vao-bo-1280.png")
 
 
 def test_chon_cung_bo_tu_dien_ten_bo_va_dem(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
-    _tab_bo(p)
+    _tab_bo(p, mo_rong=True)
     _chon_ca(p, "N.1AAAA").click()
     assert p.locator("#tl-dem").inner_text() == "Đã chọn 3 video" and p.locator("#tl-ten-bo").input_value() == "N.1AAAA"
     assert _chon_ca(p, "N.1AAAA").get_attribute("aria-checked") == "true"
@@ -351,9 +356,10 @@ def test_hook_khac_chay_truoc_thi_vao_bo_duoc_noi_them_khong_ghi_de(may_chu, tri
 
 def test_nhan_tab_da_vao_bo_dem_so_da_chon(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
-    _chon_bo_1(p)
-    nhan = p.locator("#tl-tabs [role=tab]").nth(1)
-    assert nhan.inner_text().split() == ["Đã", "vào", "bộ", "3"]
+    _tab_bo(p, mo_rong=True)
+    _chon_ca(p, "N.1AAAA").click()
+    nhan = p.locator('#tl-tabs [data-tab="bo"]')
+    assert nhan.inner_text().split() == ["Bộ", "tự", "tìm", "3"]
     p.locator("#tl-tab-bo .tl-the-v:not(.mo) input").first.uncheck()
     assert nhan.inner_text().split()[-1] == "2"
 
@@ -408,11 +414,112 @@ def test_anh_sau_khong_tai_duoc_thi_roi_ve_anh_soi(may_chu, trinh_duyet):
 
 
 def test_danh_sach_da_vao_bo_bi_cat_thi_bao(may_chu, trinh_duyet):
-    p, _ = _mo(trinh_duyet, may_chu, truoc=lambda ctx: ctx.route("**/api/thay-logo/da-vao-bo", lambda r: r.fulfill(
+    p, _ = _mo(trinh_duyet, may_chu, truoc=lambda ctx: ctx.route("**/api/thay-logo/da-vao-bo*", lambda r: r.fulfill(
         status=200, content_type="application/json", body=json.dumps({"bo": [], "bi_cat": True}))))
-    _tab_bo_trong = p.locator("#tl-tabs [role=tab]").nth(1)
-    _tab_bo_trong.click()
-    p.wait_for_function("document.getElementById('tl-tab-bo').innerText.includes('chỉ hiện các video vào bộ gần đây')")
+    p.locator('#tl-tabs [data-tab="bo"]').click()
+    p.wait_for_function("document.getElementById('tl-tab-bo').innerText.includes('chỉ hiện các bộ mới nhất')")
+
+
+# ---------------------------------------------------------------- luồng mới 16/10: tìm bộ, giỏ, nơi nhận
+def test_o_tim_ma_bo_loc_o_may_chu_va_to_phan_khop(may_chu, trinh_duyet):
+    """Gõ mã bộ ⇒ gửi `q` lên máy chủ, chỉ còn bộ khớp, phần khớp được tô. ĐỘT BIẾN: bỏ `q` khỏi URL ⇒ còn 2 bộ ⇒ ĐỎ."""
+    p, loi = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    with p.expect_request(lambda r: "/api/thay-logo/da-vao-bo?" in r.url and "q=2bb" in r.url.lower()):
+        p.locator("#tl-vb-tim").fill("2bb")
+    p.wait_for_function("document.querySelectorAll('#tl-tab-bo .tl-vb-nhom').length === 1")
+    assert "N.2BBBB" in p.locator("#tl-tab-bo .tl-vb-nhom").inner_text()
+    assert p.locator("#tl-tab-bo .tl-vb-ma mark").inner_text().lower() == "2bb"
+    assert p.evaluate("document.activeElement.id") == "tl-vb-tim"  # vẽ lại khi kết quả về không cướp con trỏ đang gõ
+    assert not loi
+
+
+def test_nap_ca_bo_vao_gio_noi_nhan_co_dinh_bo_goc(may_chu, trinh_duyet):
+    p, loi = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    _chon_ca(p, "N.1AAAA").click()
+    gio = p.locator("#tl-gio-ds").inner_text()
+    assert "Từ bộ tự tìm" in gio and "N.1AAAA · 3 video" in gio and "Nguồn khác" not in gio
+    dich = p.locator("#tl-dich").inner_text()
+    assert "trả lại đúng bộ gốc" in dich and "sau khi bạn bấm Đạt" in dich and p.locator("#tl-dich input[type=radio]").count() == 0
+    assert p.locator('#tl-tabs [data-tab="bo"] .tl-cnt').inner_text() == "3" and _chon_ca(p, "N.1AAAA").inner_text().strip() == "Bỏ khỏi giỏ"
+    _chup(p, "ux-gio-bo-1280.png")
+    assert not loi
+
+
+def test_gio_tron_hien_chon_noi_nhan_va_post_mang_dich_khac(may_chu, trinh_duyet):
+    """Giỏ trộn: video từ bộ (cố định bộ gốc) + video thư viện (chọn nơi nhận). "Thêm vào bộ có sẵn" bị khoá (đợt sau).
+    ĐỘT BIẾN: bỏ `than.dich_khac` ⇒ thân POST thiếu khoá ⇒ ĐỎ."""
+    p, loi = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(201, {"job_id": 1, "job_ids": [1, 2]}))
+    _tab_bo(p)
+    _chon_ca(p, "N.1AAAA").click()
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    p.wait_for_selector("#tl-tab-thu-vien input[type=checkbox]")
+    p.locator("#tl-tab-thu-vien input[type=checkbox]").first.check()
+    gio = p.locator("#tl-gio-ds").inner_text()
+    assert "Từ bộ tự tìm" in gio and "Nguồn khác" in gio and "Thư viện · 1 video" in gio
+    assert p.locator('#tl-tabs [data-tab="thu-vien"] .tl-cnt').inner_text() == "1"
+    assert p.locator("#tl-dich input[value=them_bo]").is_disabled() and "đợt sau" in p.locator("#tl-dich").inner_text()
+    assert p.locator("#tl-dich input[value=tao_bo]").is_checked()  # mặc định theo mock đã duyệt
+    _chup(p, "ux-gio-tron-1280.png")
+    p.locator("#tl-dich input[value=drive]").check()
+    with p.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/thay-logo/jobs")) as rq:
+        p.locator("#tl-tao").click()
+    than = json.loads(rq.value.post_data)
+    assert than["dich_khac"] == "drive" and len(than["vao_bo"]) == 3 and len(than["drive_file_ids"]) == 1
+    assert not loi
+
+
+def test_mo_lai_tab_bo_thi_tai_lai_danh_sach(may_chu, trinh_duyet):
+    """Mở lại tab ⇒ tải lại một lần (cờ "đã thay logo trước đó" phải mới sau khi vừa tạo lượt).
+    ĐỘT BIẾN: bỏ `taiDuLieu()` cuối `ve()` ⇒ không có GET thứ hai ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    with p.expect_request(lambda r: "/api/thay-logo/da-vao-bo" in r.url, timeout=5000):
+        p.locator('#tl-tabs [data-tab="bo"]').click()
+
+
+def test_tim_loi_khong_de_ket_qua_cu_duoi_chu_moi(may_chu, trinh_duyet):
+    """Lần tìm trượt (503) ⇒ báo lỗi, KHÔNG hiện bộ của lần tìm trước dưới chữ "khớp “xyz”".
+    ĐỘT BIẾN: chỉ đặt lỗi khi `data === null` ⇒ vẫn còn 2 bộ cũ ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 2
+    p.route("**/api/thay-logo/da-vao-bo?*q=xyz*", lambda r: r.fulfill(status=503, content_type="application/json", body="{}"))
+    p.locator("#tl-vb-tim").fill("xyz")
+    p.wait_for_function("document.getElementById('tl-tab-bo').innerText.includes('Chưa tìm được')")
+    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 0 and "khớp" not in p.locator("#tl-tab-bo").inner_text()
+    assert p.locator("#tl-vb-tim").get_attribute("maxlength") == "80"
+
+
+def test_chi_video_tu_bo_thi_post_khong_mang_dich_khac(may_chu, trinh_duyet):
+    p, _ = _mo(trinh_duyet, may_chu)
+    p.route("**/api/thay-logo/jobs", _tra_loi_post(201, {"job_id": 1, "job_ids": [1]}))
+    _tab_bo(p)
+    _chon_ca(p, "N.1AAAA").click()
+    with p.expect_request(lambda r: r.method == "POST" and r.url.endswith("/api/thay-logo/jobs")) as rq:
+        p.locator("#tl-tao").click()
+    assert "dich_khac" not in json.loads(rq.value.post_data)
+
+
+@pytest.mark.parametrize("rong", [1280, 390])
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_anh_trang_that_khong_cuon_ngang(may_chu, trinh_duyet, rong, theme):
+    ctx = trinh_duyet.new_context(viewport={"width": rong, "height": 900}, color_scheme=theme)
+    p = ctx.new_page()
+    mo_trang(p, f"{may_chu}/thay-logo.html", dem_mang_ngoai(ctx))
+    p.wait_for_selector("#tl-tab-bo [data-ngay='']")
+    p.locator("#tl-tab-bo [data-ngay='']").click()
+    p.wait_for_selector("#tl-tab-bo .tl-vb-nhom")
+    _chon_ca(p, "N.1AAAA").click()
+    assert p.evaluate("document.documentElement.scrollWidth <= window.innerWidth + 1"), f"cuộn ngang ở {rong}px"
+    # Mọi tab nằm TRỌN trong hàng tab (không bị cắt "Dá…" ở mép phải khổ 390). ĐỘT BIẾN: bỏ flex-wrap ⇒ tab cuối tràn ⇒ ĐỎ.
+    assert p.evaluate("""(() => { const h = document.getElementById('tl-tabs').getBoundingClientRect();
+        return [...document.querySelectorAll('#tl-tabs .tl-tab')].filter(t => t.offsetParent).every(t => {
+          const r = t.getBoundingClientRect(); return r.left >= h.left - 1 && r.right <= h.right + 1; }); })()"""), f"tab bị cắt ở {rong}px"
+    _chup(p, f"ux-trang-{rong}-{theme}.png")
 
 
 def test_zzz_tao_luot_tu_tab_gui_dung_vao_bo(may_chu, trinh_duyet):
@@ -431,7 +538,7 @@ def test_zzz_tao_luot_tu_tab_gui_dung_vao_bo(may_chu, trinh_duyet):
     assert sorted((n["kieu"], n["file_id"], n["folder_id"], n["ma_bo"], n["md5"], n["size"]) for n in nguon) == \
         [("vao_bo", BAN[i], F1, "N.1AAAA", f"MD5-{i}", str(100 * i)) for i in (1, 2, 3)]
     # tab mở lại: 3 video vừa tạo lượt giờ mờ (đã trong lượt), không chọn lại được
-    _tab_bo(p)
+    _tab_bo(p, mo_rong=True)
     p.wait_for_function("document.querySelectorAll('#tl-tab-bo .tl-the-v.mo').length === 4")
     assert _chon_ca(p, "N.1AAAA").is_disabled()
 

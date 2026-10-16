@@ -149,7 +149,7 @@ def test_khong_cuon_ngang_thanh_tren_khong_gay_dong(may_chu, trinh_duyet, rong, 
 def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     assert p.locator("#tl-nhap").is_visible() and p.locator("#tl-tabs [role=tab]").count() == 4
-    assert p.locator("#tl-nhap").inner_text().count("Tên bộ") == 1 and p.locator("#tl-tao").is_visible()
+    assert p.locator("#tl-nhap").inner_text().count("Tên lượt") == 1 and p.locator("#tl-tao").is_visible()
     assert p.locator("#tl-bo-list .tl-bo-the").count() == 2 and TEN_BO_A in p.locator("#tl-bo-list").inner_text()
     assert p.locator("#tl-loc").is_visible() and p.locator("#tl-loc [data-tt]").count() == 6
     assert p.locator("#tl-duyet").is_visible() and "Chờ bạn duyệt" in p.locator("#tl-duyet").inner_text()
@@ -362,7 +362,7 @@ def test_cho_gan_nguon_nhap_cua_dot_sau(may_chu, trinh_duyet):
     p.locator("#tl-tabs [role=tab]").nth(3).click()
     assert "MODULE-LINK-DA-VE" in p.locator("#tl-tab-link").inner_text() and p.locator("#tl-tab-thu-vien").is_hidden()
     assert "Giải thích của module" in p.locator("#tl-tab-giai").inner_text()
-    p.locator("#tl-tabs [role=tab]").nth(1).click()
+    p.locator('#tl-tabs [data-tab="bo"]').click()
     assert p.locator("#tl-tab-link").is_hidden() and p.locator("#tl-tab-thu-vien").is_hidden()
 
 
@@ -545,6 +545,7 @@ def test_o_nhap_ban_toi_dung_mau_app(may_chu, trinh_duyet):
 def test_font_va_kep_dong_theo_mock(may_chu, trinh_duyet):
     """Tên video không dùng phông mono; lưới thư viện kẹp 2 dòng; cột phải một dòng + dấu …; h3 hộp duyệt 1.2rem. ĐỘT BIẾN: trả `var(--mono)` ⇒ ĐỎ."""
     p, _ = _mo(trinh_duyet, may_chu, 1280)
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
     p.wait_for_function("document.querySelector('.tl-ten-v')")
     kq = p.evaluate("""() => { const cs = (s) => getComputedStyle(document.querySelector(s));
         return { luoi: [cs('.tl-ten-v').fontFamily, cs('.tl-ten-v').webkitLineClamp], h3: [cs('.tl-chi-tiet h3').fontFamily, cs('.tl-chi-tiet h3').fontSize],
@@ -699,6 +700,7 @@ def test_ten_bo_la_html_hien_nguyen_van_khong_chay(may_chu, trinh_duyet, monkeyp
 # ---------------------------------------------------------------- tạo lượt (CUỐI file: thêm một bộ vào DB dùng chung)
 
 def _chon_mot_video(p):
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()  # tab đầu là "Bộ tự tìm"; thư viện ở tab thứ hai
     p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
     p.locator(f"#tl-tab-thu-vien input[value={FILE_THU_VIEN[0]}]").check()
 
@@ -715,6 +717,7 @@ def _mo_bat(br, goc, monkeypatch):
 def test_anh_nghiem_thu_tinh_nang_bat_da_chon_3_video(may_chu, trinh_duyet, monkeypatch):
     """Trang ở trạng thái dùng thật (tính năng bật, đã tick 3 video): ảnh cho người duyệt đặt cạnh mock; ảnh bìa thư viện phải tải được."""
     p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
     p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
     for f in FILE_THU_VIEN[:3]:
         p.locator(f"#tl-tab-thu-vien input[value={f}]").check()
@@ -730,13 +733,13 @@ def test_ten_bo_tu_dien_theo_ngay_va_so_bo_hom_nay(may_chu, trinh_duyet, monkeyp
     # hôm nay đã có đúng 1 bộ (bộ B tạo cách đây 3 ngày không tính) ⇒ n = 2
     assert p.locator("#tl-ten-bo").input_value() == f"{hn.tm_mday:02d}/{hn.tm_mon:02d}-2" and p.locator("#tl-ten-bo").is_enabled()
     _chon_mot_video(p)
-    assert f"bộ {hn.tm_mday:02d}/{hn.tm_mon:02d}-2" in p.locator("#tl-tao").inner_text()
+    assert p.locator("#tl-ten-bo").input_value() == f"{hn.tm_mday:02d}/{hn.tm_mon:02d}-2"
 
 
 def test_loi_400_429_hien_cau_loi_thuong(may_chu, trinh_duyet, monkeypatch):
     p = _mo_bat(trinh_duyet, may_chu, monkeypatch)
     _chon_mot_video(p)
-    for ma, mong in ((400, "Tên bộ cần 1–80 ký tự"), (429, "quá nhiều video chờ")):
+    for ma, mong in ((400, "Tên lượt cần 1–80 ký tự"), (429, "quá nhiều video chờ")):
         p.route("**/api/thay-logo/jobs", (lambda ma: lambda r: r.fulfill(status=ma, content_type="application/json", body='{"detail": "raw detail"}'))(ma))
         p.locator("#tl-tao").click()
         p.wait_for_function(f"document.getElementById('tl-loi').textContent.includes({mong!r})")
