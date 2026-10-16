@@ -16,9 +16,9 @@
 set -euo pipefail
 
 HOST="mktmini@100.101.112.88"
-EXPECT_HOST="mac-mini-ca-n"
+EXPECT_HOST="mac-mini-cua-n"                  # `hostname` thật của ca-n (Mac-mini-cua-N.local), chuẩn hoá — đo 16/10
 LABEL="com.astronex.thay-logo-relay-du-phong"
-MINI_URL="http://100.109.39.103:7871"           # cùng địa chỉ relay chính dùng (listener relay của mini, chỉ nhận IP Tailscale)
+CONG_RELAY_MINI=7871                           # listener relay của mini (chỉ nhận IP Tailscale) — cùng cổng relay chính dùng
 DICH_MA="thay-logo-relay-du-phong"             # ~/thay-logo-relay-du-phong/src trên ca-n
 DICH_CFG=".config/thay-logo-relay-du-phong"    # env (600) + run-relay.sh
 ENV_CHINH="$HOME/.config/thay-logo-relay/env"  # cấu hình relay CHÍNH trên máy dev — nguồn token
@@ -28,9 +28,56 @@ TEP_MA=(src/tiktok_music_downloader/__init__.py src/tiktok_music_downloader/thay
 CHE_DO="kho"
 case "${1:-}" in --yes) CHE_DO="that" ;; --go) CHE_DO="go" ;; "") ;; *) echo "tham số lạ: $1" >&2; exit 64 ;; esac
 say() { printf '\n== %s\n' "$*"; }
-ssh_ca() { ssh -o ConnectTimeout=10 -o BatchMode=yes "$HOST" "$@"; }
+SSH_OPTS=(-o ConnectTimeout=10 -o BatchMode=yes)
+ssh_ca() { ssh "${SSH_OPTS[@]}" "$HOST" "$@"; }
+
+# Địa chỉ mini lấy từ bảng máy đích dùng chung (deploy/may-dich.sh) — không ghi cứng ở đây. Bảng đặt HOST/EXPECT_HOST của MINI,
+# nên source trong subshell để không đè HOST/EXPECT_HOST của ca-n ở trên.
+mini_ip() { ( . "$(dirname "$(realpath "${BASH_SOURCE[0]}")")/may-dich.sh" >/dev/null && printf '%s' "${HOST#*@}" ); }
+
+# Label astronex khác label của mình, trong domain gui/<uid> của ca-n. `launchctl print gui/<uid>` thay vì `launchctl list` để
+# đọc đúng domain mà LaunchAgent được bootstrap vào. Đọc trượt (ssh lỗi, chưa ai đăng nhập console ⇒ không có domain gui)
+# ⇒ DỪNG: nuốt lỗi ở đây thì "trước" và "sau" cùng rỗng và phép so hàng xóm xanh vô nghĩa.
+nhan_hang_xom() {
+  local out
+  out="$(ssh_ca 'launchctl print gui/$(id -u)')" || { echo "DỪNG: không đọc được launchctl gui/<uid> trên $HOST." >&2; return 5; }
+  printf '%s\n' "$out" | awk -v me="$LABEL" '$NF ~ /astronex/ && $NF != me {print $NF}' | sort
+}
+
+# In "con" nếu label còn nạp trong gui/<uid> HOẶC plist còn trên đĩa, "het" nếu đã gỡ sạch. ssh trượt ⇒ rc≠0 (không in gì) —
+# để người gọi phân biệt "đã gỡ" với "không hỏi được".
+trang_thai_go() {
+  ssh_ca "U=\$(id -u); if launchctl print gui/\$U/$LABEL >/dev/null 2>&1 || test -e ~/Library/LaunchAgents/$LABEL.plist; then echo con; else echo het; fi"
+}
+
+# Số byte log hiện có (0 nếu chưa có tệp) — mốc để nghiệm thu chỉ đọc phần log của LẦN CÀI NÀY.
+moc_log() { ssh_ca "f=~/Library/Logs/$LABEL.log; if test -e \$f; then wc -c < \$f; else echo 0; fi" | tr -d ' '; }
+
+# Nghiệm thu sau bootstrap: (1) `launchctl print gui/<uid>/<label>` báo state = running với pid số — `launchctl list` vẫn ra dòng
+# cho tiến trình đã thoát đang chờ KeepAlive khởi lại; (2) phần log MỚI sau mốc có 'DỰ PHÒNG' và không có 'relay chưa cấu hình'
+# — log chỉ append, đọc cả tệp thì dòng của lần cài trước làm nghiệm thu xanh cho relay đang crash-loop.
+kiem_dang_chay() {
+  local moc="$1" in_ra state pid moi
+  in_ra="$(ssh_ca "launchctl print gui/\$(id -u)/$LABEL")" || { echo "TRƯỢT: label $LABEL không nạp trong gui/<uid>." >&2; return 4; }
+  # Chỉ đọc dòng cấp ngoài (một tab): bên trong có khối lồng cũng mang 'state = active'.
+  state="$(printf '%s\n' "$in_ra" | awk -F' = ' '/^\tstate = /{print $2; exit}')"
+  pid="$(printf '%s\n' "$in_ra" | awk -F' = ' '/^\tpid = /{print $2; exit}')"
+  [ "$state" = running ] && [[ "$pid" =~ ^[0-9]+$ ]] || { echo "TRƯỢT: relay không chạy (state='$state' pid='$pid')." >&2; return 4; }
+  moi="$(ssh_ca "tail -c +$((moc + 1)) ~/Library/Logs/$LABEL.log")" || { echo "TRƯỢT: không đọc được log." >&2; return 4; }
+  printf '%s\n' "$moi" | tail -5 | sed 's/^/   log: /'
+  # here-string, không pipe: với pipefail, `grep -q` thoát sớm làm printf nhận SIGPIPE ⇒ câu kiểm sai khi log dài.
+  if grep -q 'relay chưa cấu hình' <<<"$moi"; then echo "TRƯỢT: log mới báo 'relay chưa cấu hình'." >&2; return 4; fi
+  grep -q 'DỰ PHÒNG' <<<"$moi" || { echo "TRƯỢT: log mới chưa có dòng 'chạy ở chế độ DỰ PHÒNG'." >&2; return 4; }
+  echo "   relay đang chạy: pid $pid"
+}
+
+# Test source tệp này để gọi các hàm trên với ssh giả — dừng ở đây, không chạy phần cài/gỡ.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then return 0; fi
 
 cd "$(git rev-parse --show-toplevel)"
+MINI_IP="$(mini_ip)" || { echo "DỪNG: không đọc được địa chỉ mini từ deploy/may-dich.sh." >&2; exit 7; }
+[ -n "$MINI_IP" ] || { echo "DỪNG: deploy/may-dich.sh trả địa chỉ mini rỗng." >&2; exit 7; }
+MINI_URL="http://$MINI_IP:$CONG_RELAY_MINI"
 
 say "0. Kiểm máy đích"
 ten="$(ssh_ca hostname 2>&1 | tail -1)" || { echo "DỪNG: không ssh được $HOST (nhận: '$ten')." >&2; exit 5; }
@@ -38,15 +85,15 @@ norm="$(printf '%s' "$ten" | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')"
 echo "   hostname: $ten (chuẩn hoá: $norm)"
 [ "$norm" = "$EXPECT_HOST" ] || { echo "DỪNG: máy đích không phải $EXPECT_HOST." >&2; exit 1; }
 
-nhan_hang_xom() { ssh_ca 'launchctl list' | awk 'NR>1{print $3}' | grep -i astronex | grep -v "^${LABEL}\$" | sort || true; }
-
 if [ "$CHE_DO" = "go" ]; then
   say "GỠ relay dự phòng"
   truoc="$(nhan_hang_xom)"
   ssh_ca "U=\$(id -u); launchctl bootout gui/\$U/$LABEL 2>/dev/null || true; rm -f ~/Library/LaunchAgents/$LABEL.plist; rm -rf ~/$DICH_MA ~/$DICH_CFG"
   sau="$(nhan_hang_xom)"
   [ "$truoc" = "$sau" ] || { echo "CẢNH BÁO: label hàng xóm đổi sau khi gỡ!" >&2; diff <(echo "$truoc") <(echo "$sau") >&2 || true; exit 4; }
-  ssh_ca "launchctl list | grep -c '$LABEL'" | grep -qx 0 && echo "   đã gỡ: label không còn, hàng xóm giữ nguyên"
+  tt="$(trang_thai_go)" || { echo "TRƯỢT: không hỏi được ca-n sau khi gỡ — chưa biết đã gỡ hay chưa." >&2; exit 5; }
+  [ "$tt" = het ] || { echo "TRƯỢT: label hoặc plist $LABEL vẫn còn sau khi gỡ." >&2; exit 4; }
+  echo "   đã gỡ: label không còn, hàng xóm giữ nguyên"
   exit 0
 fi
 
@@ -72,12 +119,13 @@ if [ "$CHE_DO" = "kho" ]; then
   echo "   - rsync ${#TEP_MA[@]} tệp mã (chỉ thư viện chuẩn) → $HOST:~/$DICH_MA/ ; ghi ~/$DICH_MA/.sha = $SHA"
   echo "   - ghi ~/$DICH_CFG/env (chmod 600: THAY_LOGO_RELAY_TOKEN [+ THAY_LOGO_AGY_MODEL nếu relay chính có]) + run-relay.sh"
   echo "   - ghi ~/Library/LaunchAgents/$LABEL.plist (RunAtLoad, KeepAlive) rồi bootout(nếu có)+bootstrap gui/<uid>"
-  echo "   - nghiệm thu: label đang chạy, log có 'DỰ PHÒNG', hàng xóm không đổi"
+  echo "   - relay gọi mini: $MINI_URL"
+  echo "   - nghiệm thu: launchctl print state=running + pid, log MỚI (sau mốc) có 'DỰ PHÒNG', hàng xóm không đổi"
   exit 0
 fi
 
 say "4. Đẩy mã"
-rsync -a --relative "${TEP_MA[@]}" "$HOST:$DICH_MA/"
+rsync -a --relative -e "ssh ${SSH_OPTS[*]}" "${TEP_MA[@]}" "$HOST:$DICH_MA/"
 ssh_ca "printf '%s\n' '$SHA' > ~/$DICH_MA/.sha"
 
 say "5. Cấu hình (token qua stdin, không in)"
@@ -111,13 +159,13 @@ ssh_ca "cat > ~/Library/LaunchAgents/$LABEL.plist" <<EOF
   <key>StandardErrorPath</key><string>/Users/mktmini/Library/Logs/$LABEL.log</string>
 </dict></plist>
 EOF
+moc="$(moc_log)"
+[[ "$moc" =~ ^[0-9]+$ ]] || { echo "DỪNG: không đọc được mốc log (nhận: '$moc')." >&2; exit 5; }
 ssh_ca "U=\$(id -u); launchctl bootout gui/\$U/$LABEL 2>/dev/null || true; launchctl bootstrap gui/\$U ~/Library/LaunchAgents/$LABEL.plist"
 
 say "7. Nghiệm thu"
 sleep 8
-ssh_ca "launchctl list | grep '$LABEL'" || { echo "TRƯỢT: label không có trong launchctl list." >&2; exit 4; }
-ssh_ca "tail -5 ~/Library/Logs/$LABEL.log" | sed 's/^/   log: /'
-ssh_ca "grep -q 'DỰ PHÒNG' ~/Library/Logs/$LABEL.log" || { echo "TRƯỢT: log chưa có dòng 'chạy ở chế độ DỰ PHÒNG'." >&2; exit 4; }
+kiem_dang_chay "$moc" || exit 4
 sau="$(nhan_hang_xom)"
 [ "$truoc" = "$sau" ] || { echo "TRƯỢT: label hàng xóm đổi!" >&2; diff <(echo "$truoc") <(echo "$sau") >&2 || true; exit 4; }
 echo "   OK: relay dự phòng chạy ($SHA), hàng xóm giữ nguyên. Gỡ: bash deploy/cai-relay-du-phong.sh --go"
