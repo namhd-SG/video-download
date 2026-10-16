@@ -34,37 +34,49 @@
   <p id="tat" class="error-text" hidden>Tính năng thay logo đang tắt trên máy chủ.</p>
   <p id="tl-loi-tai" class="error-text" role="status" hidden></p>
 
-  <!-- Vùng 1: Đưa video vào -->
+  <!-- Ba bước của luồng: chọn video → chọn nơi nhận → duyệt Đạt/Hỏng (Đạt thì máy mới đưa video tới nơi nhận). -->
+  <ol class="tl-buoc" aria-label="Các bước thay logo">
+    <li><b>1</b><span><strong>Chọn video</strong><small>từ bộ tự tìm, thư viện, máy, link</small></span></li>
+    <li><b>2</b><span><strong>Chọn nơi nhận</strong><small>bộ gốc · bộ tự tìm mới · thư mục Drive</small></span></li>
+    <li><b>3</b><span><strong>Duyệt Đạt / Hỏng</strong><small>Đạt thì máy mới đưa tới nơi nhận</small></span></li>
+  </ol>
+
+  <!-- Vùng 1: Đưa video vào (trái: nguồn · phải: giỏ + nơi nhận) -->
   <section class="panel tl-nhap" id="tl-nhap" aria-label="Đưa video vào">
     <button type="button" id="tl-nhap-gon" class="tl-nhap-gon" hidden><span class="ic">⇪</span> <b>Đưa video vào</b> <span class="muted">· 4 nguồn</span><span class="grow"></span><span class="mo">Mở ▾</span></button>
     <form id="tl-form" class="tl-nhap-day" aria-labelledby="tl-nhap-h">
-      <div class="tl-nhap-head">
-        <h2 id="tl-nhap-h">Đưa video vào</h2>
-        <span class="muted">Chọn từ một hay nhiều nguồn — cả lượt thành một bộ</span>
-        <span class="grow"></span>
-        <button type="button" id="tl-thu-gon" class="btn ghost" aria-expanded="true">Thu gọn ▴</button>
+      <div class="tl-nhap-trai">
+        <div class="tl-nhap-head">
+          <h2 id="tl-nhap-h">Đưa video vào</h2>
+          <span class="muted">Chọn từ một hay nhiều nguồn</span>
+          <span class="grow"></span>
+          <button type="button" id="tl-thu-gon" class="btn ghost" aria-expanded="true">Thu gọn ▴</button>
+        </div>
+        <div id="tl-tabs" class="tl-tabs" role="tablist"></div>
+        <div class="tl-tab-tools">
+          <span id="tl-tab-giai" class="muted"></span>
+          <span id="tl-tim-hop" class="tl-tim"><input id="tl-tim" type="search" placeholder="Tìm theo tên video…" aria-label="Tìm theo tên video" /></span>
+        </div>
+        <div id="tl-vung" class="tl-vung" tabindex="0">
+          <div id="tl-tab-bo" class="tl-tab-vung"></div>
+          <div id="tl-tab-thu-vien" class="tl-tab-vung" hidden></div>
+          <div id="tl-tab-may" class="tl-tab-vung" hidden></div>
+          <div id="tl-tab-link" class="tl-tab-vung" hidden></div>
+        </div>
       </div>
-      <div id="tl-tabs" class="tl-tabs" role="tablist"></div>
-      <div class="tl-tab-tools">
-        <span id="tl-tab-giai" class="muted"></span>
-        <span id="tl-tim-hop" class="tl-tim"><input id="tl-tim" type="search" placeholder="Tìm theo tên video…" aria-label="Tìm theo tên video" /></span>
-      </div>
-      <div id="tl-vung" class="tl-vung" tabindex="0">
-        <div id="tl-tab-thu-vien" class="tl-tab-vung"></div>
-        <div id="tl-tab-bo" class="tl-tab-vung" hidden></div>
-        <div id="tl-tab-may" class="tl-tab-vung" hidden></div>
-        <div id="tl-tab-link" class="tl-tab-vung" hidden></div>
-      </div>
-      <div class="tl-chan">
+      <aside class="tl-gio" aria-labelledby="tl-gio-h">
+        <h2 id="tl-gio-h">Giỏ thay logo</h2>
+        <div id="tl-gio-ds" class="tl-gio-ds"></div>
+        <div id="tl-dich" class="tl-dich" hidden></div>
         <div class="tl-ten-bo">
-          <label for="tl-ten-bo">Tên bộ</label>
+          <label for="tl-ten-bo">Tên lượt</label>
           <input id="tl-ten-bo" type="text" maxlength="80" autocomplete="off" />
-          <span class="muted">Đặt theo ngày · sửa được. Mọi video của lượt này mang tên bộ này để lọc.</span>
+          <span class="muted">Đặt theo ngày · sửa được. Video từ bộ tự tìm mang luôn mã bộ.</span>
         </div>
         <div id="tl-dem" class="tl-dem-chan"></div>
         <button type="submit" id="tl-tao" class="btn primary tl-btn-tao">Thay logo</button>
         <p id="tl-loi" class="error-text" role="alert"></p>
-      </div>
+      </aside>
     </form>
   </section>
 
@@ -93,6 +105,7 @@
 <script src="thay-logo-tab-may.js"></script>
 <script src="thay-logo-tab-da-vao-bo.js"></script>
 <script src="thay-logo-khoi-nhap.js"></script>
+<script src="thay-logo-ban-giao.js"></script>
 <script src="thay-logo-the-bo.js"></script>
 <script src="thay-logo-hop-duyet.js"></script>
 <script src="thay-logo.js"></script>

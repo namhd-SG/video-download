@@ -28,7 +28,8 @@ CREATE INDEX IF NOT EXISTS ix_tl_job_nguoi_tao ON tl_job(nguoi_tao);
 
 
 # Cột thêm SAU khi bảng đã có trên máy chạy thật: `CREATE TABLE IF NOT EXISTS` không thêm cột vào bảng cũ ⇒ ALTER có kiểm.
-_COT_THEM_SAU = (("ten_bo", "TEXT"), ("thu_muc_ra_id", "TEXT"))
+_COT_THEM_SAU = (("ten_bo", "TEXT"), ("thu_muc_ra_id", "TEXT"), ("dich_khac", "TEXT"))
+DICH_KHAC = ("drive", "tao_bo")  # nơi nhận của lượt KHÔNG phải "Đã vào bộ": thư mục Drive máy cấp | tạo bộ tự tìm (1 cú bấm hand-off)
 
 
 def khoi_tao(conn) -> None:
@@ -49,16 +50,21 @@ def ten_bo_hien_thi(job_id: int, ten_bo: str | None) -> str:
     return ten_bo if ten_bo else f"Lượt #{job_id}"
 
 
-def tao_job(conn, nguoi_tao: str, nguon: list[dict], ghi_chu: str = "", ten_bo: str | None = None) -> int:
-    """`nguon`: mỗi phần tử một video, vd {"kieu": "drive", "file_id": "..."} — lưu nguyên dạng JSON."""
+def tao_job(conn, nguoi_tao: str, nguon: list[dict], ghi_chu: str = "", ten_bo: str | None = None,
+            dich_khac: str | None = None, commit: bool = True) -> int:
+    """`nguon`: mỗi phần tử một video, vd {"kieu": "drive", "file_id": "..."} — lưu nguyên dạng JSON.
+    `commit=False`: người gọi tạo NHIỀU lượt trong cùng một giao dịch (giỏ trộn tách hai lượt) rồi tự commit một lần."""
     if not nguon:
         raise ValueError("job cần ít nhất 1 video")
+    if dich_khac is not None and dich_khac not in DICH_KHAC:
+        raise ValueError(f"dich_khac phải thuộc {DICH_KHAC}")
     now = time.time()
-    cur = conn.execute("INSERT INTO tl_job (nguoi_tao, tao_luc, ghi_chu, ten_bo) VALUES (?,?,?,?)",
-                       (nguoi_tao, now, ghi_chu[:500], ten_bo))
+    cur = conn.execute("INSERT INTO tl_job (nguoi_tao, tao_luc, ghi_chu, ten_bo, dich_khac) VALUES (?,?,?,?,?)",
+                       (nguoi_tao, now, ghi_chu[:500], ten_bo, dich_khac))
     conn.executemany("INSERT INTO tl_job_video (job_id, nguon, cap_nhat_luc) VALUES (?,?,?)",
                      [(cur.lastrowid, json.dumps(n, sort_keys=True), now) for n in nguon])
-    conn.commit()
+    if commit:
+        conn.commit()
     return cur.lastrowid
 
 

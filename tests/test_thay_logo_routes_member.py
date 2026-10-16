@@ -138,10 +138,12 @@ def _jobs_db(db, hang=()):
     import sqlite3
     with sqlite3.connect(db.parent / "jobs.db") as c:
         c.execute("CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT, nen_tang TEXT)")
-        c.execute("CREATE TABLE IF NOT EXISTS videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT)")
+        # `url` NOT NULL như bảng thật (`web/models.py`): route đọc link gốc cho hand-off "Tạo bộ tự tìm".
+        c.execute("CREATE TABLE IF NOT EXISTS videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT, "
+                  "url TEXT NOT NULL DEFAULT '')")
         for i, (fid, vid, title, nt, nguoi) in enumerate(hang, 1):
             c.execute("INSERT INTO jobs VALUES (?,?,?)", (i, nguoi, nt))
-            c.execute("INSERT INTO videos VALUES (?,?,?,?)", (vid, i, title, fid))
+            c.execute("INSERT INTO videos VALUES (?,?,?,?,?)", (vid, i, title, fid, f"https://x/{vid}"))
 
 
 def _bo(db, nguoi, ten, fids, tao_luc=None):

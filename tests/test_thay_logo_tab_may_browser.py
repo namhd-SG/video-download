@@ -189,7 +189,7 @@ def test_tai_nhieu_khuc_khong_gui_cookie_authorization_roi_tao_luot_chi_may_file
         p.wait_for_timeout(50)
     gui = p.jobs[0]
     assert gui["may_file_ids"] == [FILE_ID] and gui["drive_file_ids"] == []
-    assert "ten" not in gui and "token" not in gui and set(gui) == {"drive_file_ids", "ten_bo", "may_file_ids"}
+    assert "ten" not in gui and "token" not in gui and set(gui) == {"drive_file_ids", "ten_bo", "may_file_ids", "dich_khac"} and gui["dich_khac"] == "tao_bo"
     p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")  # lượt tạo xong ⇒ dòng đã dùng được bỏ
     assert not p.loi_js
 
@@ -378,7 +378,7 @@ def test_tai_lai_trang_khoi_phuc_dong_xong_tick_san_roi_tao_luot_dung_may_file_i
         p.wait_for_timeout(50)
     gui = p.jobs[0]
     assert sorted(gui["may_file_ids"]) == sorted([FILE_ID, F2]) and gui["drive_file_ids"] == []
-    assert set(gui) == {"drive_file_ids", "ten_bo", "may_file_ids"} and not p.loi_js
+    assert set(gui) == {"drive_file_ids", "ten_bo", "may_file_ids", "dich_khac"} and gui["dich_khac"] == "tao_bo" and not p.loi_js
 
 
 def test_tai_xong_roi_tai_lai_trang_van_con_dong_xong(may_chu, trinh_duyet, monkeypatch):
