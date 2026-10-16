@@ -26,6 +26,7 @@ from .lo_trinh import theo_lo_trinh
 from .mau import dung_mau_sach, mat_na_va_tuong_phan, tu_hoc_mau
 from .nguon_khung import NguonKhung
 from .nhay import do_nhay
+from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
 
 SO_VONG_TU_HOC = 1
@@ -232,7 +233,7 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = ()) -
     che = _kep_vao_khung(che, nguon.rong, nguon.cao)
     track = _track_day_du(n, che, uv)
     hinh = kiem_hinh_truoc_dan(nguon, track, mau)
-    kq = ap_moi_cong(nguon, track, mau, cum)
+    kq = ap_moi_cong(nguon, track, mau, cum, co_ai=bool(neo_ai))
     kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh, bam_hai_chieu=bam, ai_vong_hai=ai)
     ly_do = _bang_chung(det, khung_moi, len(cum), tt)
     if ly_do:
@@ -247,19 +248,22 @@ def mau_giong_phu_de(mau: np.ndarray) -> bool:
     return ti_le_phu_de(m, 0, 0, m.shape[1], m.shape[0], 0) > cong.PHU_DE_TI_LE
 
 
-def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi]) -> KetQuaVet:
-    """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ)."""
+def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi], co_ai: bool = False) -> KetQuaVet:
+    """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ). `co_ai`: lượt có mốc AI ⇒ che qua
+    chữ được dò hai đầu (xem qua_chu)."""
     _, tcon = mat_na_va_tuong_phan(mau)
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
+    qua_chu = lap_qua_chu(nguon, track, mau, cum, co_ai)
     cong.go_chan_le(track)
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh"))
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh") and not e.get("qua_chu"))
     dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
-    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC)
+    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC and not e.get("qua_chu"))
+    dem["qua_chu"] = qua_chu
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]

@@ -8,6 +8,7 @@ pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless (
 
 from thay_logo_tong_hop import tam_lech, tao_clip  # noqa: E402
 
+from tiktok_music_downloader.thay_logo import qua_chu as qua_chu_mod  # noqa: E402
 from tiktok_music_downloader.thay_logo import cong, duong_ong, lam_muot_vet, mat_na_vet, nhay, theo_vet  # noqa: E402
 
 TRONG_BOX = 3  # tâm watermark thật nằm trong ô che nới tối đa vài px
@@ -136,6 +137,7 @@ def test_go_chan_le_chi_go_doan_ngan_giu_doan_dai():
 
 def test_dot_bien_go_chan_le_tat_thi_khung_bi_chan_lo_ra(monkeypatch):
     """Cổng chặn oan một khung giữa vết: có gỡ chặn lẻ ⇒ khung vẫn được che; không có ⇒ nháy."""
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     clip = tao_clip(n=70)
     monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     monkeypatch.setattr(cong, "go_chan_theo_hinh", lambda track, net, san: 0)  # cô lập gỡ chặn lẻ: gỡ theo hình có test riêng
