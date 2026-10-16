@@ -102,7 +102,7 @@
   function veTimKiem(hop) {
     const hang = el("div", "tl-vb-tim");
     const o = el("input"); o.type = "search"; o.id = "tl-vb-tim"; o.placeholder = "Gõ mã bộ, vd N.1510 hoặc 1510…"; o.value = tim;
-    o.setAttribute("aria-label", "Tìm bộ theo mã"); o.autocomplete = "off";
+    o.setAttribute("aria-label", "Tìm bộ theo mã"); o.autocomplete = "off"; o.maxLength = 80;  // máy chủ nhận q tối đa 80 ký tự (422 nếu dài hơn)
     o.addEventListener("input", () => { tim = o.value.trim(); clearTimeout(henTim); henTim = setTimeout(() => taiDuLieu(true), 300); });
     hang.append(o);
     for (const [k, ten] of NGAY) {
@@ -130,16 +130,17 @@
     const o = veTimKiem(hop);
     if (dangGo) { o.focus(); o.setSelectionRange(o.value.length, o.value.length); }  // vẽ lại khi kết quả về không cướp con trỏ đang gõ
     hop.append(el("p", "tl-vb-ghi", "Máy dùng bản trong bộ. Bạn bấm Đạt xong, bản thay logo được trả lại đúng bộ đó."));
-    if (data === null) { hop.append(el("p", "muted", loi ? "Chưa tải được danh sách bộ — thử lại sau ít phút." : "Đang tìm…")); taiDuLieu(); return; }
+    if (data === null) { hop.append(el("p", "muted", loi ? "Chưa tìm được — kiểm tra mạng hoặc thử lại sau ít phút." : "Đang tìm…")); taiDuLieu(); return; }
     hop.append(el("p", "tl-vb-ket-qua", moTaKetQua()));
     if (biCat) hop.append(el("p", "tl-vb-ghi", "Danh sách dài nên chỉ hiện các bộ mới nhất — gõ mã bộ để tìm bộ cũ hơn."));
     if (!data.length) {
       hop.append(el("p", "muted", tim || ngay || ngayChon ? "Không có bộ nào khớp — thử mã khác hoặc chọn “Tất cả” ngày." : "Bạn chưa có video nào trong bộ tự tìm."));
-      return;
+    } else {
+      const ds = el("div", "tl-vb-ds");
+      for (const bo of data) ds.append(dongBo(bo));
+      hop.append(ds);
     }
-    const ds = el("div", "tl-vb-ds");
-    for (const bo of data) ds.append(dongBo(bo));
-    hop.append(ds);
+    taiDuLieu();  // mỗi lần MỞ tab tải lại một lần (cờ "đã thay logo trước đó" phải mới sau khi vừa tạo lượt); `daHoi` chặn vòng lặp
   }
 
   function duong() {
@@ -165,7 +166,10 @@
       const j = await r.json();
       if (theNay !== the) return;
       data = j.bo || []; biCat = !!j.bi_cat; loi = false;
-    } catch (e) { if (theNay === the && data === null) loi = true; }
+    } catch (e) {
+      // Lần tìm này trượt (mạng / máy chủ): KHÔNG để kết quả của lần tìm TRƯỚC nằm dưới chữ tìm mới — bỏ dữ liệu cũ, báo lỗi.
+      if (theNay === the) { data = null; loi = true; }
+    }
     finally {
       if (theNay === the) {
         dangTai = false;

@@ -784,11 +784,11 @@ def _moc_ngay_vn(gia_tri: str | None, ten: str, het_ngay: bool = False) -> str |
         return None
     try:
         d = _datetime.strptime(gia_tri, "%Y-%m-%d").replace(tzinfo=VN_TIMEZONE)
-    except ValueError:
+        if het_ngay:
+            d += _timedelta(days=1)
+        return d.astimezone(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    except (ValueError, OverflowError):  # 0001-01-01 / 9999-12-31 tràn khi đổi múi ⇒ 400, không 500
         raise HTTPException(400, f"{ten} phải là YYYY-MM-DD") from None
-    if het_ngay:
-        d += _timedelta(days=1)
-    return d.astimezone(_timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
 
 
 def _thoat_like(chuoi: str) -> str:

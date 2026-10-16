@@ -471,6 +471,29 @@ def test_gio_tron_hien_chon_noi_nhan_va_post_mang_dich_khac(may_chu, trinh_duyet
     assert not loi
 
 
+def test_mo_lai_tab_bo_thi_tai_lai_danh_sach(may_chu, trinh_duyet):
+    """Mở lại tab ⇒ tải lại một lần (cờ "đã thay logo trước đó" phải mới sau khi vừa tạo lượt).
+    ĐỘT BIẾN: bỏ `taiDuLieu()` cuối `ve()` ⇒ không có GET thứ hai ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    with p.expect_request(lambda r: "/api/thay-logo/da-vao-bo" in r.url, timeout=5000):
+        p.locator('#tl-tabs [data-tab="bo"]').click()
+
+
+def test_tim_loi_khong_de_ket_qua_cu_duoi_chu_moi(may_chu, trinh_duyet):
+    """Lần tìm trượt (503) ⇒ báo lỗi, KHÔNG hiện bộ của lần tìm trước dưới chữ "khớp “xyz”".
+    ĐỘT BIẾN: chỉ đặt lỗi khi `data === null` ⇒ vẫn còn 2 bộ cũ ⇒ ĐỎ."""
+    p, _ = _mo(trinh_duyet, may_chu)
+    _tab_bo(p)
+    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 2
+    p.route("**/api/thay-logo/da-vao-bo?*q=xyz*", lambda r: r.fulfill(status=503, content_type="application/json", body="{}"))
+    p.locator("#tl-vb-tim").fill("xyz")
+    p.wait_for_function("document.getElementById('tl-tab-bo').innerText.includes('Chưa tìm được')")
+    assert p.locator("#tl-tab-bo .tl-vb-nhom").count() == 0 and "khớp" not in p.locator("#tl-tab-bo").inner_text()
+    assert p.locator("#tl-vb-tim").get_attribute("maxlength") == "80"
+
+
 def test_chi_video_tu_bo_thi_post_khong_mang_dich_khac(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
     p.route("**/api/thay-logo/jobs", _tra_loi_post(201, {"job_id": 1, "job_ids": [1]}))

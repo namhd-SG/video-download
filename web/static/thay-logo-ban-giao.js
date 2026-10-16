@@ -57,7 +57,7 @@
     const id = crypto.randomUUID();
     const tab = window.open(`${CREATIVE_DESK_URL}/creative-order/self-bundles?videodesk_pm=1`, "_blank");
     if (!tab) return "Trình duyệt đã chặn tab mới — cho phép popup rồi bấm lại.";
-    try { tab.opener = null; } catch (e) { /* không cắt được opener: tab vẫn dùng được */ }
+    try { tab.opener = null; } catch (e) { console.warn("Không cắt được window.opener của tab Creative Desk — tab vẫn mở, opener CÒN nguyên:", e); }
     let ds;
     try { ds = await videoDatCua(jobId); } catch (e) { tab.close(); return "Chưa đọc được danh sách video — thử lại sau ít phút."; }
     const items = ds.map(item).filter(Boolean).slice(0, MAX_PM_ITEMS);

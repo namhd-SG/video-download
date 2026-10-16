@@ -98,6 +98,11 @@ def test_ngay_sai_khuon_tra_400(ctx):
     assert ctx.get("/api/thay-logo/da-vao-bo?tu=15%2F10", headers=_h("a@x")).status_code == 400
 
 
+@pytest.mark.parametrize("q", ["tu=0001-01-01", "den=9999-12-31"])
+def test_ngay_bien_tran_khi_doi_mui_tra_400_khong_500(ctx, q):
+    assert ctx.get(f"/api/thay-logo/da-vao-bo?{q}", headers=_h("a@x")).status_code == 400
+
+
 def test_nguoi_khac_khong_thay_bo_cua_minh_khi_tim(ctx):
     r = ctx.get("/api/thay-logo/da-vao-bo?q=1510", headers=_h("b@x"))
     assert r.status_code == 200 and r.json()["bo"] == []
