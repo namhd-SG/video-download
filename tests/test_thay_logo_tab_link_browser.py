@@ -257,7 +257,9 @@ def test_bo_link_khong_go_tick_cua_video_dang_co_trong_thu_vien(may_chu, trinh_d
     x = FILE_THU_VIEN[0]
     ket = {"v": [{**_file(), "id": x}, {**_file(), "id": "KHONGTHUVIEN12345", "link": URL_PDF}]}
     p = _trang(trinh_duyet, may_chu, monkeypatch, lambda: ket["v"])
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
     p.wait_for_function("document.querySelectorAll('#tl-tab-thu-vien input[type=checkbox]').length >= 8")
+    p.locator('#tl-tabs [data-tab="link"]').click()
     _dan_va_kiem(p, f"{URL_F}\n{URL_PDF}")
     assert "Đã chọn 2 video" in p.locator("#tl-dem").inner_text()
     ket["v"] = []

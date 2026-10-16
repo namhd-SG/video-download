@@ -161,7 +161,15 @@
       <ul class="hd-buoc">
         <!-- web/static/thay-logo.html; web/thay_logo_routes.py TRAN_VIDEO_MOT_JOB -->
         <li><strong>Làm gì:</strong> trang <a href="/thay-logo.html">Thay logo</a> tự tìm watermark trôi trên video rồi đè logo công
-          ty lên. Mỗi lượt tối đa <b data-tran="thay_logo_video_mot_luot">…</b> video (link file Drive hoặc chọn từ thư viện).</li>
+          ty lên. Mỗi lượt tối đa <b data-tran="thay_logo_video_mot_luot">…</b> video.</li>
+        <!-- thay-logo-tab-da-vao-bo.js (GET /api/thay-logo/da-vao-bo?q=&tu=&den=); thay-logo-khoi-nhap.js giỏ + nơi nhận -->
+        <li><strong>Chọn video:</strong> tab <em>Bộ tự tìm</em> (gõ mã bộ hoặc chọn ngày vào bộ, bấm <em>Nạp cả bộ</em>), <em>Thư viện
+          của bạn</em>, <em>Tải từ máy</em> hoặc <em>Dán link Drive</em>. Mọi video đã chọn nằm trong <em>Giỏ</em> bên phải.</li>
+        <!-- web/thay_logo_routes.py tao_job: giỏ trộn tách hai lượt; dich_khac drive | tao_bo -->
+        <li><strong>Thành phẩm đi đâu:</strong> video lấy từ bộ tự tìm được <b>trả lại đúng bộ đó sau khi bạn bấm Đạt</b> (bản cũ được
+          cất riêng, hoàn tác được). Video nguồn khác: chọn <em>Tạo bộ tự tìm mới</em> (duyệt xong bấm một nút để mở Creative Desk,
+          như nút <em>Tạo bộ tự tìm</em> ở trang Tải video) hoặc <em>Thư mục Drive riêng</em>. Giỏ có cả hai loại thì máy tách thành hai
+          lượt — bạn thấy hai dòng ở <em>Bộ của bạn</em>.</li>
         <!-- web/thay_logo_worker.py: file gốc chỉ được đọc, bản thay ghi ra file mới lên Drive -->
         <li><strong>Video gốc giữ nguyên:</strong> bản đã thay là một file mới trên Drive. Khung nào máy chưa chắc vị trí, hoặc có
           phụ đề/chữ chồng lên, thì giữ nguyên watermark gốc ở khung đó — không đè bừa.</li>

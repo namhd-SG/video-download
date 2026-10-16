@@ -7,7 +7,11 @@
   const TT = [["dang_xu_ly", "Đang xử lý"], ["cho_duyet", "Chờ duyệt"], ["khong_chac", "Máy không chắc"], ["loi", "Lỗi"], ["da_dat", "Đã đạt"], ["hong", "Hỏng"]];
   const NEN = [["", "Tất cả"], ["tiktok", "TikTok"], ["douyin", "Douyin"], ["facebook", "Facebook"]];
   const NGAY = [["", "Tất cả"], ["hom_nay", "Hôm nay"], ["7_ngay", "7 ngày"]];
-  const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Đã vào bộ", nhieu: "Nhiều nguồn" };
+  const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Bộ tự tìm", nhieu: "Nhiều nguồn" };
+  // Nơi nhận của lượt (dòng trên thẻ): lượt từ bộ ⇒ trả về bộ gốc; lượt nguồn khác ⇒ theo `dich_khac` (lượt cũ không có ⇒ Drive).
+  const noiNhan = (b) => (b.nguon_kieu === "vao_bo" ? "↩ Trả về bộ gốc sau khi bạn bấm Đạt"
+    : b.dich_khac === "tao_bo" ? "➕ Tạo bộ tự tìm mới sau khi bạn duyệt" : "📁 Thư mục Drive riêng");
+  const banGiaoTB = {};  // job_id ⇒ câu kết quả lần bấm "Tạo bộ tự tìm" gần nhất
 
   // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt; còn lại Xong.
   function trangThaiBo(b) {
@@ -34,8 +38,20 @@
     const ap = apCua[b.job_id];
     if (cls === "xong" && ap && ap.trang_thai === "xong") nut.append(el("span", "tl-bo-tiep ok", `✓ Đã áp vào bộ ${gio(ap.xong_luc)}`));
     else if (cls === "xong" && ap && ap.la_chu && ap.so_du_dieu_kien) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
+    nut.append(el("span", "tl-bo-dich", noiNhan(b)));
     nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
     the.append(nut);
+    // Lượt nguồn khác chọn "Tạo bộ tự tìm mới": có video Đạt ⇒ MỘT cú bấm bàn giao sang Creative Desk (như trang Tải video).
+    if (b.dich_khac === "tao_bo" && b.nguon_kieu !== "vao_bo" && b.dat > 0 && typeof T.taoBoTuTim === "function") {
+      const tao = el("button", "btn primary tl-bo-tao", `Tạo bộ tự tìm từ ${b.dat} video Đạt`); tao.type = "button";
+      tao.addEventListener("click", async () => {
+        tao.disabled = true; tao.textContent = "Đang gửi sang Creative Desk…";
+        try { banGiaoTB[b.job_id] = await T.taoBoTuTim(b.job_id); } catch (e) { if (!e || e.message !== "het_phien") banGiaoTB[b.job_id] = "Chưa gửi được — thử lại."; }
+        veBo();
+      });
+      the.append(tao);
+      if (banGiaoTB[b.job_id]) { const p = el("p", "tl-bo-tb", banGiaoTB[b.job_id]); p.setAttribute("role", "status"); the.append(p); }
+    }
     if (b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id)) {
       const a = el("a", "tl-bo-thumuc", "Mở thư mục đầu ra →");
       a.href = `https://drive.google.com/drive/folders/${encodeURIComponent(b.thu_muc_ra_id)}`; a.target = "_blank"; a.rel = "noopener";
