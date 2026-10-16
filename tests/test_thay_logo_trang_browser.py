@@ -837,3 +837,22 @@ def test_cho_dinh_vi_duoi_15_phut_khong_bao_do(may_chu, trinh_duyet, monkeypatch
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 1")
     assert "chưa phản hồi" not in p.locator("#tl-bo-list").inner_text()
+
+
+def test_tra_ngay_loi_hien_duoi_dung_luot_va_khoa_khi_dang_gui(may_chu, trinh_duyet, monkeypatch):
+    """M3 (review PR2): lỗi "Trả ngay" hiện dưới ĐÚNG lượt bấm (không dùng ô lỗi chung của thẻ mở rộng); đang gửi thì nút khoá.
+    ĐỘT BIẾN: quay về `bam()` dùng `apLoi` chung ⇒ không có lỗi dưới dòng lượt ⇒ ĐỎ."""
+    import json
+    bo = [_luot(1, "N.1510C", nguon_kieu="vao_bo", tong=1, xong=1, dat=1, tu_ap_luc=time.time() + 240),
+          _luot(2, "N.1610", nguon_kieu="vao_bo", tong=1, xong=1, dat=1, tu_ap_luc=time.time() + 240)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.route("**/api/thay-logo/bo/*/ap", lambda r: r.fulfill(status=409, content_type="application/json",
+                                                           body=json.dumps({"detail": "Bộ này đang có một lượt áp/hoàn tác khác chạy — đợi xong rồi thử lại."}))
+            if r.request.method == "POST" else r.fulfill(status=404))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    the = p.locator("#tl-bo-list .tl-bo-the")
+    the.nth(1).get_by_role("button", name="Trả ngay").click()
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-tra-loi').length === 1")
+    assert "đang có một lượt áp" in the.nth(1).locator(".tl-bo-tra-loi").inner_text()
+    assert the.nth(0).locator(".tl-bo-tra-loi").count() == 0

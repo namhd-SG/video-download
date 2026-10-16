@@ -138,7 +138,6 @@ class ThayLogoWorker:
         self._cong_qua, self._cong_cam, self._cong_thu_luc, self._cong_ly_do = cong is None, False, None, None
         self._cong_loi_lien_tiep = 0
         self._thread_don_phien: threading.Thread | None = None
-        self._tu_ap_bo_qua: set[int] = set()  # lượt tự áp gặp lỗi CỐ ĐỊNH (sai chủ / không còn gì để áp): không thử lại mỗi vòng
 
     def _mo(self) -> sqlite3.Connection:
         conn = nhat_ky.mo(self.log_db)
@@ -298,7 +297,7 @@ class ThayLogoWorker:
         try:
             conn = self._mo()
             try:
-                tu_ap_vao_bo.thu_tu_ap(conn, self._chu_cua, self.bat_dau_ap, self._tu_ap_bo_qua)
+                tu_ap_vao_bo.thu_tu_ap(conn, self._chu_cua, self.bat_dau_ap)
             finally:
                 conn.close()
         except Exception:

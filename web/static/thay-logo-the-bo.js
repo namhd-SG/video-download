@@ -90,12 +90,33 @@
     const chu = noiNhan(b);
     if (b.nguon_kieu === "vao_bo" && b.da_tra_bo > 0) d.append(el("span", "tl-bo-dich ok", `✓ Đã trả ${b.da_tra_bo} video vào bộ`));
     else if (b.nguon_kieu === "vao_bo" && b.tu_ap_luc) {
+      const tn = traNgay[b.job_id] || {};
       d.append(el("span", "tl-bo-dich", `↩ Sẽ tự trả vào bộ ${gio(b.tu_ap_luc)}`));
-      const n = el("button", "btn tl-bo-tra-ngay", "Trả ngay"); n.type = "button";
-      n.addEventListener("click", () => { n.disabled = true; bam(b.job_id, "ap"); });
+      const n = el("button", "btn tl-bo-tra-ngay", tn.dang ? "Đang trả…" : "Trả ngay"); n.type = "button"; n.disabled = !!tn.dang;
+      n.addEventListener("click", () => traNgayLuot(b.job_id));
       d.append(n);
+      if (tn.loi) { const p = el("p", "error-text tl-bo-tra-loi", tn.loi); p.setAttribute("role", "alert"); d.append(p); }
     } else if (chu) d.append(el("span", "tl-bo-dich", chu));
     return d;
+  }
+
+  // "Trả ngay" của TỪNG lượt: trạng thái/lỗi giữ theo job (không dùng `apLoi` chung của thẻ mở rộng — lỗi phải hiện dưới đúng lượt).
+  // Gửi được ⇒ nút giữ "Đang trả…" tới khi /bo mới về (lượt có dòng áp ⇒ máy chủ thôi trả `tu_ap_luc`), không bấm lần hai được.
+  const traNgay = {};
+  async function traNgayLuot(jid) {
+    if (traNgay[jid] && traNgay[jid].dang) return;
+    traNgay[jid] = { dang: true }; veBo();
+    try {
+      const r = await T.goi(`/api/thay-logo/bo/${jid}/ap`, { method: "POST" });
+      if (!r.ok) {
+        let d = ""; try { d = (await r.json()).detail; } catch (_) { /* thân không phải JSON */ }
+        traNgay[jid] = { loi: typeof d === "string" && d ? d : "Chưa trả được — thử lại sau ít phút." };
+      } else {
+        await window.TL_taiLai();
+        delete traNgay[jid];
+      }
+    } catch (e) { traNgay[jid] = e && e.message === "het_phien" ? {} : { loi: "Không gửi được — kiểm tra mạng rồi thử lại." }; }
+    veBo();
   }
 
   function veBo() {

@@ -54,11 +54,12 @@ THONG_DIEP_THIEU_QUYEN = "Tài khoản máy thiếu quyền Content manager trê
 
 
 class LoiAp(Exception):
-    """Từ chối ở tầng DB — mang mã HTTP cho route."""
+    """Từ chối ở tầng DB — mang mã HTTP cho route. `tam=True`: trạng thái TỰ HẾT (bộ đang khoá, hàng của lượt khác/hoàn tác đang dở
+    trên cùng bản) — người gọi tự động (tự trả về bộ) thử lại sau, không coi là lỗi cố định. Phân loại bằng cờ, không so chữ."""
 
-    def __init__(self, ma: int, thong_diep: str):
+    def __init__(self, ma: int, thong_diep: str, tam: bool = False):
         super().__init__(thong_diep)
-        self.ma = ma
+        self.ma, self.tam = ma, tam
 
 
 def dang_bat() -> bool:
@@ -183,7 +184,7 @@ def _lay_khoa(conn, folders: set[str], job_id: int) -> None:
     for f in sorted(folders):
         r = conn.execute("SELECT job_id FROM tl_ap_bo_khoa WHERE folder_id=?", (f,)).fetchone()
         if r is not None:
-            raise LoiAp(409, "Bộ này đang có một lượt áp/hoàn tác khác chạy — đợi xong rồi thử lại.")
+            raise LoiAp(409, "Bộ này đang có một lượt áp/hoàn tác khác chạy — đợi xong rồi thử lại.", tam=True)
     now = time.time()
     conn.executemany("INSERT INTO tl_ap_bo_khoa (folder_id, job_id, luc) VALUES (?,?,?)", [(f, job_id, now) for f in sorted(folders)])
 
@@ -198,7 +199,7 @@ def dat_lich_ap(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], di
     try:
         kq = phan_loai(conn, job_id, email, chu_cua)
         if kq["hoan_tac_do"]:
-            raise LoiAp(409, "Hoàn tác của bộ này đang dở — bấm Hoàn tác để chạy tiếp.")
+            raise LoiAp(409, "Hoàn tác của bộ này đang dở — bấm Hoàn tác để chạy tiếp.", tam=True)
         if kq["da_ap"]:  # bộ đã có video áp xong (chưa hoàn tác): KHÔNG áp video MỚI; hàng đang dở ("tiep") và hàng dùng lại được
             # ("dung_lai": lùi xong sau lỗi / bị loại / đã hoàn tác — G ở bộ, chưa có M) vẫn chạy, kẻo video lỗi tạm phải chờ hoàn tác cả bộ
             for v, _, cach in kq["lam"]:
@@ -210,7 +211,7 @@ def dat_lich_ap(conn, job_id: int, email: str, chu_cua: Callable[[list[str]], di
                 raise LoiAp(409, LY_DO_DA_AP)
             khac = next((b["ly_do"] for b in kq["bo_qua"] if b["ly_do"].startswith(LY_DO_DO_LUOT_KHAC)), None)
             if khac:
-                raise LoiAp(409, f"Video {khac}.")
+                raise LoiAp(409, f"Video {khac}.", tam=True)
             if kq["sai_chu"]:
                 raise LoiAp(403, "Chỉ áp được video của chính bạn.")
             raise LoiAp(409, "Không có video Đạt nào để áp.")

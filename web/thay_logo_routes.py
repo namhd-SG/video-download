@@ -362,7 +362,9 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             # Tự trả về bộ (P4): lượt đủ điều kiện ⇒ giờ máy sẽ trả (`tu_ap_luc`, epoch); số video đã trả vào bộ (`da_tra_bo`).
             tu_ap, da_tra = {}, {}
             if ap_vao_bo.dang_bat():
-                tu_ap = {j: moc + tu_ap_vao_bo.CHO_GIAY for j, (_, moc) in tu_ap_vao_bo.moc_cac_luot(conn).items()}
+                # Chỉ hẹn giờ với CHÍNH chủ lượt (admin xem lượt người khác: máy sẽ không áp thay, không hứa, không có nút).
+                tu_ap = {j: moc + tu_ap_vao_bo.CHO_GIAY for j, (chu, moc) in tu_ap_vao_bo.moc_cac_luot(conn, ids_trang).items()
+                         if chu == email}
                 for j, n in conn.execute(f"SELECT job_id, count(*) FROM tl_ap_bo WHERE chieu='ap' AND buoc='xong' AND job_id IN "
                                          f"({','.join('?' * len(ids_trang))}) GROUP BY job_id", ids_trang):
                     da_tra[j] = n
@@ -706,6 +708,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             kq = ap_vao_bo.dat_lich_ap(conn, job_id, email, _chu_cua)
+            tu_ap_vao_bo.danh_dau(conn, job_id, "ap_tay")  # người dùng đã áp tay ⇒ máy không bao giờ tự áp lượt này nữa
         except ap_vao_bo.LoiAp as e:
             raise HTTPException(e.ma, str(e)) from None
         finally:
@@ -721,6 +724,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         conn = _mo()
         try:
             kq = ap_vao_bo.dat_lich_hoan_tac(conn, job_id, email)
+            tu_ap_vao_bo.danh_dau(conn, job_id, "hoan_tac")  # Hoàn tác phải có hiệu lực: máy không tự áp lại lượt này
         except ap_vao_bo.LoiAp as e:
             raise HTTPException(e.ma, str(e)) from None
         finally:
