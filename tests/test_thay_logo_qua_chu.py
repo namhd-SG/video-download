@@ -29,7 +29,8 @@ def test_phu_de_ngan_giua_hai_khung_che_duoc_che_qua_chu_dung_cho_logo():
     che = [k for k in PHU_DE if k not in box]
     assert che and all(k in by and by[k].get("qua_chu") and by[k].get("de_chu") for k in che)
     assert all(tam_lech(by[k], clip.hop_that[k]) <= 12 for k in che)
-    assert not any(by.get(k, {}).get("qua_chu") for k in PHU_DE if k in box)  # khung box mồi ±1 không bị dời
+    tai_box = [k for k in PHU_DE if k in box]
+    assert tai_box and all(k in by and by[k]["plate_pad"] == cong.PAD_CHAT for k in tai_box)  # khung box mồi ±1 gỡ tại chỗ, tấm nền hẹp
     assert v.dem_chan["qua_chu"]["noi"] >= len(che)
 
 
@@ -66,16 +67,51 @@ def test_logo_nhay_cho_thi_khong_lap_gi():
     assert not any(e.get("qua_chu") for e in track)
 
 
-def test_khung_box_moi_bo_qua_de_go_chan_le_go_tai_cho():
-    """Đoạn chặn k10–13 (nội suy được), box mồi ở k12 ⇒ k11–13 không bị dời ⇒ go_chan_le gỡ tại vị trí vết dò (Test 03_40 k294–296: mốc
-    user k295 lộ khi chúng bị giữ chặn)."""
+def test_khung_box_moi_trung_vet_go_tai_cho_tam_nen_hep():
+    """Đoạn chặn k10–13, box mồi ở k12, vết dò ở k11–13 trùng box ⇒ gỡ TẠI CHỖ (không dời, tấm nền hẹp như khung che qua chữ): không
+    nháy giữa vùng đã che (go_chan_le không gỡ được khi bị giữ chặn / kiểm hình bác / đoạn box > 3 khung), không phình tấm nền."""
+    clip = tao_clip(n=30)
+    track = _track(clip, set(range(10, 14)), state=CHAN_HINH, co_vi_tri=True)
+    qua_chu.lap_qua_chu(clip.nguon, track, clip.box_moi(khung=(12,)))
+    assert all(track[k].get("qua_chu") == "noi" and track[k]["plate_pad"] == cong.PAD_CHAT for k in range(10, 14))
+    assert all(tam_lech(track[k], clip.hop_that[k]) == 0 for k in (11, 12, 13))
+    assert all(track[k]["state"] == "detected" for k in (11, 12, 13))  # có điểm vết dò ⇒ detected
+
+
+def test_khung_box_moi_khong_trung_vet_de_nguyen():
+    """Vết dò ở k11–13 lệch xa box mồi k12 ⇒ không gỡ, không dời (dời làm box mồi "không được phủ" ⇒ cả video chờ người — 03_38)."""
     clip = tao_clip(n=30)
     track = _track(clip, set(range(10, 14)), state=cong.CHAN_NET, co_vi_tri=True)
+    for k in (11, 12, 13):
+        track[k]["x"] += 80
     qua_chu.lap_qua_chu(clip.nguon, track, clip.box_moi(khung=(12,)))
-    assert track[10].get("qua_chu") == "noi" and not any(track[k].get("qua_chu") for k in (11, 12, 13))
-    assert not any(track[k].get("giu_chan") for k in (11, 12, 13))
-    cong.go_chan_le(track)
-    assert all(track[k]["state"] in cong.DA_CHAC and tam_lech(track[k], clip.hop_that[k]) == 0 for k in (11, 12, 13))
+    assert not any(track[k].get("qua_chu") for k in (11, 12, 13))
+    assert all(track[k]["state"] == cong.CHAN_NET for k in (11, 12, 13))
+
+
+def test_box_moi_cum_khac_cung_duoc_go_tai_cho():
+    """Box mồi thuộc cụm KHÁC (agy tách một logo thành hai cụm) mà vết trùng ⇒ cũng gỡ tại chỗ, không dời — để vết vẫn phủ box đó và
+    cụm kia được gộp (`_vet_da_giai_thich`)."""
+    clip = tao_clip(n=30)
+    track = _track(clip, set(range(10, 14)), state=cong.CHAN_NET, co_vi_tri=True)
+    for k in (11, 12, 13):
+        track[k]["y"] += 15  # vết lệch đường nối > GAN_DET nhưng vẫn trùng box ⇒ chỉ gỡ tại chỗ mới giữ vị trí này
+    khac = [dataclasses.replace(b, cum=7) for b in clip.box_moi(khung=(12,))]
+    qua_chu.lap_qua_chu(clip.nguon, track, [], moi_box=khac)
+    assert all(track[k].get("qua_chu") == "noi" and track[k]["y"] == clip.hop_that[k][1] + 15 for k in (11, 12, 13))
+
+
+def test_box_moi_sai_khung_bi_kiem_hinh_bac_lech_duong_thi_de_nguyen():
+    """Kiểu Test 03_5 k895–897: box mồi nằm cao hơn logo thật, vết lõi kẻ trùng box nhưng kiểm hình đã bác (`hidden_hinh`) và lệch đường
+    nối hai đầu > GAN_DET ⇒ KHÔNG gỡ tại chỗ (box mồi có thể sai), không dời."""
+    clip = tao_clip(n=30)
+    track = _track(clip, set(range(10, 14)), state=CHAN_HINH, co_vi_tri=True)
+    for k in (11, 12, 13):
+        track[k]["y"] -= 30
+    sai = [dataclasses.replace(b, y=b.y - 30) for b in clip.box_moi(khung=(12,))]
+    qua_chu.lap_qua_chu(clip.nguon, track, sai)
+    assert not any(track[k].get("qua_chu") for k in (11, 12, 13))
+    assert all(track[k]["state"] == CHAN_HINH for k in (11, 12, 13))
 
 
 def test_box_moi_lech_duong_noi_van_lap_cac_khung_con_lai():

@@ -315,7 +315,7 @@ def test_vet_vong_hai_tu_box_sot_khong_tu_render_va_khong_box_nao_roi_mat(monkey
     def gom_gia(boxes, nguon):
         return [list(boxes)]
 
-    def vet_gia(nguon, cl):
+    def vet_gia(nguon, cl, moi_box=None):
         goi.append(list(cl))
         dau = cl[0]
         return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(20)],
@@ -336,7 +336,7 @@ def test_cum_hat_giong_duoi_cum_lon_o_vong_mot_duoc_do_nhung_khong_tu_render(mon
     lon = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 5, 10)]
     nho = [BoxMoi(32, 300, 200, 40, 20, cum=1)]
 
-    def vet_gia(nguon, cl):
+    def vet_gia(nguon, cl, moi_box=None):
         dau = cl[0]
         return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(40)],
                                    khung_render=[{"frame": f} for f in range(40)])
