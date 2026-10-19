@@ -43,3 +43,6 @@ tiktok-cookies*.json
 # Dữ liệu chạy của lớp web — DB job, cookie người dùng, file tạm.
 # Cookie là secret; jobs.db chứa url + tên người tạo.
 web/data/
+
+# Danh sách người nhận thiệp 20/10 — dữ liệu cá nhân, đặt lúc deploy, không commit
+web/static/women-day-greetings.js

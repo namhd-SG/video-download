@@ -321,7 +321,10 @@ REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
                               "/settings.html", "/settings.js",
                               # Popup giải captcha nói giao thức với máy chủ (`ky`): bản JS cũ đứng
                               # cạnh máy chủ mới ⇒ mọi lô 400 tới khi tải lại trang. Phải tái kiểm.
-                              "/giai-captcha-popup.js"})
+                              "/giai-captcha-popup.js",
+                              # Danh sách người nhận thiệp 20/10 đặt/sửa ngay trước ngày: bản cache
+                              # 2 giờ ở edge sẽ chào nhầm hoặc bỏ sót người. Phải tái kiểm.
+                              "/women-day-greeting.js", "/women-day-greetings.js"})
 
 
 # Nén phản hồi khi trình duyệt xin (`Accept-Encoding: gzip`). `/videos` của một thư viện
