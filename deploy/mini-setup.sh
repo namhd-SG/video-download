@@ -28,8 +28,9 @@ truoc=$(launchctl list | grep -c astronex || true)
 say "label astronex trước khi chạy: $truoc"
 
 # --- 1. Python -------------------------------------------------------------
-# Bản hệ thống là 3.9.6, tool cần >= 3.10. Homebrew có 3.14.
-PY=/opt/homebrew/bin/python3
+# Bản hệ thống là 3.9.6, tool cần >= 3.10. Homebrew có 3.14 (mini). Máy không có Homebrew Python của mình
+# (ca-n: /opt/homebrew thuộc user khác) ⇒ đặt VIDEODL_PY, vd ~/micromamba/envs/work/bin/python (3.12).
+PY="${VIDEODL_PY:-/opt/homebrew/bin/python3}"
 [ -x "$PY" ] || { echo "THIẾU $PY — cài python qua homebrew trước"; exit 1; }
 say "python: $($PY -V)"
 
@@ -53,7 +54,7 @@ say "python: $($PY -V)"
 FF="$REPO/assets/ffmpeg-static/ffmpeg"
 [ -x "$FF" ] && "$FF" -version >/dev/null 2>&1 || {
   echo "ffmpeg không chạy được: $FF"
-  echo "Từ máy dev: scp assets/ffmpeg-static/ffmpeg nobi_auto@<mini>:$FF"
+  echo "Từ máy dev: scp assets/ffmpeg-static/ffmpeg <user>@<máy đích>:$FF   (bảng: deploy/may-dich.sh)"
   echo "Rồi đối chiếu sha256 với: git lfs ls-files -l"
   exit 1
 }
