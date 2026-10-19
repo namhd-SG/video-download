@@ -46,3 +46,4 @@ web/data/
 
 # Danh sách người nhận thiệp 20/10 — dữ liệu cá nhân, đặt lúc deploy, không commit
 web/static/women-day-greetings.js
+web/static/women-day-qr.png

@@ -11,7 +11,8 @@
  *   - dataUrl:  đường dẫn file dữ liệu
  *   - fallback: { name, message } dùng khi không tra được người (bỏ trống = không hiện)
  * Chỉ hiện trong ngày 20/10/2026 giờ Việt Nam, mỗi trình duyệt/người một lần.
- *   window.WOMEN_DAY_GREETINGS cũng có thể mang `button` (chữ trên nút đóng).
+ *   window.WOMEN_DAY_GREETINGS cũng có thể mang `button` (chữ trên nút) và `qr_file`
+ *   (ảnh QR đặt cạnh file dữ liệu — bấm nút sẽ hiện màn trêu "xin 50k").
  * `?wd-preview=1` trên URL bỏ qua cổng ngày và cổng "đã xem" để nghiệm thu trước.
  */
 (function () {
@@ -65,7 +66,7 @@
   // (hoặc theme gõ sai) dùng "mac-dinh".
   var THEMES = {
     "mac-dinh":    { bg: "#fff7f9,#ffe3ec 55%,#ffd0de", ink: "#6a0f37", accent: "#c2185b", btn: "#e91e63,#ff5c8a", icon: "💐", petals: ["🌸", "🌷", "💗", "🌹", "✨"] },
-    "media-buyer": { bg: "#fff8f1,#ffe6d1 55%,#ffd2b3", ink: "#7a2e05", accent: "#e8590c", btn: "#f76707,#ff922b", icon: "🚀", petals: ["🌼", "🧡", "📈", "✨", "🌸"] },
+    "media-buyer": { bg: "#fff8f1,#ffe6d1 55%,#ffd2b3", ink: "#7a2e05", accent: "#e8590c", btn: "#f76707,#ff922b", icon: "🌷", petals: ["🌼", "🧡", "🌸", "✨", "🌷"] },
     "creative":    { bg: "#fbf6ff,#f0e1ff 55%,#e3ccff", ink: "#4b1a7a", accent: "#8e44d6", btn: "#9c36b5,#cc5de8", icon: "🎨", petals: ["🌸", "💜", "🖌️", "✨", "🌷"] },
     "data":        { bg: "#f2fbfa,#d8f3ef 55%,#bfe9e2", ink: "#0b4f4a", accent: "#0f8f83", btn: "#0ca678,#20c997", icon: "📊", petals: ["🌿", "💚", "✨", "🌸", "🔢"] },
     "editor":      { bg: "#fff5f5,#ffe0e0 55%,#ffc9c9", ink: "#7a1020", accent: "#e03131", btn: "#e03131,#ff6b6b", icon: "🎬", petals: ["🌹", "🎞️", "❤️", "✨", "🌸"] },
@@ -101,6 +102,11 @@
     "background:rgba(255,255,255,.7);color:var(--wd-ink);font-size:20px;line-height:34px;padding:0}" +
     ".wd-petals{position:absolute;inset:0;z-index:0;pointer-events:none}" +
     ".wd-petal{position:absolute;top:-40px;animation:wd-fall linear forwards;opacity:.9}" +
+    ".wd-qr-body{padding:4px 26px 0}.wd-qr-body p{margin:10px 0 0;font-size:15px;line-height:1.55;color:var(--wd-ink)}" +
+    ".wd-qr-img{display:block;margin:14px auto 0;width:min(220px,70vw);height:auto;border-radius:12px;background:#fff;padding:8px;box-shadow:0 6px 16px rgba(40,20,40,.18)}" +
+    ".wd-qr-note{font-size:12.5px!important;opacity:.75}" +
+    ".wd-qr-act{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}" +
+    ".wd-btn.wd-ghost{background:#fff;color:var(--wd-ink);box-shadow:none;border:2px solid var(--wd-accent);padding:10px 22px}" +
     "@keyframes wd-fade{from{opacity:0}}" +
     "@keyframes wd-pop{from{transform:scale(.85);opacity:0}}" +
     "@keyframes wd-fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}" +
@@ -113,7 +119,7 @@
     return n;
   }
 
-  function render(person, sign, button) {
+  function render(person, sign, button, qrUrl) {
     if (!document.getElementById(STYLE_ID)) {
       var st = el("style");
       st.id = STYLE_ID;
@@ -145,7 +151,8 @@
     x.type = "button";
     x.setAttribute("aria-label", "Đóng");
     var top = el("div", "wd-top");
-    top.appendChild(el("div", "wd-flower", theme.icon));
+    // Mỗi người có thể có biểu tượng riêng (person.icon), không thì theo theme
+    top.appendChild(el("div", "wd-flower", person.icon || theme.icon));
     top.appendChild(el("div", "wd-date", "20 · 10 · Ngày Phụ nữ Việt Nam"));
     var hello = el("h2", "wd-hello", person.name ? "Chúc mừng " + person.name + "!" : "Chúc mừng 20/10!");
     hello.id = "wd-hello";
@@ -167,7 +174,35 @@
     }
     function onKey(e) { if (e.key === "Escape") close(); }
     x.onclick = close;
-    ok.onclick = close;
+    // Nút "Cảm ơn" có màn trêu: hiện mã QR "xin 50k". Ảnh nạp trước; nạp hỏng
+    // (chưa đặt file) thì nút chỉ đóng thiệp như bình thường.
+    var qrImg = null;
+    if (qrUrl) {
+      qrImg = el("img", "wd-qr-img");
+      qrImg.alt = "Mã QR chuyển khoản";
+      qrImg.onerror = function () { qrImg = null; };
+      qrImg.src = qrUrl;
+    }
+    function showQr() {
+      while (card.lastChild !== top) card.removeChild(card.lastChild);
+      top.querySelector(".wd-flower").textContent = "🧋";
+      hello.textContent = "Khoan đã… 🤭";
+      var body = el("div", "wd-qr-body");
+      body.appendChild(el("p", null, "Cảm ơn bằng lời thì Nobi nhận rồi nha 😌 Còn cảm ơn bằng hành động thì… quét giúp Nobi 50k mua ly trà sữa nhé!"));
+      body.appendChild(qrImg);
+      body.appendChild(el("p", "wd-qr-note", "Đùa đó 😆 Chúc 20/10 thật vui, thật nhiều quà!"));
+      card.appendChild(body);
+      var act = el("div", "wd-actions wd-qr-act");
+      var paid = el("button", "wd-btn", "Chuyển rồi nè 💸");
+      var nope = el("button", "wd-btn wd-ghost", "Hông chuyển đâu 😝");
+      paid.type = nope.type = "button";
+      paid.onclick = nope.onclick = close;
+      act.appendChild(paid);
+      act.appendChild(nope);
+      card.appendChild(act);
+      paid.focus();
+    }
+    ok.onclick = function () { if (qrImg) showQr(); else close(); };
     overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
     document.addEventListener("keydown", onKey);
     document.body.appendChild(overlay);
@@ -192,7 +227,9 @@
       if (!person) return;
       if (!preview && readSeen(seenKey)) return;
       markSeen(seenKey);
-      render(person, data.sign || opts.sign || "", data.button || opts.button);
+      // Ảnh QR nằm cạnh file dữ liệu: tính đường dẫn theo dataUrl để chạy đúng ở cả 3 tool
+      var qrUrl = data.qr_file ? new URL(data.qr_file, new URL(opts.dataUrl, location.href)).href : null;
+      render(person, data.sign || opts.sign || "", data.button || opts.button, qrUrl);
     }).catch(function () { /* thiệp là phần phụ: lỗi gì cũng không được làm hỏng trang */ });
   }
 
