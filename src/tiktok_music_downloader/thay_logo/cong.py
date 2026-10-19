@@ -238,7 +238,8 @@ def chuan_pad_vet(track: list[dict]) -> None:
     """Pad tấm nền CỐ ĐỊNH theo vết: ≥20% khung phủ cần pad hẹp (phụ đề sát) ⇒ cả vết dùng pad hẹp; ít hơn ⇒ pad rộng, chỉ các khung
     thật sự bị phụ đề sát mới hẹp (nội dung được bảo vệ trước, cố định pad sau)."""
     phu = [e for e in track if e.get("state") in DA_CHAC]
-    hep = [e for e in phu if e.get("plate_pad") == PAD_CHAT]
-    if phu and len(hep) >= 0.2 * len(phu):
+    xet = [e for e in phu if not e.get("qua_chu")]  # khung che qua chữ luôn pad hẹp: không được kéo cả vết sang pad hẹp
+    hep = [e for e in xet if e.get("plate_pad") == PAD_CHAT]
+    if xet and len(hep) >= 0.2 * len(xet):
         for e in phu:
             e["plate_pad"] = PAD_CHAT

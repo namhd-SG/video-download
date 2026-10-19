@@ -10,6 +10,7 @@ pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless (
 import cv2  # noqa: E402
 from thay_logo_tong_hop import tam_lech, tao_clip  # noqa: E402
 
+from tiktok_music_downloader.thay_logo import qua_chu as qua_chu_mod  # noqa: E402
 from tiktok_music_downloader.thay_logo import cong, dinh_vi as dinh_vi_mod, duong_ong, mau as mau_mod  # noqa: E402
 from tiktok_music_downloader.thay_logo.box_moi import BoxMoi  # noqa: E402
 
@@ -117,7 +118,8 @@ def test_cong_khop_mot_box_mo_sai_khong_giet_vet_dung():
 
 # --- Lớp: bộ lọc ứng viên phụ đề trong C (chữ trắng viền đen) ---
 
-def test_phu_de_vien_den_khong_bao_gio_duoc_render():
+def test_phu_de_vien_den_khong_bao_gio_duoc_render(monkeypatch):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     v = _vet(clip)
     assert v.trang_thai == "render"
@@ -138,6 +140,7 @@ def test_dot_bien_bo_ca_ba_lop_phu_de_thi_phu_de_vien_den_lot(monkeypatch):
 
 @pytest.mark.parametrize("go_lop", ["loc_ung_vien", "cong_cu", "vanh", "net_la"])
 def test_dot_bien_bo_mot_lop_phu_de_vien_den_van_bi_chan(monkeypatch, go_lop):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     if go_lop == "loc_ung_vien":
         monkeypatch.setattr(dinh_vi_mod, "NGUONG_PHU_DE_UNG_VIEN", 2.0)
@@ -153,7 +156,8 @@ def test_dot_bien_bo_mot_lop_phu_de_vien_den_van_bi_chan(monkeypatch, go_lop):
 
 # --- Lớp: cổng vành ngang (phụ đề trắng BÓNG MỜ, không viền đen — lỗ Test 02 _3) ---
 
-def test_phu_de_bong_mo_bi_cong_vanh_ngang_chan():
+def test_phu_de_bong_mo_bi_cong_vanh_ngang_chan(monkeypatch):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     clip = tao_clip(phu_de_bong_mo=range(20, 30))
     v = _vet(clip)
     assert v.dem_chan[cong.CHAN_VANH] > 0
@@ -203,6 +207,7 @@ def test_dot_bien_khong_tat_loc_phu_de_cho_mau_giong_phu_de_thi_icon_trang_den_m
 # --- Lớp: cổng tương phản chặn nội dung tương phản cao nằm trong box ---
 
 def test_cong_tuong_phan_chan_noi_dung_dam_trong_box(monkeypatch):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     clip = tao_clip()
     mau = mau_mod.dung_mau_sach(clip.nguon, clip.box_moi()[0], clip.box_moi())
     mask, _ = mau_mod.mat_na_va_tuong_phan(mau)
@@ -267,7 +272,8 @@ def test_tu_hoc_tu_choi_mau_moi_lech_mau_cu(monkeypatch):
 
 # --- Lớp: cổng NÉT LẠ (§5c.2) — khối chữ nằm GỌN trong box mà C vẫn "chắc" ---
 
-def test_khoi_chu_trong_box_bi_cong_net_la_chan():
+def test_khoi_chu_trong_box_bi_cong_net_la_chan(monkeypatch):
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
     from thay_logo_tong_hop import dan_khoi_trong_box
     clip = tao_clip()
     dan_khoi_trong_box(clip, range(30, 37))
@@ -309,7 +315,7 @@ def test_vet_vong_hai_tu_box_sot_khong_tu_render_va_khong_box_nao_roi_mat(monkey
     def gom_gia(boxes, nguon):
         return [list(boxes)]
 
-    def vet_gia(nguon, cl):
+    def vet_gia(nguon, cl, moi_box=None):
         goi.append(list(cl))
         dau = cl[0]
         return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(20)],
@@ -330,7 +336,7 @@ def test_cum_hat_giong_duoi_cum_lon_o_vong_mot_duoc_do_nhung_khong_tu_render(mon
     lon = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 5, 10)]
     nho = [BoxMoi(32, 300, 200, 40, 20, cum=1)]
 
-    def vet_gia(nguon, cl):
+    def vet_gia(nguon, cl, moi_box=None):
         dau = cl[0]
         return duong_ong.KetQuaVet("render", len(cl), track=[{"frame": f, "x": dau.x, "y": dau.y, "w": dau.w, "h": dau.h} for f in range(40)],
                                    khung_render=[{"frame": f} for f in range(40)])

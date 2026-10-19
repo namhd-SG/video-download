@@ -26,6 +26,7 @@ from .lo_trinh import theo_lo_trinh
 from .mau import dung_mau_sach, mat_na_va_tuong_phan, tu_hoc_mau
 from .nguon_khung import NguonKhung
 from .nhay import do_nhay
+from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
 
 SO_VONG_TU_HOC = 1
@@ -199,7 +200,7 @@ def _bang_chung(det: dict[int, dict], khung_moi: set[int], so_box: int, tt: dict
     return ""
 
 
-def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = ()) -> KetQuaVet:
+def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = (), moi_box: list[BoxMoi] | None = None) -> KetQuaVet:
     nhan = _ten_cum(cum)
     moi, ncc = chon_moi_dong_thuan(nguon, cum)
     mau = dung_mau_sach(nguon, moi, cum)
@@ -232,7 +233,7 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = ()) -
     che = _kep_vao_khung(che, nguon.rong, nguon.cao)
     track = _track_day_du(n, che, uv)
     hinh = kiem_hinh_truoc_dan(nguon, track, mau)
-    kq = ap_moi_cong(nguon, track, mau, cum)
+    kq = ap_moi_cong(nguon, track, mau, cum, moi_box)
     kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh, bam_hai_chieu=bam, ai_vong_hai=ai)
     ly_do = _bang_chung(det, khung_moi, len(cum), tt)
     if ly_do:
@@ -247,19 +248,21 @@ def mau_giong_phu_de(mau: np.ndarray) -> bool:
     return ti_le_phu_de(m, 0, 0, m.shape[1], m.shape[0], 0) > cong.PHU_DE_TI_LE
 
 
-def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi]) -> KetQuaVet:
+def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list[BoxMoi], moi_box: list[BoxMoi] | None = None) -> KetQuaVet:
     """Mọi cổng trên track cuối của một vết, theo đúng thứ tự; trả kết quả vết (sửa `track` tại chỗ)."""
     _, tcon = mat_na_va_tuong_phan(mau)
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
+    qua_chu = lap_qua_chu(nguon, track, cum, moi_box)
     cong.go_chan_le(track)
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh"))
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh") and not e.get("qua_chu"))
     dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
-    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC)
+    dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC and not e.get("qua_chu"))
+    dem["qua_chu"] = qua_chu
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]
@@ -296,7 +299,7 @@ LY_DO_VONG_HAI = ("box agy không được vết nào phủ; vết dò lại t�
 
 
 def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaVet], tu_render: bool = True,
-                   neo_ai: list[BoxMoi] = ()) -> list[BoxMoi]:
+                   neo_ai: list[BoxMoi] = (), moi_box: list[BoxMoi] | None = None) -> list[BoxMoi]:
     """Xử lý từng cụm, thêm vào `vet`. Trả các box của cụm render mà vết KHÔNG phủ (số cụm agy gán nhầm, hoặc box giả lẫn vào).
 
     `tu_render=False` (vòng hai): vết MỚI dò từ box sót không được tự render. Mẫu học từ 1–2 box mà phần lớn crop là nền thì vết bám
@@ -315,7 +318,7 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
             continue
         so_cum = {b.cum for b in cl}
         ai = [b for b in neo_ai if b.cum in so_cum]
-        v = xu_ly_vet(nguon, cl, ai) if ai else xu_ly_vet(nguon, cl)
+        v = xu_ly_vet(nguon, cl, ai, moi_box) if ai else xu_ly_vet(nguon, cl, moi_box=moi_box)
         if v.trang_thai == "render" and not tu_render:
             v.trang_thai, v.khung_render, v.ly_do = "cho_nguoi", [], LY_DO_VONG_HAI
         elif v.trang_thai == "render" and len(cl) < CUM_LON:
@@ -337,7 +340,7 @@ def xu_ly_video(nguon: NguonKhung, boxes: list[BoxMoi], vet_cu: list[KetQuaVet] 
     cum = gom_vet(boxes, nguon)
     vet = list(vet_cu or [])
     box_cu = sum(v.box_cum for v in vet)
-    chua = _xu_ly_cac_cum(nguon, cum, vet, neo_ai=neo_ai)  # neo_ai: box AI vòng hai — CHỈ làm mốc dò cục bộ, không vào mẫu/khớp mồi
+    chua = _xu_ly_cac_cum(nguon, cum, vet, neo_ai=neo_ai, moi_box=boxes)  # neo_ai: box AI vòng hai — CHỈ làm mốc dò cục bộ, không vào mẫu/khớp mồi
     if chua:
-        _xu_ly_cac_cum(nguon, gom_vet([replace(b, cum=None) for b in chua], nguon), vet, tu_render=False)
+        _xu_ly_cac_cum(nguon, gom_vet([replace(b, cum=None) for b in chua], nguon), vet, tu_render=False, moi_box=boxes)
     return KetQuaVideo(vet, len(boxes) + box_cu, len(cum) + len(vet_cu or []))
