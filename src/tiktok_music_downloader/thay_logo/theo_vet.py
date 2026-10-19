@@ -104,11 +104,17 @@ def bo_doan_ngan(det: dict[int, dict], khung_moi: set[int]) -> dict[int, dict]:
     return giu
 
 
-def theo_vet(uv: list[list[tuple]], kich: tuple[int, int], khung_moi: set[int]) -> tuple[dict[int, dict], dict]:
-    """Ứng viên (đã cache) ⇒ {khung: entry detected} + thông tin ngưỡng. `kich` = (w, h) mẫu, dùng làm cỡ ban đầu."""
+def theo_vet(uv: list[list[tuple]], kich: tuple[int, int], khung_moi: set[int],
+             hop_moi: dict[int, list[tuple]] | None = None) -> tuple[dict[int, dict], dict]:
+    """Ứng viên (đã cache) ⇒ {khung: entry detected} + thông tin ngưỡng. `kich` = (w, h) mẫu, dùng làm cỡ ban đầu.
+    `hop_moi` ({khung: [(x, y, w, h)]} của box mồi) bật khoá có danh tính vết (khoa_danh_tinh); None = chỉ mã cũ (lượt tự học)."""
     n = len(uv)
     hi, lo, nen95 = nguong_tuong_doi(uv)
     xuoi = _mot_luot(uv, range(n), hi, lo, kich)
     nguoc = _mot_luot(uv, range(n - 1, -1, -1), hi, lo, kich)
     det = bo_doan_ngan(hop_hai_luot(xuoi, nguoc), khung_moi)
-    return det, {"hi": round(hi, 3), "lo": round(lo, 3), "nen95": round(nen95, 3), "xuoi": len(xuoi), "nguoc": len(nguoc), "hop": len(det)}
+    tt = {"hi": round(hi, 3), "lo": round(lo, 3), "nen95": round(nen95, 3), "xuoi": len(xuoi), "nguoc": len(nguoc), "hop": len(det)}
+    if hop_moi is None:
+        return det, tt
+    from .khoa_danh_tinh import theo_vet_danh_tinh  # nhập muộn: module đó dùng hằng của module này
+    return theo_vet_danh_tinh(uv, kich, khung_moi, hop_moi, det, hi, lo, tt)
