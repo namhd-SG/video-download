@@ -221,7 +221,10 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = (), m
     uv = dinh_vi(nguon, mau, neo, 1, not mau_giong_phu_de(mau),
                  [(b.x, b.y, b.w, b.h, b.khung - NEO_KHUNG, b.khung + NEO_KHUNG) for b in neo_ai])
     n = len(uv)
-    det, tt = theo_vet([u for u, _ in uv], mau.shape[::-1], khung_moi)
+    hop_moi: dict[int, list[tuple]] = {}
+    for b in cum:
+        hop_moi.setdefault(b.khung, []).append((b.x, b.y, b.w, b.h))
+    det, tt = theo_vet([u for u, _ in uv], mau.shape[::-1], khung_moi, hop_moi)  # chỉ lần cuối có cổng danh tính
     det_sach, moi_chu = (det, 0) if mau_giong_phu_de(mau) else bo_moi_chu(nguon, det, mau)  # vết khoá nhầm chữ phụ đề ⇒ thành lỗ
     ai = {}
     if neo_ai:  # lộ trình chỉ chạy ở lượt có AI: không mốc AI thì mồi đứng yên dày đặc (test_2 k371–k403) chiếm đa số cửa sổ khớp
