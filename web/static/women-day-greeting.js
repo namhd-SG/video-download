@@ -11,6 +11,7 @@
  *   - dataUrl:  đường dẫn file dữ liệu
  *   - fallback: { name, message } dùng khi không tra được người (bỏ trống = không hiện)
  * Chỉ hiện trong ngày 20/10/2026 giờ Việt Nam, mỗi trình duyệt/người một lần.
+ *   window.WOMEN_DAY_GREETINGS cũng có thể mang `button` (chữ trên nút đóng).
  * `?wd-preview=1` trên URL bỏ qua cổng ngày và cổng "đã xem" để nghiệm thu trước.
  */
 (function () {
@@ -112,7 +113,7 @@
     return n;
   }
 
-  function render(person, sign) {
+  function render(person, sign, button) {
     if (!document.getElementById(STYLE_ID)) {
       var st = el("style");
       st.id = STYLE_ID;
@@ -150,7 +151,7 @@
     hello.id = "wd-hello";
     top.appendChild(hello);
     var actions = el("div", "wd-actions");
-    var ok = el("button", "wd-btn", "Cảm ơn team 💖");
+    var ok = el("button", "wd-btn", button || "Cảm ơn Nobi 💖");
     ok.type = "button";
     actions.appendChild(ok);
     card.appendChild(x);
@@ -191,7 +192,7 @@
       if (!person) return;
       if (!preview && readSeen(seenKey)) return;
       markSeen(seenKey);
-      render(person, data.sign || opts.sign || "");
+      render(person, data.sign || opts.sign || "", data.button || opts.button);
     }).catch(function () { /* thiệp là phần phụ: lỗi gì cũng không được làm hỏng trang */ });
   }
 
