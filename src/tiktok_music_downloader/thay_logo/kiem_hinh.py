@@ -119,7 +119,8 @@ def kiem_hinh_truoc_dan(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -
     """Sửa `track` tại chỗ (gọi TRƯỚC các cổng nội dung). Trả số đếm cho nhật ký.
     - Đoạn detected dưới sàn, dài > GO_NGAN_TOI_DA VÀ bắt đầu bằng bước nhảy ⇒ `hidden_hinh`.
     - Đoạn lấp có hai đầu lệch > LAP_TINH_PX ⇒ chấm điểm từng khung ở chỗ đang đoán VÀ ở chỗ của khung detected đạt sàn gần nhất
-      trước/sau (lỗ qua bước nhảy: logo hoặc còn ở chỗ cũ, hoặc đã sang chỗ mới); đạt sàn thì dời box về chỗ đạt, không ⇒ `hidden_hinh`."""
+      trước/sau (lỗ qua bước nhảy: logo hoặc còn ở chỗ cũ, hoặc đã sang chỗ mới). Chỗ đang đoán đạt sàn ⇒ giữ; không thì dời box về
+      chỗ kề đạt sàn; không chỗ nào đạt ⇒ `hidden_hinh`."""
     san = san_hinh(track)
     dem = {"san": None if san is None else round(san, 3), "detected_hut": 0, "filled_tinh": 0, "filled_giu": 0, "filled_doi_cho": 0,
            "filled_bo": 0}
@@ -173,7 +174,9 @@ def kiem_hinh_truoc_dan(nguon: NguonKhung, track: list[dict], mau: np.ndarray) -
                     rx = diem_tai(gx, mau_u8, *p)
                     r = rx if la_logo_qua_chu(r[0], rx[0]) and rx[0] > r[0] else r
                 ket.append(r + (p[2], p[3]))
-            tot = max(ket, key=lambda r: r[0])
+            # Khung tự qua sàn ⇒ logo đang trên quỹ đạo nội suy, giữ chỗ: vị trí kề cũ (có thể cách hàng chục khung) chấm lại sau xoá
+            # chữ có thể vọt điểm và cướp chỗ (Test 03_38 k300–302 dời lên ~65 px khỏi icon). Chỉ khung trượt sàn mới xét vị trí kề.
+            tot = ket[0] if ket[0][0] >= san else max(ket, key=lambda r: r[0])
             e["hinh"] = round(tot[0], 3)
             if tot[0] < san:
                 e["state"] = CHAN_HINH

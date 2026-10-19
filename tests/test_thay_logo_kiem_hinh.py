@@ -1,5 +1,6 @@
 """Kiểm hình trước khi dán + gỡ chặn theo hình, trên clip TỔNG HỢP có ground truth. Mỗi tính năng có đột biến chứng minh fixture
 phân định được (tắt tính năng ⇒ lỗi cũ quay lại)."""
+import numpy as np
 import pytest
 
 pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless")
@@ -7,7 +8,8 @@ pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless")
 from thay_logo_tong_hop import tao_clip  # noqa: E402
 
 from tiktok_music_downloader.thay_logo import qua_chu as qua_chu_mod  # noqa: E402
-from tiktok_music_downloader.thay_logo import cong, duong_ong  # noqa: E402
+from tiktok_music_downloader.thay_logo import cong, duong_ong, kiem_hinh  # noqa: E402
+from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungMang  # noqa: E402
 
 A, B = (30, 60), (230, 520)
 VANG = set(range(35, 45))  # logo TẮT 10 khung giữa hai lần hiện ở hai chỗ khác nhau
@@ -115,3 +117,35 @@ def test_go_chan_le_khong_go_doan_ngan_canh_khung_kiem_hinh_bac():
 def test_go_chan_le_van_go_chan_le_kep_giua_hai_khung_che():
     tr = [_e(0, "detected"), _e(1, cong.CHAN_PHU_DE), _e(2, "detected")]
     assert cong.go_chan_le(tr) == 1 and tr[1]["state"] == "detected"
+
+
+TU, KE_TRUOC = (100, 300), (100, 100)  # chỗ đang đoán của khung lấp k3 · chỗ khung detected đạt sàn gần nhất trước nó
+
+
+def _cham_lap(monkeypatch, diem_tu: float) -> dict:
+    """Một khung lấp (k3) giữa hai đầu lệch xa; chấm điểm giả lập bằng bảng: vị trí kề trước có chữ, xoá chữ đẩy điểm lên 0,95 (kiểu
+    Test 03_38 k300: thô 0,14 → 0,44). Trả khung k3 sau `kiem_hinh_truoc_dan` (sàn của vết = 0,75)."""
+    diem = {("tho", TU): diem_tu, ("tho", KE_TRUOC): 0.3, ("xoa", KE_TRUOC): 0.95}
+    monkeypatch.setattr(kiem_hinh, "_hp", lambda g, s: "tho")
+    monkeypatch.setattr(kiem_hinh, "thong_cao_xoa_chu", lambda g: "xoa")
+    monkeypatch.setattr(kiem_hinh, "chu_trong_tam_nen", lambda g, e: (e["x"], e["y"]) == KE_TRUOC)
+    monkeypatch.setattr(kiem_hinh, "la_logo_qua_chu", lambda t, x: True)
+    monkeypatch.setattr(kiem_hinh, "diem_tai", lambda gf, mau, x, y, w, h: (diem.get((gf, (x, y)), 0.1), x, y))
+    track = [{"frame": k, "state": "detected", "score": 0.9, "x": KE_TRUOC[0], "y": KE_TRUOC[1], "w": 40, "h": 20} for k in range(3)]
+    track += [{"frame": 3, "state": "filled", "score": None, "x": TU[0], "y": TU[1], "w": 40, "h": 20},
+              {"frame": 4, "state": "detected", "score": 0.9, "x": 100, "y": 500, "w": 40, "h": 20}]
+    nguon = NguonKhungMang([np.zeros((600, 400), np.uint8)] * 5)
+    assert kiem_hinh.kiem_hinh_truoc_dan(nguon, track, np.zeros((20, 40)))["san"] == 0.75
+    return track[3]
+
+
+def test_khung_lap_tu_qua_san_giu_cho_du_vi_tri_ke_xoa_chu_diem_cao_hon(monkeypatch):
+    """Test 03_38 k300–302: chỗ đang đoán đã đạt sàn mà vị trí kề cũ (cách ~20 khung, trên logo ~65 px) xoá chữ vọt điểm ⇒ vẫn giữ chỗ."""
+    e = _cham_lap(monkeypatch, diem_tu=0.8)
+    assert (e["state"], e["x"], e["y"], e["hinh"]) == ("filled", *TU, 0.8)
+
+
+def test_khung_lap_truot_san_van_doi_sang_vi_tri_ke_dat_san_nho_xoa_chu(monkeypatch):
+    """Test 03_5 k866: chỗ đang đoán trượt sàn, logo mờ thật ở vị trí kề dưới chữ phụ đề (chỉ đạt sàn sau xoá chữ) ⇒ dời sang đó."""
+    e = _cham_lap(monkeypatch, diem_tu=0.5)
+    assert (e["state"], e["x"], e["y"], e["hinh"]) == ("filled", *KE_TRUOC, 0.95)
