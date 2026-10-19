@@ -4,7 +4,8 @@ theo_vet cũ nhận ứng viên bất kỳ ≥ hi ở bất kỳ đâu và khôn
 - Danh tính `dd` = trung vị (w, h, điểm) của vết mã cũ, chỉ lấy khung có cỡ trong ±15% cỡ mẫu (vết bị rác cướp quá nửa không đảo
   được cổng); thiếu khung thì kẹp cỡ về cỡ mẫu. `dd` CỐ ĐỊNH suốt lượt: không trung bình động, không xoá khi mất dấu.
 - Cổng `qua_cong`: từ chối ⟺ ≥ 2 trong 3 tín hiệu — đỉnh 1/đỉnh 2 < A_DINH12 · điểm/dd < B_DIEM · |w/dd − 1| > C_CO.
-  Chỉ xét lúc KHOÁ (đầu vết, sau lỗ, nhảy xa, nhánh gần mà lệch dự đoán > nửa cạnh); tiếp nối sát dự đoán không qua cổng.
+  Chỉ xét lúc KHOÁ (đầu vết, sau lỗ ≥ HO_KHOA_LAI khung kể cả đúng chỗ cũ, nhảy xa, nhánh gần mà lệch dự đoán > nửa cạnh);
+  tiếp nối sát dự đoán ngay sau khung trước không qua cổng.
 - Khoá vào chỗ mới phải đứng TRE_K khung (hở ≤ HO_CHO) mà khung nào cũng qua cổng mới được ghi (hồi tố); vết cũ quay lại sát dự
   đoán và qua cổng ⇒ huỷ. Đang bám mà ứng viên sát dự đoán trượt cổng thì ứng viên xa qua cổng, điểm ≥ max(hi, THOAT_BAY × gần)
   được vào bộ đệm: vết đã dính đồ vật thì nhánh gần luôn có ứng viên nên nhánh xa (logo thật trở lại) không bao giờ được xét.
@@ -28,6 +29,7 @@ LECH_KICH_TOI_DA = 0.15   # khung vết cũ lệch cỡ mẫu quá mức này kh
 NUA_CANH = 0.5            # "chỗ khác" = tâm cách > nửa cạnh dài của danh tính
 TRE_K = tv.DOAN_TOI_THIEU  # số khung chỗ mới phải đứng được trước khi khoá
 HO_CHO = 1                # bộ đệm cho hở tối đa 1 khung liền
+HO_KHOA_LAI = 5           # mất ≥ chừng này khung rồi bắt lại (kể cả đúng chỗ cũ) là KHOÁ LẠI, không phải tiếp nối: phải qua cổng
 THOAT_BAY = 1.3
 
 
@@ -139,7 +141,8 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
             r = min(2.0 * mw, tv.BAN_KINH_CO * mw + 8 + 5 * s["mat"])
             ung = [(c[2] - tv.PHAT_KHOANG_CACH * math.hypot(c[0] - px, c[1] - py) / r, c) for c in cs
                    if c[2] >= lo_t and math.hypot(c[0] - px, c[1] - py) <= r]
-            gan = [(c, math.hypot(c[0] - px, c[1] - py) <= NUA_CANH * cd) for _, c in sorted(ung, key=lambda z: -z[0])]
+            moi_mat = s["mat"] < HO_KHOA_LAI
+            gan = [(c, moi_mat and math.hypot(c[0] - px, c[1] - py) <= NUA_CANH * cd) for _, c in sorted(ung, key=lambda z: -z[0])]
         noi = next((c for c, la_noi in gan if la_noi), None)
 
         if cho:

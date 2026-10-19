@@ -96,6 +96,23 @@ def test_dot_bien_danh_tinh_troi_theo_vet_thi_mat_thoat_bay(monkeypatch):
     assert _xs(out, 10) == {100}
 
 
+def test_khoa_lai_sau_lo_dung_cho_cu_van_qua_cong():
+    """Mất ≥ HO_KHOA_LAI khung rồi có thứ ở đúng chỗ cũ: là khoá lại, phải đúng danh tính (thứ đứng yên chỗ logo vừa rời)."""
+    ho = kd.HO_KHOA_LAI
+    gia = (600, 500, 0.40, 74, 72)                     # đúng chỗ, đúng cỡ, điểm 0,6× + có đối thủ ngang điểm ⇒ trượt cổng
+    out = _chay([[L]] * 10 + [[]] * ho + [[gia, (100, 1000, 0.38, 74, 72)]] * 10)
+    assert set(out) == set(range(10))
+    out = _chay([[L]] * 10 + [[]] * ho + [[L]] * 10)  # đối chứng: logo thật trở lại ⇒ giữ cả 10 khung (ghi hồi tố)
+    assert set(out) == set(range(10)) | set(range(10 + ho, 20 + ho))
+
+
+def test_dot_bien_khoa_lai_dung_cho_cu_khong_qua_cong(monkeypatch):
+    monkeypatch.setattr(kd, "HO_KHOA_LAI", 10 ** 6)
+    ho = 5
+    out = _chay([[L]] * 10 + [[]] * ho + [[(600, 500, 0.40, 74, 72), (100, 1000, 0.38, 74, 72)]] * 10)
+    assert set(range(10 + ho, 20 + ho)) <= set(out)
+
+
 def test_mat_dau_qua_lau_quen_vi_tri_nhung_giu_danh_tinh():
     """> TRUOT_TOI_DA khung mất ⇒ quên vị trí/vận tốc (khoá lại là khoá mới, không phải 'nhảy' từ chỗ cũ đã trôi xa)."""
     out = _chay([[L]] * 10 + [[]] * (tv.TRUOT_TOI_DA + 2) + [[B]] * 6)
