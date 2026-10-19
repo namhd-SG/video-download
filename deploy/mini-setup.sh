@@ -64,9 +64,12 @@ say "ffmpeg: $("$FF" -version 2>&1 | head -1 | cut -c1-40)"
 
 # --- 4. venv + phụ thuộc ---------------------------------------------------
 [ -d "$REPO/.venv" ] || { say "tạo venv"; "$PY" -m venv "$REPO/.venv"; }
-"$REPO/.venv/bin/pip" install -q -e "$REPO[web]"
+# `thay-logo` là extra RIÊNG (OpenCV + numpy, pyproject.toml): thiếu nó thì Video Desk vẫn lên nhưng worker thay logo không dựng
+# được (`dung_tu_env`) — tắt ÂM THẦM. Cài cùng lúc và kiểm import ngay dưới.
+"$REPO/.venv/bin/pip" install -q -e "$REPO[web,thay-logo]"
 "$REPO/.venv/bin/pip" install -q "google-api-python-client>=2.100" "google-auth>=2.30" pytest
-say "phụ thuộc: đã cài"
+"$REPO/.venv/bin/python" -c "import cv2, numpy" || { echo "THIẾU OpenCV/numpy trong venv — worker thay logo sẽ không chạy"; exit 1; }
+say "phụ thuộc: đã cài (kể cả OpenCV cho thay logo)"
 
 # Chromium cho Playwright — ~1,1 GB trên máy này (README ghi 150 MB là sai).
 if [ ! -d "$HOME/Library/Caches/ms-playwright" ]; then
@@ -116,6 +119,8 @@ cat > "$REPO/deploy/run-service.sh" <<SH
 set -euo pipefail
 cd "\$HOME/Projects/video-download"
 set -a; . "\$HOME/.config/videodl/env"; set +a
+# Giờ máy có thể không phải giờ VN (ca-n: America/Los_Angeles): log và mốc ngày dựng từ giờ máy phải theo giờ người dùng.
+export TZ="\${VIDEODL_TZ:-Asia/Saigon}"
 exec ./.venv/bin/uvicorn web.app:app --host 127.0.0.1 --port $PORT
 SH
 chmod +x "$REPO/deploy/run-service.sh"
