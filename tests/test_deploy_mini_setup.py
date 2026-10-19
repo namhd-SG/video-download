@@ -17,7 +17,8 @@ case "$1" in
   -V) echo "Python 3.12.15" ;;
   -m) [ "$2" = venv ] || exit 2
       v="$3"; mkdir -p "$v/bin"
-      for t in pip playwright; do printf '#!/usr/bin/env bash\necho "%s $*" >> "$LOG"\n' "$t" > "$v/bin/$t"; done
+      printf '#!/usr/bin/env bash\necho "pip $*" >> "$LOG"\n' > "$v/bin/pip"
+      printf '#!/usr/bin/env bash\necho "playwright $* PBP=${PLAYWRIGHT_BROWSERS_PATH:-}" >> "$LOG"\n' > "$v/bin/playwright"
       cat > "$v/bin/python" <<'P'
 #!/usr/bin/env bash
 if [ "$1" = -c ]; then echo "python -c $2" >> "$LOG"; case "$2" in *cv2*) [ "${CV2_CO:-1}" = 1 ] || exit 1 ;; esac; exit 0; fi
@@ -52,7 +53,9 @@ def san(tmp_path):
     b.mkdir()
     _gia(b, "python-gia", PY_GIA)
     _gia(b, "launchctl", '#!/usr/bin/env bash\ncase "$1" in list) echo "PID Status Label";; print) exit 1;; esac\nexit 0\n')
-    _gia(b, "curl", "#!/usr/bin/env bash\necho 200\n")
+    # curl giả: lời gọi healthz trả 000 ở CURL_LOI_DAU lần đầu (dịch vụ chưa lên) rồi 200; mọi lời gọi khác trả 200.
+    _gia(b, "curl", '#!/usr/bin/env bash\ncase "$*" in *healthz*) d="$LOG.healthz"; n=$(( $(cat "$d" 2>/dev/null || echo 0) + 1 )); '
+                    'echo $n > "$d"; [ "$n" -le "${CURL_LOI_DAU:-0}" ] && { echo 000; exit 0; } ;; esac\necho 200\n')
     _gia(b, "lsof", "#!/usr/bin/env bash\necho 'python 1 u 3u IPv4 TCP 127.0.0.1:7870 (LISTEN)'\n")
     _gia(b, "plutil", "#!/usr/bin/env bash\nexit 0\n")
     _gia(b, "sleep", "#!/usr/bin/env bash\nexit 0\n")
@@ -101,3 +104,31 @@ def test_gio_dich_vu_ghi_de_duoc_qua_env(san):
     subprocess.run(["/bin/bash", str(repo / "deploy" / "run-service.sh")], cwd=repo, check=True, timeout=30,
                    env={"PATH": "/usr/bin:/bin", "HOME": str(home), "LOG": str(log)})
     assert [d for d in log.read_text().splitlines() if d.startswith("uvicorn")][-1].startswith("uvicorn TZ=UTC ")
+
+
+def test_luon_cai_chromium_du_cache_cua_du_an_khac_co_san(san):
+    """Fixture có sẵn ~/Library/Caches/ms-playwright (như ca-n: cache của dự án khác, bản cũ). Đột biến quay về "có thư mục thì bỏ
+    qua" ⇒ không gọi install ⇒ ĐỎ."""
+    r, lenh = _chay(san)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert any(d.startswith("playwright install chromium") for d in lenh), lenh
+
+
+def test_chromium_cai_vao_thu_muc_rieng_khi_env_khai(san):
+    home, *_ = san
+    (home / ".config" / "videodl" / "env").write_text(
+        "GDRIVE_SERVICE_ACCOUNT_FILE=/x\nPLAYWRIGHT_BROWSERS_PATH=/rieng/ms-playwright\n", encoding="utf-8")
+    r, lenh = _chay(san)
+    assert r.returncode == 0, (r.stdout, r.stderr)
+    assert [d for d in lenh if d.startswith("playwright install")] == ["playwright install chromium PBP=/rieng/ms-playwright"]
+
+
+def test_healthz_cho_co_han_khi_dich_vu_len_cham(san):
+    """Dịch vụ chưa lên ở 3 lần hỏi đầu ⇒ vẫn đạt. Đột biến về một lần đo ⇒ 000 ⇒ ĐỎ."""
+    r, _ = _chay(san, CURL_LOI_DAU="3")
+    assert r.returncode == 0 and "healthz: 200" in r.stdout, (r.stdout, r.stderr)
+
+
+def test_healthz_qua_han_thi_dung_va_noi_ro_thoi_gian(san):
+    r, _ = _chay(san, CURL_LOI_DAU="99", CHO_HEALTHZ_GIAY="2")
+    assert r.returncode == 1 and "healthz trả 000 sau 2s" in r.stdout, (r.stdout, r.stderr)
