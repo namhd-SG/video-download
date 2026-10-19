@@ -13,7 +13,7 @@ thành chờ người (03_38). Ô vết dò ở đó trùng box ⇒ gỡ TẠI C
 kiểm hình đã bác khung đó VÀ nó lệch đường nối > `GAN_DET`: box mồi có thể sai (Test 03_5 k896 cao hơn logo thật ~40 px), lúc đó để nguyên.
 Đường thẳng được nội suy kể cả khi lệch tâm box mồi trong đoạn: chặn trường hợp đó để lộ hẳn logo ở Test 03_38 k287–299, trong khi dán
 theo đường che được phần lớn.
-Khung lấp: `filled`, `de_chu`, tấm nền hẹp, cờ `qua_chu` = "noi".
+Khung lấp: `filled` (khung gỡ tại chỗ: `detected` nếu có điểm, không thì `filled`), `de_chu`, tấm nền hẹp, cờ `qua_chu` = "noi".
 
 HẰNG SỐ CHƯA HIỆU CHỈNH ngoài 12 video Test3: GAP_MAX, LECH_PX/GIA_TOC_PX, GAN_DET.
 Phản biện: agy thaylogo-quachu R1b (K1–K6) + R2b (tách đường không AI, bỏ chặn nội suy qua box mồi lệch) + R3b/R4b (gỡ tại chỗ).
@@ -90,6 +90,9 @@ def lap_qua_chu(nguon: NguonKhung, track: list[dict], cum: list[BoxMoi], moi_box
                         dem["noi"] += 1
                     continue
                 if e["frame"] in box:
+                    # Để nguyên VÀ khoá: đoạn chặn bị cắt quanh box mồi thành mẩu ≤ 3 khung, `go_chan_le` sẽ gỡ mẩu đó ở chỗ lệch box
+                    # (cùng lý do `cong.go_chan_theo_hinh` gắn `giu_chan`).
+                    e["giu_chan"] = True
                     continue
                 if _vet_that(e) and math.dist(_tam(e), p) <= GAN_DET:
                     p = _tam(e)

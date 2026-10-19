@@ -155,3 +155,48 @@ def test_khung_che_qua_chu_khong_keo_ca_vet_sang_tam_nen_hep():
         e["plate_pad"] = cong.PAD_CHAT
     cong.chuan_pad_vet(track)
     assert all(e["plate_pad"] == cong.PAD_CHAT for e in track)
+
+
+def test_khung_box_moi_khong_trung_vet_khoa_khoi_go_chan_le():
+    """Mẩu ≤ 3 khung box mồi ±1 để nguyên phải được khoá: không thì `go_chan_le` gỡ nó tại vị trí lệch box ⇒ `cong_khop` đếm lệch.
+    Xảy ra cả với 1 box (k11–13) lẫn khi 2 box chẻ đoạn chặn (k14–15 lệch box k14, k11–13 trùng box k12)."""
+    clip = tao_clip(n=30)
+    track = _track(clip, set(range(10, 14)), state=cong.CHAN_NET, co_vi_tri=True)
+    for k in (11, 12, 13):
+        track[k]["x"] += 80
+    cum = clip.box_moi(khung=(12,))
+    qua_chu.lap_qua_chu(clip.nguon, track, cum)
+    cong.go_chan_le(track)
+    assert track[10].get("qua_chu") == "noi"
+    assert all(track[k]["state"] == cong.CHAN_NET and track[k].get("giu_chan") for k in (11, 12, 13))
+    assert cong.cong_khop(track, cum)["lech"] == 0
+
+    track = _track(clip, set(range(11, 16)), state=cong.CHAN_NET, co_vi_tri=True)
+    for k in (14, 15):
+        track[k]["x"] += 80
+    cum = clip.box_moi(khung=(12, 14))
+    qua_chu.lap_qua_chu(clip.nguon, track, cum)
+    cong.go_chan_le(track)
+    assert all(track[k]["state"] == "detected" and track[k].get("qua_chu") == "noi" for k in (11, 12, 13))
+    assert all(track[k]["state"] == cong.CHAN_NET and track[k].get("giu_chan") for k in (14, 15))
+    khop = cong.cong_khop(track, cum)
+    assert khop["lech"] == 0 and khop["qua_cong"]
+
+
+
+def test_xu_ly_video_truyen_moi_box_giua_hai_cum_cung_logo(monkeypatch):
+    """Một logo bị tách hai cụm: che qua chữ của MỖI cụm phải nhận box mồi của MỌI cụm (`moi_box`), không thì khung box cụm kia nằm
+    trong đoạn chặn bị kéo về đường thẳng ⇒ box đó "không được phủ" ⇒ cụm không gộp được (03_38). Clip tổng hợp không dựng được vết
+    dò lệch đường dưới phụ đề (bộ lọc vết giữ vị trí cũ), nên khoá dây nối bằng cách ghi lại `moi_box` mà `lap_qua_chu` nhận."""
+    nhan = []
+
+    def ghi(nguon, track, cum, moi_box=None):
+        nhan.append(moi_box)
+        return qua_chu.lap_qua_chu(nguon, track, cum, moi_box)
+
+    monkeypatch.setattr(duong_ong, "lap_qua_chu", ghi)
+    clip = tao_clip(phu_de_vien_den=PHU_DE)
+    boxes = clip.box_moi(khung=(5, 15, 35), cum=0) + clip.box_moi(khung=(25,), cum=1)
+    kq = duong_ong.xu_ly_video(clip.nguon, boxes)
+    assert kq.trang_thai == "render" and len(kq.vet) == 1
+    assert nhan and all(m is not None and {b.khung for b in m} == {5, 15, 25, 35} for m in nhan)
