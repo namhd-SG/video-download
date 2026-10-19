@@ -44,7 +44,7 @@ def test_cong_chan_khoa_vao_do_vat_sai_danh_tinh():
 
 
 def test_dot_bien_bo_cong_thi_khoa_vao_do_vat(monkeypatch):
-    monkeypatch.setattr(kd, "tin_hieu", lambda c, cs, dd: (False, False, False))
+    monkeypatch.setattr(kd, "tin_hieu", lambda c, cs, dd, s_ref=None: (False, False, False))
     out = _chay([[L]] * 20 + [[(100, 1000, 0.55, 68, 66), (300, 200, 0.5, 40, 40)]] * 12)
     assert _xs(out, 20) == {100}
 
@@ -88,9 +88,9 @@ def test_dot_bien_danh_tinh_troi_theo_vet_thi_mat_thoat_bay(monkeypatch):
     """Danh tính trung bình động (trôi theo thứ đang bám) ⇒ đồ vật thành 'đúng cỡ' ⇒ không còn lối ra."""
     goc = kd.tin_hieu
 
-    def troi(c, cs, dd):
+    def troi(c, cs, dd, s_ref=None):
         dd["w"] = 0.7 * dd["w"] + 0.3 * c[3]
-        return goc(c, cs, dd)
+        return goc(c, cs, dd, s_ref)
     monkeypatch.setattr(kd, "tin_hieu", troi)
     out = _chay([[W]] * 10 + [[W, L]] * 20)
     assert _xs(out, 10) == {100}
@@ -111,6 +111,46 @@ def test_dot_bien_khoa_lai_dung_cho_cu_khong_qua_cong(monkeypatch):
     ho = 5
     out = _chay([[L]] * 10 + [[]] * ho + [[(600, 500, 0.40, 74, 72), (100, 1000, 0.38, 74, 72)]] * 10)
     assert set(range(10 + ho, 20 + ho)) <= set(out)
+
+
+def test_bo_dem_cho_ho_hai_khung():
+    """Mốc đúng ngắn có lỗ 2 khung vẫn khoá được: nó là neo cho bước bám hai chiều phía sau."""
+    out = _chay([[L]] * 20 + [[B], [B], [], [], [B], [B]] + [[]] * 4)
+    assert {20, 21, 24, 25} <= set(out) and _xs(out, 20) == {100}
+
+
+def test_dot_bien_bo_dem_ho_mot_khung_thi_mat_moc(monkeypatch):
+    monkeypatch.setattr(kd, "HO_CHO", 1)
+    out = _chay([[L]] * 20 + [[B], [B], [], [], [B], [B]] + [[]] * 4)
+    assert set(out) == set(range(20))
+
+
+def _mo_dan(lech=0.0):
+    """Logo rõ rồi mờ dần (tiếp nối, không cổng), mất 8 khung, trở lại đúng quỹ đạo (hoặc lệch `lech` cạnh) vẫn mờ, có đối thủ ngang điểm."""
+    mo = (600, 500, 0.40, 74, 72)
+    ve = (600 + lech * 74, 500, 0.38, 74, 72)
+    return [[L]] * 5 + [[mo]] * 10 + [[]] * 8 + [[ve, (100, 1000, 0.33, 74, 72)]] * 6
+
+
+def test_khoa_lai_lien_quy_dao_logo_mo_so_diem_voi_vet_truoc_lo():
+    """So với danh tính toàn video, điểm 0,38 + đối thủ ngang điểm là trượt cổng; so với chính vết mờ ngay trước lỗ thì qua."""
+    out = _chay(_mo_dan())
+    assert set(range(23, 29)) <= set(out) and _xs(out, 23) == {600}
+    out = _chay(_mo_dan(lech=0.3))  # đối chứng: lệch quỹ đạo 0,3 cạnh ⇒ vẫn so với danh tính ⇒ chặn
+    assert not set(range(23, 29)) & set(out)
+
+
+def test_dot_bien_bo_lien_quy_dao_thi_logo_mo_bi_chan(monkeypatch):
+    monkeypatch.setattr(kd, "LECH_QUY_DAO", -1.0)
+    assert not set(range(23, 29)) & set(_chay(_mo_dan()))
+
+
+def test_tiep_noi_ke_thua_danh_tinh_khi_hai_ban_logo_cung_khung():
+    """Lúc chuyển cảnh hai bản logo ngang điểm ⇒ vế đỉnh nổ, cỡ nhích 1 chút ⇒ chấm lại thì trượt; khung tiếp nối vẫn mang cờ qua cổng."""
+    nhich = (600, 500, 0.8, 79, 72)
+    out = _chay([[L]] * 5 + [[nhich, (100, 1000, 0.75, 74, 72)]] * 5)
+    assert not kd.qua_cong(nhich, [nhich, (100, 1000, 0.75, 74, 72)], DD)
+    assert all(out[t]["dd_ok"] for t in range(5, 10))
 
 
 def test_mat_dau_qua_lau_quen_vi_tri_nhung_giu_danh_tinh():

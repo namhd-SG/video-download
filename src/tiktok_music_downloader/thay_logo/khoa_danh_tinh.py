@@ -9,7 +9,12 @@ theo_vet cũ nhận ứng viên bất kỳ ≥ hi ở bất kỳ đâu và khôn
 - Khoá vào chỗ mới phải đứng TRE_K khung (hở ≤ HO_CHO) mà khung nào cũng qua cổng mới được ghi (hồi tố); vết cũ quay lại sát dự
   đoán và qua cổng ⇒ huỷ. Đang bám mà ứng viên sát dự đoán trượt cổng thì ứng viên xa qua cổng, điểm ≥ max(hi, THOAT_BAY × gần)
   được vào bộ đệm: vết đã dính đồ vật thì nhánh gần luôn có ứng viên nên nhánh xa (logo thật trở lại) không bao giờ được xét.
-- Hai lượt bất đồng chỗ ⇒ bên qua cổng thắng trước khi so điểm.
+- Khoá lại sau lỗ mà ứng viên nằm sát vị trí ngoại suy theo vận tốc (≤ LECH_QUY_DAO cạnh, vết chưa bị quên): vế điểm so với điểm
+  của chính vết ngay trước lỗ thay vì danh tính toàn video — logo mờ dần ở cảnh tối vẫn là logo; thứ đứng chỗ logo vừa rời thì
+  lệch quỹ đạo hoặc tụt điểm so với vết trước lỗ.
+- Hai lượt bất đồng chỗ ⇒ bên qua cổng thắng trước khi so điểm. Khung tiếp nối kế thừa danh tính của lần khoá đã qua cổng; chỉ khung
+  vết cũ đi tạm (trượt cổng) trong lúc chờ khoá chỗ mới mới mang cờ trượt — hai bản logo cùng khung lúc chuyển cảnh luôn làm vế đỉnh
+  nổ, chấm lại từng khung thì bản đang hiện bị xử thua bản đang tắt.
 Ứng viên khớp vị trí box mồi ở khung mồi ±1 được miễn cổng và bộ đệm.
 """
 from __future__ import annotations
@@ -28,9 +33,10 @@ C_CO = 0.05
 LECH_KICH_TOI_DA = 0.15   # khung vết cũ lệch cỡ mẫu quá mức này không góp vào danh tính
 NUA_CANH = 0.5            # "chỗ khác" = tâm cách > nửa cạnh dài của danh tính
 TRE_K = tv.DOAN_TOI_THIEU  # số khung chỗ mới phải đứng được trước khi khoá
-HO_CHO = 1                # bộ đệm cho hở tối đa 1 khung liền
+HO_CHO = 2                # bộ đệm cho hở tối đa 2 khung liền: mốc đúng ngắn có lỗ 2 khung là neo cho bước bám hai chiều phía sau
 HO_KHOA_LAI = 5           # mất ≥ chừng này khung rồi bắt lại (kể cả đúng chỗ cũ) là KHOÁ LẠI, không phải tiếp nối: phải qua cổng
 THOAT_BAY = 1.3
+LECH_QUY_DAO = 0.15       # khoá lại sát vị trí ngoại suy theo vận tốc (≤ chừng này × cạnh) ⇒ điểm so với chính vết ngay trước lỗ
 
 
 def _tam(c: tuple) -> tuple[float, float]:
@@ -51,11 +57,12 @@ def danh_tinh(det0: dict[int, dict], kich: tuple[int, int]) -> dict | None:
             "kep_kich": kep, "lech_kich": round(1 - len(hop) / len(det0), 3)}
 
 
-def tin_hieu(c: tuple, cs: list[tuple], dd: dict) -> tuple[bool, bool, bool]:
-    """(đỉnh 1/đỉnh 2 thấp, điểm thấp so danh tính, lệch cỡ). Không có ứng viên nào ở chỗ khác ⇒ vế đầu không nổ."""
+def tin_hieu(c: tuple, cs: list[tuple], dd: dict, s_ref: float | None = None) -> tuple[bool, bool, bool]:
+    """(đỉnh 1/đỉnh 2 thấp, điểm thấp, lệch cỡ). Không có ứng viên nào ở chỗ khác ⇒ vế đầu không nổ. Điểm so với `s_ref` nếu có
+    (điểm của chính vết ngay trước lỗ, khi khoá lại liền quỹ đạo), không thì với danh tính."""
     c0, cd = _tam(c), max(dd["w"], dd["h"])
     s2 = max((x[2] for x in cs if math.dist(_tam(x), c0) > NUA_CANH * cd), default=None)
-    return (s2 is not None and s2 > 0 and c[2] / s2 < A_DINH12, c[2] / dd["s"] < B_DIEM, abs(c[3] / dd["w"] - 1) > C_CO)
+    return (s2 is not None and s2 > 0 and c[2] / s2 < A_DINH12, c[2] / (s_ref or dd["s"]) < B_DIEM, abs(c[3] / dd["w"] - 1) > C_CO)
 
 
 def qua_cong(c: tuple, cs: list[tuple], dd: dict) -> bool:
@@ -76,15 +83,15 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
     s = {"cur": None, "vx": 0.0, "vy": 0.0, "mat": 1, "diem_tb": 0.0, "w": kich[0], "h": kich[1]}
     cho: list[tuple[int, tuple]] = []  # bộ đệm khoá chỗ mới (khung, ứng viên), chưa ghi
     tam: dict[int, dict] = {}          # vết cũ đi tiếp trong lúc chờ: bộ đệm thành thì bỏ, huỷ thì ghi
-    cho_nhay, cho_ho = False, 0
+    cho_nhay, cho_ho, cho_sref = False, 0, None
 
     def mien(c, t):
         return _khop_moi(c, t, hop_moi, cd)
 
-    def kiem(c, cs, t):  # cổng lúc khoá; ghi lại từ chối để báo cáo
+    def kiem(c, cs, t, s_ref=None):  # cổng lúc khoá; ghi lại từ chối để báo cáo
         if mien(c, t):
             return True
-        v = tin_hieu(c, cs, dd)
+        v = tin_hieu(c, cs, dd, s_ref)
         if sum(v) < 2:
             return True
         dem["tu_choi"].add((t, c[0], c[1]))
@@ -108,11 +115,11 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
         if s["mat"] > tv.TRUOT_TOI_DA:  # danh tính dd giữ nguyên; chỉ vị trí/vận tốc bị quên
             s.update(cur=None, vx=0.0, vy=0.0, diem_tb=0.0)
 
-    def bat_dau(t, c, nhay):
-        nonlocal cho_nhay, cho_ho
+    def bat_dau(t, c, nhay, s_ref=None):
+        nonlocal cho_nhay, cho_ho, cho_sref
         cho[:] = [(t, c)]
         tam.clear()
-        cho_nhay, cho_ho = nhay, 0
+        cho_nhay, cho_ho, cho_sref = nhay, 0, s_ref
 
     def ghi_cho():
         for i, (t, c) in enumerate(cho):
@@ -135,6 +142,8 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
         cs = uv[t]
         lo_t, hi_t = max(lo, tv.TI_LE_DIEM_TOI_THIEU * s["diem_tb"]), max(hi, 0.6 * s["diem_tb"])
         gan: list[tuple[tuple, bool]] = []  # (ứng viên, sát dự đoán ⇒ tiếp nối) theo thứ tự ưu tiên của mã cũ
+        lien: set[int] = set()              # ứng viên khoá lại liền quỹ đạo (id)
+        s_ref = min(dd["s"], s["diem_tb"]) if s["diem_tb"] > 0 else None
         if s["cur"] is not None:
             px, py = s["cur"][0] + s["vx"] * s["mat"], s["cur"][1] + s["vy"] * s["mat"]
             mw = max(s["w"], s["h"])
@@ -143,6 +152,8 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
                    if c[2] >= lo_t and math.hypot(c[0] - px, c[1] - py) <= r]
             moi_mat = s["mat"] < HO_KHOA_LAI
             gan = [(c, moi_mat and math.hypot(c[0] - px, c[1] - py) <= NUA_CANH * cd) for _, c in sorted(ung, key=lambda z: -z[0])]
+            if not moi_mat:
+                lien = {id(c) for c in cs if math.hypot(c[0] - px, c[1] - py) <= LECH_QUY_DAO * cd}
         noi = next((c for c, la_noi in gan if la_noi), None)
 
         if cho:
@@ -154,7 +165,7 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
             mb = max(lc[3], lc[4])
             rb = min(2.0 * mb, tv.BAN_KINH_CO * mb + 8 + 5 * (cho_ho + 1))
             sb = max(lo, tv.TI_LE_DIEM_TOI_THIEU * st.mean(c[2] for _, c in cho))
-            bs = [c for c in cs if c[2] >= sb and math.hypot(c[0] - lc[0], c[1] - lc[1]) <= rb and kiem(c, cs, t)]
+            bs = [c for c in cs if c[2] >= sb and math.hypot(c[0] - lc[0], c[1] - lc[1]) <= rb and kiem(c, cs, t, cho_sref)]
             if noi is not None:
                 nhan(t, noi, False, tam, False)
             else:
@@ -173,7 +184,7 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
 
         chon, la_noi = None, False
         for c, ln in gan:
-            if ln or kiem(c, cs, t):
+            if ln or kiem(c, cs, t, s_ref if id(c) in lien else None):
                 chon, la_noi = c, ln
                 break
         if chon is not None and la_noi:
@@ -188,7 +199,7 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
                     if len(cho) >= TRE_K or mien(cho[0][1], t):
                         ghi_cho()
                     continue
-            nhan(t, chon, False, out, ok)
+            nhan(t, chon, False, out, True)  # tiếp nối kế thừa danh tính của lần khoá đã qua cổng
             continue
         nhay = False  # khoá ở nhánh gần (lệch dự đoán) không phải bước nhảy, như mã cũ
         if chon is None:
@@ -202,7 +213,7 @@ def mot_luot_cong(uv: list[list[tuple]], thu_tu, hi: float, lo: float, kich: tup
         if mien(chon, t):
             nhan(t, chon, nhay, out, True)
             continue
-        bat_dau(t, chon, nhay)
+        bat_dau(t, chon, nhay, s_ref if id(chon) in lien else None)
         mat_dau()
         if len(cho) >= TRE_K:
             ghi_cho()
