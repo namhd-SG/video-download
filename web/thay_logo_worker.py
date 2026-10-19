@@ -41,6 +41,9 @@ log = logging.getLogger("videodl.thay_logo")
 TRAN_DIA_GB = 5.0
 # Cổng RAM (agy tach-worker-R1b Q1): mini swap đã 3,5/5 GiB khi chưa có worker này (đo 09/10 00:24). Dưới ngưỡng ⇒ không chạy pha nặng.
 RAM_FREE_TOI_THIEU_PCT, SWAP_TRONG_TOI_THIEU_MB = 30, 1024
+# Swap macOS cấp ĐỘNG: `vm.swapusage total` là phần đã cấp, không phải trần ⇒ máy RAM rộng (ca-n 24 GB, đo 19/10: free 74%,
+# swap 2048M dùng 648M) vẫn có `free` swap < 1 GiB mà không thiếu bộ nhớ. RAM trống ≥ 60% hoặc chưa cấp swap ⇒ miễn vế swap.
+RAM_RONG_MIEN_SWAP_PCT = 60
 NICE = 10
 TRAN_CHO_AGY = 5  # pha 1 chỉ tải trước khi số video đang chờ agy < trần này — relay tắt thì không dồn file gốc vào đĩa
 # agy trượt: relay nộp lỗi (mã enum) về hộp thư, mini đếm. Lỗi TẠM THỜI (agy 503, hết quota, mạng chớp) trên main chỉ làm video chờ rồi tự lành,
@@ -96,16 +99,20 @@ def co_job_tai_dang_chay(jobs_db: Path) -> bool:
 
 
 def ram_du() -> bool:
-    """`memory_pressure` free ≥ 30% VÀ swap trống ≥ 1 GiB. Không đo được ⇒ coi như THIẾU (không chạy pha nặng)."""
+    """`memory_pressure` free ≥ 30% VÀ (swap trống ≥ 1 GiB, miễn khi free ≥ 60% hoặc chưa cấp swap). Không đo được ⇒ coi như
+    THIẾU (không chạy pha nặng)."""
     try:
         mp = subprocess.run(["memory_pressure"], capture_output=True, text=True, timeout=10).stdout
         free = int(re.search(r"free percentage:\s*(\d+)", mp).group(1))
         sw = subprocess.run(["sysctl", "-n", "vm.swapusage"], capture_output=True, text=True, timeout=10).stdout
+        swap_tong = float(re.search(r"total = ([\d.]+)M", sw).group(1))
         swap_trong = float(re.search(r"free = ([\d.]+)M", sw).group(1))
     except (OSError, subprocess.SubprocessError, AttributeError, ValueError):
         log.warning("thay logo: không đo được RAM/swap — không chạy pha nặng lượt này")
         return False
-    return free >= RAM_FREE_TOI_THIEU_PCT and swap_trong >= SWAP_TRONG_TOI_THIEU_MB
+    if free < RAM_FREE_TOI_THIEU_PCT:
+        return False
+    return free >= RAM_RONG_MIEN_SWAP_PCT or swap_tong == 0 or swap_trong >= SWAP_TRONG_TOI_THIEU_MB
 
 
 def _gui_nhom(con: subprocess.Popen, sig) -> None:

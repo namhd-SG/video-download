@@ -250,7 +250,8 @@ def test_videos_ghep_thu_vien_va_loc(ctx):
     assert {x["id"] for x in ds("?den=1750000000")} == {v1}
     assert {x["id"] for x in ds(f"?job_id={j2}&trang_thai=cho")} == {v3}
     from datetime import datetime
-    ngay1 = datetime.fromtimestamp(1_700_000_000).strftime("%Y-%m-%d")  # ngày theo giờ máy chủ; `den` tính HẾT ngày đó
+    from zoneinfo import ZoneInfo
+    ngay1 = datetime.fromtimestamp(1_700_000_000, ZoneInfo("Asia/Saigon")).strftime("%Y-%m-%d")  # ngày theo giờ VN; `den` tính HẾT ngày
     assert {x["id"] for x in ds(f"?tu={ngay1}&den={ngay1}")} == {v1}
     assert c.get("/api/thay-logo/videos?tu=hom-qua", headers=_h("a@x")).status_code == 400
 
@@ -1058,3 +1059,20 @@ def test_bo_phien_da_bo_do_cua_nguoi_khac_van_403_khong_phai_200_idempotent(tai)
     assert _bo_phien(tai, ADMIN, token).status_code == 403
     assert _tt(tai, token) == "bo_do"
     assert _bo_phien(tai, "a@x", token).status_code == 200   # chủ phiên vẫn idempotent
+
+
+@pytest.mark.parametrize("tz_may", ["America/Los_Angeles", "Asia/Saigon", "UTC"])
+def test_loc_theo_ngay_tinh_theo_gio_VN_bat_ke_gio_may_chu(monkeypatch, tz_may):
+    """Máy chủ ca-n chạy giờ LA (VN −14h): ngày `YYYY-MM-DD` người dùng gõ là ngày VN, không được trôi theo múi máy."""
+    import time
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    monkeypatch.setenv("TZ", tz_may)
+    time.tzset()
+    try:
+        dau = datetime(2026, 10, 20, tzinfo=ZoneInfo("Asia/Saigon")).timestamp()
+        assert thay_logo_routes._moc_thoi_gian("2026-10-20", "tu") == dau
+        assert thay_logo_routes._moc_thoi_gian("2026-10-20", "den", cuoi_ngay=True) == dau + 86400
+    finally:
+        monkeypatch.undo()
+        time.tzset()

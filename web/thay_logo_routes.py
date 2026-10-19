@@ -149,7 +149,8 @@ def _thu_vien_cua_chu(tv: dict[str, dict], fid: str | None, nguoi_tao: str) -> d
 
 
 def _moc_thoi_gian(gia_tri: str | None, ten: str, cuoi_ngay: bool = False) -> float | None:
-    """`tu`/`den`: số giây epoch HỮU HẠN HOẶC ngày `YYYY-MM-DD` (giờ máy chủ; `den` tính HẾT ngày đó). Sai khuôn / ngoài miền ⇒ 400."""
+    """`tu`/`den`: số giây epoch HỮU HẠN HOẶC ngày `YYYY-MM-DD` (giờ VN, không theo giờ máy chủ — ca-n chạy giờ LA; `den` tính
+    HẾT ngày đó). Sai khuôn / ngoài miền ⇒ 400."""
     if gia_tri is None or gia_tri == "":
         return None
     loi = HTTPException(400, f"{ten} phải là YYYY-MM-DD hoặc số giây hữu hạn")
@@ -162,7 +163,7 @@ def _moc_thoi_gian(gia_tri: str | None, ten: str, cuoi_ngay: bool = False) -> fl
             raise loi
         return so
     try:
-        d = _datetime.strptime(gia_tri, "%Y-%m-%d")
+        d = _datetime.strptime(gia_tri, "%Y-%m-%d").replace(tzinfo=VN_TIMEZONE)
         return (d + _timedelta(days=1 if cuoi_ngay else 0)).timestamp()
     except (ValueError, OverflowError, OSError):
         raise loi from None

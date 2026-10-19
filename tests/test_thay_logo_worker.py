@@ -177,7 +177,14 @@ def test_thieu_ram_thi_khong_chay_pha_nang(worker, clip_file, monkeypatch):
 @pytest.mark.parametrize("mp,sw,ky_vong", [
     ("System-wide memory free percentage: 63%", "total = 5120.00M  used = 3516.75M  free = 1603.25M", True),
     ("System-wide memory free percentage: 29%", "total = 5120.00M  used = 3516.75M  free = 1603.25M", False),
-    ("System-wide memory free percentage: 63%", "total = 5120.00M  used = 4200.00M  free = 920.00M", False),
+    ("System-wide memory free percentage: 63%", "total = 5120.00M  used = 4200.00M  free = 920.00M", True),   # RAM rộng ⇒ miễn swap
+    ("System-wide memory free percentage: 60%", "total = 5120.00M  used = 4200.00M  free = 920.00M", True),   # mép miễn
+    ("System-wide memory free percentage: 59%", "total = 5120.00M  used = 4200.00M  free = 920.00M", False),  # dưới mép: swap vẫn chặn
+    ("System-wide memory free percentage: 45%", "total = 5120.00M  used = 4096.00M  free = 1024.00M", True),  # mép swap 1 GiB
+    ("System-wide memory free percentage: 30%", "total = 0.00M  used = 0.00M  free = 0.00M", True),           # chưa cấp swap
+    ("System-wide memory free percentage: 29%", "total = 0.00M  used = 0.00M  free = 0.00M", False),          # vế RAM không miễn
+    ("System-wide memory free percentage: 74%", "total = 2048.00M  used = 648.12M  free = 1399.88M", True),   # số đo ca-n 19/10
+    ("System-wide memory free percentage: 63%", "free = 2000.00M", False),                                     # thiếu total ⇒ không đo được
     ("rác không đọc được", "free = 2000.00M", False),
 ])
 def test_cong_ram_doc_dung_so_mini(monkeypatch, mp, sw, ky_vong):
