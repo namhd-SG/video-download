@@ -71,11 +71,15 @@ say "ffmpeg: $("$FF" -version 2>&1 | head -1 | cut -c1-40)"
 "$REPO/.venv/bin/python" -c "import cv2, numpy" || { echo "THIẾU OpenCV/numpy trong venv — worker thay logo sẽ không chạy"; exit 1; }
 say "phụ thuộc: đã cài (kể cả OpenCV cho thay logo)"
 
-# Chromium cho Playwright — ~1,1 GB trên máy này (README ghi 150 MB là sai).
-if [ ! -d "$HOME/Library/Caches/ms-playwright" ]; then
-  say "tải Chromium (~1,1 GB, một lần)"
+# Chromium cho Playwright — ~1,1 GB (README ghi 150 MB là sai). LUÔN gọi `install`: nó tự bỏ qua khi đã có ĐÚNG bản mà playwright
+# của venv cần. Kiểm "thư mục cache có chưa" là sai phép đo: ca-n có sẵn cache của dự án khác ở bản cũ (chromium-1234) trong khi
+# playwright 1.64 cần chromium-1248 ⇒ lane tải hỏng lúc mở trình duyệt. Thư mục trình duyệt riêng của dịch vụ đặt bằng
+# PLAYWRIGHT_BROWSERS_PATH trong $CFG/env (run-service.sh nạp cùng file đó) — không ghi vào cache dùng chung của dự án khác.
+(
+  set -a; [ -f "$CFG/env" ] && . "$CFG/env"; set +a
+  say "Chromium cho Playwright: ${PLAYWRIGHT_BROWSERS_PATH:-cache mặc định}"
   "$REPO/.venv/bin/playwright" install chromium
-fi
+)
 
 # --- 5. Thư mục dữ liệu + quyền -------------------------------------------
 # Cookie và khoá Drive là secret. Quyền chặt ngay từ lúc tạo, đừng sửa sau.
@@ -164,11 +168,17 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST" || {
   echo "bootstrap THẤT BẠI — dịch vụ hiện KHÔNG chạy. Xem ~/Library/Logs/videodl.log"
   exit 1
 }
-sleep 4
 
 # --- 9. Nghiệm thu ---------------------------------------------------------
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/healthz" || true)
-[ "$code" = "200" ] || { echo "healthz trả $code, mong 200 — xem ~/Library/Logs/videodl.log"; exit 1; }
+# Chờ có HẠN, không đo một lần: dịch vụ mới khởi động (ca-n 19/10) cần hơn 4 s ⇒ một lần đo ra 000 trong khi dịch vụ lên ngay sau.
+CHO_HEALTHZ_GIAY=${CHO_HEALTHZ_GIAY:-60}
+code=000
+for _ in $(seq 1 "$CHO_HEALTHZ_GIAY"); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$PORT/healthz" || true)
+  [ "$code" = "200" ] && break
+  sleep 1
+done
+[ "$code" = "200" ] || { echo "healthz trả $code sau ${CHO_HEALTHZ_GIAY}s, mong 200 — xem ~/Library/Logs/videodl.log"; exit 1; }
 say "healthz: 200"
 
 # Cổng phải chỉ nghe nội bộ. Nghe 0.0.0.0 là mở trần ra mạng nội bộ trước khi
