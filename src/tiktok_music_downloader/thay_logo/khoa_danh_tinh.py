@@ -4,7 +4,7 @@ theo_vet cũ nhận ứng viên bất kỳ ≥ hi ở bất kỳ đâu và khôn
 - Danh tính `dd` = trung vị (w, h, điểm) của vết mã cũ, chỉ lấy khung có cỡ trong ±15% cỡ mẫu (vết bị rác cướp quá nửa không đảo
   được cổng); thiếu khung thì kẹp cỡ về cỡ mẫu. `dd` CỐ ĐỊNH suốt lượt: không trung bình động, không xoá khi mất dấu.
 - Cổng `qua_cong`: từ chối ⟺ ≥ 2 trong 3 tín hiệu — đỉnh 1/đỉnh 2 < A_DINH12 · điểm/dd < B_DIEM · |w/dd − 1| > C_CO.
-  Chỉ xét lúc KHOÁ (đầu vết, sau lỗ ≥ HO_KHOA_LAI khung kể cả đúng chỗ cũ, nhảy xa, nhánh gần mà lệch dự đoán > nửa cạnh);
+  Chỉ xét lúc KHOÁ (đầu vết, bắt lại cách khung trước ≥ HO_KHOA_LAI kể cả đúng chỗ cũ, nhảy xa, nhánh gần mà lệch dự đoán > nửa cạnh);
   tiếp nối sát dự đoán ngay sau khung trước không qua cổng.
 - Khoá vào chỗ mới phải đứng TRE_K khung (hở ≤ HO_CHO) mà khung nào cũng qua cổng mới được ghi (hồi tố); vết cũ quay lại sát dự
   đoán và qua cổng ⇒ huỷ. Đang bám mà ứng viên sát dự đoán trượt cổng thì ứng viên xa qua cổng, điểm ≥ max(hi, THOAT_BAY × gần)
@@ -34,7 +34,8 @@ LECH_KICH_TOI_DA = 0.15   # khung vết cũ lệch cỡ mẫu quá mức này kh
 NUA_CANH = 0.5            # "chỗ khác" = tâm cách > nửa cạnh dài của danh tính
 TRE_K = tv.DOAN_TOI_THIEU  # số khung chỗ mới phải đứng được trước khi khoá
 HO_CHO = 2                # bộ đệm cho hở tối đa 2 khung liền: mốc đúng ngắn có lỗ 2 khung là neo cho bước bám hai chiều phía sau
-HO_KHOA_LAI = 5           # mất ≥ chừng này khung rồi bắt lại (kể cả đúng chỗ cũ) là KHOÁ LẠI, không phải tiếp nối: phải qua cổng
+HO_KHOA_LAI = 5           # bắt lại cách khung bắt trước ≥ chừng này (tức mất ≥ HO_KHOA_LAI − 1 khung), kể cả đúng chỗ cũ, là KHOÁ LẠI:
+                          # phải qua cổng. `mat` đếm khoảng cách đó (khung liền kề = 1).
 THOAT_BAY = 1.3
 LECH_QUY_DAO = 0.15       # khoá lại sát vị trí ngoại suy theo vận tốc (≤ chừng này × cạnh) ⇒ điểm so với chính vết ngay trước lỗ
 
