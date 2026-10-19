@@ -27,7 +27,7 @@ from .box_moi import BoxMoi
 from .kiem_hinh import CHAN_HINH
 from .nguon_khung import NguonKhung
 
-GAP_MAX = 45
+GAP_MAX = 55  # dải phụ đề dài ~1,7 s (Test 03_5 k854–903 = 50 khung) phải nối được khi cổng danh tính đã bỏ mốc dò sai giữa dải
 LECH_PX, GIA_TOC_PX = 8.0, 4.0
 GAN_DET = 12.0
 

@@ -200,3 +200,18 @@ def test_xu_ly_video_truyen_moi_box_giua_hai_cum_cung_logo(monkeypatch):
     kq = duong_ong.xu_ly_video(clip.nguon, boxes)
     assert kq.trang_thai == "render" and len(kq.vet) == 1
     assert nhan and all(m is not None and {b.khung for b in m} == {5, 15, 25, 35} for m in nhan)
+
+
+def test_dai_phu_de_50_khung_van_noi_duoc():
+    """Dải phụ đề 50 khung liền (Test 03_5 k854–903) không còn mốc dò nào ở giữa ⇒ vẫn nối qua, đúng chỗ logo."""
+    clip = tao_clip(n=80)
+    track = _track(clip, set(range(10, 60)))
+    assert qua_chu.lap_qua_chu(clip.nguon, track, []) == {"noi": 50}
+    assert all(tam_lech(track[k], clip.hop_that[k]) <= 12 for k in range(10, 60))
+
+
+def test_dot_bien_gap_max_cu_thi_dai_50_khung_lo(monkeypatch):
+    monkeypatch.setattr(qua_chu, "GAP_MAX", 45)
+    clip = tao_clip(n=80)
+    track = _track(clip, set(range(10, 60)))
+    assert qua_chu.lap_qua_chu(clip.nguon, track, []) == {"noi": 0}
