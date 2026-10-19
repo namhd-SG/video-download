@@ -86,8 +86,7 @@
     "background:rgba(40,10,30,.45);backdrop-filter:blur(3px);animation:wd-fade .35s ease-out;padding:16px;overflow:hidden;" +
     "font-family:-apple-system,'Segoe UI',Roboto,sans-serif}" +
     ".wd-card{position:relative;z-index:1;box-sizing:border-box;width:min(440px,100%);border-radius:22px;overflow:hidden;text-align:center;" +
-    "background:var(--wd-bg);box-shadow:0 24px 60px rgba(40,20,40,.35);" +
-    "animation:wd-pop .45s cubic-bezier(.2,1.4,.4,1)}" +
+    "background:var(--wd-bg);box-shadow:0 24px 60px rgba(40,20,40,.35)}" +
     ".wd-top{padding:30px 28px 6px}" +
     ".wd-flower{font-size:54px;line-height:1;filter:drop-shadow(0 4px 8px rgba(200,40,90,.25))}" +
     ".wd-date{margin-top:10px;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--wd-accent);font-weight:700}" +
@@ -105,10 +104,28 @@
     ".wd-qr-body{padding:4px 26px 26px}.wd-qr-body p{margin:10px 0 0;font-size:15px;line-height:1.55;color:var(--wd-ink)}" +
     ".wd-qr-img{display:block;margin:14px auto 0;width:min(220px,70vw);height:auto;border-radius:12px;background:#fff;padding:8px;box-shadow:0 6px 16px rgba(40,20,40,.18)}" +
     ".wd-qr-note{font-size:12.5px!important;opacity:.75}" +
+    // Hiệu ứng: thiệp nảy lên + ánh hồng, chùm tim bung, chữ hiện dần, icon đập nhịp,
+    // tim bay lên, nút phập phồng, lật thiệp khi sang màn QR
+    ".wd-card{animation:wd-rise .8s cubic-bezier(.2,1.5,.4,1) both,wd-glow 2.6s ease-in-out .8s infinite}" +
+    ".wd-flower{animation:wd-beat 1.4s ease-in-out .6s infinite}" +
+    ".wd-date,.wd-hello,.wd-msg,.wd-sign,.wd-actions{animation:wd-up .6s ease-out both}" +
+    ".wd-date{animation-delay:.35s}.wd-hello{animation-delay:.5s}.wd-msg{animation-delay:.75s}.wd-sign{animation-delay:1s}.wd-actions{animation-delay:1.15s}" +
+    ".wd-btn{animation:wd-pulse 1.8s ease-in-out 2s infinite}" +
+    ".wd-burst{position:absolute;left:50%;top:50%;z-index:2;pointer-events:none}" +
+    ".wd-burst span{position:absolute;left:0;top:0;font-size:20px;opacity:0;animation:wd-pop-heart 1.3s cubic-bezier(.1,.8,.3,1) forwards}" +
+    ".wd-float{position:absolute;bottom:-40px;z-index:0;pointer-events:none;opacity:0;animation:wd-floatup linear infinite}" +
+    ".wd-card.wd-flip{animation:wd-flip .7s ease-in-out both}" +
+    "@keyframes wd-rise{0%{transform:translateY(60px) scale(.7) rotate(-4deg);opacity:0}60%{opacity:1}100%{transform:none}}" +
+    "@keyframes wd-glow{0%,100%{box-shadow:0 24px 60px rgba(40,20,40,.35),0 0 0 0 rgba(255,105,150,0)}50%{box-shadow:0 24px 60px rgba(40,20,40,.35),0 0 36px 8px rgba(255,105,150,.45)}}" +
+    "@keyframes wd-beat{0%,100%{transform:scale(1)}15%{transform:scale(1.18)}30%{transform:scale(1)}45%{transform:scale(1.12)}60%{transform:scale(1)}}" +
+    "@keyframes wd-up{from{transform:translateY(14px);opacity:0}}" +
+    "@keyframes wd-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}" +
+    "@keyframes wd-pop-heart{0%{transform:translate(-50%,-50%) scale(.2);opacity:1}70%{opacity:1}100%{transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) scale(1.1) rotate(var(--rot));opacity:0}}" +
+    "@keyframes wd-floatup{0%{transform:translateY(0);opacity:0}10%{opacity:.85}50%{transform:translateY(-55vh) translateX(var(--sway))}100%{transform:translateY(-110vh);opacity:0}}" +
+    "@keyframes wd-flip{0%{transform:perspective(900px) rotateY(0)}50%{transform:perspective(900px) rotateY(90deg)}100%{transform:perspective(900px) rotateY(0)}}" +
     "@keyframes wd-fade{from{opacity:0}}" +
-    "@keyframes wd-pop{from{transform:scale(.85);opacity:0}}" +
     "@keyframes wd-fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}" +
-    "@media (prefers-reduced-motion:reduce){.wd-overlay,.wd-card{animation:none}.wd-petals{display:none}}";
+    "@media (prefers-reduced-motion:reduce){.wd-overlay,.wd-card,.wd-flower,.wd-btn,.wd-date,.wd-hello,.wd-msg,.wd-sign,.wd-actions{animation:none}.wd-petals,.wd-burst,.wd-float{display:none}}";
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -166,6 +183,30 @@
     card.appendChild(actions);
     overlay.appendChild(card);
 
+    // Chùm tim bung từ giữa thiệp lúc vừa hiện
+    var burst = el("div", "wd-burst");
+    var hearts = ["💗", "💖", "💕", "🌸", "💞", "✨"];
+    for (var b = 0; b < 18; b++) {
+      var h = el("span", null, hearts[b % hearts.length]);
+      var ang = (b / 18) * Math.PI * 2, dist = 150 + Math.random() * 110;
+      h.style.setProperty("--dx", Math.cos(ang) * dist + "px");
+      h.style.setProperty("--dy", Math.sin(ang) * dist + "px");
+      h.style.setProperty("--rot", (Math.random() * 120 - 60) + "deg");
+      h.style.animationDelay = 0.35 + Math.random() * 0.25 + "s";
+      burst.appendChild(h);
+    }
+    overlay.appendChild(burst);
+    // Tim bay lên lơ lửng phía sau thiệp
+    for (var f = 0; f < 12; f++) {
+      var fh = el("span", "wd-float", f % 3 ? "💗" : "💕");
+      fh.style.left = 4 + Math.random() * 92 + "%";
+      fh.style.fontSize = 14 + Math.random() * 16 + "px";
+      fh.style.setProperty("--sway", (Math.random() * 60 - 30) + "px");
+      fh.style.animationDuration = 6 + Math.random() * 5 + "s";
+      fh.style.animationDelay = 0.8 + Math.random() * 6 + "s";
+      overlay.appendChild(fh);
+    }
+
     function close() {
       overlay.remove();
       document.removeEventListener("keydown", onKey);
@@ -182,6 +223,13 @@
       qrImg.src = qrUrl;
     }
     function showQr() {
+      // Lật thiệp: đổi nội dung ở giữa cú lật (lúc thiệp quay 90°, không thấy mặt)
+      card.classList.remove("wd-flip");
+      void card.offsetWidth;
+      card.classList.add("wd-flip");
+      setTimeout(fillQr, 350);
+    }
+    function fillQr() {
       while (card.lastChild !== top) card.removeChild(card.lastChild);
       top.querySelector(".wd-flower").textContent = "🧋";
       hello.textContent = "Khoan đã… 🤭";
@@ -198,7 +246,7 @@
     document.addEventListener("keydown", onKey);
     document.body.appendChild(overlay);
     ok.focus();
-    setTimeout(function () { petals.remove(); }, 11000);
+    setTimeout(function () { petals.remove(); burst.remove(); }, 11000);
   }
 
   var started = false;
