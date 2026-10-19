@@ -55,13 +55,80 @@ def video_ket(conn, hop, bay_gio: float, cho_toi_da: float = CHO_TOI_DA_GIAY) ->
     return out
 
 
-def noi_dung(ket: list[tuple[int, float, bool]], tuoi_relay: dict) -> str:
-    def moc(g):
-        return "chưa hỏi từ lúc mini chạy" if g is None else f"{round(g / 60)} phút trước"
-    lau = max(t for _, t, _ in ket)
-    return (f"⚠ Video Desk · Thay logo: {len(ket)} video chờ máy định vị logo ≥ {CHO_TOI_DA_GIAY // 60} phút mà chưa có kết quả "
-            f"(lâu nhất {round(lau / 60)} phút). Relay chính hỏi việc {moc(tuoi_relay.get('chinh'))}; relay dự phòng "
-            f"{moc(tuoi_relay.get('du_phong'))}. Relay im ⇒ kiểm máy dev / ca-n; relay vẫn hỏi ⇒ nghi agy lỗi hoặc hết quota.")
+IM_SAU_GIAY = 120  # relay hỏi mỗi 20 s; quá 2 phút không hỏi ⇒ coi là IM (USER CHỐT 19/10)
+SO_VIDEO_LIET_KE = 3  # liệt 3 video lâu nhất, còn lại ghi "+N" — tin luôn ngắn, xa trần 2000 ký tự của Discord
+TRAN_DISCORD = 2000
+TRANG_THAY_LOGO = "https://video.nobidigital.asia/thay-logo.html"  # domain thật của Video Desk (sau Cloudflare Access)
+
+
+def _thoi_gian(giay: float) -> str:
+    """25″ · 18′ · 1 giờ 5′ — dưới 1 phút ghi GIÂY (tin cũ làm tròn 30 s thành "0 phút trước")."""
+    g = max(0, int(giay))
+    if g < 60:
+        return f"{g}″"
+    if g < 3600:
+        return f"{g // 60}′"
+    return f"{g // 3600} giờ {g % 3600 // 60}′"
+
+
+def _relay(ten: str, tuoi: float | None) -> str:
+    if tuoi is None:
+        return f"{ten} chưa hỏi từ lúc mini chạy"
+    return f"{ten} im {_thoi_gian(tuoi)}" if tuoi >= IM_SAU_GIAY else f"{ten} hỏi {_thoi_gian(tuoi)} trước"
+
+
+def ket_luan(tuoi_relay: dict) -> tuple[str, str, str]:
+    """(biểu tượng, kết luận, làm gì) — MỘT kết luận theo tuổi lần hỏi việc gần nhất của 2 relay (chưa từng hỏi = im)."""
+    def im(k):
+        t = tuoi_relay.get(k)
+        return t is None or t >= IM_SAU_GIAY
+    if not im("chinh"):
+        return "🟠", "relay vẫn hỏi, nghi agy lỗi/hết quota", "xem log relay chính, kiểm quota agy"
+    if not im("du_phong"):
+        return "🟠", "dự phòng đang thay mà vẫn kẹt, nghi agy ca-n", "bật relay chính, kiểm agy ca-n"
+    return "🔴", "không máy nào đang định vị", "kiểm máy dev + ca-n"
+
+
+def _ten_luot(ten: str | None, job_id: int) -> str:
+    """Tên lượt do người dùng đặt: bỏ ký tự định dạng markdown + xuống dòng, cắt 40 ký tự (mention đã tắt ở payload)."""
+    t = " ".join((ten or "").translate({ord(c): " " for c in "*_~`|>\\\n\r"}).split())
+    if not t:
+        return f"lượt #{job_id}"
+    return t if len(t) <= 40 else t[:39] + "…"
+
+
+def thong_tin_luot(conn, video_ids) -> dict[int, tuple[int, str | None]]:
+    """{video_id: (job_id, ten_bo)} cho các video kẹt — để tin ghi «tên lượt» #mã video và link mở thẳng lượt."""
+    ids = list(video_ids)
+    if not ids:
+        return {}
+    dau = ",".join("?" * len(ids))
+    return {r[0]: (r[1], r[2]) for r in conn.execute(
+        f"SELECT v.id, v.job_id, j.ten_bo FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id WHERE v.id IN ({dau})", ids)}
+
+
+def noi_dung(ket: list[tuple[int, float, bool]], tuoi_relay: dict, luot: dict | None = None) -> str:
+    """Tin 3 dòng (USER CHỐT 19/10 phương án C): kết luận · trạng thái relay + video kẹt · làm gì + link mở thẳng lượt lâu nhất."""
+    luot = luot or {}
+    xep = sorted(ket, key=lambda k: -k[1])
+    lau = xep[0][1]
+    bt, kl, lam = ket_luan(tuoi_relay)
+    dau = f"1 video kẹt {_thoi_gian(lau)}" if len(xep) == 1 else f"{len(xep)} video kẹt (lâu nhất {_thoi_gian(lau)})"
+    nhom: dict[int, list[str]] = {}
+    ten: dict[int, str] = {}
+    for vid, _, _ in xep[:SO_VIDEO_LIET_KE]:
+        jid, tb = luot.get(vid, (0, None))
+        ten.setdefault(jid, _ten_luot(tb, jid) if jid else "")
+        nhom.setdefault(jid, []).append(f"#{vid}")
+    ds = " · ".join((f"«{ten[j]}» " if ten[j] else "") + ", ".join(v) for j, v in nhom.items())
+    if len(xep) > SO_VIDEO_LIET_KE:
+        ds += f" · +{len(xep) - SO_VIDEO_LIET_KE}"
+    jid_lau = luot.get(xep[0][0], (0, None))[0]
+    link = f"{TRANG_THAY_LOGO}?luot={jid_lau}" if jid_lau else TRANG_THAY_LOGO
+    chu = (f"{bt} **Thay logo: {dau} — {kl}**\n"
+           f"{_relay('Chính', tuoi_relay.get('chinh'))} · {_relay('Dự phòng', tuoi_relay.get('du_phong'))} · {ds}\n"
+           f"👉 {lam} · {link}")
+    return chu[:TRAN_DISCORD]
 
 
 def gui_webhook(chu: str, url: str | None = None) -> bool | None:
@@ -69,7 +136,7 @@ def gui_webhook(chu: str, url: str | None = None) -> bool | None:
     url = url if url is not None else os.environ.get(ENV_WEBHOOK, "")
     if not url:
         return None
-    req = urllib.request.Request(url, data=json.dumps({"content": chu}).encode(),
+    req = urllib.request.Request(url, data=json.dumps({"content": chu, "allowed_mentions": {"parse": []}}).encode(),  # tên lượt có "@everyone" không ping cả kênh
                                  headers={"Content-Type": "application/json", "User-Agent": USER_AGENT}, method="POST")
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
@@ -96,7 +163,7 @@ def thu_canh(conn, hop, tuoi_relay: dict, gui: Callable[[str], bool | None] = gu
             return None
         if luc < _lui["den"]:  # đang giãn cách sau lần trượt trước
             return None
-        kq = gui(noi_dung(ket, tuoi_relay))
+        kq = gui(noi_dung(ket, tuoi_relay, thong_tin_luot(conn, [v for v, _, _ in ket])))
         if kq is None:
             if not _da_bao_chua_cau_hinh:
                 log.warning("canh relay: %d video kẹt chờ định vị nhưng CHƯA cấu hình %s — không báo được", len(ket), ENV_WEBHOOK)

@@ -106,6 +106,10 @@
     } catch (_) { /* bỏ qua */ }
   }
 
+  // Link mở thẳng một lượt (tin Discord báo video kẹt: …/thay-logo.html?luot=<job_id>) ⇒ lọc sẵn lượt đó ở lần tải đầu. Lượt không còn
+  // / không phải của người xem ⇒ `taiLai` tự bỏ lọc khi /bo không có nó (như bộ đang lọc bị xoá).
+  const luotUrl = new URLSearchParams(location.search).get("luot");
+  if (luotUrl && /^[1-9]\d{0,9}$/.test(luotUrl)) T.loc.job = Number(luotUrl);
   T.veLai();
   kiemBat();
   taiLai();

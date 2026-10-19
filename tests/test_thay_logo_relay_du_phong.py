@@ -184,7 +184,9 @@ def test_canh_bao_video_cho_qua_15_phut_chua_co_ket_qua(ctx):
     _cho(conn, vids[1], 5)  # chưa tới ngưỡng
     gui = _gui_ghi(True)
     assert canh_relay.thu_canh(conn, _HopGia(), {"chinh": 1200.0, "du_phong": None}, gui) is True
-    assert len(gui.ghi) == 1 and "1 video" in gui.ghi[0] and "Relay chính hỏi việc 20 phút trước" in gui.ghi[0]
+    jid = conn.execute("SELECT job_id FROM tl_job_video WHERE id=?", (vids[0],)).fetchone()[0]
+    assert len(gui.ghi) == 1 and "1 video kẹt 20′" in gui.ghi[0] and "Chính im 20′" in gui.ghi[0]
+    assert f"«lượt #{jid}» #{vids[0]}" in gui.ghi[0] and f"thay-logo.html?luot={jid}" in gui.ghi[0]  # lượt chưa đặt tên ⇒ "lượt #id"
     assert canh_relay.thu_canh(conn, _HopGia(), {}, gui) is None  # đã báo ⇒ không báo lại trong 1 giờ
     assert len(gui.ghi) == 1
 
@@ -245,13 +247,14 @@ def test_gui_that_qua_http_mang_user_agent_khong_bi_chan(monkeypatch):
     """H1 review PR3 (đo thật: Cloudflare trả 403 "error code: 1010" cho UA `Python-urllib`). Máy chủ HTTP nội bộ giả hành vi đó.
     ĐỘT BIẾN: bỏ header User-Agent ⇒ 403 ⇒ False ⇒ ĐỎ."""
     import http.server
-    nhan = []
+    import json
+    nhan, than = [], []
 
     class XuLy(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             ua = self.headers.get("User-Agent", "")
             nhan.append(ua)
-            self.rfile.read(int(self.headers.get("Content-Length", 0)))
+            than.append(json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)))))
             self.send_response(403 if ua.startswith("Python-urllib") else 204)
             self.end_headers()
 
@@ -266,6 +269,56 @@ def test_gui_that_qua_http_mang_user_agent_khong_bi_chan(monkeypatch):
         t.join(timeout=5)
         sv.server_close()
     assert nhan and nhan[0].startswith("DiscordBot (")
+    assert than[0]["allowed_mentions"] == {"parse": []}  # tên lượt "@everyone" không ping cả kênh
+
+
+# ---- Tin 3 dòng (USER CHỐT 19/10 phương án C) -----------------------------------------------------------------------------------------
+_LUOT = {42: (5, "N.1510C"), 43: (5, "N.1510C"), 51: (9, "Shopee 19/10"), 60: (9, "Shopee 19/10"), 61: (9, "Shopee 19/10")}
+
+
+def test_tin_ca_khong_may_nao_dang_dinh_vi():
+    """Cả hai relay quá 2 phút không hỏi (hoặc chưa từng hỏi) ⇒ 🔴 + kiểm máy. ĐỘT BIẾN bỏ nhánh 🔴 ⇒ ĐỎ."""
+    for tuoi in ({"chinh": 1080.0, "du_phong": 720.0}, {"chinh": None, "du_phong": None}, {}):
+        chu = canh_relay.noi_dung([(42, 1200.0, True)], tuoi, _LUOT)
+        d = chu.split("\n")
+        assert len(d) == 3 and d[0] == "🔴 **Thay logo: 1 video kẹt 20′ — không máy nào đang định vị**", chu
+        assert d[2] == "👉 kiểm máy dev + ca-n · https://video.nobidigital.asia/thay-logo.html?luot=5"
+    assert canh_relay.noi_dung([(42, 1200.0, True)], {"chinh": 1080.0, "du_phong": 720.0}, _LUOT).split("\n")[1] == \
+        "Chính im 18′ · Dự phòng im 12′ · «N.1510C» #42"
+
+
+def test_tin_ca_relay_van_hoi_ghi_giay_khong_lam_tron_ve_0():
+    """Relay chính hỏi 30 s trước ⇒ nghi agy. Dưới 1 phút ghi GIÂY (tin cũ ghi "0 phút trước"). ĐỘT BIẾN làm tròn về phút ⇒ ĐỎ."""
+    chu = canh_relay.noi_dung([(42, 1200.0, True)], {"chinh": 30.4, "du_phong": 25.0}, _LUOT)
+    d = chu.split("\n")
+    assert d[0] == "🟠 **Thay logo: 1 video kẹt 20′ — relay vẫn hỏi, nghi agy lỗi/hết quota**"
+    assert d[1] == "Chính hỏi 30″ trước · Dự phòng hỏi 25″ trước · «N.1510C» #42"
+    assert "hỏi 0′" not in chu
+    assert d[2].startswith("👉 xem log relay chính, kiểm quota agy · ")
+
+
+def test_tin_ca_du_phong_dang_thay_va_nhieu_video():
+    """Chính im, dự phòng hỏi ⇒ nghi agy ca-n. 5 video ⇒ 3 lâu nhất gom theo lượt + "+2"; link mở lượt của video kẹt LÂU NHẤT.
+    ĐỘT BIẾN bỏ nhánh dự phòng ⇒ ĐỎ."""
+    ket = [(51, 1320.0, True), (42, 2820.0, True), (61, 950.0, True), (43, 2760.0, True), (60, 1000.0, True)]
+    d = canh_relay.noi_dung(ket, {"chinh": 2460.0, "du_phong": 12.0}, _LUOT).split("\n")
+    assert d[0] == "🟠 **Thay logo: 5 video kẹt (lâu nhất 47′) — dự phòng đang thay mà vẫn kẹt, nghi agy ca-n**"
+    assert d[1] == "Chính im 41′ · Dự phòng hỏi 12″ trước · «N.1510C» #42, #43 · «Shopee 19/10» #51 · +2"
+    assert d[2] == "👉 bật relay chính, kiểm agy ca-n · https://video.nobidigital.asia/thay-logo.html?luot=5"
+
+
+def test_tin_dai_nhat_van_duoi_tran_discord_va_ten_luot_khong_pha_dinh_dang():
+    """500 video, tên lượt 200 ký tự đầy ký tự markdown/xuống dòng ⇒ tin vẫn 3 dòng, ≤ 2000 ký tự, tên bị lọc + cắt 40."""
+    xau = ("**đậm** _nghiêng_ `mã` ~~gạch~~ |spoiler| > trích\n@everyone " * 5)
+    luot = {i: (i, xau) for i in range(1, 501)}
+    chu = canh_relay.noi_dung([(i, 99999.0 - i, True) for i in range(1, 501)], {"chinh": 4000.0, "du_phong": None}, luot)
+    assert len(chu) <= 2000 and chu.count("\n") == 2 and "+497" in chu and "27 giờ 46′" in chu
+    ten = chu.split("«")[1].split("»")[0]
+    assert len(ten) <= 40 and not any(c in ten for c in "*_`~|>\n"), ten
+
+
+def test_thoi_gian_de_doc():
+    assert [canh_relay._thoi_gian(g) for g in (0, 25, 59.9, 60, 1199, 3600, 3900)] == ["0″", "25″", "59″", "1′", "19′", "1 giờ 0′", "1 giờ 5′"]
 
 
 def test_van_ket_sau_1_gio_thi_bao_lai(ctx):

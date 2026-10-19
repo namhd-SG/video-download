@@ -943,3 +943,33 @@ def test_it_luot_thi_khong_co_nut_xem_them(may_chu, trinh_duyet, monkeypatch):
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
     assert p.locator("#tl-bo-list .tl-bo-xem-them").count() == 0
+
+
+def test_link_luot_tu_tin_discord_mo_thang_luot_do(may_chu, trinh_duyet, monkeypatch):
+    """Tin Discord báo video kẹt dẫn `…/thay-logo.html?luot=<job_id>` ⇒ trang lọc sẵn đúng lượt: thẻ sáng, ô "Bộ" chọn sẵn, /videos gọi
+    kèm job_id. Lượt cũ (thứ 3) vẫn hiện vì đang lọc. ĐỘT BIẾN bỏ đọc tham số `luot` ⇒ ĐỎ."""
+    xong = dict(tong=1, xong=1, dat=1)
+    goi = []
+
+    def videos(r):
+        goi.append(r.request.url)
+        _tra_json(r, _danh_sach([]))
+    bo = [_luot(3, "L3", **xong), _luot(2, "L2", **xong), _luot(1, "L1", **xong)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos, bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html?luot=1")
+    p.wait_for_selector("#tl-bo-list .tl-bo-the.on")
+    assert p.locator("#tl-bo-list .tl-bo-the.on .tl-bo-ten").inner_text().split("\n")[0] == "L1"
+    assert p.locator("#tl-loc-bo").input_value() == "1"
+    assert goi and "job_id=1" in goi[0]
+
+
+def test_link_luot_rac_thi_khong_loc(may_chu, trinh_duyet, monkeypatch):
+    goi = []
+
+    def videos(r):
+        goi.append(r.request.url)
+        _tra_json(r, _danh_sach([]))
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos, bo=[_luot(1, "L1", tong=1, xong=1, dat=1)])
+    p.goto(f"{may_chu}/thay-logo.html?luot=0x1")  # Number("0x1") = 1: thiếu kiểm "chỉ chữ số" sẽ lọc nhầm L1
+    p.wait_for_selector("#tl-bo-list .tl-bo-the")
+    assert p.locator("#tl-bo-list .tl-bo-the.on").count() == 0 and goi and "job_id" not in goi[0]
