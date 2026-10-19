@@ -102,11 +102,9 @@
     "background:rgba(255,255,255,.7);color:var(--wd-ink);font-size:20px;line-height:34px;padding:0}" +
     ".wd-petals{position:absolute;inset:0;z-index:0;pointer-events:none}" +
     ".wd-petal{position:absolute;top:-40px;animation:wd-fall linear forwards;opacity:.9}" +
-    ".wd-qr-body{padding:4px 26px 0}.wd-qr-body p{margin:10px 0 0;font-size:15px;line-height:1.55;color:var(--wd-ink)}" +
+    ".wd-qr-body{padding:4px 26px 26px}.wd-qr-body p{margin:10px 0 0;font-size:15px;line-height:1.55;color:var(--wd-ink)}" +
     ".wd-qr-img{display:block;margin:14px auto 0;width:min(220px,70vw);height:auto;border-radius:12px;background:#fff;padding:8px;box-shadow:0 6px 16px rgba(40,20,40,.18)}" +
     ".wd-qr-note{font-size:12.5px!important;opacity:.75}" +
-    ".wd-qr-act{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}" +
-    ".wd-btn.wd-ghost{background:#fff;color:var(--wd-ink);box-shadow:none;border:2px solid var(--wd-accent);padding:10px 22px}" +
     "@keyframes wd-fade{from{opacity:0}}" +
     "@keyframes wd-pop{from{transform:scale(.85);opacity:0}}" +
     "@keyframes wd-fall{to{transform:translateY(110vh) rotate(540deg);opacity:.2}}" +
@@ -192,15 +190,8 @@
       body.appendChild(qrImg);
       body.appendChild(el("p", "wd-qr-note", "Đùa đó 😆 Chúc 20/10 thật vui, thật nhiều quà!"));
       card.appendChild(body);
-      var act = el("div", "wd-actions wd-qr-act");
-      var paid = el("button", "wd-btn", "Chuyển rồi nè 💸");
-      var nope = el("button", "wd-btn wd-ghost", "Hông chuyển đâu 😝");
-      paid.type = nope.type = "button";
-      paid.onclick = nope.onclick = close;
-      act.appendChild(paid);
-      act.appendChild(nope);
-      card.appendChild(act);
-      paid.focus();
+      // Màn QR không có nút: đóng bằng ×, bấm ra ngoài hoặc Esc
+      x.focus();
     }
     ok.onclick = function () { if (qrImg) showQr(); else close(); };
     overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
