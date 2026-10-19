@@ -1,8 +1,6 @@
 """Khoá / khoá lại có danh tính vết: cổng 2-trong-3, bộ đệm trễ, thoát bẫy nhánh gần, danh tính chống nhiễm, hợp hai lượt.
 
 Ứng viên tổng hợp (x, y, điểm, w, h); danh tính logo 74×72 điểm 0,66. Mỗi lớp có đột biến chứng minh test phân định được."""
-
-
 from tiktok_music_downloader.thay_logo import khoa_danh_tinh as kd
 from tiktok_music_downloader.thay_logo import theo_vet as tv
 
@@ -96,6 +94,13 @@ def test_dot_bien_danh_tinh_troi_theo_vet_thi_mat_thoat_bay(monkeypatch):
     monkeypatch.setattr(kd, "tin_hieu", troi)
     out = _chay([[W]] * 10 + [[W, L]] * 20)
     assert _xs(out, 10) == {100}
+
+
+def test_mat_dau_qua_lau_quen_vi_tri_nhung_giu_danh_tinh():
+    """> TRUOT_TOI_DA khung mất ⇒ quên vị trí/vận tốc (khoá lại là khoá mới, không phải 'nhảy' từ chỗ cũ đã trôi xa)."""
+    out = _chay([[L]] * 10 + [[]] * (tv.TRUOT_TOI_DA + 2) + [[B]] * 6)
+    t0 = 10 + tv.TRUOT_TOI_DA + 2
+    assert set(out) == set(range(10)) | set(range(t0, t0 + 6)) and not out[t0]["nhay"]
 
 
 def _det0(cac_co):
