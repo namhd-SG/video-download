@@ -33,12 +33,13 @@
 
   function veTabs() {
     const hop = $("tl-tabs"); hop.replaceChildren();
+    const g = nhomGio();  // MỘT lần mỗi lượt vẽ: `dem()` của module có thể có tác dụng phụ (tab "Tải từ máy" dọn dòng đã gửi)
     for (const [k, ten] of TABS) {
       const b = el("button", "tl-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.dataset.tab = k;
       b.setAttribute("aria-selected", String(k === tab));
       b.append(ten + " ");
       // Số cạnh tab = video ĐÃ CHỌN vào giỏ từ tab đó (cả 4 tab cùng một nghĩa); 0 ⇒ ẩn — "Bộ tự tìm 0" từng bị đọc thành "không có bộ nào".
-      const g = nhomGio(), n = k === "thu-vien" ? g.tv : k === "link" ? g.link : k === "bo" ? g.bo : k === "may" ? g.may : 0;
+      const n = k === "thu-vien" ? g.tv : k === "link" ? g.link : k === "bo" ? g.bo : k === "may" ? g.may : 0;
       if (n) b.append(el("span", "tl-cnt", String(n)));
       b.addEventListener("click", () => datTab(k));
       hop.append(b);
