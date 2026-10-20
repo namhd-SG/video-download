@@ -363,6 +363,24 @@ def test_cum_xuyen_tu_agy_den_doc_ket_qua_co_cum_song_song_voi_box(tmp_path):
         ["0", None, "0", "1"]
 
 
+def test_ghep_ket_qua_bo_watermark_nhan_astronex(caplog):
+    """Logo nhà (nhãn chứa "astronex", mọi kiểu hoa/thường/khoảng trắng) không thành box mồi; watermark khác giữ nguyên; mỗi lần bỏ 1 dòng log."""
+    u = "a" * 32
+    ra = {"items": [{"file": f"/x/{u}.jpg", "endcard": False, "watermarks": [
+        {"label": " AstroNex AI ", "box_2d": [1, 2, 3, 4]}, {"label": "tiktok", "box_2d": [5, 6, 7, 8]},
+        {"label": "astronex.ai", "box_2d": [9, 10, 11, 12]},
+        # nhãn mà whitelist `_nhan_chuan` loại (ký tự lạ / quá 40 ký tự) vẫn là logo nhà, không được lọt thành box không cụm
+        {"label": "astronex!", "box_2d": [13, 14, 15, 16]}, {"label": "@astronex", "box_2d": [17, 18, 19, 20]},
+        {"label": "Astro-Nex", "box_2d": [21, 22, 23, 24]},
+        {"label": "watermark logo astronex mờ ở góc trên bên phải video", "box_2d": [25, 26, 27, 28]},
+        {"label": "astronex", "box_2d": [1, 2, 3]}]}]}  # box hỏng: bị loại vì box_2d, KHÔNG đếm là bỏ logo nhà
+    with caplog.at_level("INFO", logger="thay_logo.relay"):
+        kq = relay_may_dev.ghep_ket_qua([{"job_id": 1, "anh": [u]}], ra)
+    assert kq[1]["items"][0]["watermarks"] == [{"box_2d": [5, 6, 7, 8], "cum": 0}]
+    assert len([r for r in caplog.records if "logo nhà" in r.getMessage()]) == 6
+    assert not any("tiktok" in r.getMessage() and "bỏ" in r.getMessage() for r in caplog.records)
+
+
 def test_cum_danh_so_rieng_tung_job_va_on_dinh_trong_luot():
     u1, u2, u3 = "a" * 32, "b" * 32, "c" * 32
     wm = lambda t: [{"label": t, "box_2d": [1, 2, 3, 4]}]  # noqa: E731
