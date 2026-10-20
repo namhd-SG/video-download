@@ -66,7 +66,7 @@
   //  - Module TỰ ĐỌC `T.tat` (tính năng tắt ⇒ khoá ô/nút của mình); khối nhập chỉ khoá nút "Thay logo" và tab Thư viện.
   //  - `T.nhapChon` (Set) chỉ nhận ID FILE DRIVE (khớp T.IDRE) — máy chủ từ chối id sai khuôn bằng 400 cho cả lượt.
   //    Thêm/bỏ id xong gọi `T.capNhatChan()` để nút "Thay logo" và bộ đếm "Đã chọn N video" cập nhật.
-  //  - Bộ đếm trên nhãn tab hiện CHỈ có cho tab Thư viện; tab của module chưa có bộ đếm (hiện 0 mờ).
+  //  - Bộ đếm trên nhãn tab = số video ĐÃ CHỌN từ tab đó (module khai `dem()`; tab Link = phần còn lại của giỏ); bằng 0 ⇒ ẩn.
   // Tab chưa có module ⇒ "Sắp có".
   window.TL_TAB_NGUON = window.TL_TAB_NGUON || [];
 
@@ -79,6 +79,9 @@
 
   window.TL = {
     $, el, goi, goc, soiKy, phut, IDRE, linkDrive, loiText, lyDoDeHieu, sapCo, nhomCua, phanSo, tenVideo, ngayGio,
+    // Lựa chọn của khối nhập — tạo Ở ĐÂY (file nạp đầu tiên), không ở khối nhập: module nguồn nhập (vd tab "Tải từ máy" khôi phục
+    // phiên) có thể chạm vào nó từ một lời gọi API trả về TRƯỚC khi thay-logo-khoi-nhap.js kịp chạy (trình duyệt còn đang tải file đó).
+    nhapChon: new Set(),
     videos: [], bo: [], daCham: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],
     loc: { job: null, nen: "", ngay: "" }, conNua: false, truocTiep: null, thuVienLoi: false,
     // Các module đăng ký hàm vẽ vào đây; veLai() vẽ lại tất cả theo dữ liệu hiện có.

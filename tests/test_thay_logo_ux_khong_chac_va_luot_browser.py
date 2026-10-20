@@ -181,3 +181,14 @@ def test_khoi_da_cham_hien_dat_hong_va_chip_loc_dan_toi_khoi(may_chu, trinh_duye
         assert con in chu and mat not in chu, (chip, chu)
         p.locator("#tl-loc button", has_text=chip).click()  # tắt chip ⇒ về tất cả
         p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")
+
+
+def test_luot_tron_co_dat_va_con_khong_chac_khong_ghi_xong(may_chu, trinh_duyet, monkeypatch):
+    """Lượt 1 video Đạt + 1 video máy không chắc: KHÔNG "Xong" (còn ca chưa xử lý), vẫn có nút dẫn tới khối không chắc thay vì chỉ ghi
+    "Đã duyệt". ĐỘT BIẾN: trả điều kiện `b.xong === 0 && b.cho_nguoi > 0` ⇒ ghi "Xong" ⇒ ĐỎ."""
+    bo = [_luot(1, "Trộn", tong=2, xong=1, dat=1, cho_nguoi=1)]
+    vs = [_dong_mo(92, job_id=1, ten_bo="Trộn", danh_gia="dat", drive_file_id_ra="OUT" + "y" * 17),
+          _dong_mo(93, job_id=1, ten_bo="Trộn", trang_thai="cho_nguoi", so_box=2)]
+    p, the = _mo_luot(trinh_duyet, may_chu, monkeypatch, bo, vs)
+    t = the.nth(0).inner_text()
+    assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Máy không chắc" and "Xem 1 video máy không chắc" in t

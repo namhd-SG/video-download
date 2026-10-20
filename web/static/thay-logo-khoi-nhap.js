@@ -13,7 +13,7 @@
   };
   let tab = "bo", thuVien = null, tim = "";   // thuVien: null = chưa tải, [] = trống
   let dichKhac = "tao_bo";                    // nơi nhận của video nguồn khác — mặc định theo mock đã duyệt (bộ tự tìm mới)
-  const chon = new Set();
+  const chon = T.nhapChon;  // tạo sẵn ở thay-logo-chung.js — xem chú thích ở đó
 
   function datTab(k) {
     tab = k;
@@ -33,12 +33,14 @@
 
   function veTabs() {
     const hop = $("tl-tabs"); hop.replaceChildren();
+    const g = nhomGio();  // MỘT lần mỗi lượt vẽ: `dem()` của module có thể có tác dụng phụ (tab "Tải từ máy" dọn dòng đã gửi)
     for (const [k, ten] of TABS) {
       const b = el("button", "tl-tab"); b.type = "button"; b.setAttribute("role", "tab"); b.dataset.tab = k;
       b.setAttribute("aria-selected", String(k === tab));
       b.append(ten + " ");
-      const n = k === "thu-vien" ? demThuVien() : demModule(k);
-      b.append(el("span", "tl-cnt" + (n ? "" : " zero"), String(n)));
+      // Số cạnh tab = video ĐÃ CHỌN vào giỏ từ tab đó (cả 4 tab cùng một nghĩa); 0 ⇒ ẩn — "Bộ tự tìm 0" từng bị đọc thành "không có bộ nào".
+      const n = k === "thu-vien" ? g.tv : k === "link" ? g.link : k === "bo" ? g.bo : k === "may" ? g.may : 0;
+      if (n) b.append(el("span", "tl-cnt", String(n)));
       b.addEventListener("click", () => datTab(k));
       hop.append(b);
     }
@@ -99,9 +101,13 @@
   function veDich(g) {
     const hop = $("tl-dich"); hop.replaceChildren();
     const khac = g.tv + g.may + g.link;
-    if (!g.bo && !khac) { hop.hidden = true; return; }
     hop.hidden = false;
+    hop.classList.toggle("rong", !g.bo && !khac);
     hop.append(el("h3", "", "Thành phẩm đi đâu?"));
+    if (!g.bo && !khac) {  // giỏ trống: vẫn cho thấy bước kế (mờ), không giấu cả mục
+      hop.append(el("p", "tl-dich-hoi", "Chọn video trước — rồi chọn nơi nhận thành phẩm ở đây."));
+      return;
+    }
     if (g.bo) {
       const p = el("p", "tl-dich-co-dinh");
       p.append("↩ ", el("b", "", `${g.bo} video từ bộ tự tìm`), " sẽ được trả lại đúng bộ gốc (thay bản cũ) ", el("b", "", "sau khi bạn bấm Đạt"),
