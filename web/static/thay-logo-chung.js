@@ -66,7 +66,7 @@
   //  - Module TỰ ĐỌC `T.tat` (tính năng tắt ⇒ khoá ô/nút của mình); khối nhập chỉ khoá nút "Thay logo" và tab Thư viện.
   //  - `T.nhapChon` (Set) chỉ nhận ID FILE DRIVE (khớp T.IDRE) — máy chủ từ chối id sai khuôn bằng 400 cho cả lượt.
   //    Thêm/bỏ id xong gọi `T.capNhatChan()` để nút "Thay logo" và bộ đếm "Đã chọn N video" cập nhật.
-  //  - Bộ đếm trên nhãn tab hiện CHỈ có cho tab Thư viện; tab của module chưa có bộ đếm (hiện 0 mờ).
+  //  - Bộ đếm trên nhãn tab = số video ĐÃ CHỌN từ tab đó (module khai `dem()`; tab Link = phần còn lại của giỏ); bằng 0 ⇒ ẩn.
   // Tab chưa có module ⇒ "Sắp có".
   window.TL_TAB_NGUON = window.TL_TAB_NGUON || [];
 

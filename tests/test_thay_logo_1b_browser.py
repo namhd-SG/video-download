@@ -547,3 +547,33 @@ def test_khong_con_cho_nao_boc_window_fetch():
     """Thân POST do hook chính thức `TL_THAN_POST` sửa, không bọc `fetch` toàn trang."""
     for f in Path(app_mod.STATIC_DIR).glob("thay-logo*.js"):
         assert not re.search(r"window\.fetch\s*=|fetch\s*=\s*function", f.read_text()), f.name
+
+
+def test_tab_khong_hien_so_0_va_so_la_video_da_chon(may_chu, trinh_duyet):
+    """Số cạnh tab = video ĐÃ CHỌN từ tab đó, bằng 0 thì ẩn ("Bộ tự tìm 0" từng bị đọc là "không có bộ nào" dù tab có bộ).
+    Chọn 1 video thư viện ⇒ chỉ tab Thư viện có số. ĐỘT BIẾN: vẽ lại số 0 ⇒ ĐỎ."""
+    p, loi = _mo(trinh_duyet, may_chu)
+    assert p.locator("#tl-tabs .tl-cnt").count() == 0
+    assert p.locator('#tl-tabs [data-tab="bo"]').inner_text().strip() == "Bộ tự tìm"
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    p.wait_for_selector("#tl-tab-thu-vien input[type=checkbox]")
+    p.locator("#tl-tab-thu-vien input[type=checkbox]").first.check()
+    assert p.locator('#tl-tabs [data-tab="thu-vien"] .tl-cnt').inner_text() == "1" and p.locator("#tl-tabs .tl-cnt").count() == 1
+    assert not loi
+
+
+def test_gio_trong_van_hien_noi_nhan_mo_kem_cau_chon_video_truoc(may_chu, trinh_duyet):
+    """Giỏ trống ⇒ mục "Thành phẩm đi đâu?" VẪN hiện (mờ) với câu "Chọn video trước", không giấu bước kế; chọn video ⇒ hết mờ, hiện
+    lựa chọn nơi nhận. ĐỘT BIẾN: trả lại `hidden = true` khi giỏ trống ⇒ ĐỎ."""
+    p, loi = _mo(trinh_duyet, may_chu)
+    d = p.locator("#tl-dich")
+    assert d.is_visible() and "rong" in (d.get_attribute("class") or "")
+    chu = d.inner_text()
+    assert "Thành phẩm đi đâu?" in chu and "Chọn video trước" in chu and d.locator("input[type=radio]").count() == 0
+    assert float(p.evaluate("getComputedStyle(document.getElementById('tl-dich')).opacity")) < 1
+    _chup(p, "ux-gio-trong-noi-nhan-1280.png")
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    p.wait_for_selector("#tl-tab-thu-vien input[type=checkbox]")
+    p.locator("#tl-tab-thu-vien input[type=checkbox]").first.check()
+    assert "rong" not in (d.get_attribute("class") or "") and d.locator("input[type=radio]").count() == 3 and "Chọn video trước" not in d.inner_text()
+    assert not loi
