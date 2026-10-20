@@ -152,10 +152,20 @@
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
       const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
       m.append(than);
-      if (nhom === "khong_chac" && v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào
-        const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem"; g.loading = "lazy"; g.src = urlKhung(v, "truoc");
-        g.addEventListener("error", () => { anhHong.add(v.id); g.remove(); }, { once: true });
-        than.append(g);
+      if (nhom === "khong_chac") {
+        // Lối ra cho ca máy không thay gì: vì sao (lời thường) · xem video gốc · ảnh máy đã nhìn mở lớn được.
+        const ly = T.lyDoDeHieu(v.ly_do_may);
+        if (ly) than.append(el("p", "tl-ly-do-may", ly));
+        if (v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào; bấm ⇒ ảnh lớn ở tab mới
+          const a = el("a", "tl-truoc-nho-link"); a.href = urlKhung(v, "truoc"); a.target = "_blank"; a.rel = "noopener";
+          a.title = "Xem ảnh lớn";
+          const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem — bấm để xem lớn"; g.loading = "lazy"; g.src = a.href;
+          g.addEventListener("error", () => { anhHong.add(v.id); a.remove(); }, { once: true });
+          a.append(g); than.append(a);
+        }
+        const lk = el("div", "tl-link-phu");
+        try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, "▶ Xem video gốc")); } catch (_) { /* nguồn không phải JSON: không có link gốc */ }
+        if (lk.childElementCount) than.append(lk);
       }
       k.append(m);
     }

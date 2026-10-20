@@ -20,6 +20,24 @@
   // Hàng cũ trong DB còn lời lỗi kiểu kỹ sư (tên exception, "khung", "agy", "box", "120s)") ⇒ không cho member đọc; hiện câu thường.
   const MAU_KY_SU = /agy|khung|box|Error\)|\(\w+Error|\d+s\)/i;
   const loiText = (chu) => (!chu ? "Lỗi không rõ" : MAU_KY_SU.test(chu) ? "Máy gặp lỗi khi xử lý video này." : chu);
+  // Ca "Máy không chắc": `ly_do_may` là chuỗi lõi ghép (duong_ong.py, "N/M watermark không tự thay được: [cụm k] <lý do>; …").
+  // Đổi từng lý do sang lời thường theo CHUỖI CON; lõi đổi chữ ⇒ rơi về câu mặc định, không bao giờ in chữ kỹ thuật.
+  // Danh sách chuỗi con được khoá bằng test (đọc thẳng duong_ong.py) — thêm lý do mới ở lõi phải thêm dòng ở đây.
+  const LY_DO_MAY = [
+    [/không có box mồi nào dùng được/, "Máy không tìm thấy logo cũ đủ rõ để bám theo."],
+    [/chỉ dò lại được|cụm chỉ có|vết dựng từ/,"Logo cũ chỉ hiện ở quá ít cảnh, máy chưa đủ chắc."],
+    [/nhảy loạn/, "Logo cũ đổi chỗ liên tục trong video, máy chưa bám theo được."],
+    [/không tách khỏi nền|không dựng được mẫu|học nhầm nội dung/, "Logo cũ mờ hoặc trong suốt, lẫn vào hình nền nên máy dễ nhận nhầm."],
+    [/cổng nội dung chặn/, "Logo cũ nằm đè lên mặt người hoặc chữ, máy dừng để không che nhầm."],
+    [/không được vết nào phủ/, "Máy thấy logo cũ nhưng không bám theo được qua các cảnh."],
+  ];
+  const LY_DO_MAC_DINH = "Máy chưa tự thay được, cần người xem.";
+  function lyDoDeHieu(chu) {
+    if (!chu) return "";
+    const ra = [];
+    for (const [re, cau] of LY_DO_MAY) if (re.test(chu) && !ra.includes(cau)) ra.push(cau);
+    return ra.length ? ra.slice(0, 2).join(" ") : LY_DO_MAC_DINH;
+  }
   // pct_render (0-100) → phân số dễ hiểu ("khoảng 2/3 video"). Chọn k/n (n ≤ 5) gần nhất; ≥ 95 ⇒ gần như cả video.
   function phanSo(pct) {
     if (pct >= 95) return "gần như cả video";
@@ -60,7 +78,7 @@
   // dữ liệu của mình (vd danh sách đã cũ). Module tab có thể khai thêm `dem()` ⇒ số trên nhãn tab = số video đã chọn từ tab đó.
 
   window.TL = {
-    $, el, goi, goc, soiKy, phut, IDRE, linkDrive, loiText, sapCo, nhomCua, phanSo, tenVideo, ngayGio,
+    $, el, goi, goc, soiKy, phut, IDRE, linkDrive, loiText, lyDoDeHieu, sapCo, nhomCua, phanSo, tenVideo, ngayGio,
     videos: [], bo: [], daCham: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],
     loc: { job: null, nen: "", ngay: "" }, conNua: false, truocTiep: null, thuVienLoi: false,
     // Các module đăng ký hàm vẽ vào đây; veLai() vẽ lại tất cả theo dữ liệu hiện có.

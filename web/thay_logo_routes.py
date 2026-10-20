@@ -216,7 +216,9 @@ SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.lo
        (SELECT count(*) FROM tl_box_moi b WHERE b.video_id = v.video_log_id) AS so_box,
        (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.video_log_id ORDER BY luc DESC LIMIT 1) AS danh_gia,
        t.duong_dan_sheet IS NOT NULL AS co_sheet,
-       t.duong_dan_truoc IS NOT NULL AS co_truoc, t.duong_dan_sau IS NOT NULL AS co_sau, t.box_logo AS box_logo_json
+       t.duong_dan_truoc IS NOT NULL AS co_truoc, t.duong_dan_sau IS NOT NULL AS co_sau, t.box_logo AS box_logo_json,
+       -- Lý do máy để ca "không chắc" (chuỗi kỹ thuật của lõi): trang đổi sang lời thường, không in nguyên văn.
+       CASE WHEN v.trang_thai = 'cho_nguoi' THEN t.loi_text END AS ly_do_may
 FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id LEFT JOIN tl_video t ON t.id = v.video_log_id
 """
 

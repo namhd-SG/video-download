@@ -16,10 +16,13 @@
   const banGiaoTB = {};  // job_id ⇒ câu kết quả lần bấm "Tạo bộ tự tìm" gần nhất
   const banGiaoDang = new Set();  // job_id đang chờ ack: poll vẽ lại thẻ không được mở khoá nút (bấm lần 2 = tab Creative Desk thứ hai)
 
-  // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt; còn lại Xong.
+  // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt.
+  // Máy chạy hết mà KHÔNG thay được video nào ⇒ nói thẳng (Máy không chắc / Không làm được), không ghi "Xong" cho lượt 0 video ra.
   function trangThaiBo(b) {
     if (b.tong - b.xong - b.cho_nguoi - b.loi > 0) return ["Đang xử lý", "dang"];
     if (b.cho_duyet > 0) return ["Chờ bạn duyệt", "cho"];
+    if (b.xong === 0 && b.cho_nguoi > 0) return ["Máy không chắc", "kc"];
+    if (b.xong === 0 && b.loi > 0) return ["Không làm được", "loi"];
     return ["Xong", "xong"];
   }
 
@@ -36,7 +39,7 @@
     const h = el("div", "tl-bo-h"); h.append(el("b", "tl-bo-ten", b.ten_bo), el("span", "tl-bo-tt", chu));
     const nguon = el("div", "tl-bo-nguon", `${NGUON[b.nguon_kieu] || "Nguồn khác"} · ${b.tong} video · ${T.ngayGio(b.tao_luc)}`);
     const bar = el("div", "tl-bo-bar"); const i = el("i"); i.style.width = (b.tong ? Math.round(100 * b.xong / b.tong) : 0) + "%"; bar.append(i);
-    const tien = el("div", "tl-bo-tien"); tien.append(el("b", "", `${b.xong}/${b.tong} xong`));
+    const tien = el("div", "tl-bo-tien"); tien.append(el("b", "", `${b.xong}/${b.tong} đã thay`));  // "xong" ở đây từng đứng cạnh chip "Máy xong y/y" ⇒ hai nghĩa
     const phu = [];
     if (b.cho_duyet) phu.push(`${b.cho_duyet} cần bạn xem`);
     if (b.cho_nguoi) phu.push(`${b.cho_nguoi} máy không chắc`);
@@ -85,7 +88,13 @@
       const n = el("button", "tl-pipe-o can", `Chờ bạn duyệt ${b.cho_duyet} ▸`); n.type = "button";
       n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-duyet"); if (h) h.scrollIntoView({ block: "start" }); });
       d.append(n);
-    } else d.append(chip(b.dat + b.hong ? `Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng` : "Chờ duyệt", b.dat + b.hong ? "xong" : ""));
+    } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng`, "xong"));
+    else if (dang === 0 && b.cho_nguoi > 0) {
+      // Không có video để duyệt vì máy không chắc ⇒ chỉ thẳng tới khối "Máy không chắc" (xem lý do + video gốc), không ghi "Chờ duyệt".
+      const n = el("button", "tl-pipe-o can", `Xem ${b.cho_nguoi} video máy không chắc ▸`); n.type = "button";
+      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-khong-chac"); if (h) h.scrollIntoView({ block: "start" }); });
+      d.append(n);
+    } else d.append(chip(dang === 0 ? "Không có video để duyệt" : "Chờ duyệt"));
     return d;
   }
 
@@ -101,7 +110,11 @@
       n.addEventListener("click", () => traNgayLuot(b.job_id));
       d.append(n);
       if (tn.loi) { const p = el("p", "error-text tl-bo-tra-loi", tn.loi); p.setAttribute("role", "alert"); d.append(p); }
-    } else if (chu) d.append(el("span", "tl-bo-dich", chu));
+    } else if (chu) {
+      // Thư mục riêng của lượt chỉ được tạo khi có video Đạt đầu tiên; chưa có ⇒ nói rõ (link thật là "Mở thư mục đầu ra" bên dưới).
+      const chuaCo = chu.startsWith("📁") && !(b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id));
+      d.append(el("span", "tl-bo-dich", chuaCo ? chu + " — tạo khi có video Đạt" : chu));
+    }
     return d;
   }
 
@@ -129,7 +142,8 @@
   // "Còn việc" = máy đang làm / chờ bạn duyệt, HOẶC lượt Xong mà thẻ còn nút hành động chờ bấm (USER CHỐT 16/10 17:1x "Có, luôn hiện").
   const SO_LUOT_GAN_NHAT = 2;
   let hienHetLuot = false;
-  const conViec = (b) => trangThaiBo(b)[1] !== "xong" || coNutTaoBo(b) || coNutTraNgay(b) || conApVaoBo(b);
+  // "kc"/"loi": máy đã làm hết, không còn gì cho người bấm ⇒ không ghim lượt (như "xong").
+  const conViec = (b) => ["dang", "cho"].includes(trangThaiBo(b)[1]) || coNutTaoBo(b) || coNutTraNgay(b) || conApVaoBo(b);
   const giuKhiThu = (b, i) => i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id;
   function veBo() {
     const l = $("tl-bo-list");

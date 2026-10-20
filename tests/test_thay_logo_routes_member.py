@@ -1076,3 +1076,19 @@ def test_loc_theo_ngay_tinh_theo_gio_VN_bat_ke_gio_may_chu(monkeypatch, tz_may):
     finally:
         monkeypatch.undo()
         time.tzset()
+
+
+def test_ly_do_may_chi_tra_cho_ca_khong_chac(ctx):
+    """Lý do của lõi nằm ở `tl_video.loi_text` (không ở `tl_job_video.loi_text`): danh sách trả nó ra `ly_do_may` CHỈ cho ca máy không chắc,
+    để trang đổi sang lời thường. Ca khác ⇒ None (lỗi thật đã có `loi_text` riêng). ĐỘT BIẾN: bỏ điều kiện trạng thái ⇒ ĐỎ."""
+    c, db = ctx
+    _, v = _bo(db, "a@x", "Bộ lý do", ["A" * 20, "B" * 20])
+    conn = nhat_ky.mo(db)
+    for vid, tt in zip(v, ("cho_nguoi", "xong")):
+        log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+        nhat_ky.cap_nhat_video(conn, log_id, loi_text="1/1 watermark không tự thay được: [cụm 0, 2 box] vết nhảy loạn (5 bước nhảy xa)")
+        hang_doi.dat(conn, vid, tt, video_log_id=log_id)
+    conn.close()
+    ds = {d["id"]: d for d in c.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"]}
+    assert "vết nhảy loạn" in ds[v[0]]["ly_do_may"]
+    assert ds[v[1]]["ly_do_may"] is None

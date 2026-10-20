@@ -20,7 +20,10 @@
     const soi = T.videos.filter((v) => T.nhomCua(v) === "cho_duyet" && T.soiKy(v)).length;
     const p = $("tl-tom-tat"); p.replaceChildren();
     const b = document.createElement("b"); b.textContent = `${dem.cho_duyet || 0} video chờ duyệt`;
-    p.append("Việc của bạn: ", b, ` · ${soi} cần bạn xem kỹ · ${dem.dang_xu_ly || 0} video máy đang làm, bạn không cần chờ.`);
+    // Ca máy không chắc cũng là việc của người (xem lý do + video gốc) ⇒ phải có trên dòng này, không thì dòng toàn số 0 trong khi
+    // khối "Máy không chắc" bên dưới có video.
+    const kc = (dem.khong_chac ? ` · ${dem.khong_chac} video máy không chắc` : "") + (dem.loi ? ` · ${dem.loi} video không làm được` : "");
+    p.append("Việc của bạn: ", b, ` · ${soi} cần bạn xem kỹ${kc} · ${dem.dang_xu_ly || 0} video máy đang làm, bạn không cần chờ.`);
   }
   T.ve.tomTat = veTomTat;
 
