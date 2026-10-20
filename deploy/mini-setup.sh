@@ -28,8 +28,9 @@ truoc=$(launchctl list | grep -c astronex || true)
 say "label astronex trước khi chạy: $truoc"
 
 # --- 1. Python -------------------------------------------------------------
-# Bản hệ thống là 3.9.6, tool cần >= 3.10. Homebrew có 3.14.
-PY=/opt/homebrew/bin/python3
+# Bản hệ thống là 3.9.6, tool cần >= 3.10. Homebrew có 3.14 (mini). Máy không có Homebrew Python của mình
+# (ca-n: /opt/homebrew thuộc user khác) ⇒ đặt VIDEODL_PY, vd ~/micromamba/envs/work/bin/python (3.12).
+PY="${VIDEODL_PY:-/opt/homebrew/bin/python3}"
 [ -x "$PY" ] || { echo "THIẾU $PY — cài python qua homebrew trước"; exit 1; }
 say "python: $($PY -V)"
 
@@ -53,7 +54,7 @@ say "python: $($PY -V)"
 FF="$REPO/assets/ffmpeg-static/ffmpeg"
 [ -x "$FF" ] && "$FF" -version >/dev/null 2>&1 || {
   echo "ffmpeg không chạy được: $FF"
-  echo "Từ máy dev: scp assets/ffmpeg-static/ffmpeg nobi_auto@<mini>:$FF"
+  echo "Từ máy dev: scp assets/ffmpeg-static/ffmpeg <user>@<máy đích>:$FF   (bảng: deploy/may-dich.sh)"
   echo "Rồi đối chiếu sha256 với: git lfs ls-files -l"
   exit 1
 }
@@ -63,15 +64,22 @@ say "ffmpeg: $("$FF" -version 2>&1 | head -1 | cut -c1-40)"
 
 # --- 4. venv + phụ thuộc ---------------------------------------------------
 [ -d "$REPO/.venv" ] || { say "tạo venv"; "$PY" -m venv "$REPO/.venv"; }
-"$REPO/.venv/bin/pip" install -q -e "$REPO[web]"
+# `thay-logo` là extra RIÊNG (OpenCV + numpy, pyproject.toml): thiếu nó thì Video Desk vẫn lên nhưng worker thay logo không dựng
+# được (`dung_tu_env`) — tắt ÂM THẦM. Cài cùng lúc và kiểm import ngay dưới.
+"$REPO/.venv/bin/pip" install -q -e "$REPO[web,thay-logo]"
 "$REPO/.venv/bin/pip" install -q "google-api-python-client>=2.100" "google-auth>=2.30" pytest
-say "phụ thuộc: đã cài"
+"$REPO/.venv/bin/python" -c "import cv2, numpy" || { echo "THIẾU OpenCV/numpy trong venv — worker thay logo sẽ không chạy"; exit 1; }
+say "phụ thuộc: đã cài (kể cả OpenCV cho thay logo)"
 
-# Chromium cho Playwright — ~1,1 GB trên máy này (README ghi 150 MB là sai).
-if [ ! -d "$HOME/Library/Caches/ms-playwright" ]; then
-  say "tải Chromium (~1,1 GB, một lần)"
+# Chromium cho Playwright — ~1,1 GB (README ghi 150 MB là sai). LUÔN gọi `install`: nó tự bỏ qua khi đã có ĐÚNG bản mà playwright
+# của venv cần. Kiểm "thư mục cache có chưa" là sai phép đo: ca-n có sẵn cache của dự án khác ở bản cũ (chromium-1234) trong khi
+# playwright 1.64 cần chromium-1248 ⇒ lane tải hỏng lúc mở trình duyệt. Thư mục trình duyệt riêng của dịch vụ đặt bằng
+# PLAYWRIGHT_BROWSERS_PATH trong $CFG/env (run-service.sh nạp cùng file đó) — không ghi vào cache dùng chung của dự án khác.
+(
+  set -a; [ -f "$CFG/env" ] && . "$CFG/env"; set +a
+  say "Chromium cho Playwright: ${PLAYWRIGHT_BROWSERS_PATH:-cache mặc định}"
   "$REPO/.venv/bin/playwright" install chromium
-fi
+)
 
 # --- 5. Thư mục dữ liệu + quyền -------------------------------------------
 # Cookie và khoá Drive là secret. Quyền chặt ngay từ lúc tạo, đừng sửa sau.
@@ -115,6 +123,8 @@ cat > "$REPO/deploy/run-service.sh" <<SH
 set -euo pipefail
 cd "\$HOME/Projects/video-download"
 set -a; . "\$HOME/.config/videodl/env"; set +a
+# Giờ máy có thể không phải giờ VN (ca-n: America/Los_Angeles): log và mốc ngày dựng từ giờ máy phải theo giờ người dùng.
+export TZ="\${VIDEODL_TZ:-Asia/Saigon}"
 exec ./.venv/bin/uvicorn web.app:app --host 127.0.0.1 --port $PORT
 SH
 chmod +x "$REPO/deploy/run-service.sh"
@@ -158,11 +168,17 @@ launchctl bootstrap "gui/$(id -u)" "$PLIST" || {
   echo "bootstrap THẤT BẠI — dịch vụ hiện KHÔNG chạy. Xem ~/Library/Logs/videodl.log"
   exit 1
 }
-sleep 4
 
 # --- 9. Nghiệm thu ---------------------------------------------------------
-code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "http://127.0.0.1:$PORT/healthz" || true)
-[ "$code" = "200" ] || { echo "healthz trả $code, mong 200 — xem ~/Library/Logs/videodl.log"; exit 1; }
+# Chờ có HẠN, không đo một lần: dịch vụ mới khởi động (ca-n 19/10) cần hơn 4 s ⇒ một lần đo ra 000 trong khi dịch vụ lên ngay sau.
+CHO_HEALTHZ_GIAY=${CHO_HEALTHZ_GIAY:-60}
+code=000
+for _ in $(seq 1 "$CHO_HEALTHZ_GIAY"); do
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:$PORT/healthz" || true)
+  [ "$code" = "200" ] && break
+  sleep 1
+done
+[ "$code" = "200" ] || { echo "healthz trả $code sau ${CHO_HEALTHZ_GIAY}s, mong 200 — xem ~/Library/Logs/videodl.log"; exit 1; }
 say "healthz: 200"
 
 # Cổng phải chỉ nghe nội bộ. Nghe 0.0.0.0 là mở trần ra mạng nội bộ trước khi

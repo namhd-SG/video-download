@@ -151,3 +151,25 @@ def test_phan_tich_hinh_bien_rong_van_bi_tu_choi_va_thieu_bash_la_valueerror():
         "biến rỗng không được rơi về máy thật — MiniSsh sẽ từ chối chuỗi rỗng"
     with pytest.raises(ValueError):
         mod.host_mac_dinh({**goc, "PATH": "/khong-co-bash"})
+
+
+def test_hang_ca_n_tro_dung_user_va_hostname_da_do():
+    r = _bang(VIDEODL_MAY_DICH="can")
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "mktmini@100.101.112.88|mac-mini-cua-n"
+
+
+def test_mini_setup_dung_python_theo_VIDEODL_PY_va_dung_truoc_moi_buoc_ghi(tmp_path):
+    """Python đặt qua VIDEODL_PY mà không chạy được ⇒ DỪNG ở bước 1, nêu đúng đường đã đặt; không tạo thư mục nào trong HOME.
+    Đột biến bỏ `${VIDEODL_PY:-…}` (ghim cứng homebrew) ⇒ thông báo nêu /opt/homebrew/bin/python3 ⇒ ĐỎ."""
+    b = tmp_path / "bin"
+    b.mkdir()
+    (b / "launchctl").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (b / "launchctl").chmod(0o755)
+    home = tmp_path / "home"
+    home.mkdir()
+    r = subprocess.run(["/bin/bash", str(REPO / "deploy" / "mini-setup.sh")],
+                       env={"PATH": f"{b}:/usr/bin:/bin", "HOME": str(home), "VIDEODL_PY": "/khong-co/python"},
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 1 and "THIẾU /khong-co/python" in r.stdout, (r.stdout, r.stderr)
+    assert not any(home.iterdir()), "không được ghi gì trước khi có Python"

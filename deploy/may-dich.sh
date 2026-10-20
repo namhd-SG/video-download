@@ -13,6 +13,10 @@
 case "${VIDEODL_MAY_DICH:-cu}" in
   # EXPECT_HOST là `hostname` đã chuẩn hoá: chữ thường, bỏ đuôi `.local`.
   cu) _may_host="nobi_auto@100.109.39.103"; _may_expect="autos-mac-mini" ;;
+  # ca-n: đo 19/10 — user dịch vụ `mktmini`, `hostname` thật "Mac-mini-cua-N.local". Không sudo; Python qua micromamba
+  # (không có /opt/homebrew/bin/python3) ⇒ mini-setup.sh cần VIDEODL_PY. Lần dựng ĐẦU đi đường rsync tay của mini-setup.sh bước 2:
+  # deploy-to-mini.sh dừng khi máy đích chưa có label dịch vụ / jobs.db.
+  can) _may_host="mktmini@100.101.112.88"; _may_expect="mac-mini-cua-n" ;;
   *)
     echo "DỪNG: VIDEODL_MAY_DICH='${VIDEODL_MAY_DICH}' không có trong bảng máy đích (deploy/may-dich.sh)." >&2
     # 7, không phải 1: deploy dùng 1 cho "cổng hostname chặn" — người đọc mã thoát phải
