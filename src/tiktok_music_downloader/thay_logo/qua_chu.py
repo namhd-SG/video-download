@@ -93,6 +93,10 @@ def lap_qua_chu(nguon: NguonKhung, track: list[dict], cum: list[BoxMoi], moi_box
                     # Để nguyên VÀ khoá: đoạn chặn bị cắt quanh box mồi thành mẩu ≤ 3 khung, `go_chan_le` sẽ gỡ mẩu đó ở chỗ lệch box
                     # (cùng lý do `cong.go_chan_theo_hinh` gắn `giu_chan`).
                     e["giu_chan"] = True
+                    # Đường nối hai đầu đi qua box của cụm ⇒ ô lệch ở đây là dò sai dưới chữ, `cong_khop` không tính lệch; đường nối
+                    # KHÔNG qua box (hai đầu cùng nằm trên nội dung) ⇒ không miễn.
+                    o = {"x": p[0] - w / 2, "y": p[1] - h / 2, "w": w, "h": h}
+                    e["qua_chu_khop"] = any(_phu_box(o, bm) for bm in cum if abs(bm.khung - e["frame"]) <= 1)
                     continue
                 if _vet_that(e) and math.dist(_tam(e), p) <= GAN_DET:
                     p = _tam(e)

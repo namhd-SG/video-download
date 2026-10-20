@@ -183,6 +183,20 @@ def test_khung_box_moi_khong_trung_vet_khoa_khoi_go_chan_le():
     assert khop["lech"] == 0 and khop["qua_cong"]
 
 
+def test_vet_lech_ca_hai_dau_doan_noi_van_bi_dem_lech():
+    """Ngược với bài trên: cả vết (hai đầu đoạn chặn lẫn khung box ±1) nằm lệch box 80 px — vết bám nội dung. `giu_chan` vẫn được gắn
+    (khoá khỏi go_chan_le) nhưng đường nối KHÔNG qua box ⇒ không có `qua_chu_khop` ⇒ `cong_khop` đếm lệch, không coi là vàng."""
+    clip = tao_clip(n=30)
+    track = _track(clip, set(range(10, 14)), state=cong.CHAN_NET, co_vi_tri=True)
+    for e in track:
+        e["x"] += 80
+    cum = clip.box_moi(khung=(12,))
+    qua_chu.lap_qua_chu(clip.nguon, track, cum)
+    cong.go_chan_le(track)
+    assert all(track[k].get("giu_chan") and not track[k].get("qua_chu_khop") for k in (11, 12, 13))
+    assert cong.cong_khop(track, cum)["lech"] == 1
+
+
 
 def test_xu_ly_video_truyen_moi_box_giua_hai_cum_cung_logo(monkeypatch):
     """Một logo bị tách hai cụm: che qua chữ của MỖI cụm phải nhận box mồi của MỌI cụm (`moi_box`), không thì khung box cụm kia nằm
