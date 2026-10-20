@@ -29,19 +29,23 @@ CREATE INDEX IF NOT EXISTS ix_tl_job_nguoi_tao ON tl_job(nguoi_tao);
 
 # Cột thêm SAU khi bảng đã có trên máy chạy thật: `CREATE TABLE IF NOT EXISTS` không thêm cột vào bảng cũ ⇒ ALTER có kiểm.
 _COT_THEM_SAU = (("ten_bo", "TEXT"), ("thu_muc_ra_id", "TEXT"), ("dich_khac", "TEXT"))
+# Người bấm "Bỏ qua video này (giữ bản gốc)" cho ca máy không chắc: `trang_thai` GIỮ `cho_nguoi` (sự thật của máy), hai cột này là
+# lớp quyết định của người — như `tl_danh_gia` là lớp người trên `xong`. Không dựng lại bảng (CHECK của trang_thai giữ nguyên).
+_COT_THEM_SAU_VIDEO = (("bo_qua_luc", "REAL"), ("bo_qua_boi", "TEXT"))
 DICH_KHAC = ("drive", "tao_bo")  # nơi nhận của lượt KHÔNG phải "Đã vào bộ": thư mục Drive máy cấp | tạo bộ tự tìm (1 cú bấm hand-off)
 
 
 def khoi_tao(conn) -> None:
     conn.executescript(SCHEMA)
-    co = {r[1] for r in conn.execute("PRAGMA table_info(tl_job)")}
-    for cot, kieu in _COT_THEM_SAU:
-        if cot not in co:
-            try:
-                conn.execute(f"ALTER TABLE tl_job ADD COLUMN {cot} {kieu}")
-            except sqlite3.OperationalError as e:  # tiến trình khác (web/worker) vừa thêm giữa lúc kiểm và ALTER
-                if "duplicate column" not in str(e).lower():
-                    raise
+    for bang, cac_cot in (("tl_job", _COT_THEM_SAU), ("tl_job_video", _COT_THEM_SAU_VIDEO)):
+        co = {r[1] for r in conn.execute(f"PRAGMA table_info({bang})")}
+        for cot, kieu in cac_cot:
+            if cot not in co:
+                try:
+                    conn.execute(f"ALTER TABLE {bang} ADD COLUMN {cot} {kieu}")
+                except sqlite3.OperationalError as e:  # tiến trình khác (web/worker) vừa thêm giữa lúc kiểm và ALTER
+                    if "duplicate column" not in str(e).lower():
+                        raise
     conn.commit()
 
 
@@ -66,6 +70,20 @@ def tao_job(conn, nguoi_tao: str, nguon: list[dict], ghi_chu: str = "", ten_bo: 
     if commit:
         conn.commit()
     return cur.lastrowid
+
+
+def bo_qua(conn, vid: int, email: str, luc: float | None = None) -> None:
+    """Đánh dấu ca máy không chắc là "bỏ qua, giữ bản gốc". KHÔNG qua `dat()`: không đụng `cap_nhat_luc` (mốc tự trả về bộ đọc nó —
+    tu_ap_vao_bo `_SQL_UNG_VIEN`), không đổi `trang_thai`. COALESCE ⇒ bấm lần hai / hai request song song giữ người + giờ ĐẦU."""
+    conn.execute("UPDATE tl_job_video SET bo_qua_luc = COALESCE(bo_qua_luc, ?), bo_qua_boi = COALESCE(bo_qua_boi, ?) "
+                 "WHERE id = ? AND trang_thai = 'cho_nguoi'", (time.time() if luc is None else luc, email, vid))
+    conn.commit()
+
+
+def hoan_tac_bo_qua(conn, vid: int) -> None:
+    """Lối lùi cho bấm nhầm: ca trở lại "Máy không chắc". Cũng không đụng `cap_nhat_luc`."""
+    conn.execute("UPDATE tl_job_video SET bo_qua_luc = NULL, bo_qua_boi = NULL WHERE id = ? AND trang_thai = 'cho_nguoi'", (vid,))
+    conn.commit()
 
 
 def dat(conn, vid: int, trang_thai: str, **truong) -> None:

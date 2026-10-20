@@ -1092,3 +1092,98 @@ def test_ly_do_may_chi_tra_cho_ca_khong_chac(ctx):
     ds = {d["id"]: d for d in c.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"]}
     assert "vết nhảy loạn" in ds[v[0]]["ly_do_may"]
     assert ds[v[1]]["ly_do_may"] is None
+
+
+def _ca_khong_chac(db, nguoi="a@x", nguon=None):
+    """Một lượt 1 video máy không chắc của `nguoi`; trả (job_id, vid)."""
+    conn = nhat_ky.mo(db)
+    hang_doi.khoi_tao(conn)
+    j = hang_doi.tao_job(conn, nguoi, [nguon or {"kieu": "drive", "file_id": "F" * 20}])
+    vid = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (j,)).fetchone()[0]
+    hang_doi.dat(conn, vid, "cho_nguoi", video_log_id=nhat_ky.bat_dau_video(conn, nguon_video="x"))
+    conn.close()
+    return j, vid
+
+
+def _hang(db, vid):
+    conn = nhat_ky.mo(db)
+    try:
+        return conn.execute("SELECT trang_thai, bo_qua_luc, bo_qua_boi, cap_nhat_luc FROM tl_job_video WHERE id=?", (vid,)).fetchone()
+    finally:
+        conn.close()
+
+
+def test_bo_qua_chu_luot_dong_ca_khong_chac_giu_trang_thai_va_moc(ctx):
+    """Chủ lượt bỏ qua ⇒ 204; trang_thai GIỮ cho_nguoi; KHÔNG đụng cap_nhat_luc (mốc tự trả về bộ đọc nó); bấm lần 2 giữ người + giờ ĐẦU.
+    /bo: cho_nguoi về 0, bo_qua = 1; danh sách trả bo_qua_luc. ĐỘT BIẾN: route qua hang_doi.dat ⇒ cap_nhat_luc đổi ⇒ ĐỎ."""
+    c, db = ctx
+    _, vid = _ca_khong_chac(db)
+    truoc = _hang(db, vid)
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h("a@x")).status_code == 204
+    sau = _hang(db, vid)
+    assert sau[0] == "cho_nguoi" and sau[1] is not None and sau[2] == "a@x" and sau[3] == truoc[3]
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h(ADMIN)).status_code == 204  # idempotent
+    assert tuple(_hang(db, vid))[:3] == tuple(sau)[:3]
+    b = c.get("/api/thay-logo/bo", headers=_h("a@x")).json()["bo"][0]
+    assert (b["cho_nguoi"], b["bo_qua"]) == (0, 1)
+    v = c.get("/api/thay-logo/videos", headers=_h("a@x")).json()["videos"][0]
+    assert v["bo_qua_luc"] == sau[1]
+
+
+def test_bo_qua_quyen_va_trang_thai(ctx):
+    """Người khác 403, admin được, video không phải máy không chắc 409, id không tồn tại 404. ĐỘT BIẾN: bỏ kiểm cho_nguoi ⇒ ĐỎ."""
+    c, db = ctx
+    _, vid = _ca_khong_chac(db)
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h("b@x")).status_code == 403
+    assert _hang(db, vid)[1] is None
+    vx, _ = _xong(db)
+    assert c.post(f"/api/thay-logo/videos/{vx}/bo-qua", headers=_h("a@x")).status_code == 409
+    assert c.post("/api/thay-logo/videos/999999/bo-qua", headers=_h("a@x")).status_code == 404
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h(ADMIN)).status_code == 204 and _hang(db, vid)[2] == ADMIN
+
+
+def test_hoan_tac_tra_lai_khong_chac(ctx):
+    c, db = ctx
+    _, vid = _ca_khong_chac(db)
+    c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h("a@x"))
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua/hoan-tac", headers=_h("b@x")).status_code == 403
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua/hoan-tac", headers=_h("a@x")).status_code == 204
+    assert _hang(db, vid)[1:3] == (None, None)
+    b = c.get("/api/thay-logo/bo", headers=_h("a@x")).json()["bo"][0]
+    assert (b["cho_nguoi"], b["bo_qua"]) == (1, 0)
+
+
+def test_bo_qua_tra_ban_trong_bo_ve_tu_do_hoan_tac_bi_chan_khi_ban_da_vao_luot_khac(ctx):
+    """Bản trong bộ của ca đã bỏ qua không còn bị coi là "đang trong lượt" (chọn lại được). Nếu bản đó đã vào lượt khác thì hoàn tác
+    ⇒ 409 (không để hai lượt giữ một bản). ĐỘT BIẾN: bỏ `bo_qua_luc IS NULL` ở _nguon_dang_trong_luot ⇒ ĐỎ."""
+    c, db = ctx
+    ban = {"kieu": "vao_bo", "file_id": "B" * 20}
+    _, vid = _ca_khong_chac(db, nguon=ban)
+    conn = nhat_ky.mo(db)
+    assert "B" * 20 in thay_logo_routes._nguon_dang_trong_luot(conn, None)[0]
+    conn.close()
+    c.post(f"/api/thay-logo/videos/{vid}/bo-qua", headers=_h("a@x"))
+    conn = nhat_ky.mo(db)
+    assert "B" * 20 not in thay_logo_routes._nguon_dang_trong_luot(conn, None)[0]
+    hang_doi.tao_job(conn, "a@x", [ban])  # bản được chọn lại vào lượt mới
+    conn.close()
+    assert c.post(f"/api/thay-logo/videos/{vid}/bo-qua/hoan-tac", headers=_h("a@x")).status_code == 409
+    assert _hang(db, vid)[1] is not None  # vẫn bỏ qua
+
+
+def test_khoi_tao_them_cot_vao_db_cu_giu_du_lieu(tmp_path):
+    """DB tạo bằng schema CŨ (không có bo_qua_*) ⇒ khoi_tao thêm 2 cột, giữ nguyên dòng; gọi lại khoi_tao không lỗi (idempotent)."""
+    import sqlite3
+    db = tmp_path / "cu.db"
+    conn = sqlite3.connect(db)
+    conn.executescript(hang_doi.SCHEMA)
+    conn.execute("INSERT INTO tl_job (nguoi_tao, tao_luc) VALUES ('a@x', 1)")
+    conn.execute("INSERT INTO tl_job_video (job_id, nguon, trang_thai, cap_nhat_luc) VALUES (1, '{}', 'cho_nguoi', 5)")
+    conn.commit()
+    assert "bo_qua_luc" not in {r[1] for r in conn.execute("PRAGMA table_info(tl_job_video)")}
+    hang_doi.khoi_tao(conn)
+    hang_doi.khoi_tao(conn)
+    cot = {r[1] for r in conn.execute("PRAGMA table_info(tl_job_video)")}
+    assert {"bo_qua_luc", "bo_qua_boi"} <= cot
+    assert conn.execute("SELECT trang_thai, cap_nhat_luc, bo_qua_luc FROM tl_job_video").fetchall() == [("cho_nguoi", 5.0, None)]
+    conn.close()

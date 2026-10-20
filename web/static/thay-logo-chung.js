@@ -53,7 +53,7 @@
   // Nhóm trạng thái dùng cho bộ lọc + cột phải. Mỗi video thuộc đúng một nhóm.
   function nhomCua(v) {
     if (v.trang_thai === "xong") return v.danh_gia === "dat" ? "da_dat" : v.danh_gia === "hong" ? "hong" : "cho_duyet";
-    if (v.trang_thai === "cho_nguoi") return "khong_chac";
+    if (v.trang_thai === "cho_nguoi") return v.bo_qua_luc ? "bo_qua" : "khong_chac";  // bỏ qua (giữ bản gốc) = người đã xử lý xong
     if (v.trang_thai === "loi") return "loi";
     return "dang_xu_ly";  // cho · cho_agy · dang_chay
   }
@@ -82,7 +82,7 @@
     // Lựa chọn của khối nhập — tạo Ở ĐÂY (file nạp đầu tiên), không ở khối nhập: module nguồn nhập (vd tab "Tải từ máy" khôi phục
     // phiên) có thể chạm vào nó từ một lời gọi API trả về TRƯỚC khi thay-logo-khoi-nhap.js kịp chạy (trình duyệt còn đang tải file đó).
     nhapChon: new Set(),
-    videos: [], bo: [], daCham: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],
+    videos: [], bo: [], daCham: new Map(), daBoQua: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],
     loc: { job: null, nen: "", ngay: "" }, conNua: false, truocTiep: null, thuVienLoi: false,
     // Các module đăng ký hàm vẽ vào đây; veLai() vẽ lại tất cả theo dữ liệu hiện có.
     ve: {},

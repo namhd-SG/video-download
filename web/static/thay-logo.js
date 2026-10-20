@@ -78,6 +78,7 @@
       if (vd.loi) loi = vd.loi;
       else {
         for (const v of vd.ds) if (!v.danh_gia && T.daCham.has(v.id)) v.danh_gia = T.daCham.get(v.id);  // phản hồi tải sớm hơn lúc chấm không được đưa video về hàng chờ
+        for (const v of vd.ds) if (T.daBoQua.has(v.id)) v.bo_qua_luc = T.daBoQua.get(v.id);  // cùng lý do, cho bỏ qua + hoàn tác (hai chiều)
         T.videos = vd.ds; T.conNua = vd.conNua; T.truocTiep = vd.truocTiep; T.thuVienLoi = vd.thuVienLoi;
         if (vd.soTrangThat < trang) soTrang = Math.max(1, Math.min(soTrang, vd.soTrangThat));  // máy chủ hết dữ liệu sớm hơn số trang đã mở
       }

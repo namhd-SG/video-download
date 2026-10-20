@@ -642,6 +642,10 @@ KHONG_CAN_KIEM_CHU = {
                                  "(tests/test_thay_logo_routes_member.py)",
     "POST /api/thay-logo/videos/{vid}/danh-gia": "`_video_cua` (web/thay_logo_routes.py): chủ lượt hoặc admin, 403 cho người "
                                                  "khác (tests/test_thay_logo_routes_member.py)",
+    "POST /api/thay-logo/videos/{vid}/bo-qua": "`_video_cua`: chủ lượt hoặc admin, 403 cho người khác "
+                                               "(tests/test_thay_logo_routes_member.py::test_bo_qua_quyen_va_trang_thai)",
+    "POST /api/thay-logo/videos/{vid}/bo-qua/hoan-tac": "`_video_cua`: chủ lượt hoặc admin, 403 cho người khác "
+                                                        "(tests/test_thay_logo_routes_member.py::test_hoan_tac_tra_lai_khong_chac)",
     "GET /api/thay-logo/videos/{vid}/sheet.jpg": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_routes_member.py)",
     "GET /api/thay-logo/videos/{vid}/khung/{ten}": "`_video_cua`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_vao_bo_khung.py, có đột biến)",
     "GET /api/thay-logo/da-vao-bo": "tự lọc chủ video `j.nguoi_tao = email` trong SQL (admin thấy hết) "

@@ -137,16 +137,16 @@ def test_luot_co_thu_muc_ra_link_that_khong_kem_cau_cho(may_chu, trinh_duyet, mo
     assert the.nth(0).locator("a.tl-bo-thumuc").get_attribute("href").endswith("/THUMUC" + "z" * 14)
 
 
-def test_luot_khong_lam_duoc_khong_bi_ghim_khi_qua_2_luot_gan_nhat(may_chu, trinh_duyet, monkeypatch):
-    """"Không làm được"/"Máy không chắc" không còn gì để bấm ⇒ như "Xong": ngoài 2 lượt gần nhất thì thu gọn, không ghim mãi.
-    ĐỘT BIẾN: `conViec` quay lại `!== "xong"` ⇒ lượt thứ 3 bị ghim ⇒ ĐỎ."""
+def test_luot_khong_lam_duoc_va_da_bo_qua_khong_bi_ghim_con_khong_chac_thi_ghim(may_chu, trinh_duyet, monkeypatch):
+    """Ngoài 2 lượt gần nhất: "Không làm được" và "Đã bỏ qua" không còn gì để bấm ⇒ thu gọn; còn ca máy không chắc CHƯA bỏ qua thì có
+    nút "Bỏ qua" chờ người ⇒ ghim. ĐỘT BIẾN: bỏ "kc" khỏi `conViec` ⇒ ĐỎ."""
     bo = [_luot(5, "Mới 1", tong=1, xong=1, dat=1), _luot(4, "Mới 2", tong=1, xong=1, dat=1),
-          _luot(2, "Toàn lỗi cũ", tong=2, loi=2), _luot(1, "Không chắc cũ", tong=1, cho_nguoi=1)]
-    p, the = _mo_luot(trinh_duyet, may_chu, monkeypatch, bo)
-    p.wait_for_timeout(300)
+          _luot(3, "Đã bỏ qua cũ", tong=1, bo_qua=1), _luot(2, "Toàn lỗi cũ", tong=2, loi=2), _luot(1, "Không chắc cũ", tong=1, cho_nguoi=1)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 3")
     chu = p.locator("#tl-bo-list").inner_text()
-    assert the.count() == 2 and "Toàn lỗi cũ" not in chu and "Không chắc cũ" not in chu
-
+    assert "Không chắc cũ" in chu and "Toàn lỗi cũ" not in chu and "Đã bỏ qua cũ" not in chu
 
 def test_dau_trang_dem_ca_may_khong_chac_tren_du_lieu_that(may_chu, trinh_duyet):
     """Dữ liệu seed THẬT (bộ A có 1 video máy không chắc, đếm qua /videos thật): dòng "Việc của bạn" phải nhắc ca đó, không để toàn số 0
@@ -192,3 +192,48 @@ def test_luot_tron_co_dat_va_con_khong_chac_khong_ghi_xong(may_chu, trinh_duyet,
     p, the = _mo_luot(trinh_duyet, may_chu, monkeypatch, bo, vs)
     t = the.nth(0).inner_text()
     assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Máy không chắc" and "Xem 1 video máy không chắc" in t
+
+
+def test_bo_qua_mot_cham_chuyen_the_sang_da_cham_va_hoan_tac_tra_lai(may_chu, trinh_duyet, monkeypatch):
+    """Bấm "Bỏ qua video này (giữ bản gốc)" ⇒ POST …/bo-qua; thẻ rời "Máy không chắc", vào "Đã chấm" với nhãn "Đã bỏ qua" + "▶ Xem video
+    gốc" + "Hoàn tác"; /videos giả vẫn trả dữ liệu CŨ (chưa bỏ qua) — thẻ không được nhảy về. Hoàn tác ⇒ POST …/hoan-tac, thẻ về chỗ cũ.
+    ĐỘT BIẾN: bỏ dòng ghép `T.daBoQua` khi tải ⇒ vòng tải cũ kéo thẻ về ⇒ ĐỎ."""
+    v = _dong_mo(81, trang_thai="cho_nguoi", so_box=3, ly_do_may="vết nhảy loạn (3 bước)", ten_video="Video không chắc")
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([v])), bo=[_luot(1, "Bộ thử", tong=1, cho_nguoi=1)])
+    goi = []
+    p.route("**/api/thay-logo/videos/81/bo-qua**", lambda r: (goi.append(r.request.url.split("/videos/81/")[1]), r.fulfill(status=204)))
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
+    p.locator("#tl-khong-chac").get_by_role("button", name="Bỏ qua video này (giữ bản gốc)").click()
+    p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 1 && document.querySelectorAll('#tl-khong-chac .tl-muc').length === 0")
+    p.wait_for_timeout(1500)  # để vòng tải lại (dữ liệu cũ) chạy xong
+    k = p.locator("#tl-da-cham")
+    chu = k.inner_text()
+    assert goi == ["bo-qua"] and "Đã bỏ qua" in chu and "giữ nguyên bản gốc" in chu and "✕ Hỏng" not in chu
+    assert k.get_by_role("link", name="▶ Xem video gốc").count() == 1 and p.locator("#tl-khong-chac .tl-muc").count() == 0
+    _anh(p, "ux-1b-da-bo-qua-1280.png")
+    k.get_by_role("button", name="Hoàn tác").click()
+    p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1 && document.querySelectorAll('#tl-da-cham .tl-muc').length === 0")
+    assert goi == ["bo-qua", "bo-qua/hoan-tac"]
+
+
+def test_chip_da_bo_qua_va_trang_thai_luot_tron(may_chu, trinh_duyet, monkeypatch):
+    """Chip "Đã bỏ qua" lọc đúng nhóm. Lượt trộn (1 Đạt + 1 không chắc CHƯA bỏ qua) KHÔNG ghi "Xong" và vẫn có nút dẫn tới khối không chắc;
+    lượt 0 ra mà đã bỏ qua hết ⇒ "Đã bỏ qua", KHÔNG "Xong" và KHÔNG "Đang xử lý". ĐỘT BIẾN: trả `trangThaiBo` về điều kiện
+    `b.xong === 0 && b.cho_nguoi > 0` ⇒ lượt trộn ghi "Xong" ⇒ ĐỎ."""
+    import time as _t
+    da_bo = _dong_mo(91, job_id=2, ten_bo="Đã bỏ hết", trang_thai="cho_nguoi", so_box=1, bo_qua_luc=_t.time(), ten_video="Video đã bỏ qua")
+    dat = _dong_mo(92, job_id=1, ten_bo="Trộn", danh_gia="dat", drive_file_id_ra="OUT" + "y" * 17, ten_video="Video đạt")
+    kc = _dong_mo(93, job_id=1, ten_bo="Trộn", trang_thai="cho_nguoi", so_box=2, ten_video="Video còn không chắc")
+    bo = [_luot(2, "Đã bỏ hết", tong=1, bo_qua=1), _luot(1, "Trộn", tong=2, xong=1, dat=1, cho_nguoi=1)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([da_bo, dat, kc])), bo=bo)
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2 && document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")
+    the = p.locator("#tl-bo-list .tl-bo-the")
+    assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Đã bỏ qua" and "Đang xử lý" not in the.nth(0).inner_text()
+    assert "1 đã bỏ qua" in the.nth(0).inner_text() and "Đã bỏ qua 1" in the.nth(0).inner_text()
+    assert the.nth(1).locator(".tl-bo-tt").inner_text() == "Máy không chắc" and "Xem 1 video máy không chắc" in the.nth(1).inner_text()
+    assert "1 video máy không chắc" in p.locator("#tl-tom-tat").inner_text()
+    p.locator("#tl-loc button", has_text="Đã bỏ qua").click()
+    p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 1")
+    assert "Video đã bỏ qua" in p.locator("#tl-da-cham").inner_text() and "Video đạt" not in p.locator("#tl-da-cham").inner_text()

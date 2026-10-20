@@ -141,9 +141,33 @@
     phim.append(ph); hop.append(phim);
   }
 
+  // "Bỏ qua video này (giữ bản gốc)" / "Hoàn tác": một chạm, không hỏi lại — không đụng file nào, và luôn hoàn tác được.
+  // Cập nhật ngay trên trang + nhớ vào `T.daBoQua` để vòng tải đang bay dở (dữ liệu cũ) không kéo thẻ về chỗ cũ.
+  const LOI_BO_QUA = { 403: "Bạn không thao tác được video này.", 409: "Video này không còn ở trạng thái máy không chắc — tải lại trang." };
+  let dangBoQua = false;
+  function nutBoQua(v, hoanTac) {
+    const n = el("button", "btn tl-bo-qua", hoanTac ? "Hoàn tác" : "Bỏ qua video này (giữ bản gốc)"); n.type = "button";
+    n.disabled = T.tat || dangBoQua;
+    n.addEventListener("click", async () => {
+      if (dangBoQua) return;
+      dangBoQua = true; T.loi("");
+      try {
+        const r = await T.goi(`/api/thay-logo/videos/${v.id}/bo-qua${hoanTac ? "/hoan-tac" : ""}`, { method: "POST" });
+        if (!r.ok) { T.loi(LOI_BO_QUA[r.status] || "Chưa làm được — thử lại sau ít phút."); return; }
+        const moi = hoanTac ? null : Date.now() / 1000;
+        T.daBoQua.set(v.id, moi); v.bo_qua_luc = moi;
+        const x = T.videos.find((a) => a.id === v.id); if (x) x.bo_qua_luc = moi;
+        T.veLai(); window.TL_taiLai();
+      } catch (e) {
+        if (!e || e.message !== "het_phien") T.loi("Chưa làm được — kiểm tra mạng rồi bấm lại.");
+      } finally { dangBoQua = false; }
+    });
+    return n;
+  }
+
   function khoiPhai(id, tieuDe, giai, nhom, dong, cls) {
     const k = $(id); k.replaceChildren(); k.className = "panel tl-khoi " + (cls || "");
-    const nhoms = Array.isArray(nhom) ? nhom : [nhom];  // khối "Đã chấm" gom hai nhóm (Đạt + Hỏng)
+    const nhoms = Array.isArray(nhom) ? nhom : [nhom];  // khối "Đã chấm" gom ba nhóm (Đạt + Hỏng + Đã bỏ qua)
     const ds = T.locDuoc().filter((v) => nhoms.includes(T.nhomCua(v)));
     const h = el("h2", "", tieuDe + " "); h.append(el("span", "so", String(ds.length)));
     k.append(h, el("p", "giai", giai));
@@ -154,13 +178,14 @@
       const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
       m.append(than);
       if (nhoms.includes("da_dat") || nhoms.includes("hong")) {
-        // Video đã chấm: nhãn kết quả + mở lại được bản đã thay / bản gốc (chấm xong không còn ở hộp duyệt).
-        const dat = T.nhomCua(v) === "da_dat";
-        than.insertBefore(el("span", "tl-ket-qua " + (dat ? "dat" : "hong"), dat ? "✓ Đạt" : "✕ Hỏng"), than.children[1] || null);
+        // Video đã chấm / đã bỏ qua: nhãn kết quả + mở lại được bản đã thay / bản gốc (xong rồi thì không còn ở hộp duyệt).
+        const nh = T.nhomCua(v), [cls, chu] = nh === "da_dat" ? ["dat", "✓ Đạt"] : nh === "bo_qua" ? ["giu", "Đã bỏ qua"] : ["hong", "✕ Hỏng"];
+        than.insertBefore(el("span", "tl-ket-qua " + cls, chu), than.children[1] || null);
         const lk = el("div", "tl-link-phu");
         if (v.drive_file_id_ra) lk.append(T.linkDrive(v.drive_file_id_ra, "▶ Xem video đã thay"));
-        try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
+        try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, nh === "bo_qua" ? "▶ Xem video gốc" : "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
         if (lk.childElementCount) than.append(lk);
+        if (nh === "bo_qua") than.append(nutBoQua(v, true));
       }
       if (nhom === "khong_chac") {
         // Lối ra cho ca máy không thay gì: vì sao (lời thường) · xem video gốc · ảnh máy đã nhìn mở lớn được.
@@ -176,6 +201,7 @@
         const lk = el("div", "tl-link-phu");
         try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, "▶ Xem video gốc")); } catch (_) { /* nguồn không phải JSON: không có link gốc */ }
         if (lk.childElementCount) than.append(lk);
+        than.append(nutBoQua(v, false));
       }
       k.append(m);
     }
@@ -188,8 +214,9 @@
     khoiPhai("tl-khong-chac", "Máy không chắc", "Máy không tìm ra logo cũ đủ chắc nên giữ nguyên video.", "khong_chac", (v) =>
       (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
     khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");
-    khoiPhai("tl-da-cham", "Đã chấm", "Video bạn đã chấm Đạt hoặc Hỏng — mở lại để xem.", ["da_dat", "hong"], (v) =>
-      T.nhomCua(v) === "da_dat" ? "Bạn đã chấm Đạt." : "Bạn đã chấm Hỏng — máy ghi lại để làm tốt hơn.", "da-cham");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
+    khoiPhai("tl-da-cham", "Đã chấm", "Video bạn đã chấm Đạt, Hỏng hoặc bỏ qua — mở lại để xem.", ["da_dat", "hong", "bo_qua"], (v) =>
+      T.nhomCua(v) === "da_dat" ? "Bạn đã chấm Đạt." : T.nhomCua(v) === "bo_qua" ? "Đã bỏ qua — giữ nguyên bản gốc, không có file mới."
+        : "Bạn đã chấm Hỏng — máy ghi lại để làm tốt hơn.", "da-cham");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
   };
 
   // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. CHỈ bắt khi phím đang ở HỘP DUYỆT: focus nằm trong #tl-duyet, hoặc không
