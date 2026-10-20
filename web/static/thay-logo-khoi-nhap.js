@@ -13,7 +13,7 @@
   };
   let tab = "bo", thuVien = null, tim = "";   // thuVien: null = chưa tải, [] = trống
   let dichKhac = "tao_bo";                    // nơi nhận của video nguồn khác — mặc định theo mock đã duyệt (bộ tự tìm mới)
-  const chon = new Set();
+  const chon = T.nhapChon;  // tạo sẵn ở thay-logo-chung.js — xem chú thích ở đó
 
   function datTab(k) {
     tab = k;

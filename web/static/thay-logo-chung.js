@@ -79,6 +79,9 @@
 
   window.TL = {
     $, el, goi, goc, soiKy, phut, IDRE, linkDrive, loiText, lyDoDeHieu, sapCo, nhomCua, phanSo, tenVideo, ngayGio,
+    // Lựa chọn của khối nhập — tạo Ở ĐÂY (file nạp đầu tiên), không ở khối nhập: module nguồn nhập (vd tab "Tải từ máy" khôi phục
+    // phiên) có thể chạm vào nó từ một lời gọi API trả về TRƯỚC khi thay-logo-khoi-nhap.js kịp chạy (trình duyệt còn đang tải file đó).
+    nhapChon: new Set(),
     videos: [], bo: [], daCham: new Map(), dangTaiLoc: false, locTT: new Set(), tat: false, capNhatLuc: 0, moi: [],
     loc: { job: null, nen: "", ngay: "" }, conNua: false, truocTiep: null, thuVienLoi: false,
     // Các module đăng ký hàm vẽ vào đây; veLai() vẽ lại tất cả theo dữ liệu hiện có.

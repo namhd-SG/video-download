@@ -21,7 +21,7 @@
   function trangThaiBo(b) {
     if (b.tong - b.xong - b.cho_nguoi - b.loi > 0) return ["Đang xử lý", "dang"];
     if (b.cho_duyet > 0) return ["Chờ bạn duyệt", "cho"];
-    if (b.xong === 0 && b.cho_nguoi > 0) return ["Máy không chắc", "kc"];
+    if (b.cho_nguoi > 0) return ["Máy không chắc", "kc"];  // kể cả lượt đã có video Đạt: còn ca máy không chắc thì chưa "Xong"
     if (b.xong === 0 && b.loi > 0) return ["Không làm được", "loi"];
     return ["Xong", "xong"];
   }
@@ -88,13 +88,13 @@
       const n = el("button", "tl-pipe-o can", `Chờ bạn duyệt ${b.cho_duyet} ▸`); n.type = "button";
       n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-duyet"); if (h) h.scrollIntoView({ block: "start" }); });
       d.append(n);
-    } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng`, "xong"));
-    else if (dang === 0 && b.cho_nguoi > 0) {
+    } else if (dang === 0 && b.cho_nguoi > 0) {  // TRƯỚC nhánh "Đã duyệt": lượt trộn (có Đạt) vẫn phải dẫn tới ca máy không chắc
       // Không có video để duyệt vì máy không chắc ⇒ chỉ thẳng tới khối "Máy không chắc" (xem lý do + video gốc), không ghi "Chờ duyệt".
       const n = el("button", "tl-pipe-o can", `Xem ${b.cho_nguoi} video máy không chắc ▸`); n.type = "button";
       n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-khong-chac"); if (h) h.scrollIntoView({ block: "start" }); });
       d.append(n);
-    } else d.append(chip(dang === 0 ? "Không có video để duyệt" : "Chờ duyệt"));
+    } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng`, "xong"));
+    else d.append(chip(dang === 0 ? "Không có video để duyệt" : "Chờ duyệt"));
     return d;
   }
 

@@ -525,3 +525,28 @@ def test_thu_lai_tao_phien_moi_roi_huy_thi_bao_bo_token_moi(may_chu, trinh_duyet
     p.wait_for_function("document.querySelectorAll('#tl-tab-may .tl-may-the').length === 0")
     p.wait_for_timeout(400)
     assert p.bo == [f"{TOKEN}1", f"{TOKEN}2"], p.bo
+
+
+def test_khoi_phuc_ve_truoc_khi_khoi_nhap_chay_van_tick(may_chu, trinh_duyet, monkeypatch):
+    """GET /cua-toi về TRƯỚC khi thay-logo-khoi-nhap.js chạy (trình duyệt còn đang tải file đó — gặp thật: test tải lại trang chập chờn
+    ~20-35% cả trên main). Trước đây `T.nhapChon` chỉ có sau khi khối nhập chạy ⇒ `tick()` ném TypeError trong hàm async (bị nuốt) ⇒ dòng
+    "Đã tải xong" hiện mà KHÔNG tick. Giữ file khối nhập tới khi /cua-toi đã trả ⇒ tái hiện chắc chắn. ĐỘT BIẾN: bỏ `nhapChon` khỏi
+    window.TL ở thay-logo-chung.js (khối nhập tự tạo Set riêng) ⇒ ĐỎ."""
+    p = _trang(trinh_duyet, may_chu, monkeypatch, cua_toi=KHOI_PHUC[:1])
+    _cho_xong(p)
+    giu = []
+    p.route("**/thay-logo-khoi-nhap.js*", lambda r: giu.append(r))
+    lan_truoc = len(p.cua_toi_goi)
+    p.evaluate("setTimeout(() => location.reload(), 0)")
+    for _ in range(200):
+        p.wait_for_timeout(25)
+        if giu and len(p.cua_toi_goi) > lan_truoc:
+            break
+    assert giu and len(p.cua_toi_goi) > lan_truoc, "không dựng được thứ tự /cua-toi trước khối nhập"
+    p.wait_for_timeout(200)  # để khoiPhuc chạy xong trong lúc khối nhập vẫn chưa có
+    giu[0].continue_()
+    p.wait_for_function("document.querySelectorAll('#tl-tabs [role=tab]').length === 4")
+    _mo_tab_may(p)
+    _cho_xong(p)
+    assert p.locator("#tl-tab-may .tl-may-xong input:checked").count() == 1 and "Đã chọn 1 video" in p.locator("#tl-dem").inner_text()
+    assert not p.loi_js
