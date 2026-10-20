@@ -131,20 +131,34 @@ def cong_khop(track: list[dict], boxes: list[BoxMoi], can: int = CAN_KHOP) -> di
     """Vết cuối phải trùng box mồi ĐỘC LẬP: khớp = tâm lệch ≤ 0,5 × cạnh dài box mồi, xét ở khung box (±1).
 
     Bắt mẫu học từ mồi sai: mẫu sai tự nhất quán nên dò vẫn "chắc", chỉ đối chiếu ngoài mới lộ (Test 02: 5/5 vết sai lệch ≥2).
-    Box mà vết không phủ tại đó tính `track_vang`, không tính lệch. Qua ⟺ khớp ≥ `can` và khớp > lệch."""
+    Box mà vết không phủ tại đó tính `track_vang`, không tính lệch. Qua ⟺ khớp ≥ `can` và khớp > lệch.
+
+    Khung box chỉ có ô bị cổng nội dung chặn (`hidden_*` có toạ độ): ô đó vẫn là chỗ VẾT KHẲNG ĐỊNH logo nằm, nên lệch box ⇒ `lech`
+    (không thì vết bám mặt người qua cổng nhờ 1 box khớp tình cờ khi các box còn lại rơi vào khung bị chặn — job 2 ngày 20/10). Trùng
+    box vẫn chỉ tính `track_vang` (không nới cổng). Ô khoá dưới chữ (`giu_chan`) có vị trí ước lượng ⇒ giữ `track_vang` như cũ."""
     by = {e["frame"]: e for e in track}
     khop = lech = vang = 0
     for b in boxes:
-        e = next((by[f] for f in (b.khung, b.khung - 1, b.khung + 1) if by.get(f, {}).get("state") in DA_CHAC), None)
-        if e is None:
+        quanh = [by[f] for f in (b.khung, b.khung - 1, b.khung + 1) if f in by]
+        e = next((x for x in quanh if x.get("state") in DA_CHAC), None)
+        chan = None if e is not None else next((x for x in quanh if _chan_co_vi_tri(x) and not x.get("giu_chan")), None)
+        if e is None and chan is None:
             vang += 1
             continue
         cx, cy, canh = b.x + b.w / 2, b.y + b.h / 2, max(b.w, b.h)
-        if abs(e["x"] + e["w"] / 2 - cx) <= 0.5 * canh and abs(e["y"] + e["h"] / 2 - cy) <= 0.5 * canh:
+        o = e if e is not None else chan
+        trung = abs(o["x"] + o["w"] / 2 - cx) <= 0.5 * canh and abs(o["y"] + o["h"] / 2 - cy) <= 0.5 * canh
+        if e is None:
+            lech, vang = lech + (not trung), vang + trung
+        elif trung:
             khop += 1
         else:
             lech += 1
     return {"khop": khop, "lech": lech, "track_vang": vang, "qua_cong": khop >= can and khop > lech}
+
+
+def _chan_co_vi_tri(e: dict) -> bool:
+    return str(e.get("state", "")).startswith("hidden_") and "x" in e
 
 
 CHAN_RUN_LE = 3  # khung bị chặn lẻ loi (≤ 3 khung liền) = báo động giả: phụ đề thật nằm lại ≥ nửa giây
