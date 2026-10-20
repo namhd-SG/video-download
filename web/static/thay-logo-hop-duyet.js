@@ -143,7 +143,8 @@
 
   function khoiPhai(id, tieuDe, giai, nhom, dong, cls) {
     const k = $(id); k.replaceChildren(); k.className = "panel tl-khoi " + (cls || "");
-    const ds = T.locDuoc().filter((v) => T.nhomCua(v) === nhom);
+    const nhoms = Array.isArray(nhom) ? nhom : [nhom];  // khối "Đã chấm" gom hai nhóm (Đạt + Hỏng)
+    const ds = T.locDuoc().filter((v) => nhoms.includes(T.nhomCua(v)));
     const h = el("h2", "", tieuDe + " "); h.append(el("span", "so", String(ds.length)));
     k.append(h, el("p", "giai", giai));
     if (!ds.length) { k.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào.")); return; }
@@ -152,10 +153,29 @@
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
       const than = el("div", "tl-muc-than"); than.append(el("div", "ten", T.tenVideo(v)), chipBo(v), el("div", "tl-tt", dong(v)));
       m.append(than);
-      if (nhom === "khong_chac" && v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào
-        const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem"; g.loading = "lazy"; g.src = urlKhung(v, "truoc");
-        g.addEventListener("error", () => { anhHong.add(v.id); g.remove(); }, { once: true });
-        than.append(g);
+      if (nhoms.includes("da_dat") || nhoms.includes("hong")) {
+        // Video đã chấm: nhãn kết quả + mở lại được bản đã thay / bản gốc (chấm xong không còn ở hộp duyệt).
+        const dat = T.nhomCua(v) === "da_dat";
+        than.insertBefore(el("span", "tl-ket-qua " + (dat ? "dat" : "hong"), dat ? "✓ Đạt" : "✕ Hỏng"), than.children[1] || null);
+        const lk = el("div", "tl-link-phu");
+        if (v.drive_file_id_ra) lk.append(T.linkDrive(v.drive_file_id_ra, "▶ Xem video đã thay"));
+        try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, "Bản gốc")); } catch (_) { /* nguồn không phải JSON: bỏ link gốc */ }
+        if (lk.childElementCount) than.append(lk);
+      }
+      if (nhom === "khong_chac") {
+        // Lối ra cho ca máy không thay gì: vì sao (lời thường) · xem video gốc · ảnh máy đã nhìn mở lớn được.
+        const ly = T.lyDoDeHieu(v.ly_do_may);
+        if (ly) than.append(el("p", "tl-ly-do-may", ly));
+        if (v.co_truoc && !anhHong.has(v.id)) {  // ảnh trước đơn: thấy ngay máy đã nhìn chỗ nào; bấm ⇒ ảnh lớn ở tab mới
+          const a = el("a", "tl-truoc-nho-link"); a.href = urlKhung(v, "truoc"); a.target = "_blank"; a.rel = "noopener";
+          a.title = "Xem ảnh lớn";
+          const g = el("img", "tl-truoc-nho"); g.alt = "Khung máy đã xem — bấm để xem lớn"; g.loading = "lazy"; g.src = a.href;
+          g.addEventListener("error", () => { anhHong.add(v.id); a.remove(); }, { once: true });
+          a.append(g); than.append(a);
+        }
+        const lk = el("div", "tl-link-phu");
+        try { const ng = v.nguon && JSON.parse(v.nguon), g = ng && ng.file_id; if (g && !v.da_don) lk.append(T.linkDrive(g, "▶ Xem video gốc")); } catch (_) { /* nguồn không phải JSON: không có link gốc */ }
+        if (lk.childElementCount) than.append(lk);
       }
       k.append(m);
     }
@@ -167,7 +187,9 @@
       v.trang_thai === "cho_agy" && v.cho_agy_tu ? `Máy đang tìm chỗ logo cũ · đã ${T.phut(Date.now() / 1000 - v.cho_agy_tu)} phút` : v.trang_thai === "dang_chay" ? "Đang thay logo" : "Đang xếp hàng");
     khoiPhai("tl-khong-chac", "Máy không chắc", "Máy không tìm ra logo cũ đủ chắc nên giữ nguyên video.", "khong_chac", (v) =>
       (v.so_box > 0 ? "Máy không chắc vị trí" : "Máy không thấy logo") + " — chưa thay gì, video gốc vẫn dùng được.", "warn");
-    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
+    khoiPhai("tl-khong-lam", "Không làm được", "Video gốc không bị ảnh hưởng.", "loi", (v) => T.loiText(v.loi_text), "bad");
+    khoiPhai("tl-da-cham", "Đã chấm", "Video bạn đã chấm Đạt hoặc Hỏng — mở lại để xem.", ["da_dat", "hong"], (v) =>
+      T.nhomCua(v) === "da_dat" ? "Bạn đã chấm Đạt." : "Bạn đã chấm Hỏng — máy ghi lại để làm tốt hơn.", "da-cham");  // tiêu đề khối đã nói "video gốc không bị ảnh hưởng"
   };
 
   // Space giữ = xem bản gốc (nhả = trả vạch); [ ] nhích vạch 5%. CHỈ bắt khi phím đang ở HỘP DUYỆT: focus nằm trong #tl-duyet, hoặc không

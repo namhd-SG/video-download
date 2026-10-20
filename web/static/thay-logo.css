@@ -16,6 +16,8 @@
 .tl-bo-the.dang .tl-bo-tt { background: var(--accent-soft); color: var(--accent); }
 .tl-bo-the.cho .tl-bo-tt { background: var(--warn-bg); color: var(--warn); }
 .tl-bo-the.xong .tl-bo-tt { background: var(--success); color: #fff; }
+.tl-bo-the.kc .tl-bo-tt { background: var(--warn-bg); color: var(--warn); }
+.tl-bo-the.loi .tl-bo-tt { background: var(--danger-bg); color: var(--danger); }
 .tl-bo-nguon, .tl-bo-tien { font-size: .76rem; color: var(--text-muted); }
 .tl-bo-tien b { color: var(--text); }
 .tl-bo-bar { height: 6px; border-radius: 999px; background: var(--surface-alt); overflow: hidden; }
@@ -133,6 +135,11 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-khoi { padding: 14px 14px 12px; }
 .tl-khoi.warn { border-left: 3px solid var(--warn); }
 .tl-khoi.bad { border-left: 3px solid var(--danger); }
+.tl-khoi.da-cham { border-left: 3px solid var(--success); }
+.tl-ket-qua { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin: 2px 0; }
+.tl-ket-qua.dat { background: var(--success-bg); color: var(--success); }
+.tl-ket-qua.hong { background: var(--danger-bg); color: var(--danger); }
+.tl-muc-than .tl-link-phu a + a { margin-left: 10px; }
 .tl-khoi h2 { margin: 0 0 2px; font-size: .92rem; }
 .tl-khoi .so { font-family: var(--mono); font-size: .72rem; color: var(--text-muted); font-weight: 500; }
 .tl-khoi .giai { margin: 0 0 10px; font-size: .78rem; color: var(--text-muted); }
@@ -245,6 +252,9 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
 .tl-vb-luoi { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
 .tl-so-sanh .tl-truoc-don { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }
 .tl-muc-than .tl-truoc-nho { display: block; width: 72px; height: auto; margin-top: 6px; border-radius: 6px; border: 1px solid var(--border); }
+.tl-muc-than .tl-truoc-nho-link { display: inline-block; cursor: zoom-in; }
+.tl-muc-than .tl-ly-do-may { font-size: .78rem; color: var(--text); margin: 4px 0 0; }
+.tl-muc-than .tl-link-phu { margin-top: 6px; font-size: .78rem; }
 
 /* Đợt 2A — thẻ bộ đã duyệt xong (mở rộng) + áp vào bộ / hoàn tác (mock v3 "bo-xong") */
 .tl-bo-tiep { font-size: .76rem; font-weight: 600; color: var(--accent); }
@@ -358,7 +368,7 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
   .tl-tabs { flex-wrap: wrap; overflow-x: visible; margin: 10px 12px 0; }
   .tl-tab { padding: .5rem .7rem .55rem; }
 }
-.tl-bo-dich { font-size: .74rem; font-weight: 600; color: var(--accent); }
+.tl-bo-dich { font-size: .74rem; font-weight: 600; color: var(--text-muted); }  /* chữ thường, KHÔNG giống link (link thật: .tl-bo-thumuc) */
 .tl-bo-tao { margin: 0 14px 10px; min-height: 40px; }
 .tl-bo-tb { margin: 0 14px 12px; font-size: .76rem; color: var(--text-muted); }
 

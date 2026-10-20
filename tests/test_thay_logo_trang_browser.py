@@ -221,10 +221,10 @@ def test_the_bo_doc_bo_va_bam_loc_theo_bo(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu, 1280)
     the_a = p.locator(".tl-bo-the", has_text=TEN_BO_A)
     chu = the_a.inner_text()
-    assert "Thư viện" in chu and "5 video" in chu and "2/5 xong" in chu and __import__("re").search(r"\d cần bạn xem", chu) and "1 máy không chắc" in chu and "1 lỗi" in chu
+    assert "Thư viện" in chu and "5 video" in chu and "2/5 đã thay" in chu and __import__("re").search(r"\d cần bạn xem", chu) and "1 máy không chắc" in chu and "1 lỗi" in chu
     assert "Đang xử lý" in chu
     the_b = p.locator(".tl-bo-the", has_text=TEN_BO_B)
-    assert "0/2 xong" in the_b.inner_text()
+    assert "0/2 đã thay" in the_b.inner_text()
     link = the_b.locator("a.tl-bo-thumuc")  # bộ A chưa có thư mục đầu ra ⇒ không có link; bộ B có
     assert link.get_attribute("href") == "https://drive.google.com/drive/folders/THUMUC" + "z" * 14 and the_a.locator("a").count() == 0
     with p.expect_request(lambda r: "/api/thay-logo/videos" in r.url and "job_id=" in r.url):
@@ -251,9 +251,9 @@ def test_thu_muc_dau_ra_va_trang_thai_bo_theo_du_lieu_bo(may_chu, trinh_duyet):
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 3")
     t = {n: p.locator(".tl-bo-the", has_text=n).inner_text() for n in ("Bộ một", "Bộ hai", "Bộ ba")}
-    assert "Đang xử lý" in t["Bộ một"] and "12/30 xong" in t["Bộ một"] and "2 cần bạn xem" in t["Bộ một"]
+    assert "Đang xử lý" in t["Bộ một"] and "12/30 đã thay" in t["Bộ một"] and "2 cần bạn xem" in t["Bộ một"]
     assert "Chờ bạn duyệt" in t["Bộ hai"] and "5 cần bạn xem" in t["Bộ hai"]
-    assert "Xong" in t["Bộ ba"] and "6/6 xong" in t["Bộ ba"] and "cần bạn xem" not in t["Bộ ba"]
+    assert "Xong" in t["Bộ ba"] and "6/6 đã thay" in t["Bộ ba"] and "cần bạn xem" not in t["Bộ ba"]
     assert p.locator(".tl-bo-the", has_text="Bộ ba").locator("a").get_attribute("href") == "https://drive.google.com/drive/folders/ABCDEFGHIJK"
     assert p.locator(".tl-bo-the a").count() == 1
     assert not p.locator("text=/Áp vào bộ|Đẩy lên bộ/").count()  # nút của đợt sau: không hiện
