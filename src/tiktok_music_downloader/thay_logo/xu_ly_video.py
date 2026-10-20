@@ -48,7 +48,8 @@ def tao_anh_soi(video_goc: str, video_ra: str | None, kq: KetQuaVideo, duong_dan
     chon: list[tuple[dict, str]] = []
     for v in kq.vet:
         da_thay = v.khung_render
-        chan = [e for e in v.track if str(e.get("state", "")).startswith("hidden_")]
+        # chỉ vết khớp mồi mới có khung "bị chặn" đáng xem; vết trượt khớp mồi sinh toàn khung rác
+        chan = [e for e in v.track if str(e.get("state", "")).startswith("hidden_")] if v.khop.get("qua_cong") else []
         chon += [(e, "thay") for e in rnd.sample(da_thay, min(2, len(da_thay)))]
         chon += [(e, e["state"].removeprefix("hidden_")) for e in rnd.sample(chan, min(2, len(chan)))]
     if not chon:

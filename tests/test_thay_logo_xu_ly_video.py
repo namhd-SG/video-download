@@ -86,3 +86,14 @@ def test_loi_duoc_ghi_vao_nhat_ky_roi_nem_lai(clip_file, tmp_path, monkeypatch):
                           nguon_video="drive:z", ffmpeg=FFMPEG)
     r = conn.execute("SELECT trang_thai, loi_text FROM tl_video").fetchone()
     assert r["trang_thai"] == "loi" and "disk full" in r["loi_text"]
+
+
+def test_anh_soi_chi_lay_khung_bi_chan_tu_vet_khop_moi(clip_file, tmp_path):
+    """Vết trượt khớp mồi sinh toàn khung `hidden_*` rác ⇒ không đưa vào ảnh soi; vết khớp mồi thì có."""
+    from tiktok_music_downloader.thay_logo.duong_ong import KetQuaVet, KetQuaVideo
+    clip, p = clip_file
+    track = [{"frame": i, "state": "hidden_net", "x": 60 + i, "y": 420, "w": 50, "h": 20} for i in range(10)]
+    vet = lambda qua: KetQuaVet("cho_nguoi", 3, track=track, khop={"qua_cong": qua})  # noqa: E731
+    out = tmp_path / "soi.jpg"
+    assert xu_ly_video.tao_anh_soi(str(p), None, KetQuaVideo([vet(False)], 3, 1), out) is None and not out.exists()
+    assert xu_ly_video.tao_anh_soi(str(p), None, KetQuaVideo([vet(True)], 3, 1), out) == str(out) and out.exists()

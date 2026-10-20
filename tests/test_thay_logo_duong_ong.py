@@ -35,7 +35,8 @@ def test_hat_giong_hai_box_van_thanh_vet_dung_cho_nhung_cho_nguoi_duyet():
     Nhưng KHÔNG tự render: mẫu 1–2 crop có thể là nền (dán sai chỗ tệ hơn sót, ĐP 14/10)."""
     clip = tao_clip()
     for khung in ((5, 15), (30,)):
-        kq = duong_ong.xu_ly_video(clip.nguon, clip.box_moi(khung=khung))
+        # box vẽ tay vẫn được dò đầy đủ (hạt giống agy nhỏ thì bỏ dò, xem test_hat_giong_agy_nho_khong_dung_tim_kiem_day_du)
+        kq = duong_ong.xu_ly_video(clip.nguon, clip.box_moi(khung=khung, nguon="tay"))
         assert kq.trang_thai == "cho_nguoi" and len(kq.vet) == 1, khung
         v = kq.vet[0]
         assert v.khung_render == [] and f"{len(khung)} box" in v.ly_do
@@ -60,7 +61,8 @@ def test_cum_gia_khong_thanh_vet_va_video_cho_nguoi_co_ly_do():
     assert [v.trang_thai for v in kq.vet].count("render") == 1 and len(kq.vet) == 2
     assert kq.trang_thai == "cho_nguoi"
     bo = kq.vet_bi_bo
-    assert len(bo) == 1 and bo[0]["nhan"] == "cụm 2" and ("bằng chứng" in bo[0]["ly_do"] or "nhiễu" in bo[0]["ly_do"])
+    # cụm giả 1 box agy nay bị chặn ngay ở hạt giống nhỏ (không dò) thay vì rơi ở cổng bằng chứng
+    assert len(bo) == 1 and bo[0]["nhan"] == "cụm 2" and "1 box" in bo[0]["ly_do"]
     assert "cụm 2" in kq.ly_do
 
 
@@ -432,3 +434,50 @@ def test_box_moi_giua_khung_kep_bien_khong_doi_gi():
     moi = BoxMoi(0, 100, 60, 40, 16)
     assert mau_mod.no_box_moi(moi) == mau_mod.no_box_moi(moi, 240, 160)
     assert mau_mod.dung_mau_sach(nguon, moi, [BoxMoi(k, 100, 60, 40, 16) for k in range(3)]) is not None
+
+
+# --- Dọn lỗi GĐ1: đếm box tĩnh, bỏ dò hạt giống nhỏ ---
+
+def test_so_box_tinh_chi_dem_box_dung_yen_cung_cho():
+    tinh = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 10, 20)]  # cùng chỗ, cách ≥ 10 khung ⇒ 3
+    nhay_bac = [BoxMoi(k, 10 + 100 * i, 10, 40, 20, cum=0) for i, k in enumerate((0, 10, 20, 30))]  # mỗi chỗ một box ⇒ 1
+    gan_khung = [BoxMoi(k, 10, 10, 40, 20, cum=0) for k in (0, 3, 6)]  # cách < 10 khung không tính ⇒ 1
+    assert duong_ong._so_box_tinh(tinh) == 3
+    assert duong_ong._so_box_tinh(nhay_bac) == 1 and duong_ong._so_box_tinh(gan_khung) == 1
+    assert duong_ong._so_box_tinh([]) == 0
+
+
+def test_bang_chung_tach_nen_dung_so_box_tinh_chu_khong_phai_so_box():
+    """Cụm 6 box nhảy bậc (tĩnh = 1) mà điểm khớp không tách khỏi nền ⇒ vẫn phải bị chặn; trước đây `len(cum)=6 ≥ CUM_LON` bỏ qua phép tách."""
+    det = {t: {"x": 10, "y": 10, "score": 0.1} for t in range(10, 30)}
+    tt = {"nen95": 0.5}
+    assert "nền nhiễu" in duong_ong._bang_chung(det, {0}, 6, tt, so_box_tinh=1)
+    assert duong_ong._bang_chung(det, {0}, 6, tt, so_box_tinh=3) == ""  # đủ box đứng yên ⇒ không cần tách nền
+    assert duong_ong._bang_chung(det, {0}, 6, tt) == ""  # không truyền ⇒ dùng số box như cũ
+
+
+def test_xu_ly_vet_truyen_so_box_tinh_vao_bang_chung(monkeypatch):
+    clip = tao_clip()
+    thay = []
+    that = duong_ong._bang_chung
+    monkeypatch.setattr(duong_ong, "_bang_chung", lambda *a, **k: (thay.append(a), that(*a, **k))[1])
+    cum = clip.box_moi()
+    duong_ong.xu_ly_vet(clip.nguon, cum)
+    assert len(thay) == 1 and thay[0][4] == duong_ong._so_box_tinh(cum)
+
+
+def test_hat_giong_agy_nho_khong_dung_tim_kiem_day_du(monkeypatch):
+    """Cụm < CUM_LON box từ agy không bao giờ tự render ⇒ vòng một không chạy `xu_ly_vet` (khỏi vết/ảnh rác); cụm có box vẽ tay thì vẫn dò."""
+    goi = []
+    monkeypatch.setattr(duong_ong, "xu_ly_vet", lambda nguon, cl, *a, **k: goi.append(list(cl)) or duong_ong.KetQuaVet("cho_nguoi", len(cl)))
+    monkeypatch.setattr(duong_ong, "gom_vet", lambda boxes, nguon: [list(boxes)])
+    agy = [BoxMoi(0, 10, 10, 40, 20, cum=4), BoxMoi(5, 10, 10, 40, 20, cum=4)]
+    kq = duong_ong.xu_ly_video(object(), agy)
+    assert goi == [] and kq.trang_thai == "cho_nguoi" and len(kq.vet) == 1
+    v = kq.vet[0]
+    assert v.box_cum == 2 and v.nhan == "cụm 4" and v.track == [] and v.khung_render == []
+    assert v.ly_do == duong_ong.LY_DO_HAT_GIONG_NHO.format(n=2)
+    tay = [BoxMoi(0, 10, 10, 40, 20, nguon="tay"), BoxMoi(5, 10, 10, 40, 20, nguon="agy")]
+    duong_ong.xu_ly_video(object(), tay)
+    assert len(goi) == 1
+

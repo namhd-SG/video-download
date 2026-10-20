@@ -177,12 +177,18 @@ def _neo(cum: list[BoxMoi]) -> list[tuple[int, int, int, int, int, int]]:
     return out
 
 
+def _so_box_tinh(cum: list[BoxMoi]) -> int:
+    """Số box lớn nhất cùng đứng yên một chỗ (cách ≥ 10 khung, IoU ≥ 0,5 — cùng tiêu chí `_neo`). Cụm nhiều box nhưng mỗi chỗ chỉ một
+    box (logo nhảy bậc) có số này = 1: chưa đủ để tách nền bằng đếm box."""
+    return max((1 + sum(1 for o in cum if abs(o.khung - b.khung) >= 10 and _iou_box(b, o) >= 0.5) for b in cum), default=0)
+
+
 def _iou_box(a: BoxMoi, b: BoxMoi) -> float:
     iw, ih = min(a.x + a.w, b.x + b.w) - max(a.x, b.x), min(a.y + a.h, b.y + b.h) - max(a.y, b.y)
     return 0.0 if iw <= 0 or ih <= 0 else iw * ih / (a.w * a.h + b.w * b.h - iw * ih)
 
 
-def _bang_chung(det: dict[int, dict], khung_moi: set[int], so_box: int, tt: dict) -> str:
+def _bang_chung(det: dict[int, dict], khung_moi: set[int], so_box: int, tt: dict, so_box_tinh: int | None = None) -> str:
     """Rỗng nếu đủ bằng chứng, không thì lý do (tiếng Việt, cho người duyệt)."""
     ngoai = [t for t in det if all(abs(t - f) > 2 for f in khung_moi)]
     can = BANG_CHUNG_CUM_LON if so_box >= CUM_LON else BANG_CHUNG_CUM_NHO
@@ -193,7 +199,7 @@ def _bang_chung(det: dict[int, dict], khung_moi: set[int], so_box: int, tt: dict
     loan = nhay / len(ds)
     if loan > TI_LE_NHAY_LOAN:
         return f"vết nhảy loạn ({nhay} bước nhảy xa trong {len(ds)} khung dò được) giữa các chỗ giống mẫu: không phải một watermark"
-    if so_box < CUM_LON:
+    if (so_box if so_box_tinh is None else so_box_tinh) < CUM_LON:  # tách nền: chỉ box đứng yên mới là bằng chứng
         diem = float(np.median([det[t]["score"] for t in ngoai]))
         if diem < tt["nen95"] + BIEN_TACH_NEN:
             return f"điểm khớp trung vị {diem:.2f} không tách khỏi nền nhiễu của video ({tt['nen95']:.2f}): có thể là nội dung"
@@ -238,7 +244,7 @@ def xu_ly_vet(nguon: NguonKhung, cum: list[BoxMoi], neo_ai: list[BoxMoi] = (), m
     hinh = kiem_hinh_truoc_dan(nguon, track, mau)
     kq = ap_moi_cong(nguon, track, mau, cum, moi_box)
     kq.ncc_moi, kq.tu_hoc_bi_tu_choi, kq.nhan, kq.doan, kq.thong_tin = round(ncc, 3), tu_choi, nhan, doan, dict(tt, kiem_hinh=hinh, bam_hai_chieu=bam, ai_vong_hai=ai)
-    ly_do = _bang_chung(det, khung_moi, len(cum), tt)
+    ly_do = _bang_chung(det, khung_moi, len(cum), tt, _so_box_tinh(cum))
     if ly_do:
         kq.trang_thai, kq.khung_render, kq.ly_do = "cho_nguoi", [], ly_do
     kq.nhay = do_nhay(doan, {e["frame"] for e in kq.khung_render})
@@ -318,6 +324,10 @@ def _xu_ly_cac_cum(nguon: NguonKhung, cum: list[list[BoxMoi]], vet: list[KetQuaV
         if trung is not None:
             trung.box_cum += len(cl)
             trung.thong_tin["cum_gop"] = trung.thong_tin.get("cum_gop", 0) + 1
+            continue
+        if tu_render and len(cl) < CUM_LON and not any(b.nguon == "tay" for b in cl):
+            # hạt giống nhỏ không bao giờ tự render ở vòng một (xem dưới): khỏi dò cả video để rồi bỏ — đỡ vết/ảnh rác
+            vet.append(KetQuaVet("cho_nguoi", len(cl), nhan=_ten_cum(cl), ly_do=LY_DO_HAT_GIONG_NHO.format(n=len(cl))))
             continue
         so_cum = {b.cum for b in cl}
         ai = [b for b in neo_ai if b.cum in so_cum]
