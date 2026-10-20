@@ -135,6 +135,11 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-khoi { padding: 14px 14px 12px; }
 .tl-khoi.warn { border-left: 3px solid var(--warn); }
 .tl-khoi.bad { border-left: 3px solid var(--danger); }
+.tl-khoi.da-cham { border-left: 3px solid var(--success); }
+.tl-ket-qua { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin: 2px 0; }
+.tl-ket-qua.dat { background: var(--success-bg); color: var(--success); }
+.tl-ket-qua.hong { background: var(--danger-bg); color: var(--danger); }
+.tl-muc-than .tl-link-phu a + a { margin-left: 10px; }
 .tl-khoi h2 { margin: 0 0 2px; font-size: .92rem; }
 .tl-khoi .so { font-family: var(--mono); font-size: .72rem; color: var(--text-muted); font-weight: 500; }
 .tl-khoi .giai { margin: 0 0 10px; font-size: .78rem; color: var(--text-muted); }

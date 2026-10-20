@@ -104,7 +104,7 @@ def _mo_luot(br, goc, monkeypatch, bo, videos=()):
 
 def test_luot_khong_ra_video_noi_that_va_thu_muc_khong_gia_link(may_chu, trinh_duyet, monkeypatch):
     """Lượt máy làm hết mà 0 video thay được: KHÔNG ghi "Xong"/"Chờ duyệt"; ca không chắc ⇒ nút dẫn tới khối "Máy không chắc"; ca toàn lỗi
-    ⇒ "Không làm được" + "Không có video để duyệt". "Thư mục Drive riêng" chưa có thư mục ⇒ nói rõ "tạo khi có video Đạt" và KHÔNG mang
+    ⇒ "Không làm được" + "Không có video để duyệt". "Thư mục Drive riêng" chưa có thư mục ⇒ nói rõ "tạo khi máy thay xong video đầu tiên" và KHÔNG mang
     màu link. ĐỘT BIẾN: trả lại nhánh "Xong"/"Chờ duyệt" cũ ⇒ ĐỎ."""
     bo = [_luot(1, "Test2", dich_khac="drive", tong=1, cho_nguoi=1), _luot(2, "Toàn lỗi", dich_khac="drive", tong=2, loi=2)]
     v = _dong_mo(51, job_id=1, ten_bo="Test2", trang_thai="cho_nguoi", so_box=3, ly_do_may="vết nhảy loạn (3 bước)")
@@ -117,7 +117,7 @@ def test_luot_khong_ra_video_noi_that_va_thu_muc_khong_gia_link(may_chu, trinh_d
     assert re.search(r"Lỗi\s*2", p.locator("#tl-loc").inner_text())
     t1, t2 = the.nth(0).inner_text(), the.nth(1).inner_text()
     assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Máy không chắc" and "Chờ duyệt" not in t1
-    assert "Xem 1 video máy không chắc" in t1 and "tạo khi có video Đạt" in t1
+    assert "Xem 1 video máy không chắc" in t1 and "tạo khi máy thay xong video đầu tiên" in t1
     assert the.nth(1).locator(".tl-bo-tt").inner_text() == "Không làm được" and "Không có video để duyệt" in t2 and "Chờ duyệt" not in t2
     mau = p.evaluate("""() => { const s = document.querySelector('.tl-bo-dich'), l = document.querySelector('#tl-bo-list a, a');
         return [getComputedStyle(s).color, s.closest('a'), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()]; }""")
@@ -130,10 +130,10 @@ def test_luot_khong_ra_video_noi_that_va_thu_muc_khong_gia_link(may_chu, trinh_d
 
 
 def test_luot_co_thu_muc_ra_link_that_khong_kem_cau_cho(may_chu, trinh_duyet, monkeypatch):
-    """Có video Đạt (đã có thư mục) ⇒ "Xong", link thật "Mở thư mục đầu ra", không còn câu "tạo khi có video Đạt"."""
+    """Có video Đạt (đã có thư mục) ⇒ "Xong", link thật "Mở thư mục đầu ra", không còn câu "tạo khi máy thay xong video đầu tiên"."""
     p, the = _mo_luot(trinh_duyet, may_chu, monkeypatch, [_luot(3, "Có Đạt", dich_khac="drive", tong=2, xong=2, dat=2, thu_muc_ra_id="THUMUC" + "z" * 14)])
     t = the.nth(0).inner_text()
-    assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Xong" and "tạo khi có video Đạt" not in t and "Thư mục Drive riêng" in t
+    assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Xong" and "tạo khi máy thay xong video đầu tiên" not in t and "Thư mục Drive riêng" in t
     assert the.nth(0).locator("a.tl-bo-thumuc").get_attribute("href").endswith("/THUMUC" + "z" * 14)
 
 
@@ -155,3 +155,29 @@ def test_dau_trang_dem_ca_may_khong_chac_tren_du_lieu_that(may_chu, trinh_duyet)
     p, loi_js = _mo(trinh_duyet, may_chu, 1280)
     p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
     assert "1 video máy không chắc" in p.locator("#tl-tom-tat").inner_text() and not loi_js
+
+
+def test_khoi_da_cham_hien_dat_hong_va_chip_loc_dan_toi_khoi(may_chu, trinh_duyet, monkeypatch):
+    """Video đã chấm từng biến mất khỏi trang (hộp duyệt chỉ giữ video CHƯA chấm, không khối nào vẽ Đạt/Hỏng) ⇒ chip "Đã đạt"/"Hỏng" mở ra
+    trang trống. Nay có khối "Đã chấm": số đếm, nhãn Đạt/Hỏng, mở lại bản đã thay + bản gốc; chip lọc thu khối về đúng nhóm.
+    ĐỘT BIẾN: bỏ lệnh vẽ khối "Đã chấm" ⇒ ĐỎ."""
+    dat = _dong_mo(71, danh_gia="dat", drive_file_id_ra="OUTDAT" + "y" * 14, ten_video="Video đạt")
+    hong = _dong_mo(72, danh_gia="hong", drive_file_id_ra="OUTHONG" + "y" * 13, ten_video="Video hỏng")
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([dat, hong])),
+                   bo=[_luot(1, "Bộ thử", tong=2, xong=2, dat=1, hong=1, thu_muc_ra_id="THUMUC" + "z" * 14)])
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")
+    k = p.locator("#tl-da-cham")
+    chu = k.inner_text()
+    assert "Đã chấm 2" in chu.replace("\n", " ") and "✓ Đạt" in chu and "✕ Hỏng" in chu
+    xem = k.get_by_role("link", name="▶ Xem video đã thay")
+    assert xem.count() == 2 and xem.nth(0).get_attribute("href").endswith("/OUTDAT" + "y" * 14 + "/view")
+    assert k.get_by_role("link", name="Bản gốc").count() == 2
+    _anh(p, "ux-f2-da-cham-1280.png")
+    for chip, con, mat in (("Đã đạt", "Video đạt", "Video hỏng"), ("Hỏng", "Video hỏng", "Video đạt")):
+        p.locator("#tl-loc button", has_text=chip).click()
+        p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 1")
+        chu = k.inner_text()
+        assert con in chu and mat not in chu, (chip, chu)
+        p.locator("#tl-loc button", has_text=chip).click()  # tắt chip ⇒ về tất cả
+        p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")

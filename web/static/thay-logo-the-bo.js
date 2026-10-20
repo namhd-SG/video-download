@@ -111,9 +111,10 @@
       d.append(n);
       if (tn.loi) { const p = el("p", "error-text tl-bo-tra-loi", tn.loi); p.setAttribute("role", "alert"); d.append(p); }
     } else if (chu) {
-      // Thư mục riêng của lượt chỉ được tạo khi có video Đạt đầu tiên; chưa có ⇒ nói rõ (link thật là "Mở thư mục đầu ra" bên dưới).
+      // Thư mục riêng của lượt được tạo khi máy TẢI LÊN video đã thay đầu tiên (worker `tai_len` ⇒ thu_muc_cua_bo); chưa có ⇒ nói rõ
+      // (link thật là "Mở thư mục đầu ra" bên dưới).
       const chuaCo = chu.startsWith("📁") && !(b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id));
-      d.append(el("span", "tl-bo-dich", chuaCo ? chu + " — tạo khi có video Đạt" : chu));
+      d.append(el("span", "tl-bo-dich", chuaCo ? chu + " — tạo khi máy thay xong video đầu tiên" : chu));
     }
     return d;
   }
