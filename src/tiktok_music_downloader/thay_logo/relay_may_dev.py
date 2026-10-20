@@ -118,6 +118,17 @@ def _nhan_chuan(w: dict) -> str | None:
     return n if _NHAN.match(n) else None
 
 
+def _la_logo_nha(w: dict, job: int | None) -> bool:
+    """Watermark mang nhãn "astronex" là logo CỦA TA (đã dán sẵn), không phải logo cần thay ⇒ bỏ trước khi dựng box mồi. Chỉ ghi log
+    máy dev một dòng báo đã bỏ (không chép chữ nhãn nào khác). Xét trên nhãn THÔ rút về chữ+số, độc lập với whitelist `_nhan_chuan`:
+    nhãn bị whitelist loại ("astronex!", "@astronex", nhãn > 40 ký tự) vẫn là logo nhà, không được lọt thành box không cụm."""
+    n = w.get("label")
+    if not isinstance(n, str) or "astronex" not in re.sub(r"[^a-z0-9]+", "", n.lower()):
+        return False
+    log.info("job %s: bỏ 1 watermark nhãn logo nhà (astronex)", job)
+    return True
+
+
 def ghep_ket_qua(viec: list[dict], ra_agy: dict) -> dict[int, dict]:
     """Ánh xạ đầu ra agy (theo tên file = UUID) về từng job; chỉ giữ toạ độ + số cụm (từ nhãn whitelist) + cờ màn kết; ảnh agy bỏ sót ⇒ KHÔNG nộp job đó."""
     theo_anh: dict[str, dict] = {}
@@ -137,7 +148,8 @@ def ghep_ket_qua(viec: list[dict], ra_agy: dict) -> dict[int, dict]:
                 return {"cum": bang[n]}
             wms = [{"box_2d": [int(v) for v in w["box_2d"]], **_cum(w)} for w in it.get("watermarks") or []
                    if isinstance(w, dict) and isinstance(w.get("box_2d"), list) and len(w["box_2d"]) == 4
-                   and all(isinstance(v, (int, float)) and 0 <= v <= 1000 for v in w["box_2d"])]
+                   and all(isinstance(v, (int, float)) and 0 <= v <= 1000 for v in w["box_2d"])
+                   and not _la_logo_nha(w, anh_cua_job.get(ten))]
             theo_anh[ten] = {"anh": ten, "man_ket": bool(it.get("endcard")), "watermarks": wms[:8]}
     out = {}
     for v in viec:
