@@ -208,7 +208,7 @@ class KiemLink(BaseModel):
 
 
 _SQL_DANH_SACH = """
-SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.loi_text, v.drive_file_id_ra, j.nguoi_tao,
+SELECT v.id, v.job_id, v.nguon, v.trang_thai, v.cho_agy_tu, v.cap_nhat_luc, v.loi_text, v.drive_file_id_ra, v.bo_qua_luc, j.nguoi_tao,
        j.ten_bo, j.tao_luc AS tao_luc_bo,
        t.giay_xu_ly, t.man_ket_agy,
        (SELECT max(net_la_pho_bien) FROM tl_vet x WHERE x.video_id = v.video_log_id) AS can_soi_ky,
@@ -347,7 +347,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
         try:
             rows = conn.execute(
                 "SELECT j.id AS job_id, j.ten_bo, j.tao_luc, j.thu_muc_ra_id, j.dich_khac, j.nguoi_tao, count(v.id) AS tong, "
-                "coalesce(sum(v.trang_thai = 'xong'), 0) AS xong, coalesce(sum(v.trang_thai = 'cho_nguoi'), 0) AS cho_nguoi, "
+                "coalesce(sum(v.trang_thai = 'xong'), 0) AS xong, "
+                # Máy không chắc: CHƯA bỏ qua (còn việc của người) tách khỏi ĐÃ bỏ qua (giữ bản gốc, xong việc).
+                "coalesce(sum(v.trang_thai = 'cho_nguoi' AND v.bo_qua_luc IS NULL), 0) AS cho_nguoi, "
+                "coalesce(sum(v.trang_thai = 'cho_nguoi' AND v.bo_qua_luc IS NOT NULL), 0) AS bo_qua, "
                 "coalesce(sum(v.trang_thai = 'loi'), 0) AS loi, "
                 "coalesce(sum(v.trang_thai = 'xong' AND v.dg IS NULL), 0) AS cho_duyet, "
                 "coalesce(sum(v.trang_thai = 'xong' AND v.dg = 'dat'), 0) AS dat, "
@@ -395,7 +398,7 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             conn.close()
         return {"bo": [{"job_id": r["job_id"], "ten_bo": hang_doi.ten_bo_hien_thi(r["job_id"], r["ten_bo"]),
                         "nguon_kieu": kieu.get(r["job_id"]), "tao_luc": r["tao_luc"], "tong": r["tong"], "xong": r["xong"],
-                        "cho_duyet": r["cho_duyet"], "cho_nguoi": r["cho_nguoi"], "loi": r["loi"], "dat": r["dat"],
+                        "cho_duyet": r["cho_duyet"], "cho_nguoi": r["cho_nguoi"], "bo_qua": r["bo_qua"], "loi": r["loi"], "dat": r["dat"],
                         "hong": r["hong"], "thu_muc_ra_id": r["thu_muc_ra_id"], "nguoi_tao": r["nguoi_tao"],
                         "dich_khac": r["dich_khac"], "tu_ap_luc": tu_ap.get(r["job_id"]), "da_tra_bo": da_tra.get(r["job_id"], 0),
                         "cho_dinh_vi_giay": round(cho_dinh_vi[r["job_id"]]) if r["job_id"] in cho_dinh_vi else None} for r in rows]}
@@ -529,6 +532,40 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             except ValueError as e:
                 raise HTTPException(400, str(e)) from None
         finally:
+            conn.close()
+
+    # "Bỏ qua video này (giữ bản gốc)": đóng ca máy không chắc. Không đụng Drive, không chép bản gốc đi đâu — bản gốc vẫn ở chỗ cũ.
+    @app.post("/api/thay-logo/videos/{vid}/bo-qua", status_code=204, response_model=None)
+    def bo_qua(vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> None:
+        conn = _mo()
+        try:
+            r = _video_cua(conn, vid, email)
+            if r["trang_thai"] != "cho_nguoi":
+                raise HTTPException(409, "chỉ bỏ qua được video máy không chắc")
+            hang_doi.bo_qua(conn, vid, email)
+        finally:
+            conn.close()
+
+    @app.post("/api/thay-logo/videos/{vid}/bo-qua/hoan-tac", status_code=204, response_model=None)
+    def hoan_tac_bo_qua(vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> None:
+        conn = _mo()
+        try:
+            conn.execute("BEGIN IMMEDIATE")  # kiểm "bản trong bộ đã vào lượt khác chưa" và ghi trong CÙNG một khoá
+            r = _video_cua(conn, vid, email)
+            if r["trang_thai"] != "cho_nguoi":
+                raise HTTPException(409, "chỉ hoàn tác được video máy không chắc")
+            if r["bo_qua_luc"] is not None:
+                # Bỏ qua trả bản trong bộ về tự do (chọn lại được). Hoàn tác mà bản đó đã nằm trong lượt khác ⇒ hai lượt giữ một bản.
+                try:
+                    ng = json.loads(r["nguon"])
+                except ValueError:
+                    ng = None
+                if isinstance(ng, dict) and ng.get("kieu") == "vao_bo" and ng.get("file_id"):
+                    _chan_ban_da_trong_luot(conn, {ng["file_id"]: ng})
+            hang_doi.hoan_tac_bo_qua(conn, vid)
+        finally:
+            if conn.in_transaction:
+                conn.rollback()
             conn.close()
 
     @app.get("/api/thay-logo/videos/{vid}/sheet.jpg")
@@ -867,7 +904,8 @@ def _nguon_dang_trong_luot(conn, nguoi_tao: str | None) -> tuple[set[str], set[s
     dk, tham = ("", []) if nguoi_tao is None else (" AND j.nguoi_tao = ?", [nguoi_tao])
     ban, thu_vien = set(), set()
     for (nguon,) in conn.execute("SELECT v.nguon FROM tl_job_video v JOIN tl_job j ON j.id = v.job_id "
-                                 f"WHERE v.trang_thai != 'loi'{dk}", tham):
+                                 # Đã bỏ qua (giữ bản gốc) ⇒ không còn giữ nguồn: chọn lại vào lượt mới được.
+                                 f"WHERE v.trang_thai != 'loi' AND v.bo_qua_luc IS NULL{dk}", tham):
         try:
             n = json.loads(nguon)
         except ValueError:

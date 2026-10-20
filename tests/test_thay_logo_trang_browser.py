@@ -151,7 +151,7 @@ def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     assert p.locator("#tl-nhap").is_visible() and p.locator("#tl-tabs [role=tab]").count() == 4
     assert p.locator("#tl-nhap").inner_text().count("Tên lượt") == 1 and p.locator("#tl-tao").is_visible()
     assert p.locator("#tl-bo-list .tl-bo-the").count() == 2 and TEN_BO_A in p.locator("#tl-bo-list").inner_text()
-    assert p.locator("#tl-loc").is_visible() and p.locator("#tl-loc [data-tt]").count() == 6
+    assert p.locator("#tl-loc").is_visible() and p.locator("#tl-loc [data-tt]").count() == 7  # + "Đã bỏ qua"
     assert p.locator("#tl-duyet").is_visible() and "Chờ bạn duyệt" in p.locator("#tl-duyet").inner_text()
     chu = p.locator("aside.tl-cot").inner_text()
     assert "Máy đang làm" in chu and "Máy không chắc" in chu and "Không làm được" in chu and "Hết chỗ đĩa" in chu

@@ -139,6 +139,9 @@ html[data-theme="dark"] .tl-dat { color: #04100e; }
 .tl-ket-qua { display: inline-block; font-size: .7rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; margin: 2px 0; }
 .tl-ket-qua.dat { background: var(--success-bg); color: var(--success); }
 .tl-ket-qua.hong { background: var(--danger-bg); color: var(--danger); }
+.tl-ket-qua.giu { background: var(--surface-alt); color: var(--text-muted); }
+.tl-muc-than .tl-bo-qua { margin-top: 8px; font-size: .78rem; padding: 4px 10px; }
+.tl-bo-the.bo-qua .tl-bo-tt { background: var(--surface-alt); color: var(--text-muted); }
 .tl-muc-than .tl-link-phu a + a { margin-left: 10px; }
 .tl-khoi h2 { margin: 0 0 2px; font-size: .92rem; }
 .tl-khoi .so { font-family: var(--mono); font-size: .72rem; color: var(--text-muted); font-weight: 500; }

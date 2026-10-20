@@ -4,7 +4,7 @@
 (() => {
   "use strict";
   const T = window.TL, { $, el } = T;
-  const TT = [["dang_xu_ly", "Đang xử lý"], ["cho_duyet", "Chờ duyệt"], ["khong_chac", "Máy không chắc"], ["loi", "Lỗi"], ["da_dat", "Đã đạt"], ["hong", "Hỏng"]];
+  const TT = [["dang_xu_ly", "Đang xử lý"], ["cho_duyet", "Chờ duyệt"], ["khong_chac", "Máy không chắc"], ["loi", "Lỗi"], ["da_dat", "Đã đạt"], ["hong", "Hỏng"], ["bo_qua", "Đã bỏ qua"]];
   const NEN = [["", "Tất cả"], ["tiktok", "TikTok"], ["douyin", "Douyin"], ["facebook", "Facebook"]];
   const NGAY = [["", "Tất cả"], ["hom_nay", "Hôm nay"], ["7_ngay", "7 ngày"]];
   const NGUON = { drive: "Thư viện", may: "Tải từ máy", link: "Link Drive", vao_bo: "Bộ tự tìm", nhieu: "Nhiều nguồn" };
@@ -18,11 +18,14 @@
 
   // Trạng thái bộ: còn video chưa ra kết quả ⇒ Đang xử lý; hết việc của máy mà còn video chưa chấm ⇒ Chờ bạn duyệt.
   // Máy chạy hết mà KHÔNG thay được video nào ⇒ nói thẳng (Máy không chắc / Không làm được), không ghi "Xong" cho lượt 0 video ra.
+  // `cho_nguoi` = ca máy không chắc CHƯA bỏ qua (còn việc của người, kể cả khi lượt đã có video Đạt); `bo_qua` = đã bỏ qua (giữ bản gốc).
   function trangThaiBo(b) {
-    if (b.tong - b.xong - b.cho_nguoi - b.loi > 0) return ["Đang xử lý", "dang"];
+    const boQua = b.bo_qua || 0;
+    if (b.tong - b.xong - b.cho_nguoi - boQua - b.loi > 0) return ["Đang xử lý", "dang"];
     if (b.cho_duyet > 0) return ["Chờ bạn duyệt", "cho"];
     if (b.cho_nguoi > 0) return ["Máy không chắc", "kc"];  // kể cả lượt đã có video Đạt: còn ca máy không chắc thì chưa "Xong"
     if (b.xong === 0 && b.loi > 0) return ["Không làm được", "loi"];
+    if (b.xong === 0 && boQua > 0) return ["Đã bỏ qua", "bo-qua"];  // không phải "xong": lượt 0 video ra, không kích hoạt thẻ áp vào bộ
     return ["Xong", "xong"];
   }
 
@@ -43,6 +46,7 @@
     const phu = [];
     if (b.cho_duyet) phu.push(`${b.cho_duyet} cần bạn xem`);
     if (b.cho_nguoi) phu.push(`${b.cho_nguoi} máy không chắc`);
+    if (b.bo_qua) phu.push(`${b.bo_qua} đã bỏ qua`);
     if (b.loi) phu.push(`${b.loi} lỗi`);
     if (phu.length) tien.append(" · " + phu.join(" · "));
     nut.append(h, nguon, bar, tien);
@@ -76,7 +80,7 @@
   // Dải tiến độ của lượt: Nhận → Máy làm → Chờ duyệt. Nhìn là biết lượt đang ở bước nào; chờ máy định vị quá ngưỡng thì nói thẳng.
   const NGUONG_CHO_DINH_VI_GIAY = 15 * 60;  // cùng mốc báo động relay (plan P6, M = 15 phút)
   function dongTienDo(b) {
-    const d = el("div", "tl-bo-pipe"), lam = b.xong + b.cho_nguoi + b.loi, dang = b.tong - lam;
+    const d = el("div", "tl-bo-pipe"), lam = b.xong + b.cho_nguoi + (b.bo_qua || 0) + b.loi, dang = b.tong - lam;
     const chip = (chu, cls) => el("span", "tl-pipe-o" + (cls ? " " + cls : ""), chu);
     const mui = () => el("span", "tl-pipe-mui", "→");
     d.append(chip(`Nhận ${b.tong}`, "xong"), mui(), chip(dang > 0 ? `Máy đang làm ${lam}/${b.tong}` : `Máy xong ${lam}/${b.tong}`, dang > 0 ? "dang" : "xong"));
@@ -93,7 +97,8 @@
       const n = el("button", "tl-pipe-o can", `Xem ${b.cho_nguoi} video máy không chắc ▸`); n.type = "button";
       n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-khong-chac"); if (h) h.scrollIntoView({ block: "start" }); });
       d.append(n);
-    } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng`, "xong"));
+    } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng` + (b.bo_qua ? ` · ${b.bo_qua} bỏ qua` : ""), "xong"));
+    else if (dang === 0 && b.bo_qua) d.append(chip(`Đã bỏ qua ${b.bo_qua} · giữ bản gốc`, "xong"));
     else d.append(chip(dang === 0 ? "Không có video để duyệt" : "Chờ duyệt"));
     return d;
   }
@@ -144,7 +149,8 @@
   const SO_LUOT_GAN_NHAT = 2;
   let hienHetLuot = false;
   // "kc"/"loi": máy đã làm hết, không còn gì cho người bấm ⇒ không ghim lượt (như "xong").
-  const conViec = (b) => ["dang", "cho"].includes(trangThaiBo(b)[1]) || coNutTaoBo(b) || coNutTraNgay(b) || conApVaoBo(b);
+  // "kc" nay = còn ca máy không chắc CHƯA bỏ qua (nút chờ người bấm) ⇒ ghim như lượt còn việc.
+  const conViec = (b) => ["dang", "cho", "kc"].includes(trangThaiBo(b)[1]) || coNutTaoBo(b) || coNutTraNgay(b) || conApVaoBo(b);
   const giuKhiThu = (b, i) => i < SO_LUOT_GAN_NHAT || conViec(b) || T.loc.job === b.job_id;
   function veBo() {
     const l = $("tl-bo-list");
@@ -326,7 +332,7 @@
     const o = (cls, so, chu) => { const d = el("div", cls); d.append(el("b", "", String(so)), chu); return d; };
     const cuaBan = ap.la_chu && ap.so_du_dieu_kien != null ? ap.so_du_dieu_kien + ap.so_da_ap : null;
     tom.append(o("dat", b.dat, "Đạt" + (cuaBan != null && cuaBan !== b.dat ? ` · ${cuaBan} của bạn` : "")), o("hong", b.hong, "Hỏng"),
-               o("", b.cho_nguoi, "Máy không chắc"));
+               o("", b.cho_nguoi, "Máy không chắc"), o("", b.bo_qua || 0, "Đã bỏ qua"));
     const anh = el("div", "tl-bx-thumbs"); anh.setAttribute("aria-hidden", "true");
     for (const v of T.videos.filter((x) => x.job_id === b.job_id)) {
       const s = el("span"); s.title = T.tenVideo(v);
