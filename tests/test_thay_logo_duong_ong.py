@@ -401,3 +401,34 @@ def test_cum_hat_giong_duoi_cum_lon_o_vong_mot_duoc_do_nhung_khong_tu_render(mon
     assert [v.trang_thai for v in kq.vet] == ["render", "cho_nguoi"]
     assert kq.vet[1].khung_render == [] and "1 box" in kq.vet[1].ly_do
     assert kq.trang_thai == "cho_nguoi"
+
+
+def _nguon_logo_o(x: int, y: int, w: int = 40, h: int = 16, rong: int = 240, cao: int = 160, n: int = 3):
+    """Khung xám có cùng một mảng hoa văn (logo) ở (x, y) — đủ để dựng mẫu từ crop."""
+    import numpy as np
+
+    from tiktok_music_downloader.thay_logo.nguon_khung import NguonKhungMang
+
+    rng = np.random.default_rng(7)
+    logo = rng.integers(0, 255, (h, w), dtype=np.uint8)
+    khung = []
+    for _ in range(n):
+        g = rng.integers(90, 110, (cao, rong), dtype=np.uint8)
+        g[y:y + h, x:x + w] = logo
+        khung.append(g)
+    return NguonKhungMang(khung)
+
+
+def test_box_moi_sat_mep_phai_duoi_van_dung_duoc_mau():
+    """Test 03_22: box agy sát mép phải — nới 10% vượt khung 1 px ⇒ lát cắt hụt ⇒ 'không dựng được mẫu'. Kẹp biên ⇒ dựng được."""
+    nguon = _nguon_logo_o(200, 144)  # logo chạm mép phải (240) và mép dưới (160)
+    moi = BoxMoi(0, 200, 144, 40, 16)
+    assert mau_mod.no_box_moi(moi) != mau_mod.no_box_moi(moi, 240, 160)  # nới thô vượt khung
+    assert mau_mod.dung_mau_sach(nguon, moi, [BoxMoi(k, 200, 144, 40, 16) for k in range(3)]) is not None
+
+
+def test_box_moi_giua_khung_kep_bien_khong_doi_gi():
+    nguon = _nguon_logo_o(100, 60)
+    moi = BoxMoi(0, 100, 60, 40, 16)
+    assert mau_mod.no_box_moi(moi) == mau_mod.no_box_moi(moi, 240, 160)
+    assert mau_mod.dung_mau_sach(nguon, moi, [BoxMoi(k, 100, 60, 40, 16) for k in range(3)]) is not None

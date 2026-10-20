@@ -22,9 +22,17 @@ def _hp(g: np.ndarray, s: float) -> np.ndarray:
     return g - cv2.GaussianBlur(g, (0, 0), s)
 
 
-def no_box_moi(b: BoxMoi) -> tuple[int, int, int, int]:
-    """Nới box mồi 10% (box agy hay cắt hụt chữ — c09 hospital: 709 ⇒ 799 khung chắc khi nới)."""
-    return max(0, b.x - b.w // 20), max(0, b.y - b.h // 20), b.w * 11 // 10, b.h * 11 // 10
+def no_box_moi(b: BoxMoi, rong: int | None = None, cao: int | None = None) -> tuple[int, int, int, int]:
+    """Nới box mồi 10% (box agy hay cắt hụt chữ — c09 hospital: 709 ⇒ 799 khung chắc khi nới).
+
+    Có cỡ khung ⇒ kẹp biên phải/dưới: box agy sát mép (Test 03_22: box 677+41 > rộng 716) nới ra ngoài khung thì lát cắt hụt và
+    `dung_mau_sach` trả None ⇒ cả cụm "không dựng được mẫu" dù logo nằm trọn trong khung."""
+    x, y, w, h = max(0, b.x - b.w // 20), max(0, b.y - b.h // 20), b.w * 11 // 10, b.h * 11 // 10
+    if rong is not None:
+        w = min(w, rong - x)
+    if cao is not None:
+        h = min(h, cao - y)
+    return x, y, w, h
 
 
 def dung_mau_sach(nguon: NguonKhung, moi: BoxMoi, cum: list[BoxMoi]) -> np.ndarray | None:
@@ -32,7 +40,7 @@ def dung_mau_sach(nguon: NguonKhung, moi: BoxMoi, cum: list[BoxMoi]) -> np.ndarr
     g0 = nguon.doc(moi.khung)
     if g0 is None:
         return None
-    x, y, w, h = no_box_moi(moi)
+    x, y, w, h = no_box_moi(moi, g0.shape[1], g0.shape[0])
     seed = g0[y:y + h, x:x + w]
     if seed.shape != (h, w):
         return None
