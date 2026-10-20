@@ -120,31 +120,53 @@ def test_cong_khop_mot_box_mo_sai_khong_giet_vet_dung():
 _CUM_JOB2 = [BoxMoi(115, 192, 97, 61, 53), BoxMoi(192, 97, 110, 54, 56), BoxMoi(422, 182, 79, 43, 30)]
 
 
-def _track_job2(state_k115: str) -> list[dict]:
-    return [{"frame": 115, "state": state_k115, "x": 215, "y": 225, "w": 60, "h": 52},  # má, cách box mồi ~130 px
+def _track_job2(k115: dict) -> list[dict]:
+    return [dict({"frame": 115, "x": 215, "y": 225, "w": 60, "h": 52, "score": 0.324}, **k115),  # má, cách box mồi ~130 px
             {"frame": 192, "state": "hidden"},  # vết không phủ khung này
-            {"frame": 422, "state": "detected", "x": 166, "y": 79, "w": 68, "h": 59}]  # trùng box (logo đè mắt)
+            {"frame": 422, "state": "detected", "x": 166, "y": 79, "w": 68, "h": 59, "score": 0.776}]  # trùng box (logo đè mắt)
 
 
 def test_cong_khop_khung_box_bi_chan_ma_vet_lech_thi_dem_lech():
-    """Vết bám mặt qua cổng chỉ nhờ 1 box khớp khi box kia rơi vào khung bị cổng nội dung chặn ⇒ phải trượt cổng."""
-    kq = cong.cong_khop(_track_job2(cong.CHAN_NET), _CUM_JOB2)
-    assert (kq["khop"], kq["lech"], kq["track_vang"]) == (1, 1, 1)
-    assert not kq["qua_cong"]
-    assert not cong.cong_khop(_track_job2("detected"), _CUM_JOB2)["qua_cong"]  # đối chứng: đúng như prod 20/10
+    """Vết bám mặt qua cổng chỉ nhờ 1 box khớp khi box kia rơi vào khung bị cổng nội dung chặn ⇒ phải trượt cổng — kể cả khi ô đó
+    mang `giu_chan` (đoạn chặn bị gỡ một phần, hoặc nối qua chữ mà hai đầu cùng nằm trên mặt)."""
+    for k115 in ({"state": cong.CHAN_NET}, {"state": cong.CHAN_NET, "giu_chan": True}):
+        kq = cong.cong_khop(_track_job2(k115), _CUM_JOB2)
+        assert (kq["khop"], kq["lech"], kq["track_vang"]) == (1, 1, 1)
+        assert not kq["qua_cong"]
+    assert not cong.cong_khop(_track_job2({"state": "detected"}), _CUM_JOB2)["qua_cong"]  # đối chứng: đúng như prod 20/10
 
 
-def test_cong_khop_khung_box_bi_chan_trung_hoac_khoa_duoi_chu_van_la_vang():
-    """Ô bị chặn TRÙNG box không thành khớp (không nới cổng); ô khoá dưới chữ (`giu_chan`) lệch vẫn là vàng (vị trí ước lượng)."""
-    track = [{"frame": i, "x": 100, "y": 100, "w": 50, "h": 20, "state": "detected"} for i in range(10)]
-    track[5] = dict(track[5], state=cong.CHAN_NET)
+def _track_chan(k: int, **o) -> list[dict]:
+    track = [{"frame": i, "x": 100, "y": 100, "w": 50, "h": 20, "state": "detected", "score": 0.8} for i in range(10)]
+    for i in (k - 1, k, k + 1):
+        track[i] = dict(track[i], state=cong.CHAN_NET, x=300)  # bị chặn và lệch box
+    track[k] = dict(track[k], **o)
+    return track
+
+
+@pytest.mark.parametrize("o", [
+    {"x": 100},  # một ô trong ±1 trùng box: vết có mặt đúng chỗ, chỉ bị chặn
+    {"state": "filled"},  # ô DA_CHAC xét trước như cũ ⇒ không vào nhánh chặn
+], ids=["mot-o-trung", "da-chac-truoc"])
+def test_cong_khop_o_bi_chan_khong_lam_hong_vet_dung(o):
     boxes = [BoxMoi(1, 100, 100, 50, 20), BoxMoi(5, 100, 100, 50, 20)]
-    track[4] = dict(track[4], state=cong.CHAN_NET)
-    track[6] = dict(track[6], state=cong.CHAN_NET)
+    track = _track_chan(5, **o)
+    if o.get("state") == "filled":
+        track[5]["x"] = 100
     kq = cong.cong_khop(track, boxes)
-    assert (kq["khop"], kq["lech"], kq["track_vang"]) == (1, 0, 1)
-    for k in (4, 5, 6):
-        track[k] = dict(track[k], x=300, giu_chan=True)
+    assert kq["lech"] == 0 and kq["qua_cong"]
+
+
+@pytest.mark.parametrize("o", [
+    {"score": None},  # ô lấp mù: toạ độ giữ góc cũ, bộ dò không bắt gì ở đó
+    {"state": "hidden_hinh"},  # kiểm hình đã bác: không có logo ở đó
+    {"giu_chan": True, "qua_chu_khop": True},  # nối qua chữ, đường nối đi qua box ⇒ ô lệch là dò sai dưới chữ
+], ids=["lap-mu", "kiem-hinh-bac", "qua-chu-khop"])
+def test_cong_khop_o_bi_chan_khong_phai_bang_chung_thi_la_vang(o):
+    boxes = [BoxMoi(1, 100, 100, 50, 20), BoxMoi(5, 100, 100, 50, 20)]
+    track = _track_chan(5, **o)
+    for i in (4, 6):
+        track[i] = dict(track[i], **o)
     kq = cong.cong_khop(track, boxes)
     assert (kq["khop"], kq["lech"], kq["track_vang"]) == (1, 0, 1) and kq["qua_cong"]
 
