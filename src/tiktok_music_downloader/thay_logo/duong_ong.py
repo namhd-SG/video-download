@@ -10,6 +10,7 @@ như mọi box, vết cũ giữ nguyên; `KetQuaVideo.vet` = cũ + mới nên `r
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -28,6 +29,19 @@ from .nguon_khung import NguonKhung
 from .nhay import do_nhay
 from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
+
+# Đè khi đã biết chỗ (thử nghiệm đo 21/10, CHƯA bật trên prod): "" = tắt (hành vi cũ); "A:10" = chỉ khung kiểm hình chặn, khung lấp
+# kẹp giữa hai khung dò thật cách ≤ 10 khung; "B" = thêm cổng nội dung, không giới hạn khoảng kẹp. Xem cong.de_khi_biet_cho.
+DE_KHI_BIET = os.environ.get("THAY_LOGO_DE_KHI_BIET", "")
+
+
+def _muc_de_khi_biet(gia_tri: str) -> tuple[str, int | None] | None:
+    if not gia_tri:
+        return None
+    muc, _, kep = gia_tri.partition(":")
+    if muc not in ("A", "B"):
+        raise ValueError(f"THAY_LOGO_DE_KHI_BIET lạ: {gia_tri!r}")
+    return muc, (int(kep) if kep else None)
 
 SO_VONG_TU_HOC = 1
 BUOC_TU_HOC = 4  # lượt tự học mẫu dò mỗi 4 khung (rẻ 4×); lượt cuối dò đủ mọi khung
@@ -265,6 +279,10 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     cong.go_chan_le(track)
     cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
+    de_khi_biet = 0
+    muc = _muc_de_khi_biet(DE_KHI_BIET)
+    if muc and khop["qua_cong"]:  # sau cổng khớp: không đổi vết nào được render, chỉ thêm khung được đè trong vết đã render
+        de_khi_biet = cong.de_khi_biet_cho(track, *muc)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
@@ -272,6 +290,7 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
     dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC and not e.get("qua_chu"))
     dem["qua_chu"] = qua_chu
+    dem["de_khi_biet"] = de_khi_biet
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]

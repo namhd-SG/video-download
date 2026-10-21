@@ -254,6 +254,44 @@ def khung_con_watermark_khong_thay(track: list[dict]) -> list[dict]:
     return [e for e in track if str(e.get("state", "")).startswith("hidden_") and "x" in e]
 
 
+CAC_CONG_NOI_DUNG = (CHAN_PHU_DE, CHAN_TUONG_PHAN, CHAN_VANH, CHAN_NET)
+TOC_DO_KEP_TOI_DA = 25.0  # px/khung giữa hai khung dò thật kẹp hai bên — cùng ngưỡng bước nhảy của kiem_hinh/lam_muot_vet
+
+
+def de_khi_biet_cho(track: list[dict], muc: str, kep_toi_da: int | None) -> int:
+    """User chốt 16/10 + 20/10 + 21/10 ("đè lên gì cũng được"): khi máy BIẾT chỗ logo thì đè, không để cổng sợ-đè-sai chặn.
+    Chỉ gọi cho vết ĐÃ qua cổng khớp. Khung bị chặn được đè lại (về detected/filled, gắn `de_khi_biet`) khi có toạ độ VÀ:
+    - là khung dò thật (`score` khác None), hoặc
+    - là khung lấp KẸP giữa hai khung dò thật cách nhau ≤ `kep_toi_da` khung (None = không giới hạn) mà tâm đi
+      ≤ TOC_DO_KEP_TOI_DA px/khung (lớn hơn = bước nhảy: chỗ đoán không đáng tin).
+    `muc` "A": chỉ khung bị KIỂM HÌNH chặn; "B": thêm khung bị các cổng nội dung chặn. Khung lấp ở mép vết (thiếu một phía) và
+    khung không toạ độ vẫn chặn. Trả số khung đè lại."""
+    chan = KHONG_GO if muc == "A" else KHONG_GO + CAC_CONG_NOI_DUNG
+    that = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e]
+
+    def tam(e: dict) -> tuple[float, float]:
+        return e["x"] + e["w"] / 2, e["y"] + e["h"] / 2
+
+    de = 0
+    for i, e in enumerate(track):
+        if e.get("state") not in chan or "x" not in e:
+            continue
+        if e.get("score") is None:
+            a = next((k for k in reversed(that) if k < i), None)
+            b = next((k for k in that if k > i), None)
+            if a is None or b is None:
+                continue
+            fa, fb = track[a]["frame"], track[b]["frame"]
+            if kep_toi_da is not None and fb - fa > kep_toi_da:
+                continue
+            if float(np.hypot(*np.subtract(tam(track[a]), tam(track[b])))) / max(1, fb - fa) > TOC_DO_KEP_TOI_DA:
+                continue
+        e["chan_cu"], e["de_khi_biet"] = e["state"], True
+        e["state"] = "detected" if e.get("score") is not None else "filled"
+        de += 1
+    return de
+
+
 def chuan_pad_vet(track: list[dict]) -> None:
     """Pad tấm nền CỐ ĐỊNH theo vết: ≥20% khung phủ cần pad hẹp (phụ đề sát) ⇒ cả vết dùng pad hẹp; ít hơn ⇒ pad rộng, chỉ các khung
     thật sự bị phụ đề sát mới hẹp (nội dung được bảo vệ trước, cố định pad sau)."""
