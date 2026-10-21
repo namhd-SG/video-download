@@ -34,7 +34,7 @@ say() { printf '\n== %s\n' "$*"; }
 
 # Cùng cổng như lúc deploy: lui nhầm máy cũng hỏng như deploy nhầm máy.
 say "0. Kiểm máy đích"
-echo "   máy đích: $HOST (VIDEODL_MAY_DICH=${VIDEODL_MAY_DICH:-cu}, mong hostname: $EXPECT_HOST)"
+echo "   máy đích: $HOST (VIDEODL_MAY_DICH=$MAY_DICH, mong hostname: $EXPECT_HOST)"
 remote_host="$(ssh -o ConnectTimeout=10 -o BatchMode=yes "$HOST" 'hostname' 2>&1 | tail -1)"
 norm="$(printf '%s' "$remote_host" | tr '[:upper:]' '[:lower:]' | sed 's/\.local$//')"
 echo "   hostname bên kia: $remote_host"

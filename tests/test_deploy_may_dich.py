@@ -17,7 +17,7 @@ BANG = REPO / "deploy" / "may-dich.sh"
 
 SSH_GIA = """#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$SSH_LOG"
-case "${@: -1}" in hostname) echo "${HOSTNAME_GIA:-Autos-Mac-mini.local}" ;; *) exit 0 ;; esac
+case "${@: -1}" in hostname) echo "${HOSTNAME_GIA:-Mac-mini-cua-N.local}" ;; *) exit 0 ;; esac
 """
 
 
@@ -27,8 +27,15 @@ def _bang(**env_them) -> subprocess.CompletedProcess:
                            "_", str(BANG)], capture_output=True, text=True, env=env)
 
 
-def test_mac_dinh_la_may_cu():
+def test_mac_dinh_la_ca_n():
+    """Video Desk chạy ở ca-n từ 20/10 ⇒ deploy/lui không khai máy phải tới ca-n, không về mini cũ."""
     r = _bang()
+    assert r.returncode == 0, r.stderr
+    assert r.stdout == "mktmini@100.101.112.88|mac-mini-cua-n"
+
+
+def test_hang_may_cu_van_con_cho_duong_lui():
+    r = _bang(VIDEODL_MAY_DICH="cu")
     assert r.returncode == 0, r.stderr
     host, expect = r.stdout.split("|")
     assert expect == "autos-mac-mini" and host.startswith("nobi_auto@")
@@ -40,8 +47,8 @@ def test_ghi_de_tung_truong():
 
 
 def test_ghi_de_rieng_host_giu_expect_cu_de_cong_hostname_chan():
-    """Chỉ đổi HOST ⇒ EXPECT_HOST vẫn là máy cũ ⇒ cổng hostname sẽ DỪNG nếu trỏ máy khác."""
-    assert _bang(VIDEODL_MINI_HOST="svc@x").stdout.endswith("|autos-mac-mini")
+    """Chỉ đổi HOST ⇒ EXPECT_HOST vẫn là máy mặc định ⇒ cổng hostname sẽ DỪNG nếu trỏ máy khác."""
+    assert _bang(VIDEODL_MINI_HOST="svc@x").stdout.endswith("|mac-mini-cua-n")
 
 
 def test_ten_may_khong_co_trong_bang_thi_dung():
