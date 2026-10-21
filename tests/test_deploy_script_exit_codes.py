@@ -31,7 +31,7 @@ case "$KICH_BAN" in
 esac
 da_kickstart() { [ -n "${SSH_LOG:-}" ] && grep -q "launchctl kickstart" "$SSH_LOG"; }
 case "$cmd" in
-  hostname) echo "Autos-Mac-mini.local" ;;
+  hostname) echo "Mac-mini-cua-N.local" ;;
   *"launchctl kickstart"*) exit 0 ;;
   *"launchctl list"*)
     case "$KICH_BAN" in

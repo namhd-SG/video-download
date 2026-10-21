@@ -2,7 +2,7 @@
 # `source` từ deploy-to-mini.sh và rollback-on-mini.sh; `scripts/tu-chia-cum/phan_tich_hinh.py`
 # đọc cùng bảng này (đừng chép địa chỉ sang chỗ khác).
 #
-# Chọn máy:   VIDEODL_MAY_DICH=<tên trong bảng>        (mặc định: cu)
+# Chọn máy:   VIDEODL_MAY_DICH=<tên trong bảng>        (mặc định: can — Video Desk chạy ở ca-n từ 20/10)
 # Ghi đè:     VIDEODL_MINI_HOST=<user@host>  VIDEODL_MINI_EXPECT_HOST=<hostname chuẩn hoá>
 #
 # Vì sao EXPECT_HOST đi cùng máy: cổng `hostname` ở bước 0 của deploy/lui là thứ chặn
@@ -10,15 +10,18 @@
 # (đúng ý) — muốn trỏ máy khác phải khai cả hai, hoặc thêm một hàng vào bảng.
 # Hàng cho máy mới chỉ thêm khi đã đo được user dịch vụ + `hostname` thật của nó.
 
-case "${VIDEODL_MAY_DICH:-cu}" in
+# Tên máy đã giải (kể cả mặc định) — deploy/lui in lại đúng giá trị này, không tự chép mặc định.
+MAY_DICH="${VIDEODL_MAY_DICH:-can}"
+case "$MAY_DICH" in
   # EXPECT_HOST là `hostname` đã chuẩn hoá: chữ thường, bỏ đuôi `.local`.
+  # cu: mini cũ — Video Desk dời sang ca-n 20/10; giữ hàng này cho đường lùi về mini (plan pha C §3).
   cu) _may_host="nobi_auto@100.109.39.103"; _may_expect="autos-mac-mini" ;;
   # ca-n: đo 19/10 — user dịch vụ `mktmini`, `hostname` thật "Mac-mini-cua-N.local". Không sudo; Python qua micromamba
   # (không có /opt/homebrew/bin/python3) ⇒ mini-setup.sh cần VIDEODL_PY. Lần dựng ĐẦU đi đường rsync tay của mini-setup.sh bước 2:
   # deploy-to-mini.sh dừng khi máy đích chưa có label dịch vụ / jobs.db.
   can) _may_host="mktmini@100.101.112.88"; _may_expect="mac-mini-cua-n" ;;
   *)
-    echo "DỪNG: VIDEODL_MAY_DICH='${VIDEODL_MAY_DICH}' không có trong bảng máy đích (deploy/may-dich.sh)." >&2
+    echo "DỪNG: VIDEODL_MAY_DICH='${MAY_DICH}' không có trong bảng máy đích (deploy/may-dich.sh)." >&2
     # 7, không phải 1: deploy dùng 1 cho "cổng hostname chặn" — người đọc mã thoát phải
     # phân biệt "cấu hình máy đích sai" với "đã tới một máy không phải máy đích".
     exit 7 ;;

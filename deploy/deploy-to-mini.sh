@@ -111,7 +111,7 @@ don_tep_xoa() {
 # Đây là cổng quan trọng nhất trong script. Không có nó, một alias trỏ sai là
 # đủ để rsync đè lên máy dev.
 say "0. Kiểm máy đích"
-echo "   máy đích: $HOST (VIDEODL_MAY_DICH=${VIDEODL_MAY_DICH:-cu}, mong hostname: $EXPECT_HOST)"
+echo "   máy đích: $HOST (VIDEODL_MAY_DICH=$MAY_DICH, mong hostname: $EXPECT_HOST)"
 # `|| …`: ssh chết (255) dưới `set -euo pipefail` sẽ thoát NGAY bằng 255, im
 # lặng — stderr đã bị `2>&1` nuốt vào biến. Không đọc được tên máy là PHÉP ĐO
 # HỎNG, không phải "sai máy".
