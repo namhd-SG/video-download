@@ -12,6 +12,7 @@ import numpy as np
 from .box_moi import BoxMoi
 from .chu_phu_de import mat_na_chu
 from .dinh_vi import ti_le_phu_de
+from .kiem_hinh import san_hinh
 
 # Cổng phụ đề cũ (ĐP-1437): tấm nền A2 nới 4px chồng chữ trắng viền đen >3% ⇒ thử co về box chữ cũ +2px; vẫn chồng ⇒ bỏ.
 PHU_DE_TI_LE, PAD_TAM_NEN, PAD_CHAT = 0.03, 4, 2
@@ -265,16 +266,29 @@ def de_khi_biet_cho(track: list[dict], muc: str, kep_toi_da: int | None) -> int:
     - là khung lấp KẸP giữa hai khung dò thật cách nhau ≤ `kep_toi_da` khung (None = không giới hạn) mà tâm đi
       ≤ TOC_DO_KEP_TOI_DA px/khung (lớn hơn = bước nhảy: chỗ đoán không đáng tin).
     `muc` "A": chỉ khung bị KIỂM HÌNH chặn; "B": thêm khung bị các cổng nội dung chặn. Khung lấp ở mép vết (thiếu một phía) và
-    khung không toạ độ vẫn chặn. Trả số khung đè lại."""
-    chan = KHONG_GO if muc == "A" else KHONG_GO + CAC_CONG_NOI_DUNG
-    that = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e]
+    khung không toạ độ vẫn chặn. Trả số khung đè lại.
+
+    `muc` "L" (lai — đo 21/10: B đè sai 9/38 chỗ, toàn là khung kiểm hình chặn kẹp qua khoảng DÀI; khung cổng nội dung đã qua kiểm
+    hình nên đúng 14/14; A10 trên khung kiểm hình đúng 34/35):
+    - cổng nội dung: không giới hạn khoảng kẹp; khung kiểm hình: khoảng kẹp ≤ `kep_toi_da` (mặc định 10);
+    - KHÔNG đè khung có `hinh_hut` (kiểm hình bắt được vết nhảy rồi bám chỗ khác — chỗ đó không có logo);
+    - neo kẹp chỉ lấy khung dò thật SẠCH: không `hinh_hut`, điểm ≥ sàn hình của vết hoặc `quy_dao` (neo nhiễu đơn lẻ trên mặt / áo
+      đã kéo cả đoạn lấp dài sai chỗ ở v5)."""
+    if muc == "L":
+        kep = {KHONG_GO[0]: kep_toi_da or 10, **dict.fromkeys(CAC_CONG_NOI_DUNG)}
+        san = san_hinh(track)
+        that = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e and "hinh_hut" not in e
+                and (e.get("quy_dao") or san is None or e["score"] >= san)]
+    else:
+        kep = dict.fromkeys(KHONG_GO if muc == "A" else KHONG_GO + CAC_CONG_NOI_DUNG, kep_toi_da)
+        that = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e]
 
     def tam(e: dict) -> tuple[float, float]:
         return e["x"] + e["w"] / 2, e["y"] + e["h"] / 2
 
     de = 0
     for i, e in enumerate(track):
-        if e.get("state") not in chan or "x" not in e:
+        if e.get("state") not in kep or "x" not in e or (muc == "L" and "hinh_hut" in e):
             continue
         if e.get("score") is None:
             a = next((k for k in reversed(that) if k < i), None)
@@ -282,7 +296,7 @@ def de_khi_biet_cho(track: list[dict], muc: str, kep_toi_da: int | None) -> int:
             if a is None or b is None:
                 continue
             fa, fb = track[a]["frame"], track[b]["frame"]
-            if kep_toi_da is not None and fb - fa > kep_toi_da:
+            if kep[e["state"]] is not None and fb - fa > kep[e["state"]]:
                 continue
             if float(np.hypot(*np.subtract(tam(track[a]), tam(track[b])))) / max(1, fb - fa) > TOC_DO_KEP_TOI_DA:
                 continue

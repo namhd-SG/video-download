@@ -31,7 +31,8 @@ from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
 
 # Đè khi đã biết chỗ (thử nghiệm đo 21/10, CHƯA bật trên prod): "" = tắt (hành vi cũ); "A:10" = chỉ khung kiểm hình chặn, khung lấp
-# kẹp giữa hai khung dò thật cách ≤ 10 khung; "B" = thêm cổng nội dung, không giới hạn khoảng kẹp. Xem cong.de_khi_biet_cho.
+# kẹp giữa hai khung dò thật cách ≤ 10 khung; "B" = thêm cổng nội dung, không giới hạn khoảng kẹp; "L" = lai (cổng nội dung không
+# giới hạn, kiểm hình ≤ 10, neo sạch, không đè hinh_hut). Xem cong.de_khi_biet_cho.
 DE_KHI_BIET = os.environ.get("THAY_LOGO_DE_KHI_BIET", "")
 
 
@@ -39,7 +40,7 @@ def _muc_de_khi_biet(gia_tri: str) -> tuple[str, int | None] | None:
     if not gia_tri:
         return None
     muc, _, kep = gia_tri.partition(":")
-    if muc not in ("A", "B"):
+    if muc not in ("A", "B", "L"):
         raise ValueError(f"THAY_LOGO_DE_KHI_BIET lạ: {gia_tri!r}")
     return muc, (int(kep) if kep else None)
 
@@ -277,12 +278,15 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
     qua_chu = lap_qua_chu(nguon, track, cum, moi_box)
     cong.go_chan_le(track)
-    cong.chuan_pad_vet(track)
+    muc = _muc_de_khi_biet(DE_KHI_BIET)
+    if not muc:
+        cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
     de_khi_biet = 0
-    muc = _muc_de_khi_biet(DE_KHI_BIET)
     if muc and khop["qua_cong"]:  # sau cổng khớp: không đổi vết nào được render, chỉ thêm khung được đè trong vết đã render
         de_khi_biet = cong.de_khi_biet_cho(track, *muc)
+    if muc:  # pad cố định theo vết phải tính cả khung vừa đè lại (cong_khop không đọc/ghi plate_pad)
+        cong.chuan_pad_vet(track)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}

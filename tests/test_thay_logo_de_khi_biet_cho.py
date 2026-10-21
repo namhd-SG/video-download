@@ -79,3 +79,38 @@ def test_bien_moi_truong_trong_la_tat_va_gia_tri_la_bi_tu_choi():
         pass
     else:
         raise AssertionError("giá trị lạ phải bị từ chối")
+
+
+# --- Mức L (lai): đo 21/10 B đè sai 9/38 chỗ — toàn khung kiểm hình kẹp khoảng dài, neo nhiễu, hinh_hut ---
+
+def test_L_khong_de_khung_hinh_hut_va_khong_lay_no_lam_neo():
+    """Kiểm hình hạ khung dò thật vì vết NHẢY rồi bám chỗ khác (`hinh_hut`, vẫn còn score) — chỗ đó không có logo."""
+    hut = dict(_chan(1, 300, score=0.3), hinh_hut=0.3)
+    t = [_dt(0, 100), hut, _chan(2, 300), dict(_chan(3, 300, score=0.3), hinh_hut=0.3)]
+    assert cong.de_khi_biet_cho(t, "L", None) == 0
+    assert [e["state"] for e in t[1:]] == ["hidden_hinh"] * 3
+
+
+def test_L_neo_duoi_san_hinh_khong_duoc_kep():
+    """Neo nhiễu (điểm dưới sàn hình của vết) không được kéo khung lấp dậy; neo đạt sàn thì được."""
+    tot = [_dt(f, 100 + f, score=0.9) for f in range(0, 30, 3)]
+    nhieu = [_dt(30, 130, score=0.1), _chan(31, 131), _dt(32, 132, score=0.1)]
+    assert cong.de_khi_biet_cho(tot + nhieu, "L", None) == 0
+    t = tot + [_dt(30, 130, score=0.9), _chan(31, 131), _dt(32, 132, score=0.9)]
+    assert cong.de_khi_biet_cho(t, "L", None) == 1
+
+
+def test_L_cong_noi_dung_khong_gioi_han_khoang_kiem_hinh_toi_da_10():
+    assert cong.de_khi_biet_cho(_vet_kep(khoang=15, state="hidden_ring"), "L", None) == 14
+    assert cong.de_khi_biet_cho(_vet_kep(khoang=15), "L", None) == 0
+    assert cong.de_khi_biet_cho(_vet_kep(khoang=10), "L", None) == 9
+
+
+def test_L_khung_do_that_bi_cong_noi_dung_chan_de_lai_khong_can_kep():
+    t = [_chan(0, 100, state="hidden_sub", score=0.7)]
+    assert cong.de_khi_biet_cho(t, "L", None) == 1 and t[0]["state"] == "detected"
+
+
+def test_bien_moi_truong_nhan_muc_L():
+    assert duong_ong._muc_de_khi_biet("L") == ("L", None)
+    assert duong_ong._muc_de_khi_biet("L:10") == ("L", 10)
