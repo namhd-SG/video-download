@@ -74,7 +74,7 @@ def test_bien_moi_truong_trong_la_tat_va_gia_tri_la_bi_tu_choi():
     assert duong_ong._muc_de_khi_biet("A:5") == ("A", 5)
     assert duong_ong._muc_de_khi_biet("B") == ("B", None)
     try:
-        duong_ong._muc_de_khi_biet("C:1")
+        duong_ong._muc_de_khi_biet("X:1")
     except ValueError:
         pass
     else:
@@ -114,3 +114,11 @@ def test_L_khung_do_that_bi_cong_noi_dung_chan_de_lai_khong_can_kep():
 def test_bien_moi_truong_nhan_muc_L():
     assert duong_ong._muc_de_khi_biet("L") == ("L", None)
     assert duong_ong._muc_de_khi_biet("L:10") == ("L", 10)
+
+
+def test_C_chi_go_cong_noi_dung_khong_dung_kiem_hinh():
+    """Mức C (22/10): chỉ cổng nội dung — khung kiểm hình chặn giữ nguyên dù kẹp ngắn, khung cổng nội dung đè lại."""
+    t = _vet_kep(khoang=4)
+    assert cong.de_khi_biet_cho(t, "C", None) == 0 and all(e["state"] == "hidden_hinh" for e in t[1:-1])
+    assert cong.de_khi_biet_cho(_vet_kep(khoang=15, state="hidden_net"), "C", None) == 14
+    assert duong_ong._muc_de_khi_biet("C") == ("C", None)

@@ -274,8 +274,9 @@ def de_khi_biet_cho(track: list[dict], muc: str, kep_toi_da: int | None) -> int:
     - KHÔNG đè khung có `hinh_hut` (kiểm hình bắt được vết nhảy rồi bám chỗ khác — chỗ đó không có logo);
     - neo kẹp chỉ lấy khung dò thật SẠCH: không `hinh_hut`, điểm ≥ sàn hình của vết hoặc `quy_dao` (neo nhiễu đơn lẻ trên mặt / áo
       đã kéo cả đoạn lấp dài sai chỗ ở v5)."""
-    if muc == "L":
-        kep = {KHONG_GO[0]: kep_toi_da or 10, **dict.fromkeys(CAC_CONG_NOI_DUNG)}
+    if muc in ("L", "C"):
+        # "C" = L bỏ phần kiểm hình (đo 22/10 ảnh lớn: kiểm hình sai 3/10 ô mẫu, cổng nội dung lệch 1/38).
+        kep = dict.fromkeys(CAC_CONG_NOI_DUNG) if muc == "C" else {KHONG_GO[0]: kep_toi_da or 10, **dict.fromkeys(CAC_CONG_NOI_DUNG)}
         san = san_hinh(track)
         that = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e and "hinh_hut" not in e
                 and (e.get("quy_dao") or san is None or e["score"] >= san)]
@@ -288,7 +289,7 @@ def de_khi_biet_cho(track: list[dict], muc: str, kep_toi_da: int | None) -> int:
 
     de = 0
     for i, e in enumerate(track):
-        if e.get("state") not in kep or "x" not in e or (muc == "L" and "hinh_hut" in e):
+        if e.get("state") not in kep or "x" not in e or (muc in ("L", "C") and "hinh_hut" in e):
             continue
         if e.get("score") is None:
             a = next((k for k in reversed(that) if k < i), None)

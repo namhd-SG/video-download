@@ -40,7 +40,7 @@ def _muc_de_khi_biet(gia_tri: str) -> tuple[str, int | None] | None:
     if not gia_tri:
         return None
     muc, _, kep = gia_tri.partition(":")
-    if muc not in ("A", "B", "L"):
+    if muc not in ("A", "B", "L", "C"):
         raise ValueError(f"THAY_LOGO_DE_KHI_BIET lạ: {gia_tri!r}")
     return muc, (int(kep) if kep else None)
 
