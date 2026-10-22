@@ -12,6 +12,7 @@ import time
 import urllib.parse
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from ..utils import parse_video_url
 from .truy_van import TruyVan
@@ -24,7 +25,17 @@ DOC_DOM = """() => { const out = []; const seen = new Set();
     let c = a; for (let i = 0; i < 4 && c.parentElement; i++) c = c.parentElement;
     out.push({url: a.href, cover: img.src, caption: (img.alt || c.innerText || '').replace(/\\s+/g, ' ').slice(0, 300)});
   }
-  return out; }"""
+  const chu = document.body ? document.body.innerText.slice(0, 5000) : '';
+  return {items: out, chu: chu}; }"""
+# Pha 4 22/10: TikTok bật captcha xoay ảnh "Drag the slider to fit the puzzle" trên trang search ⇒ lưới video không bao giờ
+# tải; công cụ cũ thấy "0 link" rồi đốt hết 12/12 lượt. Gặp captcha ⇒ dừng cả lần chạy NGAY (mở thêm chỉ làm nặng cờ IP).
+DAU_CAPTCHA = ("fit the puzzle", "drag the slider", "verify to continue", "captcha")
+
+
+def la_captcha(chu_trang: str) -> bool:
+    """Chữ hiển thị của trang (innerText) có dấu hiệu hộp captcha TikTok không."""
+    chu = chu_trang.lower()
+    return any(d in chu for d in DAU_CAPTCHA)
 CHO_LINK_MS = 15_000
 
 
@@ -40,6 +51,10 @@ class UngVien:
 
 class HetLuot(RuntimeError):
     """Đã dùng hết ngân sách lần mở trang TikTok cho lần chạy này."""
+
+
+class BiCaptcha(HetLuot):
+    """TikTok hỏi captcha: dừng như hết lượt, nhưng ghi rõ lý do để người chạy biết phải để IP nguội / tự giải."""
 
 
 def url_cua(tv: TruyVan) -> str:
@@ -66,8 +81,10 @@ def tu_dom(muc: list[dict], truy_van: str) -> list[UngVien]:
 class ChromeTim:
     """Dùng trong `with`: mở MỘT cửa sổ Chrome cho cả lần chạy, đóng khi ra khỏi khối (kể cả khi lỗi)."""
 
-    def __init__(self, tran_luot: int, gian_cach: float, bao: Callable[[str], None] = print):
+    def __init__(self, tran_luot: int, gian_cach: float, bao: Callable[[str], None] = print,
+                 chan_doan: Path | None = None):
         self.tran_luot = tran_luot
+        self.chan_doan = chan_doan   # thư mục chụp màn hình khi feed rỗng (bằng chứng: trang chặn, captcha, hay rỗng thật)
         self.gian_cach = gian_cach
         self.bao = bao
         self.da_mo = 0
@@ -114,7 +131,21 @@ class ChromeTim:
         except Exception:
             pass
         self._page.wait_for_timeout(3000)
-        return self._page.evaluate(DOC_DOM)
+        ket_qua = self._page.evaluate(DOC_DOM)
+        if la_captcha(str(ket_qua.get("chu", ""))):
+            self._chup(f"captcha-{self.da_mo:02d}.png")
+            raise BiCaptcha(f"TikTok hỏi captcha ở lần mở trang thứ {self.da_mo} ({url})")
+        return ket_qua["items"]
+
+    def _chup(self, ten: str) -> str:
+        if self.chan_doan is None:
+            return ""
+        self.chan_doan.mkdir(parents=True, exist_ok=True)
+        try:
+            self._page.screenshot(path=str(self.chan_doan / ten))
+            return ten
+        except Exception as exc:   # chụp hỏng không được làm hỏng lần chạy
+            return f"khong chup duoc ({type(exc).__name__})"
 
     def tim(self, tv: TruyVan) -> tuple[list[UngVien], str]:
         """Trả (ứng viên, ghi chú). Rỗng sau hâm phiên ⇒ ghi chú 'feed rỗng' — không coi là 'không có video'."""
@@ -127,4 +158,7 @@ class ChromeTim:
         ra = tu_dom(muc, tv.text)
         if not ra:
             ghi_chu = (ghi_chu + "; " if ghi_chu else "") + "feed rong sau ham phien"
+            anh = self._chup(f"rong-{self.da_mo:02d}.png")
+            if anh:
+                ghi_chu += f"; anh {anh}"
         return ra, ghi_chu

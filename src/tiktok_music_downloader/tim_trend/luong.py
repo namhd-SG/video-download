@@ -16,7 +16,7 @@ from . import agy_boc, anh_bia, khung
 from .cham import NGUONG_MAC_DINH, ChuKy, chu_ky, hang
 from .khu_trung import MucKhuTrung, khu_trung
 from .mo_rong import sinh_mo_rong
-from .nguon_tim import HetLuot, UngVien
+from .nguon_tim import BiCaptcha, HetLuot, UngVien
 from .truong import TruongAnh
 from .truy_van import TruyVan, sinh_truy_van
 
@@ -33,7 +33,13 @@ class KetQua:
     lo_ctrl: list[dict] = field(default_factory=list)        # {lo, hang_ctrl}
     so_lan_mo_trang: int = 0
     dung_vi: str = ""                                         # lý do dừng sớm, nếu có
+    bi_captcha: bool = False
     tin_duoc: bool = True
+
+    @property
+    def rong(self) -> bool:
+        """Không có ứng viên nào: KHÔNG phải "chạy xong, 0 kết quả" — thường là feed bị chặn/rỗng (Pha 4 22/10: 12/12)."""
+        return not self.ung_vien
 
     def giu(self, nguong: frozenset[str]) -> list[dict]:
         return [u for u in self.ung_vien if u["hang"] in nguong]
@@ -90,6 +96,7 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
                     tim_duoc, ghi_chu = nguon.tim(tv)
                 except HetLuot as exc:
                     kq.dung_vi = str(exc)
+                    kq.bi_captcha = isinstance(exc, BiCaptcha)
                     break
                 kq.truy_van.append({**asdict(tv), "hop": hop, "so_link": len(tim_duoc), "ghi_chu": ghi_chu})
                 for u in tim_duoc:
@@ -120,7 +127,7 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
 
 def ghi_links(kq: KetQua, ra: Path, nguong: frozenset[str] = NGUONG_MAC_DINH) -> list[Path]:
     """`links.txt` (mọi link đạt) + `links-NN.txt` mỗi file ≤50 khi vượt trần job. KHÔNG ghi gì nếu chạy không tin được."""
-    if not kq.tin_duoc:
+    if not kq.tin_duoc or kq.rong or kq.bi_captcha:
         return []
     links = [u["url"] for u in kq.giu(nguong)]
     tep = [ra / "links.txt"]

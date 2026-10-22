@@ -45,7 +45,12 @@ class _TrangGia:
         pass
 
     def evaluate(self, _js):
-        return self.ket_qua.pop(0)
+        muc = self.ket_qua.pop(0)
+        return muc if isinstance(muc, dict) else {"items": muc, "chu": "TikTok Videos"}
+
+    def screenshot(self, path):
+        from pathlib import Path
+        Path(path).write_bytes(b"png")
 
 
 def _tim(monkeypatch, ket_qua, tran=6):
@@ -105,3 +110,34 @@ def test_luon_dong_cua_so_khi_loi(monkeypatch):
         with ChromeTim(6, 0, bao=bao.append):
             pass
     assert dong == ["ctx", "pw"] and bao and "cửa sổ Chrome" in bao[0]
+
+
+def test_captcha_dung_ngay_va_chup_anh(monkeypatch, tmp_path):
+    """Pha 4 22/10: trang search hiện "Drag the slider to fit the puzzle" ⇒ phải dừng ở lần mở ĐẦU, không hâm, không đốt tiếp."""
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    t = _tim(monkeypatch, [{"items": [], "chu": "Log in | Drag the slider to fit the puzzle | Audio"}, DOM_GD1])
+    t.chan_doan = tmp_path
+    with pytest.raises(BiCaptcha):
+        t.tim(TruyVan("7 pose ai trend", "cau_truc", "en"))
+    assert t.da_mo == 1 and (tmp_path / "captcha-01.png").exists()
+
+
+def test_la_captcha_tren_html_that_221022():
+    """Mảnh HTML thật của trang search bị captcha (Pha 4, 22/10) ⇒ chữ hiển thị nhận ra captcha; trang kết quả thường thì không."""
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    from tiktok_music_downloader.tim_trend.nguon_tim import la_captcha
+
+    class _Chu(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.chu = []
+
+        def handle_data(self, data):
+            self.chu.append(data)
+
+    p = _Chu()
+    p.feed((Path(__file__).parent / "fixtures" / "tim_trend" / "captcha-search-221022.html").read_text())
+    assert la_captcha(" | ".join(p.chu))
+    assert not la_captcha("TikTok | 7 pose ai trend | Top | Users | Videos | AI collage 7 poses | saaart 4 ngày trước")

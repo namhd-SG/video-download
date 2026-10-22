@@ -30,12 +30,20 @@ def main(
     model: str = typer.Option(MODEL_MAC_DINH, "--model", help="Model agy bóc trường"),
 ) -> None:
     hang_giu = frozenset(x.strip() for x in nguong.split(",") if x.strip())
-    kq = chay(video, ra, tao_nguon=lambda: ChromeTim(tran_luot, gian_cach), so_truy_van=so_truy_van, so_hop=hop,
-              model=model)
+    kq = chay(video, ra, tao_nguon=lambda: ChromeTim(tran_luot, gian_cach, chan_doan=ra / "chan-doan"),
+              so_truy_van=so_truy_van, so_hop=hop, model=model)
     (ra / "ket-qua.json").write_text(json.dumps(asdict(kq), ensure_ascii=False, indent=1, default=str))
     tep = ghi_links(kq, ra, hang_giu)
     trang = render(kq, ra, video.name, hang_giu)
     typer.echo(f"Trang: {trang}")
+    if kq.bi_captcha:
+        typer.echo(f"TikTok hỏi captcha — đã dừng ngay ({kq.dung_vi}). Để IP nguội vài giờ rồi chạy lại; "
+                   f"ảnh trong {ra / 'chan-doan'}.", err=True)
+        raise typer.Exit(4)
+    if kq.rong:
+        typer.echo(f"KHÔNG CÓ ỨNG VIÊN NÀO sau {kq.so_lan_mo_trang} lần mở trang — feed TikTok rỗng/bị chặn; "
+                   f"xem ảnh trong {ra / 'chan-doan'}.", err=True)
+        raise typer.Exit(3)
     if not kq.tin_duoc:
         typer.echo("ĐỐI CHỨNG DƯƠNG TRƯỢT — không xuất links.txt (máy chấm không tin được lần này).", err=True)
         raise typer.Exit(2)

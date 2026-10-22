@@ -50,7 +50,14 @@ def render(kq: KetQua, ra: Path, ten_video: str, nguong: frozenset[str] = NGUONG
         ds = [u for u in kq.ung_vien if u["hang"] == h]
         if ds:
             nhom += f'<h2>{escape(TEN_HANG[h])} — {len(ds)}</h2><div class="grid">{"".join(map(_o_ung_vien, ds))}</div>'
-    tin = ('<p class="ok">Đối chứng dương đạt ở mọi lô (khung video đầu vào ra hạng 3).</p>' if kq.tin_duoc else
+    if kq.bi_captcha:
+        tin = (f'<p class="bad">TIKTOK HỎI CAPTCHA — đã dừng ngay: {escape(kq.dung_vi)}. Không xuất link. '
+               'Để IP nguội vài giờ rồi chạy lại; ảnh chụp trong chan-doan/.</p>')
+    elif kq.rong:
+        tin = (f'<p class="bad">KHÔNG CÓ ỨNG VIÊN NÀO sau {kq.so_lan_mo_trang} lần mở trang — feed TikTok rỗng hoặc bị chặn. '
+               'Xem ảnh chụp trong thư mục chan-doan/.</p>')
+    else:
+        tin = ('<p class="ok">Đối chứng dương đạt ở mọi lô (khung video đầu vào ra hạng 3).</p>' if kq.tin_duoc else
            '<p class="bad">ĐỐI CHỨNG DƯƠNG TRƯỢT — máy chấm không tin được ở lần chạy này ⇒ KHÔNG xuất link. '
            f'Lô: {escape(str(kq.lo_ctrl))}</p>')
     html = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

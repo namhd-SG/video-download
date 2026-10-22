@@ -137,3 +137,35 @@ def test_chia_khoi_50(tmp_path):
     tep = luong.ghi_links(kq, tmp_path)
     assert [p.name for p in tep] == ["links.txt", "links-01.txt", "links-02.txt", "links-03.txt"]
     assert [len(p.read_text().split()) for p in tep] == [120, 50, 50, 20]
+
+
+def test_khong_co_ung_vien_nao_thi_khong_ghi_links(gia, tmp_path):
+    """Pha 4 22/10: 12/12 lần mở trang feed rỗng ⇒ trước đây ghi links.txt rỗng + thoát 0, trông như "xong, 0 kết quả"."""
+    _, video = gia
+
+    class _Rong(_NguonGia):
+        def tim(self, tv):
+            self.da_mo += 2
+            return [], "ham phien; feed rong sau ham phien"
+
+    ra = tmp_path / "ra"
+    kq = luong.chay(video, ra, tao_nguon=lambda: _Rong(), so_hop=2, bao=lambda s: None)
+    assert kq.rong and kq.tin_duoc
+    assert luong.ghi_links(kq, ra) == [] and not (ra / "links.txt").exists()
+    assert "KHÔNG CÓ ỨNG VIÊN" in render(kq, ra, video.name).read_text()
+
+
+def test_captcha_dung_ca_lan_chay(gia, tmp_path):
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    _, video = gia
+
+    class _Captcha(_NguonGia):
+        def tim(self, tv):
+            self.da_mo += 1
+            raise BiCaptcha("TikTok hỏi captcha ở lần mở trang thứ 1")
+
+    nguon = _Captcha()
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: nguon, so_hop=2, bao=lambda s: None)
+    assert "captcha" in kq.dung_vi and kq.bi_captcha and nguon.da_mo == 1 and kq.rong
+    assert luong.ghi_links(kq, tmp_path / "ra") == []
+    assert "CAPTCHA" in render(kq, tmp_path / "ra", video.name).read_text()
