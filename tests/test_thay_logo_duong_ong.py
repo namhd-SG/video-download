@@ -2,6 +2,10 @@
 
 Mẫu mỗi test an toàn: (1) có lớp ⇒ không khung nguy hiểm nào được render; (2) gỡ đúng lớp đó bằng monkeypatch ⇒ khung nguy hiểm
 LỌT vào danh sách render. Vế (2) là bằng chứng fixture có sức phân định — thiếu nó thì vế (1) xanh cũng không nói lên gì.
+
+Các test "phụ đề / khối chữ không bao giờ được render" là hợp đồng của LỚP CỔNG khi TẮT đè-khi-biết-chỗ (`duong_ong.DE_KHI_BIET`).
+User đã thay bất biến đó cho ca máy BIẾT chỗ logo (USER-QUYET 16/10 11:29 "đề lên chữ dc mà đừng sợ"; 21/10 16:32 "đè lên gì cung dc")
+⇒ khi bật (mặc định), khung bị cổng nội dung chặn mà biết chỗ được đè lại — hợp đồng đó ở test_thay_logo_de_khi_biet_cho.py.
 """
 import pytest
 
@@ -177,6 +181,7 @@ def test_cong_khop_o_bi_chan_khong_phai_bang_chung_thi_la_vang(o):
 
 def test_phu_de_vien_den_khong_bao_gio_duoc_render(monkeypatch):
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     v = _vet(clip)
     assert v.trang_thai == "render"
@@ -198,6 +203,7 @@ def test_dot_bien_bo_ca_ba_lop_phu_de_thi_phu_de_vien_den_lot(monkeypatch):
 @pytest.mark.parametrize("go_lop", ["loc_ung_vien", "cong_cu", "vanh", "net_la"])
 def test_dot_bien_bo_mot_lop_phu_de_vien_den_van_bi_chan(monkeypatch, go_lop):
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(phu_de_vien_den=range(20, 30))
     if go_lop == "loc_ung_vien":
         monkeypatch.setattr(dinh_vi_mod, "NGUONG_PHU_DE_UNG_VIEN", 2.0)
@@ -215,6 +221,7 @@ def test_dot_bien_bo_mot_lop_phu_de_vien_den_van_bi_chan(monkeypatch, go_lop):
 
 def test_phu_de_bong_mo_bi_cong_vanh_ngang_chan(monkeypatch):
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(phu_de_bong_mo=range(20, 30))
     v = _vet(clip)
     assert v.dem_chan[cong.CHAN_VANH] > 0
@@ -331,6 +338,7 @@ def test_tu_hoc_tu_choi_mau_moi_lech_mau_cu(monkeypatch):
 
 def test_khoi_chu_trong_box_bi_cong_net_la_chan(monkeypatch):
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     from thay_logo_tong_hop import dan_khoi_trong_box
     clip = tao_clip()
     dan_khoi_trong_box(clip, range(30, 37))

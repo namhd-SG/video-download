@@ -10,6 +10,7 @@ như mọi box, vết cũ giữ nguyên; `KetQuaVideo.vet` = cũ + mới nên `r
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field, replace
 
 import numpy as np
@@ -28,6 +29,14 @@ from .nguon_khung import NguonKhung
 from .nhay import do_nhay
 from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
+
+# Đè lại khung bị cổng nội dung chặn khi đã biết chỗ (cong.de_khi_biet_cho) — BẬT mặc định. Tắt khẩn không cần deploy lại: đặt
+# THAY_LOGO_DE_KHI_BIET=off trong env dịch vụ rồi khởi động lại ⇒ đúng hành vi cũ (đo: bản ra trùng md5 bản trước khi có tính năng).
+def _bat_de_khi_biet(gia_tri: str | None) -> bool:
+    return (gia_tri or "").strip().lower() != "off"
+
+
+DE_KHI_BIET = _bat_de_khi_biet(os.environ.get("THAY_LOGO_DE_KHI_BIET"))
 
 SO_VONG_TU_HOC = 1
 BUOC_TU_HOC = 4  # lượt tự học mẫu dò mỗi 4 khung (rẻ 4×); lượt cuối dò đủ mọi khung
@@ -263,15 +272,23 @@ def ap_moi_cong(nguon: NguonKhung, track: list[dict], mau: np.ndarray, cum: list
     net_pho_bien = _ap_cong_khung(nguon, track, mau, mau_giong_phu_de(mau))
     qua_chu = lap_qua_chu(nguon, track, cum, moi_box)
     cong.go_chan_le(track)
-    cong.chuan_pad_vet(track)
+    if not DE_KHI_BIET:
+        cong.chuan_pad_vet(track)
     khop = cong.cong_khop(track, cum)
+    de_khi_biet = 0
+    if DE_KHI_BIET:
+        if khop["qua_cong"]:  # sau cổng khớp: không đổi vết nào được render, chỉ thêm khung được đè trong vết đã render
+            de_khi_biet = cong.de_khi_biet_cho(track)
+        cong.chuan_pad_vet(track)  # pad cố định theo vết tính cả khung vừa đè lại (cong_khop không đọc/ghi plate_pad)
     render = cong.khung_duoc_render(track, khop["qua_cong"])
     dem = {s: sum(1 for e in track if e.get("state") == s)
            for s in (cong.CHAN_PHU_DE, cong.CHAN_TUONG_PHAN, cong.CHAN_VANH, cong.CHAN_NET, CHAN_HINH)}
-    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh") and not e.get("qua_chu"))
+    dem["go_chan_le"] = sum(1 for e in track if "chan_cu" in e and not e.get("go_hinh") and not e.get("qua_chu")
+                            and not e.get("de_khi_biet"))
     dem["go_theo_hinh"] = sum(1 for e in track if e.get("go_hinh"))
     dem["de_chu"] = sum(1 for e in track if e.get("de_chu") and e.get("state") in cong.DA_CHAC and not e.get("qua_chu"))
     dem["qua_chu"] = qua_chu
+    dem["de_khi_biet"] = de_khi_biet
     ly_do = ""
     if not render:
         ly_do = ("vết không khớp box mồi (mẫu có thể học nhầm nội dung)" if not khop["qua_cong"]
