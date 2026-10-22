@@ -14,3 +14,15 @@ import os
 
 AGY_HOC_MAU = os.environ.get("THAY_LOGO_AGY_HOC_MAU") == "1"
 AGY_BU = os.environ.get("THAY_LOGO_AGY_BU") == "1"
+
+# Đè lại khung bị cổng nội dung chặn khi đã biết chỗ (cong.de_khi_biet_cho) — BẬT mặc định. Tắt khẩn không cần deploy lại: đặt
+# THAY_LOGO_DE_KHI_BIET=off (hoặc 0 / false / no, không phân biệt hoa thường) trong env dịch vụ rồi khởi động lại ⇒ đúng hành vi cũ
+# (đo: bản ra trùng md5 bản trước khi có tính năng). Giá trị khác ⇒ BẬT; worker ghi giá trị hiệu lực khi khởi động.
+GIA_TRI_TAT = ("off", "0", "false", "no")
+
+
+def de_khi_biet_bat(gia_tri: str | None) -> bool:
+    return (gia_tri or "").strip().lower() not in GIA_TRI_TAT
+
+
+DE_KHI_BIET = de_khi_biet_bat(os.environ.get("THAY_LOGO_DE_KHI_BIET"))

@@ -36,6 +36,7 @@ def test_phu_de_ngan_giua_hai_khung_che_duoc_che_qua_chu_dung_cho_logo():
 
 def test_dot_bien_tat_che_qua_chu_thi_phu_de_lo_lai(monkeypatch):
     monkeypatch.setattr(qua_chu, "GAP_MAX", -1)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(phu_de_vien_den=PHU_DE)
     v = _vet(clip)
     assert not {e["frame"] for e in v.khung_render} & set(PHU_DE)
@@ -43,6 +44,7 @@ def test_dot_bien_tat_che_qua_chu_thi_phu_de_lo_lai(monkeypatch):
 
 def test_doan_chan_dai_hon_gap_max_van_bi_chan(monkeypatch):
     monkeypatch.setattr(qua_chu, "GAP_MAX", 5)  # phụ đề 10 khung > trần ⇒ coi như nội dung dài, cổng giữ chặn
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(phu_de_vien_den=PHU_DE)
     v = _vet(clip)
     assert not {e["frame"] for e in v.khung_render} & set(PHU_DE)

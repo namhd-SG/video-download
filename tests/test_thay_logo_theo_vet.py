@@ -138,6 +138,7 @@ def test_go_chan_le_chi_go_doan_ngan_giu_doan_dai():
 def test_dot_bien_go_chan_le_tat_thi_khung_bi_chan_lo_ra(monkeypatch):
     """Cổng chặn oan một khung giữa vết: có gỡ chặn lẻ ⇒ khung vẫn được che; không có ⇒ nháy."""
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT đè-khi-biết-chỗ; khi bật: test_thay_logo_de_khi_biet_cho.py
     clip = tao_clip(n=70)
     monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     monkeypatch.setattr(cong, "go_chan_theo_hinh", lambda track, net, san: 0)  # cô lập gỡ chặn lẻ: gỡ theo hình có test riêng

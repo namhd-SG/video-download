@@ -6,12 +6,15 @@ Nguồn: `p0b_subtitle_rule.py`, phép tương phản trong `p1a_t2_pipeline_v2.
 """
 from __future__ import annotations
 
+import bisect
+
 import cv2
 import numpy as np
 
 from .box_moi import BoxMoi
 from .chu_phu_de import mat_na_chu
 from .dinh_vi import ti_le_phu_de
+from .kiem_hinh import san_hinh
 
 # Cổng phụ đề cũ (ĐP-1437): tấm nền A2 nới 4px chồng chữ trắng viền đen >3% ⇒ thử co về box chữ cũ +2px; vẫn chồng ⇒ bỏ.
 PHU_DE_TI_LE, PAD_TAM_NEN, PAD_CHAT = 0.03, 4, 2
@@ -252,6 +255,45 @@ def khung_duoc_render(track: list[dict], qua_cong_khop: bool) -> list[dict]:
 def khung_con_watermark_khong_thay(track: list[dict]) -> list[dict]:
     """Khung vết còn watermark thật nhưng bị cổng chặn (không thay): nguồn tô lấp của khung KHÁC không được lấy từ đây."""
     return [e for e in track if str(e.get("state", "")).startswith("hidden_") and "x" in e]
+
+
+CAC_CONG_NOI_DUNG = (CHAN_PHU_DE, CHAN_TUONG_PHAN, CHAN_VANH, CHAN_NET)
+TOC_DO_KEP_TOI_DA = 25.0  # px/khung giữa hai neo kẹp hai bên — cùng ngưỡng bước nhảy của kiem_hinh/lam_muot_vet
+
+
+def de_khi_biet_cho(track: list[dict]) -> int:
+    """User chốt 16/10 + 20/10 + 21/10 ("đè lên gì cũng được"): khung bị CỔNG NỘI DUNG (phụ đề / tương phản / vành / nét lạ) chặn
+    mà máy đã biết chỗ logo thì đè lại. Chỉ gọi cho vết ĐÃ qua cổng khớp ⇒ không đổi vết hay video nào được render.
+
+    Khung được đè lại (về detected/filled, gắn `de_khi_biet`) khi có toạ độ VÀ là khung dò thật (`score` khác None), hoặc là khung
+    lấp KẸP giữa hai neo sạch mà tâm đi ≤ TOC_DO_KEP_TOI_DA px/khung. Neo sạch = khung dò thật, không `hinh_hut`, điểm ≥ sàn hình
+    của vết hoặc `quy_dao` (neo nhiễu đơn lẻ từng kéo cả đoạn lấp sai chỗ).
+
+    Khung bị KIỂM HÌNH chặn KHÔNG đè: đo 22/10 trên 40 video Test3, đè cả chúng làm hiện 2 logo (logo cũ lộ chỗ khác, logo mới dán
+    lên chỗ trống) ở 2/10 ô mẫu; riêng cổng nội dung: lộ có toạ độ 1039 → 740 khung, user chấm 40/40 chỗ đè đúng. Trả số khung đè lại."""
+    san = san_hinh(track)
+    neo = [i for i, e in enumerate(track) if e.get("score") is not None and "x" in e and "hinh_hut" not in e
+           and (e.get("quy_dao") or san is None or e["score"] >= san)]
+
+    def tam(e: dict) -> tuple[float, float]:
+        return e["x"] + e["w"] / 2, e["y"] + e["h"] / 2
+
+    de = 0
+    for i, e in enumerate(track):
+        if e.get("state") not in CAC_CONG_NOI_DUNG or "x" not in e:
+            continue
+        if e.get("score") is None:
+            j = bisect.bisect_left(neo, i)  # khung lấp không có score ⇒ không nằm trong `neo` ⇒ neo[j] > i
+            if j == 0 or j == len(neo):
+                continue
+            a, b = neo[j - 1], neo[j]
+            fa, fb = track[a]["frame"], track[b]["frame"]
+            if float(np.hypot(*np.subtract(tam(track[a]), tam(track[b])))) / max(1, fb - fa) > TOC_DO_KEP_TOI_DA:
+                continue
+        e["chan_cu"], e["de_khi_biet"] = e["state"], True
+        e["state"] = "detected" if e.get("score") is not None else "filled"
+        de += 1
+    return de
 
 
 def chuan_pad_vet(track: list[dict]) -> None:
