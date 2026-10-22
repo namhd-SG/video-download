@@ -66,14 +66,19 @@ def _prompt_truong(anh: list[Path], dich: Path) -> str:
     )
 
 
-def boc_truong(anh: list[Path], thu_muc_ra: Path, model: str = MODEL_MAC_DINH) -> dict[str, TruongAnh]:
-    """Bóc trường cho mọi ảnh (chia lô ≤ LO_TOI_DA, mọi ảnh phải cùng thư mục). Trả {id: TruongAnh} cho mục đọc được."""
+def boc_truong(anh: list[Path], thu_muc_ra: Path, model: str = MODEL_MAC_DINH,
+               ten: str = "agy-truong") -> dict[str, TruongAnh]:
+    """Bóc trường cho mọi ảnh (chia lô ≤ LO_TOI_DA, mọi ảnh phải cùng thư mục). Trả {id: TruongAnh} cho mục đọc được.
+
+    File đích bị XOÁ trước mỗi lượt: lượt agy trượt không được đọc nhầm kết quả của lượt trước còn nằm trên đĩa.
+    """
     ra: dict[str, TruongAnh] = {}
     for i in range(0, len(anh), LO_TOI_DA):
         lo = anh[i:i + LO_TOI_DA]
-        dich = thu_muc_ra / f"agy-truong-{i // LO_TOI_DA}.json"
+        dich = thu_muc_ra / f"{ten}-{i // LO_TOI_DA}.json"
+        dich.unlink(missing_ok=True)
         log = goi_agy(_prompt_truong(lo, dich), lo[0].parent, model)
-        (thu_muc_ra / f"agy-truong-{i // LO_TOI_DA}.log").write_text(log)
+        (thu_muc_ra / f"{ten}-{i // LO_TOI_DA}.log").write_text(log)
         du_lieu = _doc_json(dich, log) or {}
         hop_le = {a.stem for a in lo}
         for muc in du_lieu.get("items", []):

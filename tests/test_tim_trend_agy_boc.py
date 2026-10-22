@@ -68,3 +68,11 @@ def test_goi_y_tu_khoa(tmp_path, monkeypatch):
     tv = agy_boc.goi_y_tu_khoa(_anh(tmp_path, ["dau-vao-0"]), tmp_path)
     assert [(t.text, t.nhom, t.lang) for t in tv] == [("ai pose collage", "chu_de", "en"), ("collage ia", "chu_de", "es"),
                                                      ("conjunto preto", "san_pham", "pt")]
+
+
+def test_khong_doc_lai_file_cu_khi_agy_truot(tmp_path, monkeypatch):
+    """Lượt trước để lại file đích; lượt này agy trượt (không ghi, không in JSON) ⇒ phải ra rỗng, không đọc file cũ."""
+    anh = _anh(tmp_path, ["s6-7"])
+    (tmp_path / "agy-truong-0.json").write_text(json.dumps({"items": [m for m in ITEMS if m["id"] == "s6-7"]}))
+    monkeypatch.setattr(agy_boc, "goi_agy", lambda *a, **k: "Eligibility check failed")
+    assert agy_boc.boc_truong(anh, tmp_path) == {}
