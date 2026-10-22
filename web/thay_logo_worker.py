@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from tiktok_music_downloader.thay_logo import ap_vao_bo, canh_relay, hang_doi, nhat_ky, nhip_relay, tai_len_phien, tu_ap_vao_bo
+from tiktok_music_downloader.thay_logo import de_khi_biet_bat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -156,6 +157,8 @@ class ThayLogoWorker:
         conn = self._mo()
         try:
             log.info("thay logo: quét khởi động %s", hang_doi.quet_khoi_dong(conn))
+            log.info("thay logo: đè khi biết chỗ = %s (THAY_LOGO_DE_KHI_BIET=%r)", "BẬT" if de_khi_biet_bat(os.environ.get(
+                "THAY_LOGO_DE_KHI_BIET")) else "TẮT", os.environ.get("THAY_LOGO_DE_KHI_BIET"))
         finally:
             conn.close()
         self._thread = threading.Thread(target=self._chay, name="thay-logo-worker", daemon=True)

@@ -1,4 +1,5 @@
 """Đè lại khung bị cổng nội dung chặn khi đã biết chỗ (`cong.de_khi_biet_cho`) + công tắc tắt khẩn THAY_LOGO_DE_KHI_BIET=off."""
+from tiktok_music_downloader import thay_logo
 from tiktok_music_downloader.thay_logo import cong, duong_ong
 
 
@@ -23,7 +24,9 @@ def test_khung_lap_kep_bi_cong_noi_dung_chan_duoc_de_lai():
 
 
 def test_khoang_kep_dai_van_de_lai():
-    """Cổng nội dung đã qua kiểm hình (máy thấy hình logo) ⇒ không giới hạn khoảng kẹp."""
+    """Cổng nội dung không giới hạn khoảng kẹp (đo 22/10: 42/42 khung lấp trong đoạn chặn > GAP_MAX đè đúng). Hành vi đã biết:
+    khung lấp ở vết YẾU (trung vị điểm < kiem_hinh.VET_MANH) không qua kiểm hình nên nội suy có thể trượt chéo qua nội dung — lỗ có
+    sẵn ở main, tính năng này nới rộng thêm (ghi trong PR)."""
     assert cong.de_khi_biet_cho(_vet_kep(khoang=40)) == 39
 
 
@@ -53,9 +56,11 @@ def test_khung_khong_toa_do_giu_chan():
 
 
 def test_neo_hinh_hut_khong_duoc_kep():
-    """Khung kiểm hình hạ vì vết nhảy (`hinh_hut`, vẫn còn score) không phải neo đáng tin."""
-    hut = dict(_chan(2, 114, state="hidden_hinh", score=0.3), hinh_hut=0.3)
-    assert cong.de_khi_biet_cho([_dt(0, 100), _chan(1, 107), hut]) == 0
+    """Khung kiểm hình hạ vì vết nhảy (`hinh_hut`, vẫn còn score) không phải neo đáng tin — kể cả khi điểm ĐẠT sàn (không thì
+    lọc theo sàn đã loại nó, test không phân định được lọc `hinh_hut`)."""
+    hut = dict(_chan(2, 114, state="hidden_hinh", score=0.9), hinh_hut=0.9)
+    assert cong.de_khi_biet_cho([_dt(0, 100, score=0.9), _chan(1, 107), hut]) == 0
+    assert cong.de_khi_biet_cho([_dt(0, 100, score=0.9), _chan(1, 107), _dt(2, 114, score=0.9)]) == 1
 
 
 def test_neo_duoi_san_hinh_khong_duoc_kep():
@@ -65,8 +70,19 @@ def test_neo_duoi_san_hinh_khong_duoc_kep():
 
 
 def test_cong_tac_tat_khan():
-    for gia_tri, bat in ((None, True), ("", True), ("off", False), ("OFF", False), (" off ", False), ("on", True)):
-        assert duong_ong._bat_de_khi_biet(gia_tri) is bat
+    tat = ("off", "OFF", " off ", "0", "false", "False", "no", "NO")
+    for gia_tri in tat:
+        assert thay_logo.de_khi_biet_bat(gia_tri) is False, gia_tri
+    for gia_tri in (None, "", "on", "1", "true", "of", "tat"):  # gõ nhầm ⇒ BẬT (giá trị hiệu lực được log khi worker khởi động)
+        assert thay_logo.de_khi_biet_bat(gia_tri) is True, gia_tri
+
+
+def test_khung_do_that_bi_cong_noi_dung_chan_de_lai_ke_ca_duoi_san():
+    """GHIM hành vi có chủ ý của C (user chấm 40/40 trên đúng đầu ra này): khung DÒ THẬT bị cổng nội dung chặn được đè lại không cần
+    đạt sàn hình — chỉ NEO cho khung lấp mới phải đạt sàn. Có thể liên quan ca lệch mép v13#63 (ghi trong PR, chờ user)."""
+    tot = [_dt(f, 100 + f, score=0.9) for f in range(0, 30, 3)]
+    t = tot + [_chan(30, 130, state="hidden_net", score=0.05)]
+    assert cong.de_khi_biet_cho(t) == 1 and t[-1]["state"] == "detected"
 
 
 def test_hop_dong_bat_khung_phu_de_biet_cho_duoc_de_dung_cho(monkeypatch):
@@ -93,3 +109,23 @@ def test_hop_dong_bat_khung_phu_de_biet_cho_duoc_de_dung_cho(monkeypatch):
     assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in khung) <= 3
     assert all(e.get("de_khi_biet") for e in khung)
     assert de(False)[1] == []
+
+
+def test_vet_khong_qua_cong_khop_thi_khong_de(monkeypatch):
+    """Đè chỉ chạy cho vết ĐÃ qua cổng khớp: vết bị cổng khớp bác không được gắn khung đè lại nào."""
+    import pytest
+    pytest.importorskip("cv2", reason="lõi thay logo cần opencv-python-headless")
+    from thay_logo_tong_hop import tao_clip
+    from tiktok_music_downloader.thay_logo import qua_chu as qua_chu_mod
+
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", True)
+    goc = cong.cong_khop
+
+    def bac(track, cum):
+        return dict(goc(track, cum), qua_cong=False)
+    monkeypatch.setattr(cong, "cong_khop", bac)
+    clip = tao_clip(phu_de_vien_den=range(20, 30))
+    kq = duong_ong.xu_ly_video(clip.nguon, clip.box_moi())
+    assert kq.vet and all(not e.get("de_khi_biet") for v in kq.vet for e in v.track)
+    assert all(v.dem_chan.get("de_khi_biet", 0) == 0 for v in kq.vet)

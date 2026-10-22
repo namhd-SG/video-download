@@ -6,6 +6,8 @@ Nguồn: `p0b_subtitle_rule.py`, phép tương phản trong `p1a_t2_pipeline_v2.
 """
 from __future__ import annotations
 
+import bisect
+
 import cv2
 import numpy as np
 
@@ -281,10 +283,10 @@ def de_khi_biet_cho(track: list[dict]) -> int:
         if e.get("state") not in CAC_CONG_NOI_DUNG or "x" not in e:
             continue
         if e.get("score") is None:
-            a = next((k for k in reversed(neo) if k < i), None)
-            b = next((k for k in neo if k > i), None)
-            if a is None or b is None:
+            j = bisect.bisect_left(neo, i)  # khung lấp không có score ⇒ không nằm trong `neo` ⇒ neo[j] > i
+            if j == 0 or j == len(neo):
                 continue
+            a, b = neo[j - 1], neo[j]
             fa, fb = track[a]["frame"], track[b]["frame"]
             if float(np.hypot(*np.subtract(tam(track[a]), tam(track[b])))) / max(1, fb - fa) > TOC_DO_KEP_TOI_DA:
                 continue

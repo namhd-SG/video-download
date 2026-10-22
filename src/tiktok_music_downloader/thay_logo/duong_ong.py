@@ -10,11 +10,11 @@ như mọi box, vết cũ giữ nguyên; `KetQuaVideo.vet` = cũ + mới nên `r
 """
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field, replace
 
 import numpy as np
 
+from . import DE_KHI_BIET as DE_KHI_BIET_GOI
 from . import cong
 from .ai_vong_hai import gan_moc_ai
 from .bam_hai_chieu import bam_lai_doan_mat
@@ -30,13 +30,8 @@ from .nhay import do_nhay
 from .qua_chu import lap_qua_chu
 from .theo_vet import theo_vet
 
-# Đè lại khung bị cổng nội dung chặn khi đã biết chỗ (cong.de_khi_biet_cho) — BẬT mặc định. Tắt khẩn không cần deploy lại: đặt
-# THAY_LOGO_DE_KHI_BIET=off trong env dịch vụ rồi khởi động lại ⇒ đúng hành vi cũ (đo: bản ra trùng md5 bản trước khi có tính năng).
-def _bat_de_khi_biet(gia_tri: str | None) -> bool:
-    return (gia_tri or "").strip().lower() != "off"
-
-
-DE_KHI_BIET = _bat_de_khi_biet(os.environ.get("THAY_LOGO_DE_KHI_BIET"))
+# Công tắc đè-khi-biết-chỗ: đọc một lần ở gói (thay_logo.DE_KHI_BIET); tests ghim bằng monkeypatch trên module này.
+DE_KHI_BIET = DE_KHI_BIET_GOI
 
 SO_VONG_TU_HOC = 1
 BUOC_TU_HOC = 4  # lượt tự học mẫu dò mỗi 4 khung (rẻ 4×); lượt cuối dò đủ mọi khung

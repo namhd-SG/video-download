@@ -272,6 +272,7 @@ def test_dot_bien_khong_tat_loc_phu_de_cho_mau_giong_phu_de_thi_icon_trang_den_m
 
 def test_cong_tuong_phan_chan_noi_dung_dam_trong_box(monkeypatch):
     monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)  # kiểm RIÊNG lớp cổng: tắt che qua chữ (có test riêng ở test_thay_logo_qua_chu.py)
+    monkeypatch.setattr(duong_ong, "DE_KHI_BIET", False)  # hợp đồng KHI TẮT; khi bật: test_noi_dung_dam_co_diem_khi_bat_… ngay dưới
     clip = tao_clip()
     mau = mau_mod.dung_mau_sach(clip.nguon, clip.box_moi()[0], clip.box_moi())
     mask, _ = mau_mod.mat_na_va_tuong_phan(mau)
@@ -290,6 +291,35 @@ def test_cong_tuong_phan_chan_noi_dung_dam_trong_box(monkeypatch):
     monkeypatch.setattr(cong, "cong_net_la", lambda track, ti_le: False)
     kq = duong_ong.ap_moi_cong(clip.nguon, [dict(e) for e in track], mau, clip.box_moi())
     assert {e["frame"] for e in kq.khung_render} & khung_dam
+
+
+def test_noi_dung_dam_co_diem_khi_bat_thi_de_lai_dung_cho(monkeypatch):
+    """Cùng clip, track CÓ điểm dò thật (bản trên không có score nên đè-khi-biết-chỗ không có neo, xanh vì fixture): bật ⇒ khung
+    đặc bị cổng NỘI DUNG chặn (đo: chính cổng phụ đề bắt trước) mà biết chỗ được đè lại, đúng box thật; tắt ⇒ giữ chặn.
+    Luật user 16/10 + 21/10 (xem đầu file)."""
+    monkeypatch.setattr(qua_chu_mod, "GAP_MAX", -1)
+    clip = tao_clip()
+    mau = mau_mod.dung_mau_sach(clip.nguon, clip.box_moi()[0], clip.box_moi())
+    mask, _ = mau_mod.mat_na_va_tuong_phan(mau)
+    khung_dam = set(range(30, 36))
+    for i in khung_dam:
+        x, y, w, h = clip.hop_that[i]
+        mk = cv2.resize(mask, (w, h), interpolation=cv2.INTER_NEAREST) > 0
+        vung = clip.nguon.doc(i)[y:y + h, x:x + w]
+        vung[mk], vung[~mk] = 250, 20
+    track = [{"frame": i, "x": x, "y": y, "w": w, "h": h, "state": "detected", "score": 0.9}
+             for i, (x, y, w, h) in enumerate(clip.hop_that)]
+
+    def chay(bat):
+        monkeypatch.setattr(duong_ong, "DE_KHI_BIET", bat)
+        return duong_ong.ap_moi_cong(clip.nguon, [dict(e) for e in track], mau, clip.box_moi())
+    tat = chay(False)
+    assert all(e["state"] in cong.CAC_CONG_NOI_DUNG for e in tat.track if e["frame"] in khung_dam)
+    assert not {e["frame"] for e in tat.khung_render} & khung_dam
+    bat = chay(True)
+    de = [e for e in bat.khung_render if e["frame"] in khung_dam]
+    assert de and all(e.get("de_khi_biet") for e in de)
+    assert max(tam_lech(e, clip.hop_that[e["frame"]]) for e in de) <= 3
 
 
 # --- Lớp: cổng khớp box mồi (mẫu sai tự nhất quán) ---
