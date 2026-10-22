@@ -22,7 +22,7 @@ Nhóm nền: {trang_tron, mau_tron, studio} = "trơn"; còn lại theo giá tr�
 ## Test (`tests/test_tim_trend_cham.py`, `…_khu_trung.py`, `…_truy_van.py`, `…_mo_rong.py`)
 - Bảng ca từ GĐ1 thật (`cham-may-v2.json`, chép 12 mục làm fixture): s6-7 ⇒ 3, s7-1 ⇒ 2A, s5-5 (lưới) ⇒ 1, s1-7 (1 người) ⇒ 1, s3-4 (chó) ⇒ 0, ctrl ⇒ 3.
 - Chữ ký video 2 (1 người catwalk): s3-1 ⇒ 3, s6-7 (collage) ⇒ 1 — chứng minh không hằng cứng.
-- Đột biến (bắt buộc ĐỎ): đảo xét lưới sau bản sao; bỏ cổng bậc bản sao.
+- Đột biến (bắt buộc ĐỎ): bỏ luật lưới; bỏ cổng bậc bản sao; xét chủ thể SAU các luật khác; bỏ cổng hành động. (Bản đầu ghi "đảo xét lưới sau bản sao" — đo 22/10 ra XANH vì hai luật cùng trả "1", đổi thứ tự không đổi kết quả ⇒ không phải đột biến có nghĩa; lỗi GĐ1 thật là luật lưới bị BỎ QUA khi n≥3.)
 - dHash: 2 ảnh md5 trùng ⇒ trùng; ảnh khác ⇒ không.
 - mo_rong: caption GĐ1 S5-0 "lookbook ai kolase multi pose foto potret" ⇒ sinh "kolase multi pose"; "Tutorial Pembuatan Gratis" ⇒ bị lọc.
 

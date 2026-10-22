@@ -1,0 +1,214 @@
+{
+ "nguon": "GĐ1 22/10 cham-may-v2.json (agy gemini-3.8-flash-low); hanh_dong gán tay theo mo_ta",
+ "items": [
+  {
+   "id": "ctrl-0",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Nu mac do den tao 7 dang khac nhau tren nen trang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "ctrl-1",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Nu mac do den tao 7 dang khac nhau tren nen trang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "ctrl-2",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Nu mac do den tao 7 dang khac nhau tren nen trang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s6-7",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai mac do den soc trang tao 7 dang khac nhau",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s7-0",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai mac ao khoac da nau quan short den tao 7 dang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s7-1",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": true,
+   "chu_ocr_tren_hinh": "Tutorial Pembuatan Gratis",
+   "mo_ta": "Co gai ao len quan den tao 7 dang khac nhau tren nen",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s5-5",
+   "so_ban_sao_cung_mot_nguoi": 4,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": true,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Luoi 4 o cung mot co gai ao so mi trang tao dang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s1-7",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "studio",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai mac trang phuc truyen thong nam tren tham xanh",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s3-4",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "dong vat",
+   "loai_nen": "trong_nha",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Chu cho vang mac dam hong buoc di trong lau dai",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s2-7",
+   "so_ban_sao_cung_mot_nguoi": 7,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "khac",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": true,
+   "chu_ocr_tren_hinh": "WANT THIS MULTI CLONE AI EFFECT? CapCut BEFORE AFTER APP: CAPCUT",
+   "mo_ta": "Poster huong dan hieu ung nhan ban nhieu nguoi trong CapCut",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s2-3",
+   "so_ban_sao_cung_mot_nguoi": 60,
+   "chu_the": "nguoi thuong",
+   "loai_nen": "trong_nha",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "сыночек вам только через 7 лет в школу",
+   "mo_ta": "Hang chuc em be ngoi ghe an giong het nhau",
+   "hanh_dong": "khac"
+  },
+  {
+   "id": "s2-1",
+   "so_ban_sao_cung_mot_nguoi": 5,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "studio",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "Ai CLONE POTION Drink Once.. Become Four!",
+   "mo_ta": "Co gai toc vang va cac ban sao xung quanh binh thuoc",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s3-0",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "san_dien",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "QTArt KlingAI",
+   "mo_ta": "Nguoi mau nu sai buoc trinh dien thoi trang tren san catwalk",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s3-1",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "san_dien",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Nguoi mau trinh dien dam da hoi xoe tren san catwalk",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s3-2",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "ngoai_troi",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai mac ao khoac den tao dang ngoai cong vien",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s3-3",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "ngoai_troi",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai doi mu luoi trai dao buoc ngoai duong pho",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s3-7",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "studio",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Nguoi dan ong deo kinh mac vest buoc di trong studio",
+   "hanh_dong": "catwalk"
+  },
+  {
+   "id": "s5-2",
+   "so_ban_sao_cung_mot_nguoi": 1,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "mau_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "",
+   "mo_ta": "Co gai mac ao so mi trang quan jean ngoi tao dang",
+   "hanh_dong": "tao_dang"
+  },
+  {
+   "id": "s6-1",
+   "so_ban_sao_cung_mot_nguoi": 6,
+   "chu_the": "nguoi mau thoi trang",
+   "loai_nen": "trang_tron",
+   "la_luoi_chia_o": false,
+   "la_tutorial_hoac_giao_dien_app": false,
+   "chu_ocr_tren_hinh": "RONALDO 7",
+   "mo_ta": "Cristiano Ronaldo ghep 6 tu the trang phuc Bo Dao Nha",
+   "hanh_dong": "tao_dang"
+  }
+ ]
+}

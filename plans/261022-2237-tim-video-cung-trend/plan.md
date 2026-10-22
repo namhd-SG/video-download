@@ -35,7 +35,7 @@ Phụ thuộc: 0 → (1 ∥ 2) → 3 → 4. Pha 1 không cần mạng, làm song
 2. **Video mẫu 2 KHÁC trend** (đề xuất: 1 video catwalk AI 1 người từ nguồn `#aicatwalk` GĐ1, vd `@harry_gunawan999/video/7619141013801667861`): link giữ **≥ 60% cùng dạng của nó** (1 người, catwalk) và **0 link dạng collage 7 pose** ⇒ chứng minh chữ ký dạng sinh TỪ video đầu vào, không hằng cứng.
 3. **Đối chứng dương mỗi lần chạy**: khung của chính video đầu vào phải ra hạng 3; trượt ⇒ lần chạy báo "máy chấm không tin được", không xuất link.
 4. Test tự động xanh: `pytest tests/test_tim_trend_*.py` + toàn suite không đỏ thêm.
-5. Đột biến (luật `guard-marker…` vế 5, vì lọc sai là hỏng âm thầm): đảo thứ tự xét lưới/bản sao ⇒ test PHẢI đỏ; bỏ cổng bản sao ≥3 ⇒ test PHẢI đỏ.
+5. Đột biến (luật `guard-marker…` vế 5, vì lọc sai là hỏng âm thầm): bỏ luật lưới / bỏ cổng bậc bản sao / xét chủ thể sau / bỏ cổng hành động ⇒ test PHẢI đỏ.
 
 ## Rủi ro chính
 - Playwright-Chrome bị TikTok trả rỗng như README ghi (đo 09/09) ⇒ pha 0 gác; trượt thì `connect_over_cdp` vào Chrome user tự mở. tikwm `feed/search` đã loại (403 Cloudflare theo endpoint, đo từ cả máy dev lẫn ca-n 22/10) ⇒ từ khoá chỉ còn đường Chrome — **điểm hỏng đơn**; tất cả = 0 ⇒ dừng, báo ĐP.
