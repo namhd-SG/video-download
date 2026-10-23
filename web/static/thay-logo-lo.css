@@ -49,3 +49,27 @@
   .lo-bia { width: 48px; height: 84px; }
   .lo-soi-anh { width: calc(50% - 4px); }
 }
+
+/* Màn Sửa (bước 3) — bố cục như mock v2-3-sua-khoanh: ảnh khung trái, ô phóng to + nút phải. */
+.lo-sua { margin: 8px 24px 32px; }
+.sua-ve { display: inline-block; margin-bottom: 10px; color: var(--accent); }
+.sua-than { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 20px; align-items: start; }
+.sua-khung { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; }
+.sua-khung img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.sua-lop { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
+.sua-o { position: absolute; box-sizing: border-box; pointer-events: none; }
+.sua-o-may { border: 2px dashed #e0b400; }
+.sua-o-cho { border: 2px dashed #e5484d; }
+.sua-o-luu { border: 2px solid #e5484d; background: rgba(229, 72, 77, .12); }
+.sua-dai { margin-top: 10px; height: 18px; cursor: pointer; }
+.sua-kim { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1px; background: var(--text); pointer-events: none; }
+.sua-phai { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); min-width: 0; }
+.sua-tieu-de { font-size: 17px; margin: 0 0 4px; overflow-wrap: anywhere; }
+.sua-zoom { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 6px; background: #000; margin-top: 10px; }
+.sua-zoom img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
+.sua-buoc { margin: 10px 0; padding-left: 20px; }
+.sua-nut { display: flex; flex-wrap: wrap; gap: 8px; }
+.sua-trang { margin-top: 12px; padding: 10px 12px; border-radius: 6px; background: var(--surface-alt); }
+.sua-phim { margin-top: 14px; color: var(--text-muted); font-size: 13px; }
+.sua-cuoi { margin-top: 12px; }
+@media (max-width: 760px) { .sua-than { grid-template-columns: 1fr; } .lo-sua { margin: 8px 16px 24px; } }

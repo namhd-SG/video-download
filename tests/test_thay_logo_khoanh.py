@@ -365,3 +365,51 @@ def test_khung_tai_ngoai_video_khi_khong_biet_so_khung_tra_400(ctx):
         out.write(np.zeros((96, 64, 3), np.uint8))
     out.release()
     assert c.get(f"/api/thay-logo/videos/{vid}/khung-tai/5000", headers=_h("a@x")).status_code == 400
+
+
+# ---------------------------------------------------------------- box theo khung cho màn Sửa
+def test_route_box_trung_box_ma_ca_khoanh_ghi_cung_khung(ctx):
+    """Khung vàng màn Sửa phải là ĐÚNG box mà ca khoanh lưu — hai route đi qua cùng một hàm tra box."""
+    c, db, tmp = ctx
+    vid, _ = _job(db, tmp)
+    for khung, vung in ((9, {"x": 0.72, "y": 0.66, "w": 0.07, "h": 0.03}), (10, {"x": 0.53, "y": 0.68, "w": 0.14, "h": 0.02})):
+        b = c.get(f"/api/thay-logo/videos/{vid}/box/{khung}", headers=_h("a@x"))
+        assert b.status_code == 200
+        ca = c.post(f"/api/thay-logo/videos/{vid}/khoanh", headers=_h("a@x"), json={"khung": khung, "vung": vung}).json()["id"]
+        conn = nhat_ky.mo(db)
+        try:
+            luu = conn.execute("SELECT box_may FROM tl_ca_khoanh WHERE id=?", (ca,)).fetchone()[0]
+        finally:
+            conn.close()
+        assert b.json()["box_may"] == (json.loads(luu) if luu else None), khung
+    assert c.get(f"/api/thay-logo/videos/{vid}/box/9", headers=_h("a@x")).json()["box_may"] == [378, 864, 143, 24]
+    k10 = c.get(f"/api/thay-logo/videos/{vid}/box/10", headers=_h("a@x")).json()
+    assert k10["box_may"] is None and k10["chan"] == [{"state": "hidden_sub", "box": [378, 864, 143, 24]}]  # máy không đè, cổng chặn
+
+
+def test_route_box_quyen_trang_thai_va_khung(ctx):
+    c, db, tmp = ctx
+    vid, _ = _job(db, tmp)
+    assert c.get(f"/api/thay-logo/videos/{vid}/box/9", headers=_h("b@x")).status_code == 403
+    assert c.get(f"/api/thay-logo/videos/{vid}/box/100", headers=_h("a@x")).status_code == 400  # so_khung = 100
+    vid2, _ = _job(db, tmp, trang_thai="dang_chay")
+    assert c.get(f"/api/thay-logo/videos/{vid2}/box/9", headers=_h("a@x")).status_code == 409
+    vid3, _ = _job(db, tmp, trang_thai="cho_nguoi")  # máy chưa đè gì ⇒ không có box, cũng không đọc track
+    assert c.get(f"/api/thay-logo/videos/{vid3}/box/9", headers=_h("a@x")).json() == {"khung": 9, "box_may": None, "chan": []}
+
+
+def test_route_dai_dem_ca_khoanh_con_cho_sua(ctx):
+    """Màn Sửa dựa vào `so_ca_cho` để không mời "đánh Đạt" video đã có chỗ khoanh từ lượt mở trước."""
+    c, db, tmp = ctx
+    vid, log_id = _job(db, tmp)
+    assert c.get(f"/api/thay-logo/videos/{vid}/dai", headers=_h("a@x")).json()["so_ca_cho"] == 0
+    c.post(f"/api/thay-logo/videos/{vid}/khoanh", headers=_h("a@x"), json={"khung": 9, "vung": {"x": 0.72, "y": 0.66, "w": 0.07, "h": 0.03}})
+    c.post(f"/api/thay-logo/videos/{vid}/khoanh", headers=_h("a@x"), json={"khung": 9, "giu_goc": True})
+    assert c.get(f"/api/thay-logo/videos/{vid}/dai", headers=_h("a@x")).json()["so_ca_cho"] == 2
+    conn = nhat_ky.mo(db)
+    try:  # ca đã sửa / huỷ không còn "chờ"
+        conn.execute("UPDATE tl_ca_khoanh SET trang_thai='da_sua' WHERE video_log_id=? AND mau_loi='che_nham'", (log_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    assert c.get(f"/api/thay-logo/videos/{vid}/dai", headers=_h("a@x")).json()["so_ca_cho"] == 1

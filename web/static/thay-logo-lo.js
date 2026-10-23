@@ -1,6 +1,6 @@
 // Màn Lô (pha 1b bước 2): video của MỘT lượt xếp theo việc cần người, dải màu theo `/dai`, ảnh soi nhanh theo `/soi`.
 // Chạy song song trang cũ thay-logo.html (không đụng trang đó). Chữ dữ liệu vào bằng textContent qua T.el, không innerHTML.
-// Màn Sửa là bước sau ⇒ nút sang Sửa hiện đúng như mock nhưng MỜ, kèm chú thích (ĐP chốt 23/10, phương án c).
+// Nút sang màn Sửa (thay-logo-sua.js, cùng trang: `?lo=&sua=<vid>&khung=`) mở đúng video ở đoạn cần xem đầu tiên.
 (() => {
   "use strict";
   const T = window.TL, { $, el, goi } = T;
@@ -19,7 +19,6 @@
 
   const SONG_SONG = 4;               // số request /dai, /soi cùng lúc — máy chủ chỉ có 2 khe ffmpeg, đừng dồn
   const DOAN_TOI_THIEU_PX = 3;       // đoạn 1 khung vẫn phải thấy trên dải (mock: chỗ vàng 1 khung)
-  const CHU_SUA = "Màn Sửa có ở bước sau — hiện chỉ xem được dải và ảnh soi.";
   const api = (vid, duoi) => `/api/thay-logo/videos/${encodeURIComponent(vid)}/${duoi}`;
 
   async function json(path, opts) {
@@ -85,9 +84,16 @@
     return d;
   }
 
-  function nutSua(chu) {
+  // Nút sang màn Sửa: mở đúng video ở đúng khung (đoạn cần xem đầu tiên, hoặc khung 10% với video máy chưa đè gì).
+  const khungDau = (dai) => (dai && !dai.loi && dai.doan.length ? dai.doan[0].tu : Math.floor(((dai && dai.so_khung) || 0) * 0.1));
+  function nutSua(chu, v, dai) {
     const b = el("button", "lo-nut lo-nut-chinh", chu);
-    b.type = "button"; b.disabled = true; b.title = CHU_SUA;
+    b.type = "button";
+    b.addEventListener("click", () => {
+      const u = new URL(location.href);
+      u.searchParams.set("lo", $("lo-chon-lo").value); u.searchParams.set("sua", v.id); u.searchParams.set("khung", khungDau(dai));
+      location.assign(u);
+    });
     return b;
   }
 
@@ -142,7 +148,7 @@
         }
       }
       o.append(hang);
-      if (nutCuaVideo) o.append(nutCuaVideo(x.v));
+      if (nutCuaVideo) o.append(nutCuaVideo(x.v, x.dai));
       hop.append(o);
     });
   }
@@ -166,7 +172,7 @@
   }
 
   // Nhóm D: người xác nhận từng video — "Đúng là không có logo" = bỏ qua (giữ bản gốc, hoàn tác được); "Có logo" ⇒ màn Sửa (bước sau).
-  function nutXacNhan(v) {
+  function nutXacNhan(v, dai) {
     const o = el("div", "lo-xac-nhan");
     const ve = () => {
       o.replaceChildren();
@@ -178,7 +184,7 @@
       } else {
         const k = el("button", "lo-nut", "Đúng là không có logo"); k.type = "button";
         k.addEventListener("click", () => doi(k, "bo-qua", Date.now() / 1000));
-        o.append(k, nutSua("Có logo"));
+        o.append(k, nutSua("Có logo", v, dai));
       }
     };
     async function doi(nut, duoi, luc) {
@@ -224,9 +230,9 @@
     for (const { v, dai: d } of theo.A) {
       const c = demDoan(d), n = c.do + c.vang;
       const moTa = [c.vang && `${c.vang} chỗ vàng`, c.do && `${c.do} chỗ đỏ`].filter(Boolean).join(" · ");
-      hop.append(dongVideo(v, d, moTa, nutSua(`Xem ${n} chỗ`)));
+      hop.append(dongVideo(v, d, moTa, nutSua(`Xem ${n} chỗ`, v, d)));
     }
-    for (const { v, dai: d } of theo.B) hop.append(dongVideo(v, d, T.lyDoDeHieu(v.ly_do_may), nutSua("Khoanh logo")));
+    for (const { v, dai: d } of theo.B) hop.append(dongVideo(v, d, T.lyDoDeHieu(v.ly_do_may), nutSua("Khoanh logo", v, d)));
     if (theo.C.length) hop.append(nhomGop("lo-nhom-C", `${theo.C.length} video máy chắc`,
       "Mỗi video có 3 ảnh phóng to vùng logo (đầu · giữa · cuối) — lướt cả nhóm bằng mắt trong 1 màn.",
       `Soi nhanh ${theo.C.length} video`, theo.C, null));
@@ -247,6 +253,9 @@
       const can = videos.filter((v) => v.trang_thai === "xong" || v.trang_thai === "cho_nguoi");
       const kq = await chayGioiHan(can, SONG_SONG, (v) => json(api(v.id, "dai")));
       LUOT = { videos, dai: new Map(can.map((v, k) => [v.id, kq[k]])) };
+      const sua = Number(new URLSearchParams(location.search).get("sua"));
+      const v = sua && videos.find((x) => x.id === sua);
+      if (v && window.TL_SUA) { $("lo-danh-sach").hidden = true; window.TL_SUA.mo(v, LUOT.dai.get(v.id), jobId); return; }
       veDanhSach();
     } catch (e) {
       if (e.message !== "het_phien") baoLoi("Không tải được lô này.");
@@ -268,6 +277,7 @@
     await taiLuot(chon.value);
   }
 
-  window.TL_LO = { nhom, demDoan };  // cho test đọc phân nhóm trực tiếp
+  // Dùng chung với màn Sửa (thay-logo-sua.js) + test đọc phân nhóm trực tiếp.
+  window.TL_LO = { nhom, demDoan, api, json, veDai, mmss, giayCua, baoLoi };
   batDau();
 })();

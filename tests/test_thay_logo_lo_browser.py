@@ -200,8 +200,8 @@ def test_xep_nhom_theo_trang_thai_may_va_so_box(may_chu, trinh_duyet):
     assert gop == ["Soi nhanh 2 video", "Xác nhận 1 video"]
     tom = p.locator("#lo-tom-tat").inner_text()
     assert "cần bạn: 4 video, 3 chỗ" in tom and "máy còn làm 1 · lỗi 1" in tom and "9 video" in tom
-    nut_sua = p.evaluate("[...document.querySelectorAll('#lo-danh-sach > .lo-dong > .lo-nut')].map(b => b.disabled && b.title.includes('bước sau'))")
-    assert nut_sua == [True] * 4  # nút sang Sửa: mờ + chú thích (màn Sửa là bước sau)
+    nut_sua = p.evaluate("[...document.querySelectorAll('#lo-danh-sach > .lo-dong > .lo-nut')].map(b => b.disabled)")
+    assert nut_sua == [False] * 4  # nút sang màn Sửa bấm được (bước 3)
     assert p.evaluate("[...document.querySelectorAll('.lo-dong-gop .lo-nut')].every(b => !b.disabled)")  # nút mở nhóm vẫn bấm được
     assert str(_ID["_khac"]) not in str(dong)
     ly_do = lambda k: p.locator(f'.lo-dong[data-vid="{_ID[k]}"] .lo-ten').inner_text()  # noqa: E731
@@ -249,7 +249,7 @@ def test_xac_nhan_khong_co_logo_bo_qua_roi_hoan_tac(may_chu, trinh_duyet):
     p, loi_js, _ = _mo(trinh_duyet, goc)
     p.get_by_role("button", name="Xác nhận 1 video").click()
     p.wait_for_function("document.querySelectorAll('.lo-nhom-D .lo-soi-anh').length === 3")
-    assert p.get_by_role("button", name="Có logo", exact=True).is_disabled()
+    assert p.get_by_role("button", name="Có logo", exact=True).is_enabled()  # sang màn Sửa (bước 3)
     p.get_by_role("button", name="Đúng là không có logo").click()
     p.wait_for_selector(".lo-nhom-D >> text=Đã xác nhận không có logo")
     conn = nhat_ky.mo(tmp / "thay_logo_log.db")
