@@ -15,23 +15,42 @@ mkdir -p "$O"
 
 # Gác cổng (luật cũ, ĐP 22/10): RAM trống ≥ 30%, không job thay logo prod đang chạy, không chồng BẤT KỲ tiến trình Creative Tracker /
 # chay-thu / vn-slot / daily-bo. Mẫu [c]… + awk bỏ dòng grep: cổng không được tự khớp chính mình (đã dẫm 20/10, 21/10).
-# Khung cấm (Creative Tracker ưu tiên, ĐP 23/10): $K/khung-cam, mỗi dòng `HH:MM-HH:MM` giờ VN. Không BẮT ĐẦU video khi giờ hiện tại
-# nằm trong [đầu − DU_PHUT, cuối): cổng chỉ kiểm lúc bắt đầu, video dài nhất ~8 phút ⇒ dư 10 phút để không chồng lên khung.
+# Khung cấm (Creative Tracker ưu tiên, ĐP 23/10): $K/khung-cam, mỗi dòng `HH:MM-HH:MM` giờ VN. Cổng chỉ kiểm lúc BẮT ĐẦU video
+# (video đang chạy không bị cắt) ⇒ hai lớp, không bắt đầu khi:
+#   lớp 1: giờ hiện tại + ƯỚC × 1,5 vượt quá đầu một khung (kể cả khung của ngày hôm sau);
+#   lớp 2: giờ hiện tại nằm trong [đầu − DU_PHUT, cuối).
+# ƯỚC = thời gian chạy LỚN NHẤT đã đo của chính video này (mọi kq.json cũ trong $K/ra/*/N và $K/uoc-giay); chưa đo bao giờ
+# ⇒ độ dài video × HE_SO_UOC. HE_SO_UOC = 16 ≥ hệ số lớn nhất đo được 15,7 (v6, 1080p 17 s, 9 lượt 21–22/10); trung vị 1,7.
 DU_PHUT=10
+HE_SO_UOC=16
 phut() { echo $(( 10#${1%:*} * 60 + 10#${1#*:} )); }
-trong_khung_cam() {
+uoc_giay() {  # <N> → giây ước (số nguyên)
+  local g
+  g=$( { cat "$K"/ra/*/"$1"/kq.json 2>/dev/null | grep -o '"giay":[0-9]*' | cut -d: -f2
+         awk -v n="$1" '$1 == n {print $2}' "$K/uoc-giay" 2>/dev/null; } | sort -n | tail -1)
+  if [ -z "$g" ]; then
+    g=$(/Users/mktmini/micromamba/envs/work/bin/ffprobe -v error -show_entries format=duration -of csv=p=0 "$K/v/$1/goc.mp4" \
+        | awk -v h="$HE_SO_UOC" '{printf "%d", $1 * h + 1}')
+  fi
+  echo "${g:-3600}"
+}
+trong_khung_cam() {  # <N> [giờ VN HH:MM, để thử giả giờ] → in lý do và trả 0 nếu KHÔNG được bắt đầu
   [ -s "$K/khung-cam" ] || return 1
-  local bay dong a b
-  bay=$(phut "$(TZ=Asia/Ho_Chi_Minh date +%H:%M)")
+  local bay can dong a b
+  bay=$(phut "${2:-$(TZ=Asia/Ho_Chi_Minh date +%H:%M)}")
+  can=$(( ( $(uoc_giay "$1") * 3 / 2 + 59 ) / 60 ))  # phút, làm tròn lên
   while IFS= read -r dong; do
     case "$dong" in [0-9][0-9]:[0-9][0-9]-[0-9][0-9]:[0-9][0-9]) ;; *) continue ;; esac
-    a=$(( $(phut "${dong%-*}") - DU_PHUT )); b=$(phut "${dong#*-}")
-    if [ "$bay" -ge "$a" ] && [ "$bay" -lt "$b" ]; then echo "$dong"; return 0; fi
+    a=$(phut "${dong%-*}"); b=$(phut "${dong#*-}")
+    if { [ "$bay" -lt "$a" ] && [ $(( bay + can )) -gt "$a" ]; } || [ $(( bay + can )) -gt $(( a + 1440 )) ]; then
+      echo "$dong (ước ${can} phút, chạy sẽ chồng)"; return 0
+    fi
+    if [ "$bay" -ge $(( a - DU_PHUT )) ] && [ "$bay" -lt "$b" ]; then echo "$dong"; return 0; fi
   done < "$K/khung-cam"
   return 1
 }
 while :; do
-  if cam=$(trong_khung_cam); then
+  if cam=$(trong_khung_cam "$N"); then
     echo "$(date +%T) $LUOT v$N chờ: khung cấm $cam (VN)" >> "$K/ra/gac-cong.log"; sleep 60; continue
   fi
   ram=$(memory_pressure | awk -F': ' '/free percentage/{gsub("%","",$2); print $2}')
