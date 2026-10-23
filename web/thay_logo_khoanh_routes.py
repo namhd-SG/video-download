@@ -9,6 +9,7 @@ import gzip
 import json
 import logging
 import subprocess
+import threading
 from pathlib import Path
 from typing import Callable
 
@@ -22,12 +23,23 @@ log = logging.getLogger("videodl.thay_logo")
 
 TRANG_THAI_KHOANH_DUOC = ("xong", "cho_nguoi")
 TRAN_GIAY_TRICH_KHUNG = 20
+TRAN_FFMPEG_CUNG_LUC = 2  # trích khung chung máy với worker render: không để trang bắn hàng loạt ffmpeg
+_KHE_FFMPEG = threading.BoundedSemaphore(TRAN_FFMPEG_CUNG_LUC)
 
 
 class Khoanh(BaseModel):
     khung: int = Field(ge=0, le=10_000_000)
     vung: dict | None = None  # {x, y, w, h} tỉ lệ 0–1 theo ảnh hiển thị; bỏ trống chỉ khi giu_goc
     giu_goc: bool = False     # "Giữ hình gốc đoạn này": máy đè nhầm ⇒ ca che_nham, vùng = ô máy ở khung đó
+
+
+def _dem_khung(p: Path) -> int:
+    import cv2  # extra `thay-logo` (worker cũng cần) — chỉ nạp khi nhật ký thiếu số khung
+    cap = cv2.VideoCapture(str(p))
+    try:
+        return int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    finally:
+        cap.release()
 
 
 def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Callable[[], object], require_user,
@@ -81,6 +93,8 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
         p = khoanh.duong_video(_data(), t["id"], ban)
         if not p.exists():
             raise HTTPException(404, "video đã dọn khỏi máy")
+        if t["so_khung"] is None and khung >= _dem_khung(p):  # nhật ký thiếu số khung ⇒ đếm của chính file, không để ffmpeg lỗi 500
+            raise HTTPException(400, "khung ngoài video")
         w = lay_worker()
         ffmpeg = getattr(w, "ffmpeg", None)
         if not ffmpeg:
@@ -90,12 +104,16 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
             raise HTTPException(503, "máy chủ thiếu ffmpeg")
         giay = khung / (t["fps"] or 30.0)
         # -ss TRƯỚC -i: nhảy theo keyframe (nhanh) — trích khung ở phút thứ 4 không phải giải mã từ đầu
-        cmd = [ffmpeg, "-v", "error", "-ss", f"{giay:.3f}", "-i", str(p), "-frames:v", "1", "-q:v", "3", "-f", "image2pipe",
+        cmd = ["nice", "-n", "10", ffmpeg, "-v", "error", "-ss", f"{giay:.3f}", "-i", str(p), "-frames:v", "1", "-q:v", "3", "-f", "image2pipe",
                "-vcodec", "mjpeg", "pipe:1"]
+        if not _KHE_FFMPEG.acquire(timeout=TRAN_GIAY_TRICH_KHUNG):
+            raise HTTPException(503, "máy đang bận trích khung, thử lại sau")
         try:
             kq = subprocess.run(cmd, capture_output=True, timeout=TRAN_GIAY_TRICH_KHUNG)
         except subprocess.TimeoutExpired:
             raise HTTPException(504, "trích khung quá lâu") from None
+        finally:
+            _KHE_FFMPEG.release()
         if kq.returncode != 0 or not kq.stdout:
             log.warning("thay logo: trích khung %s#%s lỗi: %s", vid, khung, kq.stderr[-500:])
             raise HTTPException(500, "không trích được khung")

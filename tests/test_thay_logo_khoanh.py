@@ -276,3 +276,69 @@ def test_file_tai_tu_may_cua_video_co_khoanh_giu_180_ngay(tmp_path):
     khoanh.ghi_ca(conn, video_log_id=log_id, job_video_id=vid, member="a@x", khung=1, vung=(1, 1, 9, 9), mau_loi="lo_mep",
                   chan_cu=None, box_may=None)
     assert not tai_len_phien._het_han_giu(conn, "M" * 20, bay)  # có khoanh ⇒ giữ 180 ngày để tải lại chạy ca
+
+
+# ---------------------------------------------------------------- sau review độc lập 23/10
+def test_don_video_qua_han_xoa_truoc_khi_do_dia_khong_xoa_oan_video_con_han(tmp_path):
+    """H1: video quá hạn phải rời đĩa TRƯỚC vòng thiếu đĩa — nếu không, dia() đo lúc nó còn nằm đó ⇒ xoá oan video còn hạn/có khoanh."""
+    conn = nhat_ky.mo(tmp_path / "l.db")
+    hang_doi.khoi_tao(conn)
+    bay = time.time()
+    qua_han = _video(conn, bay - 10 * 86400)   # không khoanh, quá 7 ngày
+    co_khoanh = _video(conn, bay - 20 * 86400)  # có khoanh, còn hạn 180 ngày, CŨ HƠN
+    for v in (qua_han, co_khoanh):
+        _thu_muc(tmp_path, v)
+    khoanh.ghi_ca(conn, video_log_id=co_khoanh, job_video_id=1, member="a", khung=1, vung=(1, 1, 9, 9), mau_loi="lo_mep",
+                  chan_cu=None, box_may=None)
+    goc = tmp_path / khoanh.THU_MUC_VIDEO
+
+    def dia():  # xoá 1 thư mục là đủ đĩa
+        return khoanh.DIA_TRONG_TOI_THIEU_GB if len(list(goc.iterdir())) <= 1 else 0.0
+    khoanh.don_video_sua(conn, tmp_path, bay_gio=bay, dia_trong_gb=dia)
+    assert [int(p.name) for p in goc.iterdir()] == [co_khoanh]
+
+
+def test_video_co_khoanh_giu_du_han_ke_ca_da_cham_dat_het_ca_cho(tmp_path):
+    """M3 (ĐP 23/10): video có khoanh là dữ liệu tự học ⇒ không xoá sớm vì đã Đạt / hết ca chờ."""
+    conn = nhat_ky.mo(tmp_path / "l.db")
+    hang_doi.khoi_tao(conn)
+    v = _video(conn, time.time() - 3600)
+    _thu_muc(tmp_path, v)
+    ca = khoanh.ghi_ca(conn, video_log_id=v, job_video_id=1, member="a", khung=1, vung=(1, 1, 9, 9), mau_loi="lo_mep",
+                       chan_cu=None, box_may=None)
+    conn.execute("UPDATE tl_ca_khoanh SET trang_thai='da_sua' WHERE id=?", (ca,))
+    nhat_ky.ghi_danh_gia(conn, v, "a", "dat")
+    khoanh.don_video_sua(conn, tmp_path, dia_trong_gb=lambda: 999)
+    assert (tmp_path / khoanh.THU_MUC_VIDEO / str(v)).exists()
+
+
+def test_khoanh_bam_hai_lan_khong_tao_hang_trung(ctx):
+    """M2: bấm lưu hai lần cùng một chỗ ⇒ một ca."""
+    c, db, tmp = ctx
+    vid, _ = _job(db, tmp)
+    body = {"khung": 9, "vung": {"x": 522 / 720, "y": 850 / 1280, "w": 53 / 720, "h": 30 / 1280}}
+    a = c.post(f"/api/thay-logo/videos/{vid}/khoanh", headers=_h("a@x"), json=body).json()
+    b = c.post(f"/api/thay-logo/videos/{vid}/khoanh", headers=_h("a@x"), json=body).json()
+    conn = nhat_ky.mo(db)
+    assert a["id"] == b["id"] and conn.execute("SELECT count(*) FROM tl_ca_khoanh").fetchone()[0] == 1
+
+
+def test_khung_tai_ngoai_video_khi_khong_biet_so_khung_tra_400(ctx):
+    import cv2
+    import numpy as np
+
+    from tiktok_music_downloader.watermark import find_ffmpeg
+    if find_ffmpeg() is None:
+        pytest.skip("không có ffmpeg")
+    c, db, tmp = ctx
+    vid, log_id = _job(db, tmp)
+    conn = nhat_ky.mo(db)
+    conn.execute("UPDATE tl_video SET so_khung=NULL WHERE id=?", (log_id,))
+    conn.commit()
+    d = tmp / khoanh.THU_MUC_VIDEO / str(log_id)
+    d.mkdir(parents=True)
+    out = cv2.VideoWriter(str(d / "ra.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (64, 96))
+    for _ in range(10):
+        out.write(np.zeros((96, 64, 3), np.uint8))
+    out.release()
+    assert c.get(f"/api/thay-logo/videos/{vid}/khung-tai/5000", headers=_h("a@x")).status_code == 400

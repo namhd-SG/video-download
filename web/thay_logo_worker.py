@@ -436,7 +436,8 @@ class ThayLogoWorker:
                     continue
                 ts = SimpleNamespace(**json.loads(r["thong_so"]))
                 boxes, man_ket = hoc_mau_agy.doc_ket_qua(ts, self.hop, r["id"])
-                if not Path(r["duong_dan_goc"]).is_file():
+                if not Path(r["duong_dan_goc"]).is_file() and not khoanh.lay_lai_goc(conn, self.data, r["job_id"], r["nguon"],
+                                                                                    Path(r["duong_dan_goc"])):
                     raise FileNotFoundError("mất file gốc trong scratch")
             except Exception as e:
                 log.warning("thay logo: video %s không chạy pha 2 được (%s): %s", r["id"], type(e).__name__, e)

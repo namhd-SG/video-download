@@ -124,6 +124,10 @@ def ghi_ca(conn, *, video_log_id: int, job_video_id: int, member: str, khung: in
     if mau_loi not in MAU_LOI:
         raise ValueError(f"mã lỗi lạ: {mau_loi}")
     x, y, w, h = vung if vung else (box_may or (None,) * 4)
+    cu = conn.execute("SELECT id FROM tl_ca_khoanh WHERE video_log_id=? AND member=? AND khung=? AND mau_loi=? AND x IS ? AND y IS ? "
+                      "AND w IS ? AND h IS ? AND trang_thai='cho'", (video_log_id, member, khung, mau_loi, x, y, w, h)).fetchone()
+    if cu:  # bấm lưu hai lần cùng một chỗ ⇒ một ca
+        return cu[0]
     cur = conn.execute(
         "INSERT INTO tl_ca_khoanh (video_log_id, job_video_id, member, khung, x, y, w, h, mau_loi, chan_cu, box_may, phien_ban, luc) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -144,6 +148,18 @@ def giu_video(data: Path, video_log_id: int, goc: Path, ra: Path | None) -> Path
     return d
 
 
+def lay_lai_goc(conn, data: Path, job_id: int, nguon_video: str, dich: Path) -> bool:
+    """Tiến trình chết giữa `giu_video` và `_ket_thuc` ⇒ gốc đã rời scratch mà hàng đợi chưa biết `video_log_id`. Tìm theo
+    `tl_video(job_id, nguon_video)` (tiến trình con ghi) và dời gốc về `dich` để chạy lại. Không thấy ⇒ False."""
+    for (vid,) in conn.execute("SELECT id FROM tl_video WHERE job_id=? AND nguon_video=? ORDER BY id DESC", (job_id, nguon_video)):
+        p = duong_video(data, vid, "goc")
+        if p.is_file():
+            Path(dich).parent.mkdir(parents=True, exist_ok=True)
+            os.replace(p, dich)
+            return True
+    return False
+
+
 def duong_video(data: Path, video_log_id: int, ban: str) -> Path:
     if ban not in ("goc", "ra"):
         raise ValueError("ban phải là goc hoặc ra")
@@ -151,8 +167,9 @@ def duong_video(data: Path, video_log_id: int, ban: str) -> Path:
 
 
 def don_video_sua(conn, data: Path, bay_gio: float | None = None, dia_trong_gb=None) -> dict:
-    """Xoá thư mục video giữ để sửa khi: quá hạn (7 ngày; có khoanh 180 ngày), hoặc video đã chấm Đạt / bỏ qua mà không còn ca chờ.
-    Đĩa trống < DIA_TRONG_TOI_THIEU_GB ⇒ xoá thêm cũ nhất trước, video có khoanh sau cùng. Mốc xoá ghi SAU khi xoá xong."""
+    """Xoá thư mục video giữ để sửa khi: quá hạn (7 ngày; có khoanh 180 ngày), hoặc video KHÔNG khoanh đã chấm Đạt / bỏ qua.
+    Video có khoanh luôn giữ đủ hạn (dữ liệu tự học — ĐP 23/10). Đĩa trống < DIA_TRONG_TOI_THIEU_GB ⇒ xoá thêm cũ nhất trước, video có
+    khoanh sau cùng. Video quá hạn bị xoá TRƯỚC khi đo đĩa: đo lúc chúng còn nằm đó sẽ xoá oan video còn hạn."""
     goc = Path(data) / THU_MUC_VIDEO
     if not goc.exists():
         return {"xoa": 0}
@@ -166,7 +183,6 @@ def don_video_sua(conn, data: Path, bay_gio: float | None = None, dia_trong_gb=N
         r = conn.execute("""SELECT v.ket_thuc, v.bat_dau,
               (SELECT ket_qua FROM tl_danh_gia g WHERE g.video_id = v.id ORDER BY luc DESC LIMIT 1) AS danh_gia,
               (SELECT count(*) FROM tl_ca_khoanh c WHERE c.video_log_id = v.id) AS so_ca,
-              (SELECT count(*) FROM tl_ca_khoanh c WHERE c.video_log_id = v.id AND c.trang_thai = 'cho') AS ca_cho,
               (SELECT max(j.bo_qua_luc) FROM tl_job_video j WHERE j.video_log_id = v.id) AS bo_qua
             FROM tl_video v WHERE v.id = ?""", (vid,)).fetchone()
         hang.append((vid, d, r))
@@ -177,9 +193,11 @@ def don_video_sua(conn, data: Path, bay_gio: float | None = None, dia_trong_gb=N
             continue
         tuoi = bay_gio - (r["ket_thuc"] or r["bat_dau"])
         han = (NGAY_GIU_VIDEO_CO_KHOANH if r["so_ca"] else NGAY_GIU_VIDEO_SUA) * 86400
-        xong_viec = (r["danh_gia"] == "dat" or r["bo_qua"]) and not r["ca_cho"]
+        xong_viec = (r["danh_gia"] == "dat" or r["bo_qua"]) and not r["so_ca"]
         if tuoi > han or xong_viec:
             xoa.append(d)
+    for d in xoa:
+        shutil.rmtree(d, ignore_errors=True)
     for uu_tien_khoanh in (False, True):
         for vid, d, r in sorted(hang, key=lambda t: (t[2]["ket_thuc"] or 0) if t[2] else 0):
             if d in xoa or dia() >= DIA_TRONG_TOI_THIEU_GB:
@@ -187,6 +205,4 @@ def don_video_sua(conn, data: Path, bay_gio: float | None = None, dia_trong_gb=N
             if bool(r and r["so_ca"]) == uu_tien_khoanh:
                 shutil.rmtree(d, ignore_errors=True)
                 xoa.append(d)
-    for d in xoa:
-        shutil.rmtree(d, ignore_errors=True)
     return {"xoa": len(xoa)}
