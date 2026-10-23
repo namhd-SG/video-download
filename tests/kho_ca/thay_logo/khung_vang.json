@@ -1,0 +1,529 @@
+{
+ "mo_ta": "Nhãn NGƯỜI theo khung cho bộ đề thay logo. dung = người xác nhận đè đúng chỗ (box mốc); khong_duoc_de = canh âm (frame null = cả video); lo_mep/lech/... = ca lỗi đã biết (box_dung null ⇒ chỉ người soi mới xác nhận được 'sửa'). v35–37 (logo nhà) CHƯA gắn khong_duoc_de: box mồi cố định không có nhãn chữ nên lọc logo nhà ở relay (#98) không áp được trong bộ đề — chờ ĐP/agy quyết.",
+ "nhan": [
+  {
+   "v": 3,
+   "frame": 3550,
+   "loai": "dung",
+   "box": [
+    172,
+    885,
+    137,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 650,
+   "loai": "dung",
+   "box": [
+    542,
+    620,
+    157,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 651,
+   "loai": "dung",
+   "box": [
+    542,
+    619,
+    157,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 652,
+   "loai": "dung",
+   "box": [
+    542,
+    618,
+    157,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 656,
+   "loai": "dung",
+   "box": [
+    541,
+    614,
+    156,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 657,
+   "loai": "dung",
+   "box": [
+    540,
+    613,
+    156,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 4,
+   "frame": 658,
+   "loai": "dung",
+   "box": [
+    538,
+    613,
+    156,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 84,
+   "loai": "dung",
+   "box": [
+    576,
+    1174,
+    94,
+    25
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 86,
+   "loai": "dung",
+   "box": [
+    572,
+    1179,
+    94,
+    25
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 93,
+   "loai": "dung",
+   "box": [
+    551,
+    1189,
+    94,
+    25
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 98,
+   "loai": "dung",
+   "box": [
+    531,
+    1190,
+    94,
+    25
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 100,
+   "loai": "dung",
+   "box": [
+    522,
+    1189,
+    95,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 115,
+   "loai": "dung",
+   "box": [
+    442,
+    1168,
+    95,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 11,
+   "frame": 400,
+   "loai": "dung",
+   "box": [
+    348,
+    714,
+    93,
+    25
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 36,
+   "loai": "dung",
+   "box": [
+    374,
+    864,
+    144,
+    24
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 40,
+   "loai": "dung",
+   "box": [
+    378,
+    864,
+    143,
+    24
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7291,
+   "loai": "dung",
+   "box": [
+    464,
+    515,
+    152,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7295,
+   "loai": "dung",
+   "box": [
+    462,
+    517,
+    152,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7296,
+   "loai": "dung",
+   "box": [
+    461,
+    518,
+    152,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7305,
+   "loai": "dung",
+   "box": [
+    454,
+    521,
+    153,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7330,
+   "loai": "dung",
+   "box": [
+    436,
+    537,
+    152,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 13,
+   "frame": 7347,
+   "loai": "dung",
+   "box": [
+    423,
+    547,
+    153,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7010,
+   "loai": "dung",
+   "box": [
+    454,
+    521,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7025,
+   "loai": "dung",
+   "box": [
+    443,
+    531,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7026,
+   "loai": "dung",
+   "box": [
+    442,
+    531,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7037,
+   "loai": "dung",
+   "box": [
+    434,
+    538,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7040,
+   "loai": "dung",
+   "box": [
+    432,
+    540,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 14,
+   "frame": 7045,
+   "loai": "dung",
+   "box": [
+    428,
+    543,
+    154,
+    27
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 15,
+   "frame": 9798,
+   "loai": "dung",
+   "box": [
+    321,
+    827,
+    136,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 18,
+   "frame": 41,
+   "loai": "dung",
+   "box": [
+    613,
+    974,
+    80,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 18,
+   "frame": 43,
+   "loai": "dung",
+   "box": [
+    601,
+    967,
+    79,
+    26
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 19,
+   "frame": 104,
+   "loai": "dung",
+   "box": [
+    321,
+    870,
+    61,
+    31
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 19,
+   "frame": 111,
+   "loai": "dung",
+   "box": [
+    428,
+    861,
+    61,
+    31
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 19,
+   "frame": 421,
+   "loai": "dung",
+   "box": [
+    539,
+    177,
+    61,
+    31
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 19,
+   "frame": 444,
+   "loai": "dung",
+   "box": [
+    146,
+    138,
+    61,
+    30
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 22,
+   "frame": 146,
+   "loai": "dung",
+   "box": [
+    519,
+    635,
+    41,
+    17
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 22,
+   "frame": 148,
+   "loai": "dung",
+   "box": [
+    505,
+    634,
+    41,
+    17
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 23,
+   "frame": 163,
+   "loai": "dung",
+   "box": [
+    423,
+    623,
+    50,
+    23
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 23,
+   "frame": 164,
+   "loai": "dung",
+   "box": [
+    418,
+    622,
+    50,
+    23
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 23,
+   "frame": 407,
+   "loai": "dung",
+   "box": [
+    351,
+    446,
+    50,
+    23
+   ],
+   "nguon": "USER 22/10 17:13 cham-C.html 'đúng hết' (USER-QUYET.md:1403); mau-C.json"
+  },
+  {
+   "v": 5,
+   "frame": 1008,
+   "loai": "khong_duoc_de",
+   "nguon": "kiểm hình chặn đúng — đè ra 2 logo (plan SỬA R1b)"
+  },
+  {
+   "v": 5,
+   "frame": 1010,
+   "loai": "khong_duoc_de",
+   "nguon": "như #1008"
+  },
+  {
+   "v": 26,
+   "frame": null,
+   "loai": "khong_duoc_de",
+   "nguon": "video không có logo"
+  },
+  {
+   "v": 13,
+   "frame": 63,
+   "loai": "lo_mep",
+   "box_moc": [
+    378,
+    864,
+    143,
+    24
+   ],
+   "box_dung": null,
+   "nguon": "lane logo 22/10, soi ảnh lớn: lệch trái, lộ chữ 'AI'. Sửa = còn đè VÀ che hết 'AI' (cấm bỏ đè) ⇒ chỉ người soi xác nhận"
+  },
+  {
+   "v": 22,
+   "frame": 407,
+   "loai": "lech",
+   "box_moc": [
+    351,
+    449,
+    40,
+    17
+   ],
+   "box_dung": null,
+   "nguon": "lane logo 22/10 + agy R3b: lệch phải 3–4 px (khung dò thật). box_dung chưa đo"
+  }
+ ]
+}
