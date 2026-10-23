@@ -1,0 +1,238 @@
+{
+ "tong": {
+  "video_render": 26,
+  "doan_do": 81,
+  "khung_do": 1457,
+  "doan_vang_dkb": 36,
+  "khung_vang_dkb": 336,
+  "doan_vang_fill": 789,
+  "khung_vang_fill": 3942,
+  "doan_can_xem_moi_video_trung_vi": 20,
+  "doan_can_xem_moi_video_max": 188,
+  "video_0_doan": 0
+ },
+ "kiem_nhan": {
+  "dung": {
+   "vang_dkb": 40
+  },
+  "khong_duoc_de": {
+   "khong_de": 2
+  },
+  "lo_mep": {
+   "vang_dkb": 1
+  },
+  "lech": {
+   "vang_dkb": 1
+  }
+ },
+ "chi_tiet": {
+  "1": {
+   "doan_do": 1,
+   "khung_do": 24,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 19,
+   "khung_vang_fill": 121
+  },
+  "2": {
+   "doan_do": 3,
+   "khung_do": 21,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 37,
+   "khung_vang_fill": 328
+  },
+  "3": {
+   "doan_do": 2,
+   "khung_do": 4,
+   "doan_vang_dkb": 3,
+   "khung_vang_dkb": 20,
+   "doan_vang_fill": 28,
+   "khung_vang_fill": 142
+  },
+  "4": {
+   "doan_do": 7,
+   "khung_do": 585,
+   "doan_vang_dkb": 2,
+   "khung_vang_dkb": 13,
+   "doan_vang_fill": 25,
+   "khung_vang_fill": 55
+  },
+  "5": {
+   "doan_do": 6,
+   "khung_do": 76,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 37,
+   "khung_vang_fill": 185
+  },
+  "9": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 8,
+   "khung_vang_fill": 33
+  },
+  "10": {
+   "doan_do": 1,
+   "khung_do": 5,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 14,
+   "khung_vang_fill": 144
+  },
+  "11": {
+   "doan_do": 6,
+   "khung_do": 80,
+   "doan_vang_dkb": 6,
+   "khung_vang_dkb": 40,
+   "doan_vang_fill": 10,
+   "khung_vang_fill": 25
+  },
+  "13": {
+   "doan_do": 2,
+   "khung_do": 31,
+   "doan_vang_dkb": 2,
+   "khung_vang_dkb": 96,
+   "doan_vang_fill": 110,
+   "khung_vang_fill": 448
+  },
+  "14": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 1,
+   "khung_vang_dkb": 63,
+   "doan_vang_fill": 187,
+   "khung_vang_fill": 619
+  },
+  "15": {
+   "doan_do": 19,
+   "khung_do": 282,
+   "doan_vang_dkb": 4,
+   "khung_vang_dkb": 41,
+   "doan_vang_fill": 106,
+   "khung_vang_fill": 657
+  },
+  "16": {
+   "doan_do": 1,
+   "khung_do": 2,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 25,
+   "khung_vang_fill": 163
+  },
+  "17": {
+   "doan_do": 1,
+   "khung_do": 63,
+   "doan_vang_dkb": 1,
+   "khung_vang_dkb": 1,
+   "doan_vang_fill": 51,
+   "khung_vang_fill": 270
+  },
+  "18": {
+   "doan_do": 7,
+   "khung_do": 123,
+   "doan_vang_dkb": 3,
+   "khung_vang_dkb": 7,
+   "doan_vang_fill": 3,
+   "khung_vang_fill": 50
+  },
+  "19": {
+   "doan_do": 12,
+   "khung_do": 92,
+   "doan_vang_dkb": 5,
+   "khung_vang_dkb": 15,
+   "doan_vang_fill": 0,
+   "khung_vang_fill": 0
+  },
+  "21": {
+   "doan_do": 2,
+   "khung_do": 9,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 19,
+   "khung_vang_fill": 49
+  },
+  "22": {
+   "doan_do": 9,
+   "khung_do": 51,
+   "doan_vang_dkb": 4,
+   "khung_vang_dkb": 13,
+   "doan_vang_fill": 21,
+   "khung_vang_fill": 74
+  },
+  "23": {
+   "doan_do": 2,
+   "khung_do": 9,
+   "doan_vang_dkb": 5,
+   "khung_vang_dkb": 27,
+   "doan_vang_fill": 10,
+   "khung_vang_fill": 40
+  },
+  "30": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 1,
+   "khung_vang_fill": 58
+  },
+  "31": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 1,
+   "khung_vang_fill": 58
+  },
+  "35": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 9,
+   "khung_vang_fill": 26
+  },
+  "36": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 20,
+   "khung_vang_fill": 168
+  },
+  "37": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 8,
+   "khung_vang_fill": 104
+  },
+  "38": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 16,
+   "khung_vang_fill": 65
+  },
+  "39": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 6,
+   "khung_vang_fill": 16
+  },
+  "40": {
+   "doan_do": 0,
+   "khung_do": 0,
+   "doan_vang_dkb": 0,
+   "khung_vang_dkb": 0,
+   "doan_vang_fill": 18,
+   "khung_vang_fill": 44
+  }
+ }
+}

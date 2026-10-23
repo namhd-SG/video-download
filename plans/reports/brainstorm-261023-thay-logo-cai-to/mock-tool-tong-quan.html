@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thay logo — mock tổng quan</title>
+<style>
+  :root { --nen:#f4f6f3; --the:#fff; --chu:#1d2a24; --mo:#66756d; --xanh:#1f6b4a; --xanh-nhat:#e3efe8; --vang:#d9a400; --do:#c0392b; --vien:#dfe5e1; --tim:#5b4bb7; }
+  @media (prefers-color-scheme: dark) { :root { --nen:#141a17; --the:#1d2420; --chu:#e7eee9; --mo:#9aa8a0; --vien:#2c3530; --xanh-nhat:#1f3a2d; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--nen); color:var(--chu); font:15px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--vien); display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; }
+  header b { font-size:18px; } .nhan { color:var(--mo); font-size:13px; }
+  .tabs { display:flex; gap:6px; padding:12px 20px 0; flex-wrap:wrap; }
+  .tabs button { border:1px solid var(--vien); background:var(--the); color:var(--chu); padding:7px 14px; border-radius:999px; cursor:pointer; }
+  .tabs button.on { background:var(--xanh); color:#fff; border-color:var(--xanh); }
+  main { padding:16px 20px 48px; max-width:1200px; }
+  .man { display:none; } .man.on { display:block; }
+  .the { background:var(--the); border:1px solid var(--vien); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .goi-y { font-size:13px; color:var(--mo); margin:4px 0 12px; }
+  .so { font-size:13px; color:var(--mo); }
+  .nut { border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; font-size:14px; }
+  .nut.chinh { background:var(--xanh); color:#fff; } .nut.phu { background:var(--vien); color:var(--chu); }
+  .minh-hoa { font-size:12px; color:var(--do); }
+  /* chú thích khi rê chuột */
+  [data-tip] { position:relative; }
+  [data-tip]:hover::after { content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 8px); transform:translateX(-50%); width:max-content; max-width:260px;
+    background:#1d2a24; color:#fff; font:500 12.5px/1.4 -apple-system, sans-serif; padding:7px 9px; border-radius:7px; z-index:10; white-space:normal; text-align:left; pointer-events:none; }
+  /* tổng quan */
+  .luong { display:grid; grid-template-columns:repeat(5, 1fr); gap:10px; align-items:stretch; }
+  @media (max-width:900px) { .luong { grid-template-columns:1fr 1fr; } }
+  @media (max-width:560px) { .luong { grid-template-columns:1fr; } }
+  .buoc { background:var(--the); border:1px solid var(--vien); border-radius:12px; padding:12px; cursor:pointer; position:relative; }
+  .buoc:hover { border-color:var(--xanh); }
+  .buoc .so-buoc { display:inline-grid; place-items:center; width:24px; height:24px; border-radius:50%; background:var(--xanh); color:#fff; font-weight:700; font-size:13px; margin-right:6px; }
+  .buoc .ai { font-size:12px; font-weight:600; margin-top:8px; }
+  .ai.may { color:var(--tim); } .ai.ban { color:var(--xanh); }
+  .vong { margin-top:12px; border:2px dashed var(--tim); border-radius:12px; padding:12px 14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .vong .o { background:var(--the); border:1px solid var(--vien); border-radius:8px; padding:6px 10px; font-size:13px; }
+  .mui { color:var(--tim); font-weight:700; }
+  /* lô */
+  .dong { display:grid; grid-template-columns:64px 1fr 140px; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--vien); cursor:pointer; }
+  .dong:first-of-type { border-top:0; }
+  @media (max-width:640px) { .dong { grid-template-columns:52px 1fr; } .dong .nut { grid-column:1 / -1; } }
+  .anh-nho { width:64px; height:114px; object-fit:cover; border-radius:6px; background:#ccc; }
+  .dai { height:14px; border-radius:4px; display:flex; overflow:hidden; margin:6px 0; }
+  .dai span { height:100%; } .x { background:var(--xanh); } .v { background:var(--vang); } .d { background:var(--do); } .g { background:#9aa39e; }
+  /* sửa */
+  .phuong-an { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
+  .phuong-an button { border:1px solid var(--vien); background:var(--the); color:var(--chu); border-radius:8px; padding:8px 12px; cursor:pointer; text-align:left; }
+  .phuong-an button.on { border-color:var(--xanh); background:var(--xanh-nhat); }
+  .phuong-an small { display:block; color:var(--mo); font-size:12px; }
+  .sua { display:grid; grid-template-columns:minmax(260px, 360px) 1fr; gap:18px; }
+  @media (max-width:760px) { .sua { grid-template-columns:1fr; } }
+  .khung { position:relative; width:100%; aspect-ratio:720/1280; background:#000; border-radius:10px; overflow:hidden; touch-action:none; }
+  .khung img { width:100%; height:100%; object-fit:cover; display:block; pointer-events:none; user-select:none; }
+  .o-ve { position:absolute; border:2px solid #ff4d4d; background:rgba(255,77,77,.18); }
+  .o-cu { position:absolute; border:2px dashed #ffd400; }
+  .diem { position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%; background:#2ee59d; border:2px solid #fff; }
+  .zoom { width:100%; aspect-ratio:3/1; border-radius:8px; background-color:#000; background-repeat:no-repeat; position:relative; overflow:hidden; }
+  .zoom .zo { position:absolute; border:2px solid #ff4d4d; background:rgba(255,77,77,.15); }
+  .zoom .zc { position:absolute; border:2px dashed #ffd400; }
+  .tl { position:relative; height:26px; border-radius:6px; overflow:hidden; display:flex; margin:10px 0 4px; }
+  .tl span { height:100%; } .kim { position:absolute; top:-2px; bottom:-2px; width:3px; background:#fff; box-shadow:0 0 0 1px #000; left:3.2%; }
+  .chu-tl { display:flex; justify-content:space-between; font-size:12px; color:var(--mo); }
+  .hanh-dong { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .trang-thai { font-size:13px; padding:9px 11px; border-radius:8px; background:var(--nen); margin-top:10px; }
+  ol.buoc-lam { margin:8px 0 0 18px; padding:0; font-size:14px; }
+  /* hỏi */
+  .chon { display:grid; grid-template-columns:1fr 1fr; gap:12px; } @media (max-width:760px) { .chon { grid-template-columns:1fr; } }
+  .chon img { width:100%; height:240px; object-fit:cover; object-position:50% 68%; border-radius:8px; }
+  .hq { font-weight:600; margin:8px 0 4px; }
+</style>
+</head>
+<body>
+<header><b>Thay logo</b><span class="nhan">MOCK để hình dung — chưa có code. Ảnh: khung thật v13 khung 63 (bản đang chạy). Số liệu dải màu, thời gian: MINH HOẠ. Rê chuột vào nút để xem chú thích.</span></header>
+<div class="tabs">
+  <button class="on" data-man="tong">0 · Tổng quan cả tool</button>
+  <button data-man="nap">1 · Đưa video vào</button>
+  <button data-man="lo">2 · Lô: việc của bạn</button>
+  <button data-man="sua">3 · Sửa một video</button>
+  <button data-man="hoi">4 · Câu hỏi đang mở</button>
+</div>
+<main>
+
+<!-- 0. TỔNG QUAN -->
+<section class="man on" id="tong">
+  <div class="the">
+    <b>Cả tool trong 1 hình</b>
+    <p class="goi-y">5 bước. <span style="color:var(--tim);font-weight:600">Tím = máy làm</span>, <span style="color:var(--xanh);font-weight:600">xanh = bạn làm</span>. Bấm một bước để mở màn đó.</p>
+    <div class="luong">
+      <div class="buoc" data-den="nap" data-tip="Chọn cả bộ tự tìm, thư viện, tải từ máy hoặc dán link Drive — và chọn luôn thành phẩm đi đâu. Một màn, một nút.">
+        <span class="so-buoc">1</span><b>Đưa video vào</b>
+        <div class="so">bộ tự tìm · thư viện · máy · link Drive · chọn nơi nhận</div>
+        <div class="ai ban">Bạn: 1 lần, ~1 phút</div>
+      </div>
+      <div class="buoc" data-tip="Máy tìm logo cũ, bám theo nó suốt video, đè ASTRONEX. Trạng thái nói rõ: đang làm 12/40, đang chờ máy khác, hay máy đang tắt.">
+        <span class="so-buoc">2</span><b>Máy thay logo</b>
+        <div class="so">tìm logo cũ → bám theo → đè ASTRONEX</div>
+        <div class="ai may">Máy: vài phút/video, bạn không cần chờ</div>
+      </div>
+      <div class="buoc" data-den="lo" data-tip="Video được sắp theo việc cần bạn. Mỗi video có dải màu theo thời gian: đỏ là chỗ còn lộ logo cũ.">
+        <span class="so-buoc">3</span><b>Lô: việc của bạn</b>
+        <div class="so">sắp theo chỗ cần bạn · dải màu đỏ/vàng/xanh</div>
+        <div class="ai ban">Bạn: xem chỗ đỏ / vàng trước</div>
+      </div>
+      <div class="buoc" data-den="sua" data-tip="Khoanh chỗ logo cũ còn lộ — máy tự sửa tiếp đoạn đó, rồi cho bạn xem 2 giây kết quả.">
+        <span class="so-buoc">4</span><b>Khoanh chỗ lộ</b>
+        <div class="so">khoanh → máy sửa tiếp → xem 2 giây → Đúng</div>
+        <div class="ai ban">Bạn: vài giây mỗi chỗ</div>
+      </div>
+      <div class="buoc" data-tip="Video bạn bấm Đúng được đưa tới nơi nhận đã chọn ở bước 1 (bộ gốc, bộ mới hoặc thư mục Drive).">
+        <span class="so-buoc">5</span><b>Xuất</b>
+        <div class="so">tự đưa tới bộ gốc / bộ mới / thư mục Drive</div>
+        <div class="ai may">Máy: tự động</div>
+      </div>
+    </div>
+    <div class="vong" data-tip="Đây là vòng tool 'ngon dần lên': không ai phải nhớ lỗi cũ — chỗ bạn khoanh tự thành bài kiểm tra cho mọi bản sửa sau.">
+      <b style="color:var(--tim)">Vòng tự học</b>
+      <span class="o">Chỗ bạn khoanh</span><span class="mui">→</span>
+      <span class="o">thành 1 ca kiểm tra (video + khung + vị trí)</span><span class="mui">→</span>
+      <span class="o">bản cải tiến sau phải làm đúng mọi ca trước khi lên</span><span class="mui">→</span>
+      <span class="o">bạn khoanh ít dần</span>
+    </div>
+  </div>
+  <div class="the">
+    <b>Khác gì so với trang hiện tại</b>
+    <ul style="margin:8px 0 0 18px;padding:0;font-size:14px">
+      <li>Hiện tại: duyệt cả video bằng 1 khung; Hỏng = gõ "giây thứ mấy". <b>Mới:</b> thấy chỗ lộ trên dải thời gian, khoanh trực tiếp.</li>
+      <li>Hiện tại: máy không chắc ⇒ chỉ có "Bỏ qua". <b>Mới:</b> khoanh logo 1 lần trên 1 khung, máy làm phần còn lại.</li>
+      <li>Hiện tại: 1 trang làm 4 việc. <b>Mới:</b> 4 màn theo thứ tự công việc.</li>
+      <li>Hiện tại: xem video phải mở Drive. <b>Mới:</b> xem 2 giây ngay tại chỗ sửa.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- 1. NẠP -->
+<section class="man" id="nap">
+  <div class="the">
+    <b>Đưa video vào</b> <span class="so">— một màn: chọn nguồn bên trái, nơi nhận bên phải, bấm Bắt đầu</span>
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:14px;margin-top:12px" class="nap-luoi">
+      <div>
+        <div class="phuong-an">
+          <button class="on" data-tip="Bộ video tự tìm gần đây. Nạp cả bộ hoặc bỏ bớt.">Bộ tự tìm</button>
+          <button data-tip="Video bạn đã tải qua Video Desk. Có ảnh xem trước để nhận ra video.">Thư viện</button>
+          <button data-tip="Kéo thả file mp4/mov, tối đa 500 MB/file.">Tải từ máy</button>
+          <button data-tip="Dán link file hoặc thư mục Drive, mỗi dòng 1 link.">Link Drive</button>
+        </div>
+        <div class="the" style="margin:0">
+          <b>PN.2310C</b> <span class="so">· 40 video · TikTok · vào bộ 23/10</span>
+          <div class="so" style="margin:6px 0">Máy đoán trước: <b>34 video có logo đối thủ</b>, 6 video không có (bỏ qua sẵn)
+            <span class="minh-hoa">— minh hoạ</span></div>
+          <button class="nut chinh" data-tip="Thêm 40 video vào giỏ. Video không có logo cũ máy sẽ tự bỏ qua, không tốn thời gian của bạn.">+ Nạp cả bộ</button>
+          <button class="nut phu">Bỏ bớt</button>
+        </div>
+      </div>
+      <div class="the" style="margin:0">
+        <b>Thành phẩm đi đâu?</b>
+        <label style="display:block;margin:8px 0"><input type="radio" name="dich" checked> Trả lại đúng bộ gốc</label>
+        <label style="display:block;margin:8px 0"><input type="radio" name="dich"> Bộ tự tìm mới</label>
+        <label style="display:block;margin:8px 0"><input type="radio" name="dich"> Thư mục Drive riêng</label>
+        <button class="nut chinh" style="width:100%;margin-top:8px" data-tip="Máy bắt đầu ngay. Bạn có thể đóng trang — khi có việc cần bạn, lô sẽ hiện ở màn 2.">Bắt đầu thay logo (40)</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 2. LÔ -->
+<section class="man" id="lo">
+  <div class="the">
+    <b>Lô 23/10-2 · 40 video</b>
+    <span class="so">· máy xong 40/40 · <b>cần bạn: 3 video, 4 chỗ</b> · 31 video máy chắc · 6 video không có logo cũ</span>
+    <p class="goi-y">Dải màu = cả video theo thời gian: <span style="color:var(--xanh)">xanh</span> đã thay chắc · <span style="color:#b38600">vàng</span> máy cảnh báo (đoán, hoặc ô đè chồng phụ đề / đổi cỡ đột ngột) · <span style="color:var(--do)">đỏ</span> máy biết còn lộ · xám không có logo. ⚠ Máy KHÔNG tự thấy được chỗ đè lệch nếu nó tưởng mình đúng — vì vậy có dải ảnh soi nhanh (dòng cuối). <span class="minh-hoa">Số liệu minh hoạ.</span></p>
+    <div class="dong" data-den="sua">
+      <img class="anh-nho" src="anh/v13-63-sau.jpg" alt="">
+      <div><b>Test 03_13.mp4</b> <span class="so">5′51″ · 1 chỗ vàng · 1 chỗ đỏ</span>
+        <div class="dai" data-tip="Vàng ở 0:02: ô đè chồng lên phụ đề nên máy cảnh báo (đây là chỗ lộ chữ 'AI' thật). Đỏ ở 4:31: máy mất dấu. Bấm để nhảy tới."><span class="x" style="flex:3"></span><span class="v" style="flex:.5"></span><span class="x" style="flex:40"></span><span class="v" style="flex:2"></span><span class="x" style="flex:30"></span><span class="d" style="flex:.8"></span><span class="x" style="flex:24"></span></div>
+      </div>
+      <button class="nut chinh" data-tip="Mở màn sửa, nhảy tới chỗ cần xem đầu tiên.">Xem 2 chỗ</button>
+    </div>
+    <div class="dong" data-den="sua">
+      <div class="anh-nho" style="display:grid;place-items:center;font-size:11px;text-align:center">ảnh<br>03_12</div>
+      <div><b>Test 03_12.mp4</b> <span class="so">0′18″ · máy không tìm thấy logo cũ</span>
+        <div class="dai"><span class="g" style="flex:1"></span></div>
+        <span class="so">Khoanh logo 1 lần trên 1 khung — máy làm phần còn lại.</span></div>
+      <button class="nut chinh" data-tip="Thay cho nút 'Bỏ qua' hiện nay: bạn chỉ cho máy logo ở đâu.">Khoanh logo</button>
+    </div>
+    <div class="dong">
+      <div class="anh-nho" style="display:grid;place-items:center;font-size:11px;text-align:center">ảnh<br>03_22</div>
+      <div><b>Test 03_22.mp4</b> <span class="so">0′16″ · 1 đoạn máy đoán</span>
+        <div class="dai"><span class="x" style="flex:5"></span><span class="v" style="flex:2"></span><span class="x" style="flex:8"></span></div></div>
+      <button class="nut phu" data-tip="Phát 2 giây quanh đoạn vàng. Đúng thì bấm Đúng, lộ thì khoanh.">Xem 2 giây</button>
+    </div>
+    <div class="dong">
+      <div class="anh-nho" style="display:grid;place-items:center;font-size:11px;text-align:center">31<br>video</div>
+      <div><b>31 video máy chắc</b> <span class="so">· toàn xanh</span><div class="dai"><span class="x" style="flex:1"></span></div>
+        <span class="so">Mỗi video có 3 ảnh phóng to vùng logo (đầu · giữa · cuối) — lướt cả 31 video bằng mắt trong 1 màn, thấy lộ thì bấm vào ảnh đó để khoanh.</span></div>
+      <button class="nut phu" data-tip="Dải ảnh phóng to cho TẤT CẢ 31 video (không chọn mẫu) — cách bắt lỗi đè lệch mà máy tưởng là đúng.">Soi nhanh 31 video</button>
+    </div>
+    <div class="dong">
+      <div class="anh-nho" style="display:grid;place-items:center;font-size:11px;text-align:center">6<br>video</div>
+      <div><b>6 video máy cho là không có logo cũ</b> <span class="so">· xám</span><div class="dai"><span class="g" style="flex:1"></span></div>
+        <span class="so">Máy có thể bỏ sót logo mờ (đã gặp: chữ "CO" mờ trôi). Mỗi video 3 ảnh để bạn xác nhận.</span></div>
+      <button class="nut phu" data-tip="Có logo mà máy bỏ sót ⇒ bấm 'Khoanh logo' như video máy không chắc.">Xác nhận 6 video</button>
+    </div>
+  </div>
+</section>
+
+<!-- 3. SỬA -->
+<section class="man" id="sua">
+  <div class="phuong-an" id="pa">
+    <button class="on" data-pa="khoanh">Phương án A · Khoanh chỗ lộ <small>bạn chọn 23/10 — kéo chuột quanh phần logo cũ còn thấy</small></button>
+    <button data-pa="keo">Phương án B · Kéo khung máy <small>sửa khung vàng của máy cho trùm hết</small></button>
+    <button data-pa="diem">Phương án C · Bấm 1 điểm <small>bấm vào logo cũ, máy tự đoán vùng</small></button>
+  </div>
+  <div class="sua">
+    <div>
+      <div class="khung" id="khung">
+        <img id="anh-khung" src="anh/v13-63-sau.jpg" alt="khung đang sửa">
+        <div class="o-cu" id="o-cu"></div>
+      </div>
+      <div class="tl" data-tip="Đỏ = máy biết còn lộ · vàng = đè dù bị chặn, nên liếc. Shift+J / Shift+L nhảy chỗ cần xem trước/sau.">
+        <span class="x" style="flex:3"></span><span class="v" style="flex:.5"></span><span class="x" style="flex:40"></span><span class="v" style="flex:2"></span><span class="x" style="flex:30"></span><span class="d" style="flex:.8"></span><span class="x" style="flex:24"></span>
+        <div class="kim"></div>
+      </div>
+      <div class="chu-tl"><span>0:00</span><span>0:02 · chỗ vàng</span><span>5:51</span></div>
+    </div>
+    <div>
+      <div class="the">
+        <b>Test 03_13.mp4 — chỗ vàng 0:02 (máy cảnh báo: ô đè chồng phụ đề)</b>
+        <p class="goi-y" id="mo-ta">Chữ "AI" của logo cũ còn lộ bên phải ô ASTRONEX. Khoanh phần còn lộ ở ảnh trái (hoặc trong ô phóng to).</p>
+        <div class="zoom" id="zoom"><div class="zc" id="zc"></div></div>
+        <div class="so" style="margin-top:4px">Phóng to quanh chỗ cần sửa — vàng đứt = ô máy đã đè · đỏ = chỗ bạn khoanh</div>
+        <ol class="buoc-lam" id="buoc-lam"></ol>
+        <div class="hanh-dong">
+          <button class="nut chinh" id="sua-tiep" data-tip="Máy lấy chỗ bạn khoanh làm mốc, bám lại đoạn này rồi làm bản nháp 2 giây để bạn xem. Cần giữ video gốc trên máy tới khi bạn duyệt xong lô (hiện nay video gốc bị xoá ngay khi máy xong — phải đổi).">Máy sửa tiếp đoạn này</button>
+          <button class="nut phu" data-tip="Phát 2 giây quanh khung này, tốc độ 0,5×.">Xem 2 giây</button>
+          <button class="nut phu" data-tip="Không đè đoạn này, giữ nguyên hình gốc (logo cũ vẫn thấy).">Giữ hình gốc đoạn này</button>
+          <button class="nut phu" id="xoa" data-tip="Xoá các vùng đã khoanh để khoanh lại.">Khoanh lại</button>
+        </div>
+        <div class="trang-thai" id="tt">Chưa khoanh gì.</div>
+      </div>
+      <div class="the"><b>Phím tắt</b> <span class="so">J/L lùi/tới 1 khung · Shift+J/L chỗ cần xem trước/sau · Space xem gốc · Enter Đúng · Esc khoanh lại</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 4. HỎI -->
+<section class="man" id="hoi">
+  <div class="the" style="border-color:var(--xanh)">
+    <b>Câu đang mở: video có được gửi ra dịch vụ AI bên ngoài để thử xoá logo không?</b>
+    <p class="goi-y">Giải thích câu hỏi 3. Chưa cần trả lời ngay.</p>
+    <div class="chon">
+      <div class="the">
+        <div class="hq">A. Mặc định — chỉ xử lý trên máy công ty</div>
+        <div>Video chạy trên máy ca-n của công ty, <b>không rời khỏi công ty</b>. Không tốn tiền thêm. Chất lượng như tool hiện tại + bạn khoanh chỗ lộ.</div>
+      </div>
+      <div class="the">
+        <div class="hq">B. Gửi ra dịch vụ ngoài (ví dụ Bria)</div>
+        <div>Tải video lên máy chủ của hãng để AI của họ xoá logo. Giá ~$0,14 mỗi giây video ⇒ video 30 giây ≈ $4,2 (~105.000đ). Mỗi lần gửi tối đa 5 giây.
+          Có thể xoá đẹp hơn — <b>chưa ai đo trên loại logo chữ mờ của ta</b>. Video creative <b>rời khỏi công ty</b>.</div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<script>
+  const chon = m => {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.man === m));
+    document.querySelectorAll('.man').forEach(x => x.classList.toggle('on', x.id === m));
+    if (m === 'sua') veZoom();
+  };
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => chon(b.dataset.man));
+  document.querySelectorAll('[data-den]').forEach(d => d.onclick = () => chon(d.dataset.den));
+
+  // Màn sửa: toạ độ theo khung gốc 720x1280. Ô máy đã đè ở bản đang chạy: (378,864,143,24).
+  const W = 720, H = 1280, Z = 2.5, khung = document.getElementById('khung'), zoom = document.getElementById('zoom');
+  const cu = { x: 378, y: 864, w: 143, h: 24 };
+  let pa = 'khoanh', vung = [], diem = null, keo = { ...cu };
+  const MO_TA = {
+    khoanh: ['Kéo chuột trên ảnh để khoanh phần logo cũ còn lộ (có thể khoanh nhiều chỗ).', 'Bấm "Máy sửa tiếp đoạn này".', 'Xem 2 giây rồi bấm Đúng.'],
+    keo: ['Kéo khung vàng của máy, hoặc kéo góc phải dưới để nới, cho trùm hết logo cũ.', 'Bấm "Máy sửa tiếp đoạn này".', 'Xem 2 giây rồi bấm Đúng.'],
+    diem: ['Bấm 1 lần vào chữ logo cũ còn lộ.', 'Máy tự đoán vùng logo (có thể sai với chữ mờ — khoanh lại nếu sai).', 'Xem 2 giây rồi bấm Đúng.'],
+  };
+  const pct = (v, t) => v / t * 100 + '%';
+  function ve() {
+    khung.querySelectorAll('.o-ve,.diem').forEach(e => e.remove());
+    const oCu = document.getElementById('o-cu'), b = pa === 'keo' ? keo : cu;
+    Object.assign(oCu.style, { left: pct(b.x, W), top: pct(b.y, H), width: pct(b.w, W), height: pct(b.h, H), cursor: pa === 'keo' ? 'move' : 'default' });
+    if (pa === 'khoanh') vung.forEach(v => { const e = document.createElement('div'); e.className = 'o-ve';
+      Object.assign(e.style, { left: pct(v.x, W), top: pct(v.y, H), width: pct(v.w, W), height: pct(v.h, H) }); khung.appendChild(e); });
+    if (pa === 'diem' && diem) { const e = document.createElement('div'); e.className = 'diem'; Object.assign(e.style, { left: pct(diem.x, W), top: pct(diem.y, H) }); khung.appendChild(e); }
+    document.getElementById('buoc-lam').innerHTML = MO_TA[pa].map(t => '<li>' + t + '</li>').join('');
+    document.getElementById('tt').textContent = pa === 'khoanh' ? (vung.length ? 'Đã khoanh ' + vung.length + ' chỗ.' : 'Chưa khoanh gì.')
+      : pa === 'diem' ? (diem ? 'Đã bấm 1 điểm — máy sẽ đoán vùng quanh điểm này.' : 'Chưa bấm điểm nào.') : 'Khung máy: ' + [keo.x, keo.y, keo.w, keo.h].map(Math.round).join(', ');
+    veZoom();
+  }
+  function veZoom() {
+    const zw = zoom.clientWidth || 600, zh = zw / 3, vw = zw / Z, vh = zh / Z, cx = cu.x + cu.w / 2 + 40, cy = cu.y + cu.h / 2, x0 = cx - vw / 2, y0 = cy - vh / 2;
+    Object.assign(zoom.style, { backgroundImage: 'url(anh/v13-63-sau.jpg)', backgroundSize: W * Z + 'px ' + H * Z + 'px', backgroundPosition: -x0 * Z + 'px ' + -y0 * Z + 'px' });
+    zoom.querySelectorAll('.zo').forEach(e => e.remove());
+    const b = pa === 'keo' ? keo : cu, zc = document.getElementById('zc');
+    Object.assign(zc.style, { left: (b.x - x0) * Z + 'px', top: (b.y - y0) * Z + 'px', width: b.w * Z + 'px', height: b.h * Z + 'px' });
+    if (pa === 'khoanh') vung.forEach(v => { const e = document.createElement('div'); e.className = 'zo';
+      Object.assign(e.style, { left: (v.x - x0) * Z + 'px', top: (v.y - y0) * Z + 'px', width: v.w * Z + 'px', height: v.h * Z + 'px' }); zoom.appendChild(e); });
+  }
+  const toaDo = (e, r) => ({ x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H });
+  khung.addEventListener('pointerdown', e => {
+    const r = khung.getBoundingClientRect(), p0 = toaDo(e, r);
+    if (pa === 'diem') { diem = p0; ve(); return; }
+    if (pa === 'keo') {
+      const g = { ...keo }, goc = Math.abs(p0.x - (keo.x + keo.w)) < 18 && Math.abs(p0.y - (keo.y + keo.h)) < 18;
+      const di = ev => { const p = toaDo(ev, r); if (goc) { keo.w = Math.max(20, g.w + p.x - p0.x); keo.h = Math.max(10, g.h + p.y - p0.y); } else { keo.x = g.x + p.x - p0.x; keo.y = g.y + p.y - p0.y; } ve(); };
+      const tha = () => { removeEventListener('pointermove', di); removeEventListener('pointerup', tha); };
+      addEventListener('pointermove', di); addEventListener('pointerup', tha); return;
+    }
+    const v = { x: p0.x, y: p0.y, w: 0, h: 0 }; vung.push(v);
+    const di = ev => { const p = toaDo(ev, r); v.x = Math.min(p0.x, p.x); v.y = Math.min(p0.y, p.y); v.w = Math.abs(p.x - p0.x); v.h = Math.abs(p.y - p0.y); ve(); };
+    const tha = () => { if (v.w < 4 || v.h < 4) vung.pop(); ve(); removeEventListener('pointermove', di); removeEventListener('pointerup', tha); };
+    addEventListener('pointermove', di); addEventListener('pointerup', tha);
+  });
+  document.querySelectorAll('#pa button').forEach(b => b.onclick = () => {
+    pa = b.dataset.pa; document.querySelectorAll('#pa button').forEach(x => x.classList.toggle('on', x === b)); ve(); });
+  document.getElementById('xoa').onclick = () => { vung = []; diem = null; keo = { ...cu }; ve(); };
+  document.getElementById('sua-tiep').onclick = () => {
+    const tt = document.getElementById('tt');
+    tt.innerHTML = 'Máy đang sửa tiếp đoạn 0:02–0:03 … <span class="minh-hoa">(mock: bản thật chạy lại đoạn này trên máy, ~30–60 giây, rồi hiện 2 giây kết quả; chỗ bạn khoanh lưu thành 1 ca kiểm tra)</span>';
+  };
+  ve();
+</script>
+</body>
+</html>
