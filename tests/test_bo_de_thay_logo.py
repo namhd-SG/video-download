@@ -182,3 +182,11 @@ def test_doc_video_du_lieu_hong_la_luot_hong_khong_phai_vi_pham(tmp_path, noi_du
     (tmp_path / "1/kq.json").write_text(noi_dung)
     with pytest.raises(bd.LuotHong):
         bd.doc_video(tmp_path / "1")
+
+
+@pytest.mark.parametrize("box, ket", [((97, 200, 56, 20), "cho_soi"), ((103, 200, 50, 20), "qua")])
+def test_a_dich_roi_noi_rong_van_cho_soi_dich_dung_dung_sai_thi_qua(box, ket):
+    m = luot(v1=vd({10: (100, 200, 50, 20)}, md5="a"))
+    kq = bd.so_sanh(m, luot(v1=vd({10: box}, md5="b")), NHAN_DUNG, None)
+    assert kq["vi_pham"] == []
+    assert ({"v": 1, "frame": 10, "kieu": "nhan_dung_noi_rong"} in kq["mau"]) is (ket == "cho_soi")
