@@ -1,0 +1,389 @@
+{
+ "mo_ta": "40 video Test3 (~/Downloads/Test3, bản chép ca-n ~/kho-ca/thay-logo/v/<N>/goc.mp4) + box agy cố định box-agymoi. Ánh xạ thương hiệu: lane logo cũ đếm bằng mắt + agy R1b goc-nhin-moi (researcher-261020-2350 mục 6); nhóm biến thể theo thời lượng trùng/lane cũ. Chọn tham số trên 'thiet_ke', báo số trên 'giu_kin'.",
+ "hat_chia": 20261023,
+ "so_giu_kin": 10,
+ "don_vi": [
+  {
+   "thuong_hieu": "learna",
+   "v": [
+    13,
+    14,
+    15
+   ],
+   "co_dinh": true,
+   "ghi_chu": "ca lỗi v13#63: dùng để chỉnh ⇒ thiết kế"
+  },
+  {
+   "thuong_hieu": "learna",
+   "v": [
+    1,
+    16,
+    17
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "learna",
+   "v": [
+    2,
+    3
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "learna",
+   "v": [
+    4,
+    5
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "icon_p",
+   "v": [
+    9
+   ],
+   "co_dinh": false,
+   "ghi_chu": "kèm icon Ai"
+  },
+  {
+   "thuong_hieu": "icon_p",
+   "v": [
+    38,
+    39,
+    40
+   ],
+   "co_dinh": false,
+   "ghi_chu": "biến thể"
+  },
+  {
+   "thuong_hieu": "melvo",
+   "v": [
+    6,
+    7,
+    8
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "reelme",
+   "v": [
+    11
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "reelme",
+   "v": [
+    30,
+    31
+   ],
+   "co_dinh": false,
+   "ghi_chu": "biến thể"
+  },
+  {
+   "thuong_hieu": "barry",
+   "v": [
+    21,
+    22,
+    23
+   ],
+   "co_dinh": true,
+   "ghi_chu": "biến thể; ca lỗi v22#407 ⇒ thiết kế"
+  },
+  {
+   "thuong_hieu": "br_photorevive",
+   "v": [
+    24,
+    25,
+    27
+   ],
+   "co_dinh": false,
+   "ghi_chu": "biến thể"
+  },
+  {
+   "thuong_hieu": "helixa_artimind",
+   "v": [
+    32
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "helixa_artimind",
+   "v": [
+    33,
+    34
+   ],
+   "co_dinh": false,
+   "ghi_chu": "biến thể; agy đọc thêm CO"
+  },
+  {
+   "thuong_hieu": "yar",
+   "v": [
+    18,
+    19
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "superminds",
+   "v": [
+    10
+   ],
+   "co_dinh": false,
+   "ghi_chu": ""
+  },
+  {
+   "thuong_hieu": "co",
+   "v": [
+    28,
+    29
+   ],
+   "co_dinh": false,
+   "ghi_chu": "biến thể (cùng 15,4166 s)"
+  },
+  {
+   "thuong_hieu": "terasofts",
+   "v": [
+    12
+   ],
+   "co_dinh": false,
+   "ghi_chu": "agy đọc, chưa ai kiểm"
+  },
+  {
+   "thuong_hieu": "canh_badge",
+   "v": [
+    20
+   ],
+   "co_dinh": true,
+   "ghi_chu": "badge Google Play — loại khỏi tính điểm"
+  },
+  {
+   "thuong_hieu": "canh_khong_logo",
+   "v": [
+    26
+   ],
+   "co_dinh": true,
+   "ghi_chu": "không logo"
+  },
+  {
+   "thuong_hieu": "canh_logo_nha",
+   "v": [
+    35,
+    36,
+    37
+   ],
+   "co_dinh": true,
+   "ghi_chu": "logo nhà Astronex"
+  }
+ ],
+ "video": [
+  {
+   "v": 1,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 2,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 3,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 4,
+   "phia": "giu_kin",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 5,
+   "phia": "giu_kin",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 6,
+   "phia": "thiet_ke",
+   "thuong_hieu": "melvo"
+  },
+  {
+   "v": 7,
+   "phia": "thiet_ke",
+   "thuong_hieu": "melvo"
+  },
+  {
+   "v": 8,
+   "phia": "thiet_ke",
+   "thuong_hieu": "melvo"
+  },
+  {
+   "v": 9,
+   "phia": "thiet_ke",
+   "thuong_hieu": "icon_p"
+  },
+  {
+   "v": 10,
+   "phia": "thiet_ke",
+   "thuong_hieu": "superminds"
+  },
+  {
+   "v": 11,
+   "phia": "thiet_ke",
+   "thuong_hieu": "reelme"
+  },
+  {
+   "v": 12,
+   "phia": "thiet_ke",
+   "thuong_hieu": "terasofts"
+  },
+  {
+   "v": 13,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 14,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 15,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 16,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 17,
+   "phia": "thiet_ke",
+   "thuong_hieu": "learna"
+  },
+  {
+   "v": 18,
+   "phia": "giu_kin",
+   "thuong_hieu": "yar"
+  },
+  {
+   "v": 19,
+   "phia": "giu_kin",
+   "thuong_hieu": "yar"
+  },
+  {
+   "v": 20,
+   "phia": "thiet_ke",
+   "thuong_hieu": "canh_badge"
+  },
+  {
+   "v": 21,
+   "phia": "thiet_ke",
+   "thuong_hieu": "barry"
+  },
+  {
+   "v": 22,
+   "phia": "thiet_ke",
+   "thuong_hieu": "barry"
+  },
+  {
+   "v": 23,
+   "phia": "thiet_ke",
+   "thuong_hieu": "barry"
+  },
+  {
+   "v": 24,
+   "phia": "thiet_ke",
+   "thuong_hieu": "br_photorevive"
+  },
+  {
+   "v": 25,
+   "phia": "thiet_ke",
+   "thuong_hieu": "br_photorevive"
+  },
+  {
+   "v": 26,
+   "phia": "thiet_ke",
+   "thuong_hieu": "canh_khong_logo"
+  },
+  {
+   "v": 27,
+   "phia": "thiet_ke",
+   "thuong_hieu": "br_photorevive"
+  },
+  {
+   "v": 28,
+   "phia": "giu_kin",
+   "thuong_hieu": "co"
+  },
+  {
+   "v": 29,
+   "phia": "giu_kin",
+   "thuong_hieu": "co"
+  },
+  {
+   "v": 30,
+   "phia": "giu_kin",
+   "thuong_hieu": "reelme"
+  },
+  {
+   "v": 31,
+   "phia": "giu_kin",
+   "thuong_hieu": "reelme"
+  },
+  {
+   "v": 32,
+   "phia": "thiet_ke",
+   "thuong_hieu": "helixa_artimind"
+  },
+  {
+   "v": 33,
+   "phia": "giu_kin",
+   "thuong_hieu": "helixa_artimind"
+  },
+  {
+   "v": 34,
+   "phia": "giu_kin",
+   "thuong_hieu": "helixa_artimind"
+  },
+  {
+   "v": 35,
+   "phia": "thiet_ke",
+   "thuong_hieu": "canh_logo_nha"
+  },
+  {
+   "v": 36,
+   "phia": "thiet_ke",
+   "thuong_hieu": "canh_logo_nha"
+  },
+  {
+   "v": 37,
+   "phia": "thiet_ke",
+   "thuong_hieu": "canh_logo_nha"
+  },
+  {
+   "v": 38,
+   "phia": "thiet_ke",
+   "thuong_hieu": "icon_p"
+  },
+  {
+   "v": 39,
+   "phia": "thiet_ke",
+   "thuong_hieu": "icon_p"
+  },
+  {
+   "v": 40,
+   "phia": "thiet_ke",
+   "thuong_hieu": "icon_p"
+  }
+ ]
+}
