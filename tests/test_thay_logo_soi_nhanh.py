@@ -20,13 +20,30 @@ def test_video_xong_chon_dau_giua_cuoi_cua_khung_may_de_va_box_tung_khung():
     chon = soi_nhanh.chon_khung([vet], {0: "render"}, "xong", 100, "720x1280")
     assert [c["khung"] for c in chon] == [5, 8, 12]  # tập đè {5,7,8,12}: đầu, giữa (index 2), cuối — khung bị chặn/nội suy không tính
     assert all(c["ban"] == "ra" for c in chon)
-    assert chon[0]["cat"] == (70, 176, 120, 68)   # nới max(w//2=30, 24) ngang, max(h//2=10, 24)=24 dọc
+    # nới max(w//2=30, 24) ngang ⇒ 120, max(h//2=10, 24) dọc ⇒ 68; ép 4:3 ⇒ 120×90, đặt giữa box (130, 210)
+    assert chon[0]["cat"] == (70, 165, 120, 90)
     assert chon[2]["cat"][0] == 100                # box khung 12 ở x=130 ⇒ cắt theo box CỦA khung đó, không box chung
 
 
-def test_cat_quanh_kep_trong_khung_hinh():
-    assert soi_nhanh.cat_quanh((5, 1270, 60, 20), 720, 1280) == (0, 1246, 95, 34)
-    assert soi_nhanh.cat_quanh((690, 0, 30, 10), 720, 1280) == (666, 0, 54, 34)
+@pytest.mark.parametrize("box", [(660, 600, 60, 20),    # sát mép phải
+                                 (0, 600, 60, 20),      # sát mép trái
+                                 (300, 0, 143, 24),     # sát mép trên
+                                 (300, 1256, 143, 24),  # sát mép dưới
+                                 (690, 1270, 30, 10),   # góc dưới phải, box nhỏ
+                                 (100, 400, 500, 30),   # box rộng
+                                 (300, 300, 20, 300)])  # box cao
+def test_cat_quanh_ti_le_4_3_trong_khung_va_box_nam_tron(box):
+    x0, y0, w, h = soi_nhanh.cat_quanh(box, 720, 1280)
+    bx, by, bw, bh = box
+    assert 0 <= x0 and x0 + w <= 720 and 0 <= y0 and y0 + h <= 1280
+    assert x0 <= bx and bx + bw <= x0 + w and y0 <= by and by + bh <= y0 + h  # trượt vào trong, không cắt mất box
+    assert abs(w * 3 - h * 4) <= 4  # 4:3, lệch tối đa vì làm tròn số nguyên
+
+
+def test_cat_quanh_sat_mep_phai_truot_vao_giu_nguyen_co():
+    giua = soi_nhanh.cat_quanh((400, 600, 60, 20), 720, 1280)
+    mep = soi_nhanh.cat_quanh((660, 600, 60, 20), 720, 1280)
+    assert mep[2:] == giua[2:] and mep[0] + mep[2] == 720  # cùng cỡ với box ở giữa, mép phải vùng cắt trùng mép khung
 
 
 def test_bo_vet_khong_render_va_video_xong_khong_khung_de_thi_rong():
@@ -79,7 +96,8 @@ def test_dung_anh_dung_khung_cat_dung_vung_va_ghi_moc(tmp_path):
         assert abs(_sang((d / f"soi-{i}.jpg").read_bytes()) - mong) < 12
     import cv2
     anh = cv2.imread(str(d / "soi-0.jpg"))
-    assert anh.shape[1] == soi_nhanh.RONG_ANH and abs(anh.shape[0] - 720) <= 2  # vùng cắt 32×48 phóng lên rộng 480
+    assert anh.shape[:2] == (soi_nhanh.CAO_ANH, soi_nhanh.RONG_ANH)  # ảnh cắt luôn đúng cỡ lưới
+    assert cv2.imread(str(d / "soi-2.jpg")).shape[1] == soi_nhanh.RONG_ANH  # ảnh cả khung: rộng cố định, giữ tỉ lệ video
     assert not list(d.glob(".*.tam"))
 
 

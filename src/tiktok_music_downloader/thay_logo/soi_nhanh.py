@@ -24,8 +24,10 @@ SO_ANH = 3
 TI_LE_KHUNG_XAM = (0.1, 0.5, 0.9)
 NOI_TOI_THIEU_PX = 24  # nới mỗi cạnh max(0,5·cạnh box, 24 px): ô nhỏ vẫn đủ nền xung quanh để thấy lộ mép
 RONG_ANH = 480         # rộng ảnh soi: lưới 3 ảnh/dòng trên màn Lô vẫn đọc được mép logo
+CAO_ANH = 360          # 4:3 — ảnh cắt quanh box (video `xong`); ảnh cả khung (video `cho_nguoi`) giữ tỉ lệ video
 TEN_MOC = "soi.json"
-# Trần cả 3 lệnh ffmpeg (-ss trước -i, 1 khung/lệnh), CHƯA ĐO thời gian thật — quá trần thì bỏ (job vẫn xong, route dựng
+# Trần cả 3 lệnh ffmpeg (-ss trước -i, 1 khung/lệnh). Đo 23/10 trên máy dev, bản sao 2 video prod 720×1280 (714 và 1537 khung):
+# cả 3 ảnh 0,13–0,19 s/video (5 lần mỗi video) — chưa đo trên ca-n lúc đang render. Quá trần thì bỏ (job vẫn xong, route dựng
 # lười lại khi có người mở).
 TRAN_GIAY_DUNG = 30
 
@@ -44,12 +46,23 @@ def _box_de(track: list[list[dict]], tt_vet: dict) -> dict[int, tuple]:
 
 
 def cat_quanh(box: tuple, rong: int, cao: int) -> tuple[int, int, int, int]:
-    """Vùng cắt (x, y, w, h) quanh box, nới mỗi cạnh, kẹp trong khung rong×cao."""
+    """Vùng cắt (x, y, w, h) tỉ lệ CỐ ĐỊNH 4:3 quanh box (nới mỗi cạnh), đặt giữa box rồi TRƯỢT vào trong khung khi chạm mép.
+    Cố định tỉ lệ ⇒ mọi ảnh soi cùng cỡ RONG_ANH×CAO_ANH, lưới màn Lô thẳng hàng mà không phải cắt ảnh ở FE (object-fit cover có
+    thể cắt mất chính logo). Trượt thay vì cắt bớt ⇒ box luôn nằm TRỌN trong vùng cắt kể cả khi sát mép khung hình."""
     x, y, w, h = (int(v) for v in box)
-    nx, ny = max(w // 2, NOI_TOI_THIEU_PX), max(h // 2, NOI_TOI_THIEU_PX)
-    x0, y0 = max(0, x - nx), max(0, y - ny)
-    x1, y1 = min(rong, x + w + nx), min(cao, y + h + ny)
-    return x0, y0, x1 - x0, y1 - y0
+    cw = w + 2 * max(w // 2, NOI_TOI_THIEU_PX)
+    ch = h + 2 * max(h // 2, NOI_TOI_THIEU_PX)
+    if cw * 3 >= ch * 4:
+        ch = -(-cw * 3 // 4)
+    else:
+        cw = -(-ch * 4 // 3)
+    if cw > rong:  # vùng cần lớn hơn khung hình ⇒ thu về khung, vẫn giữ 4:3
+        cw, ch = rong, rong * 3 // 4
+    if ch > cao:
+        cw, ch = cao * 4 // 3, cao
+    x0 = min(max(0, x + w // 2 - cw // 2), rong - cw)
+    y0 = min(max(0, y + h // 2 - ch // 2), cao - ch)
+    return x0, y0, cw, ch
 
 
 def chon_khung(track: list[list[dict]] | None, tt_vet: dict, trang_thai: str, so_khung: int | None,
@@ -107,7 +120,7 @@ def dung_anh(data: Path, video_log_id: int, chon: list[dict], ffmpeg: str, fps: 
         loc = f"scale={RONG_ANH}:-2"
         if c["cat"] is not None:
             x, y, w, h = c["cat"]
-            loc = f"crop={w}:{h}:{x}:{y},{loc}"
+            loc = f"crop={w}:{h}:{x}:{y},scale={RONG_ANH}:{CAO_ANH}"  # vùng cắt 4:3 (lệch ≤ 1 px do làm tròn) ⇒ ép đúng cỡ lưới
         cmd = ["nice", "-n", "10", ffmpeg, "-v", "error", "-ss", khoanh.giay_cua_khung(c["khung"], fps), "-i", str(nguon),
                "-frames:v", "1", "-vf", loc, "-q:v", "3", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"]
         con_lai = TRAN_GIAY_DUNG - (time.monotonic() - bat_dau)
