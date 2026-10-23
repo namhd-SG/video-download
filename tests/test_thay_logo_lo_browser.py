@@ -80,6 +80,16 @@ def seed_lo(data: Path) -> dict:
         if tt == "xong":
             _video(khoanh.duong_video(data, log_id, "ra"), sang_tu=10 * i + 5)
         hang_doi.dat(conn, vid, tt, video_log_id=log_id)
+    # "Lô cũ": video máy đã xong mà vết đã dọn (không đọc được /dai) + video còn đang chạy ⇒ không xếp nhóm được video nào
+    jc = hang_doi.tao_job(conn, NGUOI, [{"kieu": "drive", "file_id": f"CU{i:02d}" + "x" * 14} for i in range(2)], ten_bo="Lô cũ")
+    vc = [r[0] for r in conn.execute("SELECT id FROM tl_job_video WHERE job_id=? ORDER BY id", (jc,))]
+    lc = nhat_ky.bat_dau_video(conn, nguon_video="cu")
+    conn.execute("UPDATE tl_video SET kho=?, fps=?, so_khung=?, duong_dan_track=? WHERE id=?",
+                 (f"{KHO[0]}x{KHO[1]}", FPS, SO_KHUNG, str(data / "track-da-don.json.gz"), lc))  # tệp không tồn tại
+    conn.commit()
+    hang_doi.dat(conn, vc[0], "xong", video_log_id=lc)
+    hang_doi.dat(conn, vc[1], "dang_chay")
+    out["_lo_cu"] = jc
     jk = hang_doi.tao_job(conn, NGUOI_KHAC, [{"kieu": "drive", "file_id": "KHAC" + "x" * 16}], ten_bo="Lô người khác")
     vk = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (jk,)).fetchone()[0]
     lk = nhat_ky.bat_dau_video(conn, nguon_video="khac")
@@ -250,4 +260,74 @@ def test_xac_nhan_khong_co_logo_bo_qua_roi_hoan_tac(may_chu, trinh_duyet):
         assert conn.execute("SELECT bo_qua_luc FROM tl_job_video WHERE id=?", (_ID["D-khong-logo"],)).fetchone()[0] is None
     finally:
         conn.close()
+    assert loi_js == []
+
+
+# ---------------------------------------------------------------- ảnh bìa + giao diện tối
+def test_anh_bia_tu_khung_goc_cho_dong_can_nguoi_va_khong_goi_cho_nhom_gop(may_chu, trinh_duyet):
+    """Video "Tải từ máy"/Drive không có `/thumbs` ⇒ bìa lấy khung 10% bản gốc qua `/khung-tai` CHỈ cho dòng từng video (A/B)."""
+    goc, _ = may_chu
+    p, loi_js, yeu_cau = _mo(trinh_duyet, goc)
+    p.evaluate("document.querySelectorAll('img').forEach(i => { i.loading = 'eager'; })")
+    co_bia = ("A-hai-cho", "B-khong-chac", "B-thay-khong-bam")
+    for k in co_bia:
+        p.wait_for_function(f"""(() => {{ const i = document.querySelector('.lo-dong[data-vid="{_ID[k]}"] .lo-bia img');
+            return i && i.complete && i.naturalWidth > 0; }})()""")
+    # A-mot-cho: nhật ký ghi 3000 khung, tệp chỉ 60 ⇒ máy chủ không trích được ⇒ ảnh lỗi bị gỡ, ô bìa trống (không ảnh vỡ)
+    p.wait_for_function(f"""document.querySelector('.lo-dong[data-vid="{_ID['A-mot-cho']}"] .lo-bia img') === null""")
+    bia = sorted(u.split("/videos/")[1] for u in yeu_cau if "/khung-tai/" in u)
+    assert bia == sorted(f"{_ID[k]}/khung-tai/{int(n * 0.1)}?ban=goc" for k, n in
+                         (("A-hai-cho", SO_KHUNG), ("A-mot-cho", 3000), ("B-khong-chac", SO_KHUNG), ("B-thay-khong-bam", SO_KHUNG)))
+    assert loi_js == []
+
+
+def test_giao_dien_toi_doc_duoc(may_chu, trinh_duyet):
+    goc, _ = may_chu
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    ctx.add_init_script("localStorage.setItem('videodl-theme', 'dark')")
+    p = ctx.new_page()
+    mo_trang(p, f"{goc}/thay-logo-lo.html?lo={_ID['_job']}", dem_mang_ngoai(ctx))
+    p.wait_for_function("document.querySelector('#lo-danh-sach .lo-dong') !== null")
+    assert p.evaluate("document.documentElement.getAttribute('data-theme')") == "dark"
+    nen = p.evaluate("getComputedStyle(document.body).backgroundColor")
+    chu = p.evaluate("getComputedStyle(document.querySelector('.lo-ten')).color")
+    sang = lambda c: sum(int(x) for x in c[c.index('(') + 1:c.index(')')].split(',')[:3]) / 3  # noqa: E731
+    assert sang(nen) < 60 < 180 < sang(chu), (nen, chu)  # nền tối, chữ sáng
+    _chup(p, "lo-toi-1280.png")
+
+
+# ---------------------------------------------------------------- lô cũ / lỗi tạm
+def test_lo_cu_video_mat_vet_duoc_dem_ra_khong_bien_mat_im_lang(may_chu, trinh_duyet):
+    goc, _ = may_chu
+    ctx = trinh_duyet.new_context(viewport={"width": 1280, "height": 900})
+    p = ctx.new_page()
+    loi_js: list[str] = []
+    p.on("pageerror", lambda e: loi_js.append(str(e)))
+    mo_trang(p, f"{goc}/thay-logo-lo.html?lo={_ID['_lo_cu']}", dem_mang_ngoai(ctx))
+    p.wait_for_selector("#lo-danh-sach >> text=Chưa có video nào máy làm xong để duyệt.")
+    tom = p.locator("#lo-tom-tat").inner_text()
+    assert "1 video máy đã xong nhưng không còn dữ liệu để xếp nhóm" in tom and "máy còn làm 1" in tom, tom
+    assert p.locator("#lo-danh-sach .lo-dong").count() == 0
+    assert loi_js == []
+
+
+def test_xac_nhan_loi_tam_roi_thu_lai_thanh_cong_xoa_cau_loi(may_chu, trinh_duyet):
+    goc, tmp = may_chu
+    p, loi_js, _ = _mo(trinh_duyet, goc)
+    lan = []
+
+    def chan_lan_dau(route):
+        lan.append(1)
+        route.fulfill(status=500, body="loi") if len(lan) == 1 else route.continue_()
+    p.route("**/bo-qua", chan_lan_dau)
+    p.get_by_role("button", name="Xác nhận 1 video").click()
+    p.wait_for_function("document.querySelectorAll('.lo-nhom-D .lo-soi-anh').length === 3")
+    p.get_by_role("button", name="Đúng là không có logo").click()
+    p.wait_for_function("!document.getElementById('lo-loi').hidden")
+    assert "Không lưu được" in p.locator("#lo-loi").inner_text()
+    p.get_by_role("button", name="Đúng là không có logo").click()
+    p.wait_for_selector(".lo-nhom-D >> text=Đã xác nhận không có logo")
+    assert p.evaluate("document.getElementById('lo-loi').hidden") and len(lan) == 2
+    p.get_by_role("button", name="Hoàn tác").click()  # trả DB về như cũ cho các test khác dùng chung máy chủ
+    p.wait_for_selector(".lo-nhom-D >> text=Đúng là không có logo")
     assert loi_js == []

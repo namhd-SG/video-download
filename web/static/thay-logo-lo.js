@@ -39,6 +39,7 @@
 
   // Xếp nhóm TẤT ĐỊNH theo trạng thái máy (thiết kế phase-1b-2-man-lo.md):
   //  A xong + có đoạn đỏ/vàng · C xong không đoạn nào · B cho_nguoi + agy thấy box (so_box>0: thấy logo mà chưa bám/chưa chắc)
+  //  "khac": máy chưa xong / lỗi, HOẶC xong mà không đọc được /dai (vết đã dọn) — ca sau được đếm riêng ở dòng tóm tắt.
   //  D cho_nguoi + agy 0 box (máy tin không có logo cũ — agy bỏ sót ảnh thì relay không nộp, relay_may_dev.py:155-157).
   // B/D tách theo so_box, KHÔNG theo số vết: so_box>0 mà 0 vết vẫn là "máy thấy logo" ⇒ phải khoanh.
   function nhom(v, dai) {
@@ -90,9 +91,19 @@
     return b;
   }
 
-  function bia(v) {
+  // Ảnh bìa: video thuộc thư viện có `/thumbs` (thay_logo_routes.py danh_sach). Video "Tải từ máy" / link Drive KHÔNG có ⇒ lấy một
+  // khung của bản gốc qua route sẵn có `/khung-tai` (khung ở 10% độ dài — khung 0 hay đen). Chỉ dòng từng video (A/B, số ít) gọi tới;
+  // video đã dọn ⇒ 404 ⇒ bỏ ảnh, ô bìa để trống.
+  const KHUNG_BIA = 0.1;
+  function bia(v, dai) {
     const b = el("div", "lo-bia");
-    if (v.anh_bia) { const i = el("img"); i.src = v.anh_bia; i.alt = ""; i.loading = "lazy"; b.append(i); }
+    let src = v.anh_bia;
+    if (!src && dai && !dai.loi && dai.so_khung) src = api(v.id, `khung-tai/${Math.floor(dai.so_khung * KHUNG_BIA)}?ban=goc`);
+    if (src) {
+      const i = el("img"); i.src = src; i.alt = ""; i.loading = "lazy";
+      i.addEventListener("error", () => i.remove(), { once: true });
+      b.append(i);
+    }
     return b;
   }
 
@@ -105,7 +116,7 @@
     if (dai && !dai.loi && dai.so_khung) tieuDe.append(el("span", "lo-phu", ` ${mmss(dai.so_khung / (dai.fps || 30))}`));
     if (moTa) tieuDe.append(el("span", "lo-phu", ` · ${moTa}`));
     giua.append(tieuDe, veDai(v, dai));
-    r.append(bia(v), giua, nut);
+    r.append(bia(v, dai), giua, nut);
     return r;
   }
 
@@ -172,6 +183,7 @@
     };
     async function doi(nut, duoi, luc) {
       nut.disabled = true;
+      baoLoi("");  // lần thử trước lỗi thì câu lỗi không được sống qua lần thử lại thành công
       try { await json(api(v.id, duoi), { method: "POST" }); v.bo_qua_luc = luc; ve(); veTomTat(); }
       catch (e) { nut.disabled = false; baoLoi("Không lưu được xác nhận, thử lại."); }
     }
@@ -198,6 +210,9 @@
     p.append(el("strong", "", `cần bạn: ${dem.A + dem.B} video, ${cho} chỗ`),
       ` · ${dem.C} video máy chắc · ${dChua} video máy cho là không có logo cũ chưa xác nhận`);
     if (conLam || loi) p.append(` · máy còn làm ${conLam} · lỗi ${loi}`);
+    // Video máy đã xong mà không đọc được dải (vết đã dọn ở lô cũ) không xếp được nhóm ⇒ PHẢI nói ra, không để nó biến mất im lặng.
+    const matVet = videos.filter((v) => v.trang_thai === "xong" && (!dai.get(v.id) || dai.get(v.id).loi)).length;
+    if (matVet) p.append(el("span", "lo-mat-vet", ` · ${matVet} video máy đã xong nhưng không còn dữ liệu để xếp nhóm — xem ở trang Thay logo`));
   }
 
   function veDanhSach() {
@@ -219,6 +234,7 @@
       "Máy có thể bỏ sót logo mờ (đã gặp: chữ \"CO\" mờ trôi). Mỗi video 3 ảnh để bạn xác nhận.",
       `Xác nhận ${theo.D.length} video`, theo.D, nutXacNhan));
     if (!videos.length) hop.append(el("p", "lo-phu", "Lô này chưa có video."));
+    else if (!hop.childElementCount) hop.append(el("p", "lo-phu", "Chưa có video nào máy làm xong để duyệt."));
     veTomTat();
   }
 
