@@ -109,10 +109,13 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
             r, t = _nap(conn, vid, email)
             track, tt = _track(conn, t)
             doan = khoanh.dai_thoi_gian(track, tt)
+            # Ca khoanh còn chờ sửa của video (mọi lượt mở, mọi người): màn Sửa không được mời "đánh Đạt" video còn chỗ lộ đã khoanh.
+            so_ca_cho = conn.execute("SELECT count(*) FROM tl_ca_khoanh WHERE video_log_id=? AND trang_thai='cho'", (t["id"],)).fetchone()[0]
         finally:
             conn.close()
         co = {b: khoanh.duong_video(_data(), t["id"], b).exists() for b in ("goc", "ra")}
-        return {"fps": t["fps"], "so_khung": t["so_khung"], "kho": t["kho"], "trang_thai": r["trang_thai"], "doan": doan, "co_video": co}
+        return {"fps": t["fps"], "so_khung": t["so_khung"], "kho": t["kho"], "trang_thai": r["trang_thai"], "doan": doan, "co_video": co,
+                "so_ca_cho": so_ca_cho}
 
     @app.get("/api/thay-logo/videos/{vid}/khung-tai/{khung}")
     def khung_tai(vid: int = PathParam(ge=1, le=2**63 - 1), khung: int = PathParam(ge=0, le=10_000_000),

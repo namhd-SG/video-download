@@ -184,7 +184,14 @@ def test_xong_ve_lo_khong_danh_dat_khi_da_khoanh(may_chu, trinh_duyet):  # noqa:
     x.click()
     p.wait_for_url(lambda u: "sua=" not in u)
     assert not [r for r in yeu_cau if r.url.endswith("/danh-gia")]
-    assert loi_js == []
+    # MỞ LẠI video đó (lượt mới, chưa khoanh gì trong lượt này): vẫn KHÔNG được mời đánh Đạt vì còn ca khoanh chờ sửa
+    p2, loi2, yc2 = _mo_sua(trinh_duyet, goc, "C-chac-2", khung=2)
+    assert p2.locator("#sua-xong").inner_text() == "Xong — về Lô"
+    assert "đã có 1 chỗ khoanh từ trước" in p2.locator("#sua-trang").inner_text()
+    p2.locator("#sua-xong").click()
+    p2.wait_for_url(lambda u: "sua=" not in u)
+    assert not [r for r in yc2 if r.url.endswith("/danh-gia")]
+    assert loi_js == [] and loi2 == []
 
 
 def test_video_may_chua_de_gi_xem_ban_goc_o_ba_cho(may_chu, trinh_duyet):  # noqa: F811

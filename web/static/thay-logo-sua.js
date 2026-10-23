@@ -152,7 +152,8 @@
   }
   function veTrang() {
     const p = $("sua-trang");
-    if (!S.daLuu.length) { p.textContent = "Chưa khoanh chỗ nào."; return; }
+    const truoc = S.dai.so_ca_cho > 0 ? `Video này đã có ${S.dai.so_ca_cho} chỗ khoanh từ trước, đang chờ sửa. ` : "";
+    if (!S.daLuu.length) { p.textContent = truoc + "Lượt này chưa khoanh chỗ nào."; return; }
     const cuoi = S.daLuu[S.daLuu.length - 1];
     p.textContent = `Đã lưu ${S.daLuu.length} chỗ. Chỗ vừa lưu (khung ${cuoi.khung}): máy ghi "${MAU_LOI[cuoi.mau_loi] || cuoi.mau_loi}".`;
   }
@@ -160,8 +161,9 @@
     $("sua-luu").disabled = !S.cho.length;
     $("sua-giu-goc").disabled = !S.box || S.v.trang_thai !== "xong";
     const x = $("sua-xong");
-    // Nút cuối GHI RÕ hành động (ĐP chốt): chỉ "đánh Đạt" khi video máy đã xong và lượt xem này không lưu ô khoanh nào.
-    S.danhDat = S.v.trang_thai === "xong" && !S.daLuu.length;
+    // Nút cuối GHI RÕ hành động (ĐP chốt): chỉ "đánh Đạt" khi video máy đã xong, KHÔNG còn ca khoanh chờ sửa từ lượt mở trước
+    // (`/dai` so_ca_cho — mở lại trang sau khi khoanh) và lượt này cũng chưa lưu ô nào.
+    S.danhDat = S.v.trang_thai === "xong" && !S.daLuu.length && !(S.dai.so_ca_cho > 0);
     x.textContent = S.danhDat ? "Xong — đánh Đạt" : "Xong — về Lô";
     x.disabled = S.cho.length > 0;
     x.title = S.cho.length ? "Còn ô chưa lưu: bấm Lưu chỗ khoanh hoặc Esc để bỏ." : "";
