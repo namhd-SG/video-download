@@ -80,3 +80,9 @@ def test_gia_tri_la_thanh_khac():
 def test_chu_ky_khong_khung_nao_doc_duoc():
     with pytest.raises(ValueError):
         cham.chu_ky([tu_json({"id": "x", "so_ban_sao": None})])
+
+
+def test_chu_ky_co_nguoi_ma_anh_khong_nguoi_la_0(ck_collage):
+    t = tu_json({"id": "x", "so_ban_sao": 0, "chu_the": "nguoi mau thoi trang", "loai_nen": "trang_tron",
+                 "hanh_dong": "tao_dang"})
+    assert cham.hang(t, ck_collage) == "0"

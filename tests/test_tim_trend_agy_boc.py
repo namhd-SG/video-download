@@ -76,3 +76,9 @@ def test_khong_doc_lai_file_cu_khi_agy_truot(tmp_path, monkeypatch):
     (tmp_path / "agy-truong-0.json").write_text(json.dumps({"items": [m for m in ITEMS if m["id"] == "s6-7"]}))
     monkeypatch.setattr(agy_boc, "goi_agy", lambda *a, **k: "Eligibility check failed")
     assert agy_boc.boc_truong(anh, tmp_path) == {}
+
+
+def test_goi_y_tu_khoa_khong_doc_file_cu(tmp_path, monkeypatch):
+    (tmp_path / "agy-tu-khoa.json").write_text(json.dumps({"chu_de": {"en": ["key cu tu lan truoc"]}}))
+    monkeypatch.setattr(agy_boc, "goi_agy", lambda *a, **k: "Eligibility check failed")
+    assert agy_boc.goi_y_tu_khoa(_anh(tmp_path, ["dau-vao-0"]), tmp_path) == []

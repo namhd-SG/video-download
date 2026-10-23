@@ -169,3 +169,70 @@ def test_captcha_dung_ca_lan_chay(gia, tmp_path):
     assert "captcha" in kq.dung_vi and kq.bi_captcha and nguon.da_mo == 1 and kq.rong
     assert luong.ghi_links(kq, tmp_path / "ra") == []
     assert "CAPTCHA" in render(kq, tmp_path / "ra", video.name).read_text()
+
+
+class _NguonLan:
+    """Hop 1 trả kết quả; từ lượt thứ `loi_tu` ném lỗi `loi`. Đếm cả lượt ném lỗi."""
+
+    def __init__(self, loi, loi_tu=2):
+        self.loi, self.loi_tu, self.thu, self.da_mo = loi, loi_tu, 0, 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        pass
+
+    def tim(self, tv):
+        self.thu += 1
+        self.da_mo += 1
+        if self.thu >= self.loi_tu:
+            raise self.loi
+        return [_uv(v, tv.text) for v in HOP1], ""
+
+
+def test_captcha_o_hop2_sau_khi_hop1_co_ket_qua_thi_khong_xuat_link(gia, tmp_path):
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    _, video = gia
+    ra = tmp_path / "ra"
+    kq = luong.chay(video, ra, tao_nguon=lambda: _NguonLan(BiCaptcha("captcha")), so_truy_van=1, so_hop=2,
+                    bao=lambda s: None)
+    assert kq.ung_vien and kq.tin_duoc and kq.bi_captcha
+    assert luong.ghi_links(kq, ra) == [] and not list(ra.glob("links*.txt"))
+
+
+def test_dung_vi_thi_khong_chay_hop_sau(gia, tmp_path):
+    from tiktok_music_downloader.tim_trend.nguon_tim import HetLuot
+    _, video = gia
+    nguon = _NguonLan(HetLuot("het"), loi_tu=2)
+    luong.chay(video, tmp_path / "ra", tao_nguon=lambda: nguon, so_truy_van=3, so_hop=3, bao=lambda s: None)
+    assert nguon.thu == 2   # 1 lượt được + 1 lượt hết; không thử thêm ở hop sau
+
+
+def test_loi_mo_trang_giu_ket_qua_hop_truoc_va_khong_xuat_link(gia, tmp_path):
+    from tiktok_music_downloader.tim_trend.nguon_tim import LoiMoTrang
+    _, video = gia
+    ra = tmp_path / "ra"
+    kq = luong.chay(video, ra, tao_nguon=lambda: _NguonLan(LoiMoTrang("timeout")), so_truy_van=1, so_hop=2,
+                    bao=lambda s: None)
+    assert kq.loi_trang and len(kq.ung_vien) == 4
+    assert luong.ghi_links(kq, ra) == []
+
+
+def test_chay_lai_xoa_links_va_khung_cu(gia, tmp_path):
+    """Review 23/10 H1: lần 1 ra link, lần 2 captcha ⇒ links*.txt cũ không được nằm lại."""
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    _, video = gia
+    ra = tmp_path / "ra"
+    kq1 = luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    kq1.ung_vien += [dict(kq1.ung_vien[0], url=f"https://www.tiktok.com/@a/video/{7 * 10**18 + i}") for i in range(60)]
+    assert len(luong.ghi_links(kq1, ra)) == 3
+    (ra / "khung" / "cu-tu-lan-truoc.jpg").write_bytes(b"x")
+
+    class _Cap(_NguonGia):
+        def tim(self, tv):
+            raise BiCaptcha("captcha")
+
+    kq2 = luong.chay(video, ra, tao_nguon=lambda: _Cap(), so_hop=1, bao=lambda s: None)
+    assert not list(ra.glob("links*.txt")) and not (ra / "khung" / "cu-tu-lan-truoc.jpg").exists()
+    assert luong.ghi_links(kq2, ra) == []

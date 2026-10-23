@@ -30,10 +30,19 @@ def test_tu_dom_chi_giu_link_video_chuan():
     assert ra[0].url == "https://www.tiktok.com/@saaart3/video/7697969447553813778"
 
 
+class _ChuotGia:
+    def __init__(self):
+        self.cuon = 0
+
+    def wheel(self, dx, dy):
+        self.cuon += 1
+
+
 class _TrangGia:
     def __init__(self, ket_qua):
         self.ket_qua = list(ket_qua)
         self.da_goto = []
+        self.mouse = _ChuotGia()
 
     def goto(self, url, **k):
         self.da_goto.append(url)
@@ -242,3 +251,81 @@ def test_profile_ben_duoc_dung_lai(monkeypatch, tmp_path):
         pass
     assert da_mo_thu_muc[0] == da_mo_thu_muc[1] == str(ben) and ben.is_dir()
     assert da_mo_thu_muc[2] != str(ben)
+
+
+def test_anh_giu_cho_data_bi_bo_va_trang_duoc_cuon(monkeypatch):
+    """Pha 4 23/10: thẻ chưa cuộn tới có img.src = 'data:…' ⇒ 88/181 ứng viên lỗi InvalidSchema lúc tải."""
+    dom = DOM_GD1 + [{"url": "https://www.tiktok.com/@z/video/7699000000000000009",
+                      "cover": "data:image/png;base64,iVBOR", "caption": "chưa tải lười"}]
+    assert "7699000000000000009" not in [u.video_id for u in tu_dom(dom, "q")]
+    t = _tim(monkeypatch, [dom])
+    t.tim(TruyVan("q", "cau_truc", "en"))
+    assert t._page.mouse.cuon >= 3
+
+
+def test_captcha_khong_bat_nham_caption_co_chu_captcha():
+    from tiktok_music_downloader.tim_trend.nguon_tim import la_captcha
+    assert not la_captcha("TikTok | Videos | how I solve every captcha in 2 seconds #captcha #lifehack")
+    assert la_captcha("TikTok | Videos", co_hop_captcha=True)
+    assert la_captcha("Log in | Drag the slider to fit the puzzle | Audio")
+
+
+def test_goto_loi_van_dem_luot_va_dung_sach(monkeypatch):
+    from tiktok_music_downloader.tim_trend.nguon_tim import LoiMoTrang
+    t = _tim(monkeypatch, [DOM_GD1])
+
+    def no(url, **k):
+        raise TimeoutError("Timeout 30000ms exceeded")
+
+    t._page.goto = no
+    with pytest.raises(LoiMoTrang):
+        t.tim(TruyVan("q", "cau_truc", "en"))
+    assert t.da_mo == 1
+
+
+def test_doc_trang_loi_luc_cho_captcha_thi_doc_lai(monkeypatch):
+    cap = {"items": [], "chu": "Drag the slider to fit the puzzle"}
+    t = _tim_cho(monkeypatch, [cap, RuntimeError("Execution context was destroyed"), {"items": DOM_GD1, "chu": "TikTok"}],
+                 cho_giai_giay=60)
+    goc = t._page.evaluate
+
+    def eval_co_loi(js):
+        muc = t._page.ket_qua[0]
+        if isinstance(muc, Exception):
+            t._page.ket_qua.pop(0)
+            raise muc
+        return goc(js)
+
+    t._page.evaluate = eval_co_loi
+    ra, _ = t.tim(TruyVan("q", "cau_truc", "en"))
+    assert len(ra) == 2 and t.da_mo == 1
+
+
+def test_profile_tam_bi_xoa_khi_dong(monkeypatch):
+    from pathlib import Path
+    tao = []
+
+    class _Ctx:
+        def new_page(self):
+            return object()
+
+        def close(self):
+            pass
+
+    class _Chromium:
+        def launch_persistent_context(self, thu_muc, **k):
+            tao.append(thu_muc)
+            (Path(thu_muc) / "Cookies").write_text("tiktok")
+            return _Ctx()
+
+    class _Pw:
+        chromium = _Chromium()
+
+        def stop(self):
+            pass
+
+    import playwright.sync_api as api
+    monkeypatch.setattr(api, "sync_playwright", lambda: type("S", (), {"start": lambda self: _Pw()})())
+    with ChromeTim(6, 0, bao=lambda s: None):
+        assert Path(tao[0]).is_dir()
+    assert not Path(tao[0]).exists()

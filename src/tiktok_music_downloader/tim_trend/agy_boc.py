@@ -91,6 +91,7 @@ def boc_truong(anh: list[Path], thu_muc_ra: Path, model: str = MODEL_MAC_DINH,
 def goi_y_tu_khoa(anh: list[Path], thu_muc_ra: Path, model: str = MODEL_MAC_DINH) -> list[TruyVan]:
     """Từ khoá chủ đề/sản phẩm EN/ES/PT do agy gợi ý từ khung video đầu vào (bổ sung cho nhóm cấu trúc tất định)."""
     dich = thu_muc_ra / "agy-tu-khoa.json"
+    dich.unlink(missing_ok=True)   # như boc_truong: lượt agy trượt không được đọc nhầm kết quả lượt trước
     prompt = (
         "Khong chay lenh shell. Khong hoi lai. "
         f"Dung tool doc file mo cac anh {' '.join(a.name for a in anh)} trong thu muc {anh[0].parent}/ "

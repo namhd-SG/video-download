@@ -16,7 +16,7 @@ from . import agy_boc, anh_bia, khung
 from .cham import NGUONG_MAC_DINH, ChuKy, chu_ky, hang
 from .khu_trung import MucKhuTrung, khu_trung
 from .mo_rong import sinh_mo_rong
-from .nguon_tim import BiCaptcha, HetLuot, UngVien
+from .nguon_tim import BiCaptcha, HetLuot, LoiMoTrang, UngVien
 from .truong import TruongAnh
 from .truy_van import TruyVan, sinh_truy_van
 
@@ -39,6 +39,7 @@ class KetQua:
     so_lan_mo_trang: int = 0
     dung_vi: str = ""                                         # lý do dừng sớm, nếu có
     bi_captcha: bool = False
+    loi_trang: bool = False
     tin_duoc: bool = True
 
     @property
@@ -77,11 +78,12 @@ def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq:
 
 
 def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van: int = 6, so_hop: int = 2,
-         gian_cach_anh: float = 2.0, model: str = agy_boc.MODEL_MAC_DINH,
+         gian_cach_anh: float = 4.0, model: str = agy_boc.MODEL_MAC_DINH,
          bao: Callable[[str], None] = bao_ngay) -> KetQua:
     kq = KetQua()
     ra.mkdir(parents=True, exist_ok=True)
     thu_khung, thu_bia = ra / "khung", ra / "bia"
+    don_dau_ra_cu(ra)
     bao("Đang trích khung video và nhờ agy đọc (≈1 phút)…")
     ds_khung = khung.trich_khung(video, thu_khung)
     if not ds_khung:
@@ -104,6 +106,7 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
                 except HetLuot as exc:
                     kq.dung_vi = str(exc)
                     kq.bi_captcha = isinstance(exc, BiCaptcha)
+                    kq.loi_trang = isinstance(exc, LoiMoTrang)
                     break
                 kq.truy_van.append({**asdict(tv), "hop": hop, "so_link": len(tim_duoc), "ghi_chu": ghi_chu})
                 bao(f"[hop {hop}] tìm '{tv.text}': {len(tim_duoc)} link {('(' + ghi_chu + ')') if ghi_chu else ''}")
@@ -134,9 +137,19 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
     return kq
 
 
+def don_dau_ra_cu(ra: Path) -> None:
+    """Xoá `links*.txt` và khung của lần chạy trước trong cùng `--ra`: lần này thoát 2/3/4 thì file cũ KHÔNG được nằm lại
+    trông như kết quả mới (review 23/10 H1: lần 1 ra 60 link, lần 2 captcha ⇒ 3 file cũ còn nguyên)."""
+    for p in ra.glob("links*.txt"):
+        p.unlink()
+    shutil.rmtree(ra / "khung", ignore_errors=True)
+
+
 def ghi_links(kq: KetQua, ra: Path, nguong: frozenset[str] = NGUONG_MAC_DINH) -> list[Path]:
     """`links.txt` (mọi link đạt) + `links-NN.txt` mỗi file ≤50 khi vượt trần job. KHÔNG ghi gì nếu chạy không tin được."""
-    if not kq.tin_duoc or kq.rong or kq.bi_captcha:
+    for p in ra.glob("links*.txt"):
+        p.unlink()
+    if not kq.tin_duoc or kq.rong or kq.bi_captcha or kq.loi_trang:
         return []
     links = [u["url"] for u in kq.giu(nguong)]
     tep = [ra / "links.txt"]
