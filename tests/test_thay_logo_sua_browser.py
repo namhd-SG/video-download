@@ -208,3 +208,33 @@ def test_video_may_chua_de_gi_xem_ban_goc_o_ba_cho(may_chu, trinh_duyet):  # noq
     p.wait_for_function("TL_SUA.trangThai().daLuu.length === 1")
     assert _ca(tmp, _ID["B-khong-chac"])[-1]["mau_loi"] == "may_khong_thay"
     assert loi_js == []
+
+
+def test_xong_doc_lai_so_ca_truoc_khi_danh_dat(may_chu, trinh_duyet):  # noqa: F811
+    """Ca khoanh được lưu ở NƠI KHÁC sau khi trang đã tải (tab thứ hai) ⇒ bấm "Xong — đánh Đạt" phải đọc lại và KHÔNG ghi Đạt."""
+    goc, tmp = may_chu
+    p, loi_js, yeu_cau = _mo_sua(trinh_duyet, goc, "C-chac-1", khung=0)
+    conn = nhat_ky.mo(tmp / "thay_logo_log.db")
+    try:  # C-chac-1 có thể đã có ca từ test trước ⇒ đưa về 0 ca chờ để trang mời "đánh Đạt", rồi mồi 1 ca SAU khi trang tải
+        log_id = conn.execute("SELECT video_log_id FROM tl_job_video WHERE id=?", (_ID["C-chac-1"],)).fetchone()[0]
+        conn.execute("UPDATE tl_ca_khoanh SET trang_thai='huy' WHERE video_log_id=?", (log_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    p.reload()
+    _cho_khung(p)
+    x = p.locator("#sua-xong")
+    assert x.inner_text() == "Xong — đánh Đạt"
+    conn = nhat_ky.mo(tmp / "thay_logo_log.db")
+    try:
+        from tiktok_music_downloader.thay_logo import khoanh
+        khoanh.ghi_ca(conn, video_log_id=log_id, job_video_id=_ID["C-chac-1"], member="tab-khac@dev.local", khung=0,
+                      vung=(1, 1, 10, 10), mau_loi="lo_mat_dau", chan_cu=None, box_may=None)
+    finally:
+        conn.close()
+    yeu_cau.clear()
+    x.click()
+    p.wait_for_function("document.getElementById('sua-xong').textContent === 'Xong — về Lô'")
+    assert "vừa được lưu ở nơi khác" in p.locator("#sua-trang").inner_text()
+    assert not [r for r in yeu_cau if r.url.endswith("/danh-gia")] and "sua=" in p.url  # không ghi Đạt, chưa rời trang
+    assert loi_js == []

@@ -28,6 +28,18 @@ nút sang Sửa đang MỜ.
    **"Xong — về Lô"** khi đã có ô khoanh hoặc video `cho_nguoi` ⇒ không ghi gì. Test cả 2 nhánh.
 Nút chính giữ chữ "Lưu chỗ khoanh" (bàn giao 67543).
 
+## ĐP CHỐT 24/10 00:24 — chặn "đánh Đạt" khi còn ca khoanh chờ sửa
+- `/dai` thêm `so_ca_cho`; màn Sửa chỉ mời "Xong — đánh Đạt" khi `so_ca_cho == 0` và lượt này chưa lưu ô nào; NGAY trước khi gửi Đạt đọc lại
+  `/dai` (ca có thể vừa lưu ở tab khác) — còn ca ⇒ không gửi, đổi nút "Xong — về Lô".
+- KHÔNG chặn phía máy chủ ở PR này (phương án c): Đạt/phím D ở trang cũ là hành động tường minh của người duyệt; chặn cứng là quyết định sản phẩm.
+
+## Câu chờ user
+- **Khi video còn chỗ khoanh chờ sửa, trang cũ có được đánh Đạt cả video không?**
+  · (a) Không: máy chủ trả mã riêng 423 "Video còn N chỗ khoanh chờ sửa — chưa đánh Đạt được", trang cũ thêm 1 dòng câu báo. Hệ quả: không ai
+    ghi Đạt được video còn chỗ lộ đã khoanh; mất lựa chọn "chỗ khoanh nhỏ, vẫn cho Đạt" cho tới khi ca được sửa/huỷ.
+  · (c) Có (hiện trạng): chỉ màn Sửa tránh mời Đạt. Hệ quả: người duyệt ở trang cũ (hoặc tab khác) vẫn ghi Đạt được video còn ca khoanh chờ —
+    tường minh, nhưng ca khoanh vẫn nằm chờ trong khi video đã "Đạt".
+
 ## (Câu hỏi gốc gửi ĐP — đã chốt ở trên)
 1. **Box máy theo khung — THIẾU nguồn.** Khung vàng đứt + ô phóng to cần box máy ở khung đang xem; khi bấm J/L khung đổi ⇒ cần tra theo khung.
    Hiện KHÔNG route nào trả box (chỉ `POST /khoanh` trả `box_may` SAU khi lưu). Đề xuất: route ĐỌC mới

@@ -172,6 +172,13 @@
     const ve = () => { const u = new URL(location.href); u.searchParams.delete("sua"); u.searchParams.delete("khung"); location.assign(u); };
     if (!S.danhDat) { ve(); return; }
     try {
+      // Đọc LẠI số ca chờ ngay trước khi ghi Đạt: ca có thể vừa được lưu ở tab/trang khác sau khi trang này tải.
+      const moi = await L().json(L().api(S.v.id, "dai"));
+      if (moi.so_ca_cho > 0) {
+        S.dai.so_ca_cho = moi.so_ca_cho; capNhatNut();
+        $("sua-trang").textContent = `Video đã có ${moi.so_ca_cho} chỗ khoanh (vừa được lưu ở nơi khác) — chưa đánh Đạt. Bấm lại để về Lô.`;
+        return;
+      }
       await L().json(L().api(S.v.id, "danh-gia"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ket_qua: "dat" }) });
       ve();
     } catch (e) { L().baoLoi("Không ghi được Đạt, thử lại."); }
