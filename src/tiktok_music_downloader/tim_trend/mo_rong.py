@@ -15,6 +15,7 @@ TU_DUNG = frozenset("""
 tutorial cara buat membuat pembuatan gratis how to make prompt fyp fypシ viral foryou foryoupage xuhuong trending
 capcut capcutpioneer capcutnow capcutforus pioneertemplate template di de la el the a an and of in on with for
 y e o do da para com untuk dan yang ini itu dengan jadi
+suara asli original sound som created by
 """.split())
 SO_CAPTION_TOI_THIEU = 2
 DAI_CUM_TOI_DA = 3
@@ -27,7 +28,8 @@ def _tu(caption: str) -> list[str]:
 
 
 def _cum(tu: list[str]) -> set[str]:
-    sach = [w for w in tu if not w.startswith(("#", "@"))]
+    # Bỏ hashtag/@ và mẩu 1 ký tự (vd "s" từ "©s" / "'s") — Pha 4 23/10 sinh truy vấn rác "s suara asli".
+    sach = [w for w in tu if not w.startswith(("#", "@")) and (len(w) > 1 or w.isdigit())]
     ra: set[str] = set()
     for dai in range(1, DAI_CUM_TOI_DA + 1):
         for i in range(len(sach) - dai + 1):

@@ -55,3 +55,12 @@ def test_mo_rong_mot_caption_le_khong_sinh_gi():
 def test_mo_rong_bo_truy_van_da_dung():
     texts = [t.text for t in sinh_mo_rong(CAPTIONS_GD1, da_dung={"Tren AI ubah foto menjadi kolase 7 pose"}, toi_da=50)]
     assert "tren ai ubah foto menjadi kolase 7 pose" not in texts
+
+
+def test_mo_rong_bo_original_sound_va_manh_1_ky_tu():
+    """Pha 4 23/10: caption 'Original sound / suara asli - X' và 'created by' sinh truy vấn rác 's suara asli', 'pose created by'."""
+    caps = ["kolase 7 pose ©s suara asli - Rina", "kolase 7 pose 's suara asli - Dewi",
+            "7 pose created by @aa", "7 pose created by @bb"]
+    texts = [t.text for t in sinh_mo_rong(caps, set(), toi_da=20)]
+    assert "kolase 7 pose" in texts
+    assert not any(w in t.split() for t in texts for w in ("s", "suara", "asli", "created", "by"))

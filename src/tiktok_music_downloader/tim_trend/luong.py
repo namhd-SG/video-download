@@ -20,6 +20,11 @@ from .nguon_tim import BiCaptcha, HetLuot, UngVien
 from .truong import TruongAnh
 from .truy_van import TruyVan, sinh_truy_van
 
+def bao_ngay(chu: str) -> None:
+    """In và đẩy ra ngay: chạy với stdout chuyển hướng thì print bị gom, người ngồi máy tưởng công cụ treo (23/10)."""
+    print(chu, flush=True)
+
+
 LINK_MOI_KHOI = 50   # trần link/job của Video Desk (`web/app.py` MAX_LINK_MOT_JOB)
 _DANG_CAU_TRUC = re.compile(r"\b\d+\s*poses?\b|kolase|collage", re.I)
 
@@ -59,6 +64,7 @@ def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq:
         nhom = ids[k:k + co]
         ctrl = thu_muc / f"ctrl-{len(kq.lo_ctrl)}.jpg"
         shutil.copyfile(ctrl_goc, ctrl)
+        print(f"agy chấm lô {len(kq.lo_ctrl) + 1}: {len(nhom)} ảnh bìa (≈1–2 phút)…", flush=True)
         truong = agy_boc.boc_truong([bia[i] for i in nhom] + [ctrl], thu_muc, model, ten=f"agy-truong-{ctrl.stem}")
         h_ctrl = hang(truong[ctrl.stem], ck) if ctrl.stem in truong else None
         kq.lo_ctrl.append({"lo": len(kq.lo_ctrl), "hang_ctrl": h_ctrl})
@@ -72,10 +78,11 @@ def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq:
 
 def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van: int = 6, so_hop: int = 2,
          gian_cach_anh: float = 2.0, model: str = agy_boc.MODEL_MAC_DINH,
-         bao: Callable[[str], None] = print) -> KetQua:
+         bao: Callable[[str], None] = bao_ngay) -> KetQua:
     kq = KetQua()
     ra.mkdir(parents=True, exist_ok=True)
     thu_khung, thu_bia = ra / "khung", ra / "bia"
+    bao("Đang trích khung video và nhờ agy đọc (≈1 phút)…")
     ds_khung = khung.trich_khung(video, thu_khung)
     if not ds_khung:
         raise RuntimeError("không trích được khung nào từ video đầu vào")
@@ -99,11 +106,13 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
                     kq.bi_captcha = isinstance(exc, BiCaptcha)
                     break
                 kq.truy_van.append({**asdict(tv), "hop": hop, "so_link": len(tim_duoc), "ghi_chu": ghi_chu})
+                bao(f"[hop {hop}] tìm '{tv.text}': {len(tim_duoc)} link {('(' + ghi_chu + ')') if ghi_chu else ''}")
                 for u in tim_duoc:
                     if u.video_id not in theo_id:
                         theo_id[u.video_id] = u
                         moi.append(u)
             kq.so_lan_mo_trang = getattr(nguon, "da_mo", 0)
+            bao(f"[hop {hop}] tải {len(moi)} ảnh bìa mới (≈{len(moi) * gian_cach_anh:.0f} giây; cửa sổ Chrome đứng yên lúc này)…")
             bia, loi = anh_bia.tai_anh_bia([(u.video_id, u.cover_url) for u in moi], thu_bia, gian_cach_anh)
             kq.bo.update(loi)
             giu, bo = khu_trung([MucKhuTrung(u.video_id, bia[u.video_id]) for u in moi if u.video_id in bia])

@@ -82,7 +82,7 @@ def tu_dom(muc: list[dict], truy_van: str) -> list[UngVien]:
 class ChromeTim:
     """Dùng trong `with`: mở MỘT cửa sổ Chrome cho cả lần chạy, đóng khi ra khỏi khối (kể cả khi lỗi)."""
 
-    def __init__(self, tran_luot: int, gian_cach: float, bao: Callable[[str], None] = print,
+    def __init__(self, tran_luot: int, gian_cach: float, bao: Callable[[str], None] = lambda s: print(s, flush=True),
                  chan_doan: Path | None = None, profile_ben: Path | None = None, cho_giai_giay: int = 0):
         """`profile_ben`: thư mục profile Chrome dùng lại giữa các lần chạy (cookie sau khi người giải captcha còn giữ);
         None = profile trắng mỗi lần (mặc định). `cho_giai_giay` > 0: gặp captcha thì CHỜ người giải trong cửa sổ tối đa
