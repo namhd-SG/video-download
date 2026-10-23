@@ -121,6 +121,48 @@ def test_moc_con_ma_mat_mot_anh_thi_coi_nhu_chua_co(tmp_path):
     assert soi_nhanh.da_co(tmp_path, 7) is None
 
 
+def test_moc_cu_khong_song_qua_lan_dung_lai_truot_giua_chung(tmp_path):
+    """Mốc cũ còn, mất 1 ảnh ⇒ dựng lại; lần dựng lại ghi xong ảnh 0, 1 rồi trượt ở ảnh 2 ⇒ trên đĩa đủ 3 jpg (ảnh 2 CŨ) — mốc cũ
+    mà còn thì `da_co` sẽ trả bộ ảnh trộn cũ/mới."""
+    ff = _ffmpeg()
+    _video(khoanh.duong_video(tmp_path, 7, "ra"))
+    assert soi_nhanh.dung_anh(tmp_path, 7, [{"khung": k, "ban": "ra", "cat": None} for k in (1, 2, 3)], ff, 30.0)
+    (soi_nhanh.thu_muc(tmp_path, 7) / "soi-1.jpg").unlink()
+    lai = [{"khung": 4, "ban": "ra", "cat": None}, {"khung": 5, "ban": "ra", "cat": None}, {"khung": 6, "ban": "goc", "cat": None}]
+    assert soi_nhanh.dung_anh(tmp_path, 7, lai, ff, 30.0) is False
+    assert all((soi_nhanh.thu_muc(tmp_path, 7) / f"soi-{i}.jpg").exists() for i in range(3))
+    assert soi_nhanh.da_co(tmp_path, 7) is None
+
+
+def test_worker_va_route_dung_cung_luc_chi_dung_mot_lan(tmp_path, monkeypatch):
+    """Video vừa xong: job đã báo `xong` trước khi worker dựng ⇒ người mở `/soi` đúng lúc đó gọi `dung_cho_video` song song với
+    worker (cùng tiến trình). Khoá theo video + kiểm lại mốc ⇒ một lần dựng."""
+    vao, tha, goi = threading.Event(), threading.Event(), []
+
+    def cham(conn, data, video_log_id, trang_thai, ffmpeg):
+        goi.append(threading.current_thread().name)
+        vao.set()
+        tha.wait(5)
+        d = soi_nhanh.thu_muc(data, video_log_id)
+        d.mkdir(parents=True, exist_ok=True)
+        for i in range(3):
+            (d / f"soi-{i}.jpg").write_bytes(b"\xff\xd8")
+        (d / soi_nhanh.TEN_MOC).write_text(json.dumps({"anh": [{"i": i, "khung": i, "ban": "ra", "cat": None} for i in range(3)]}))
+        return True
+    monkeypatch.setattr(soi_nhanh, "_dung_cho_video", cham)
+    kq = []
+    ts = [threading.Thread(target=lambda: kq.append(soi_nhanh.dung_cho_video(None, tmp_path, 9, "xong", "ff")), name=n)
+          for n in ("worker", "route")]
+    ts[0].start()
+    assert vao.wait(5)
+    ts[1].start()
+    time.sleep(0.5)  # bên thứ hai tới TRONG LÚC bên thứ nhất còn dựng
+    tha.set()
+    for t in ts:
+        t.join(10)
+    assert goi == ["worker"] and kq == [True, True]
+
+
 def test_qua_tran_thoi_gian_thi_bo_khong_ghi_moc(tmp_path, monkeypatch):
     ff = _ffmpeg()
     _video(khoanh.duong_video(tmp_path, 7, "ra"))

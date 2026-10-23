@@ -25,15 +25,6 @@ TRANG_THAI_KHOANH_DUOC = ("xong", "cho_nguoi")
 TRAN_GIAY_TRICH_KHUNG = 20
 TRAN_FFMPEG_CUNG_LUC = 2  # trích khung chung máy với worker render: không để trang bắn hàng loạt ffmpeg
 _KHE_FFMPEG = threading.BoundedSemaphore(TRAN_FFMPEG_CUNG_LUC)
-_KHOA_SOI: dict[int, threading.Lock] = {}
-_KHOA_BANG_SOI = threading.Lock()
-
-
-def _khoa_soi(video_log_id: int) -> threading.Lock:
-    """Một khoá cho mỗi video: hai request dựng lười cùng video ⇒ một lần dựng. Bảng tăng theo số video được mở từ lúc tiến trình
-    bật (một int + một Lock mỗi video) — khởi động lại là sạch."""
-    with _KHOA_BANG_SOI:
-        return _KHOA_SOI.setdefault(video_log_id, threading.Lock())
 
 
 class Khoanh(BaseModel):
@@ -132,8 +123,9 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
 
     @app.get("/api/thay-logo/videos/{vid}/soi")
     def soi(vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> dict:
-        """3 ảnh soi nhanh của video. Worker dựng sẵn; video cũ / dựng trượt ⇒ dựng LƯỜI ở đây, khoá theo video (hai người mở cùng
-        lúc chỉ dựng một lần) và giữ một khe ffmpeg chung với trích khung. `co=false` khi chưa đủ ảnh — không bao giờ trả 2/3."""
+        """3 ảnh soi nhanh của video. Worker dựng sẵn; video cũ / dựng trượt ⇒ dựng LƯỜI ở đây, dưới khoá theo video dùng chung với
+        worker (hai người mở cùng lúc, hoặc mở đúng lúc worker đang dựng ⇒ một lần dựng) và giữ một khe ffmpeg chung với trích khung.
+        Khoá lấy TRƯỚC khe: người chờ khoá không chiếm khe. `co=false` khi chưa đủ ảnh — không bao giờ trả 2/3."""
         conn = mo()
         try:
             r, t = _nap(conn, vid, email)
@@ -141,7 +133,7 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
                 return {"co": False, "anh": []}
             meta = soi_nhanh.da_co(_data(), t["id"])
             if meta is None and khoanh.duong_video(_data(), t["id"], "goc").exists():
-                with _khoa_soi(t["id"]):
+                with soi_nhanh.khoa(t["id"]):
                     meta = soi_nhanh.da_co(_data(), t["id"])  # người giữ khoá trước có thể đã dựng xong
                     if meta is None:
                         ffmpeg = _ffmpeg()

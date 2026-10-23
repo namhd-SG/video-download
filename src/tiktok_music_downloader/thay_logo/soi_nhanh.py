@@ -13,12 +13,16 @@ import json
 import logging
 import os
 import subprocess
+import tempfile
+import threading
 import time
 from pathlib import Path
 
 from . import khoanh
 
 log = logging.getLogger("videodl.thay_logo")
+_KHOA: dict[int, threading.RLock] = {}
+_KHOA_BANG = threading.Lock()
 
 SO_ANH = 3
 TI_LE_KHUNG_XAM = (0.1, 0.5, 0.9)
@@ -27,9 +31,9 @@ RONG_ANH = 480         # rộng ảnh soi: lưới 3 ảnh/dòng trên màn Lô 
 CAO_ANH = 360          # 4:3 — ảnh cắt quanh box (video `xong`); ảnh cả khung (video `cho_nguoi`) giữ tỉ lệ video
 TEN_MOC = "soi.json"
 # Trần cả 3 lệnh ffmpeg (-ss trước -i, 1 khung/lệnh). Đo 23/10 trên máy dev, bản sao 2 video prod 720×1280 (714 và 1537 khung):
-# cả 3 ảnh 0,13–0,19 s/video (5 lần mỗi video) — chưa đo trên ca-n lúc đang render. Quá trần thì bỏ (job vẫn xong, route dựng
-# lười lại khi có người mở).
-TRAN_GIAY_DUNG = 30
+# cả 3 ảnh 0,12–0,19 s/video (5 lần mỗi video) — chưa đo trên ca-n lúc đang render. Quá trần thì bỏ (job vẫn xong, route dựng
+# lười lại khi có người mở). Giữ DƯỚI thời gian `/khung-tai` chờ khe ffmpeg (20 s): lượt dựng lười giữ một khe suốt lượt.
+TRAN_GIAY_DUNG = 15
 
 
 def _box_de(track: list[list[dict]], tt_vet: dict) -> dict[int, tuple]:
@@ -98,10 +102,24 @@ def da_co(data: Path, video_log_id: int) -> dict | None:
     return meta
 
 
+def khoa(video_log_id: int) -> threading.RLock:
+    """Khoá dựng theo video, dùng chung cho luồng worker và luồng request (cùng tiến trình web). Video vừa xong: job đã báo `xong`
+    trước khi worker dựng, nên một người mở `/soi` đúng lúc đó sẽ dựng song song — không khoá thì hai bên ghi đè ảnh của nhau.
+    RLock: route giữ khoá để kiểm lại mốc rồi gọi `dung_cho_video` (lấy lại cùng khoá) trong cùng luồng. Bảng tăng theo số video
+    được dựng từ lúc tiến trình bật (một int + một RLock mỗi video) — khởi động lại là sạch."""
+    with _KHOA_BANG:
+        return _KHOA.setdefault(video_log_id, threading.RLock())
+
+
 def _ghi_nguyen_khoi(dich: Path, du_lieu: bytes) -> None:
-    tam = dich.with_name(f".{dich.name}.tam")
-    tam.write_bytes(du_lieu)
-    os.replace(tam, dich)  # cùng thư mục ⇒ nguyên khối: route không bao giờ đọc file dở
+    fd, tam = tempfile.mkstemp(dir=dich.parent, prefix=f".{dich.name}.", suffix=".tam")  # tên riêng mỗi lần ghi
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(du_lieu)
+        os.replace(tam, dich)  # cùng thư mục ⇒ nguyên khối: route không bao giờ đọc file dở
+    except BaseException:
+        Path(tam).unlink(missing_ok=True)
+        raise
 
 
 def dung_anh(data: Path, video_log_id: int, chon: list[dict], ffmpeg: str, fps: float | None) -> bool:
@@ -111,6 +129,7 @@ def dung_anh(data: Path, video_log_id: int, chon: list[dict], ffmpeg: str, fps: 
         log.info("thay logo: video %s không đủ khung để dựng ảnh soi (%d)", video_log_id, len(chon))
         return False
     d = thu_muc(data, video_log_id)
+    (d / TEN_MOC).unlink(missing_ok=True)  # mốc cũ (ảnh đã mất một phần) không được sống qua một lượt dựng lại trượt giữa chừng
     bat_dau = time.monotonic()
     for i, c in enumerate(chon):
         nguon = khoanh.duong_video(data, video_log_id, c["ban"])
@@ -142,7 +161,15 @@ def dung_anh(data: Path, video_log_id: int, chon: list[dict], ffmpeg: str, fps: 
 
 
 def dung_cho_video(conn, data: Path, video_log_id: int, trang_thai: str, ffmpeg: str) -> bool:
-    """Nạp nhật ký của video (kích thước, fps, track, trạng thái vết) rồi dựng — dùng chung cho worker và đường dựng lười của route."""
+    """Nạp nhật ký của video (kích thước, fps, track, trạng thái vết) rồi dựng — dùng chung cho worker và đường dựng lười của route.
+    Dưới khoá theo video; bên tới sau thấy mốc đã đủ thì không dựng lại."""
+    with khoa(video_log_id):
+        if da_co(data, video_log_id) is not None:
+            return True
+        return _dung_cho_video(conn, data, video_log_id, trang_thai, ffmpeg)
+
+
+def _dung_cho_video(conn, data: Path, video_log_id: int, trang_thai: str, ffmpeg: str) -> bool:
     t = conn.execute("SELECT kho, fps, so_khung, duong_dan_track FROM tl_video WHERE id=?", (video_log_id,)).fetchone()
     if t is None:
         return False
