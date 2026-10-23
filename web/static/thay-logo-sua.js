@@ -56,7 +56,7 @@
     const them = (vung, lop) => { const a = oTrai(vung), b = oZoom(vung, z); a.className = b.className = lop; trai.append(a); zoom.append(b); };
     if (S.box) them(S.box, "sua-o sua-o-may");
     for (const o of S.daLuu) if (o.khung === S.khung && o.vung) them(o.vung, "sua-o sua-o-luu");
-    for (const o of S.cho) them(o, "sua-o sua-o-cho");
+    for (const o of S.cho) if (o.khung === S.khung) them(o.vung, "sua-o sua-o-cho");
     if (S.dang) them(S.dang, "sua-o sua-o-cho");
     const img = $("sua-zoom-anh");
     Object.assign(img.style, { width: `${S.W * z.s}px`, left: `${z.ox}px`, top: `${z.oy}px` });
@@ -72,7 +72,7 @@
       const tha = (ev) => {
         lop.removeEventListener("pointermove", keo); lop.removeEventListener("pointerup", tha);
         const o = chuNhat(a, quyDoi(ev)); S.dang = null;
-        if (o[2] >= CANH_TOI_THIEU_PX && o[3] >= CANH_TOI_THIEU_PX) S.cho.push(o);
+        if (o[2] >= CANH_TOI_THIEU_PX && o[3] >= CANH_TOI_THIEU_PX) S.cho.push({ khung: S.khung, vung: o });  // gắn khung nơi vẽ
         veLop();
       };
       lop.addEventListener("pointermove", keo); lop.addEventListener("pointerup", tha);
@@ -80,8 +80,10 @@
   }
   const kep = (v, max) => Math.min(max, Math.max(0, v));
   function chuNhat([x1, y1], [x2, y2]) {
-    const x = kep(Math.min(x1, x2), S.W), y = kep(Math.min(y1, y2), S.H);
-    return [Math.round(x), Math.round(y), Math.round(kep(Math.max(x1, x2), S.W) - x), Math.round(kep(Math.max(y1, y2), S.H) - y)];
+    // Làm tròn từng MÉP trước rồi lấy hiệu: làm tròn x và w riêng có thể ra x + w = cạnh + 1 (x = 10,5 ⇒ 11 + 54 = 65 > 64) ⇒ máy chủ trả 400.
+    const x0 = Math.round(kep(Math.min(x1, x2), S.W)), y0 = Math.round(kep(Math.min(y1, y2), S.H));
+    const x1r = Math.round(kep(Math.max(x1, x2), S.W)), y1r = Math.round(kep(Math.max(y1, y2), S.H));
+    return [x0, y0, x1r - x0, y1r - y0];
   }
   const tuTrai = (e) => { const r = $("sua-lop-trai").getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * S.W, ((e.clientY - r.top) / r.height) * S.H]; };
   const tuZoom = (e) => { const z = phepZoom(); return [(e.clientX - z.r.left - z.ox) / z.s, (e.clientY - z.r.top - z.oy) / z.s]; };
@@ -91,7 +93,8 @@
     const n = S.dai.so_khung || 1;
     S.khung = kep(Math.round(k), n - 1);
     const u = new URL(location.href); u.searchParams.set("khung", S.khung); history.replaceState(null, "", u);
-    veAnh(); veTieuDe();  // tiêu đề theo khung mới NGAY — không chờ box
+    S.box = null; S.zoom = [0, 0, S.W, S.H];
+    veAnh(); veTieuDe(); veLop();  // khung mới NGAY: tiêu đề, ô đã lưu của khung này — box cũ đã bỏ, chờ box mới
     const lan = ++S.lan;  // J/L bấm liên tục: chỉ nhận box của lần gọi MỚI nhất
     let box = null;
     try { box = (await L().json(L().api(S.v.id, `box/${S.khung}`))).box_may; } catch (e) { box = null; }
@@ -123,7 +126,7 @@
   function sangCho(huong) {
     const ds = S.choXem.map((c) => c.khung);
     const k = huong > 0 ? ds.find((x) => x > S.khung) : [...ds].reverse().find((x) => x < S.khung);
-    if (k == null) { if (huong > 0) { $("sua-xong").focus(); $("sua-trang").textContent = "Hết chỗ cần xem — bấm nút Xong bên dưới."; } return; }
+    if (k == null) { if (huong > 0) $("sua-trang").textContent = "Hết chỗ cần xem — bấm nút Xong bên dưới."; return; }  // KHÔNG focus nút Xong
     denKhung(k);
   }
 
@@ -137,12 +140,12 @@
     const nut = $("sua-luu"); nut.disabled = true;
     try {
       while (S.cho.length) {
-        const o = S.cho[0];
-        const r = await luu({ khung: S.khung, vung: { x: o[0] / S.W, y: o[1] / S.H, w: o[2] / S.W, h: o[3] / S.H } });
-        S.daLuu.push({ khung: S.khung, vung: o, mau_loi: r.mau_loi }); S.cho.shift();
+        const { khung, vung: o } = S.cho[0];
+        const r = await luu({ khung, vung: { x: o[0] / S.W, y: o[1] / S.H, w: o[2] / S.W, h: o[3] / S.H } });
+        S.daLuu.push({ khung, vung: o, mau_loi: r.mau_loi }); S.cho.shift();
       }
-      veTrang();
     } catch (e) { L().baoLoi("Không lưu được chỗ khoanh, thử lại."); }
+    finally { veTrang(); }  // lỗi giữa chừng: các ô đã lưu vẫn phải hiện
     veLop();
   }
   async function giuGoc() {
@@ -200,7 +203,12 @@
   function thaPhim(e) { if (S && e.code === "Space" && S.xemGoc) { S.xemGoc = false; veAnh(); } }
 
   // ---------------------------------------------------------------- dựng màn
-  function nut(id, chu, lop) { const b = el("button", lop || "lo-nut", chu); b.type = "button"; b.id = id; return b; }
+  function nut(id, chu, lop) {
+    const b = el("button", lop || "lo-nut", chu); b.type = "button"; b.id = id;
+    // Bấm chuột xong thì nhả focus: Enter/Space sau đó là PHÍM TẮT, không bấm lặp nút vừa click (Enter trên nút Xong = ghi Đạt).
+    b.addEventListener("click", (e) => { if (e.detail > 0) b.blur(); });
+    return b;
+  }
 
   async function mo(v, dai, jobId) {
     const hop = $("lo-sua");

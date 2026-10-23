@@ -238,3 +238,90 @@ def test_xong_doc_lai_so_ca_truoc_khi_danh_dat(may_chu, trinh_duyet):  # noqa: F
     assert "vừa được lưu ở nơi khác" in p.locator("#sua-trang").inner_text()
     assert not [r for r in yeu_cau if r.url.endswith("/danh-gia")] and "sua=" in p.url  # không ghi Đạt, chưa rời trang
     assert loi_js == []
+
+
+# ---------------------------------------------------------------- lỗ agy R1b (L1–L4)
+def test_keo_vuot_mep_phai_voi_toa_do_le_van_luu_duoc(may_chu, trinh_duyet):  # noqa: F811
+    """L1: làm tròn x và w riêng có thể ra x + w = cạnh + 1 ⇒ máy chủ 400. Kéo từ x lẻ ,5 tới QUÁ mép phải."""
+    goc, _ = may_chu
+    p, loi_js, yeu_cau = _mo_sua(trinh_duyet, goc, "A-hai-cho", khung=8)
+    _keo(p, "sua-lop-trai", [10.5, 20.5, 70, 10])  # mép phải 80,5 > 64 ⇒ kẹp về 64
+    p.get_by_role("button", name="Lưu chỗ khoanh").click()
+    p.wait_for_function("TL_SUA.trangThai().cho.length === 0 && TL_SUA.trangThai().daLuu.length === 1")
+    v = _post_khoanh(yeu_cau)[-1]["vung"]
+    assert v["x"] + v["w"] <= 1 + 1e-9 and v["y"] + v["h"] <= 1 + 1e-9
+    assert p.evaluate("document.getElementById('lo-loi').hidden") and loi_js == []
+
+
+def test_o_chua_luu_giu_khung_noi_ve_khi_doi_khung(may_chu, trinh_duyet):  # noqa: F811
+    """L2a: khoanh ở khung 5, bấm J sang khung 4 rồi Lưu ⇒ ca phải ghi KHUNG 5, không phải khung đang xem."""
+    goc, _ = may_chu
+    p, loi_js, yeu_cau = _mo_sua(trinh_duyet, goc, "C-chac-1", khung=5)
+    _keo(p, "sua-lop-trai", [5, 5, 20, 20])
+    p.keyboard.press("j")
+    p.wait_for_function("TL_SUA.trangThai().khung === 4")
+    assert p.locator("#sua-lop-trai .sua-o-cho").count() == 0  # ô của khung 5 không vẽ đè lên khung 4
+    p.get_by_role("button", name="Lưu chỗ khoanh").click()
+    p.wait_for_function("TL_SUA.trangThai().cho.length === 0")
+    assert [g["khung"] for g in _post_khoanh(yeu_cau)] == [5]
+    assert loi_js == []
+
+
+def test_doi_khung_bo_box_cu_ngay_trong_luc_cho_box_moi(may_chu, trinh_duyet):  # noqa: F811
+    """L2b: trong lúc chờ /box của khung mới, khung vàng của khung CŨ không được nằm trên ảnh mới, nút Giữ hình gốc phải tắt."""
+    goc, _ = may_chu
+    p, loi_js, _ = _mo_sua(trinh_duyet, goc, "A-hai-cho", khung=5)  # khung 5 có box máy
+    assert p.locator("#sua-lop-trai .sua-o-may").count() == 1
+    p.evaluate("""(() => { const f = window.fetch; window.fetch = (u, o) => String(u).includes('/box/')
+        ? new Promise(r => setTimeout(() => r(f(u, o)), 1500)) : f(u, o); })()""")  # /box trả chậm 1,5 s
+    p.keyboard.press("l")
+    p.wait_for_function("TL_SUA.trangThai().khung === 6")
+    assert p.locator("#sua-lop-trai .sua-o-may").count() == 0 and p.locator("#sua-giu-goc").is_disabled()
+    # tiêu đề theo khung MỚI ngay trong lúc /box còn chờ (khung 6 thuộc đoạn đỏ 6–7; khung 5 trước đó không thuộc chỗ nào)
+    assert "chỗ đỏ" in p.locator("#sua-tieu-de").inner_text()
+    assert p.evaluate("TL_SUA.trangThai().box") is None  # /box chưa về
+    assert loi_js == []
+
+
+def test_enter_o_cho_cuoi_khong_ghi_dat_va_nut_vua_bam_khong_bi_bam_lai(may_chu, trinh_duyet):  # noqa: F811
+    """L3: hết chỗ ⇒ Enter tiếp KHÔNG được kích hoạt nút "Xong — đánh Đạt"; bấm chuột Giữ hình gốc xong, Enter không bấm lại nút đó."""
+    goc, _ = may_chu
+    p, loi_js, yeu_cau = _mo_sua(trinh_duyet, goc, "C-chac-2", khung=50)  # C-chac-2: 0 đoạn ⇒ không có chỗ cần xem phía sau
+    conn = nhat_ky.mo(may_chu[1] / "thay_logo_log.db")
+    try:
+        conn.execute("UPDATE tl_ca_khoanh SET trang_thai='huy' WHERE job_video_id=?", (_ID["C-chac-2"],))
+        conn.commit()
+    finally:
+        conn.close()
+    p.reload()
+    _cho_khung(p)
+    assert p.locator("#sua-xong").inner_text() == "Xong — đánh Đạt"
+    for _ in range(3):
+        p.keyboard.press("Enter")
+    assert "Hết chỗ cần xem" in p.locator("#sua-trang").inner_text()
+    assert not [r for r in yeu_cau if r.url.endswith("/danh-gia")] and "sua=" in p.url
+    p.get_by_role("button", name="Giữ hình gốc đoạn này").click()
+    p.wait_for_function("TL_SUA.trangThai().daLuu.length === 1")
+    p.keyboard.press("Enter")
+    p.keyboard.press("Enter")
+    assert len([r for r in yeu_cau if r.url.endswith("/khoanh")]) == 1  # Enter không bấm lặp nút vừa click
+    assert loi_js == []
+
+
+def test_luu_loi_giua_chung_van_hien_cac_o_da_luu(may_chu, trinh_duyet):  # noqa: F811
+    """L4: lưu 2 ô, ô thứ 2 lỗi ⇒ dòng trạng thái vẫn phải ghi ô thứ nhất đã lưu."""
+    goc, _ = may_chu
+    p, loi_js, _ = _mo_sua(trinh_duyet, goc, "C-chac-1", khung=10)
+    lan = []
+
+    def loi_lan_hai(route):
+        lan.append(1)
+        route.fulfill(status=500, body="loi") if len(lan) == 2 else route.continue_()
+    p.route("**/khoanh", loi_lan_hai)
+    _keo(p, "sua-lop-trai", [2, 2, 10, 10])
+    _keo(p, "sua-lop-trai", [30, 30, 10, 10])
+    p.get_by_role("button", name="Lưu chỗ khoanh").click()
+    p.wait_for_function("!document.getElementById('lo-loi').hidden")
+    assert p.evaluate("[TL_SUA.trangThai().daLuu.length, TL_SUA.trangThai().cho.length]") == [1, 1]
+    assert "Đã lưu 1 chỗ" in p.locator("#sua-trang").inner_text()
+    assert loi_js == []
