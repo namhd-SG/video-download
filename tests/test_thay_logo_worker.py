@@ -127,6 +127,9 @@ def test_di_tron_hai_pha_qua_tien_trinh_con(worker, clip_file):
     assert tuple(v) == ("render", "drive-ra-1")
     assert not (worker.data / "thay_logo_scratch" / str(vid)).exists()  # scratch dọn sau trạng thái cuối
     assert not (worker.hop.goc / str(vid)).exists()  # hộp thư cũng dọn
+    giu = worker.data / "thay_logo_video" / str(r["video_log_id"])  # video gốc + bản ra GIỮ lại cho người khoanh, ngoài scratch
+    assert (giu / "goc.mp4").stat().st_size > 0 and (giu / "ra.mp4").stat().st_size > 0
+    assert not (worker.data / "thay_logo" / str(r["video_log_id"]) / "goc.mp4").exists()  # không chung thư mục có trần dọn
 
 
 def test_nhuong_lane_tai_khi_co_job_running(worker, tmp_path, clip_file):
@@ -571,5 +574,44 @@ def test_co_ket_qua_thi_thang_loi_va_qua_han(worker, clip_file):
     conn = worker._mo()
     hang_doi.dat(conn, vid, "cho_agy", cho_agy_tu=time.time() - tw.HAN_CHO_AGY_GIAY - 60)
     conn.close()
+    assert worker.mot_luot() == "da_xu_ly"
+    assert _trang_thai(worker, vid)["trang_thai"] == "xong"
+
+
+def test_giu_video_loi_os_van_xong_job(worker, clip_file, monkeypatch):
+    """Giữ video cho người khoanh là phụ: lỗi đĩa ở bước đó không được làm hỏng job đã tải bản ra lên Drive."""
+    clip, _ = clip_file
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+
+    def hong(*a, **k):
+        raise OSError("đĩa đầy")
+    monkeypatch.setattr(tw.khoanh, "giu_video", hong)
+    assert worker.mot_luot() == "da_xu_ly"
+    assert _trang_thai(worker, vid)["trang_thai"] == "xong"
+
+
+def test_chet_giua_giu_video_va_ket_thuc_khoi_dong_lai_van_chay_tiep(worker, clip_file, monkeypatch):
+    """Video gốc đã dời sang thư mục giữ mà tiến trình chết trước `_ket_thuc` ⇒ khởi động lại, pha 2 lấy lại gốc từ thư mục giữ."""
+    clip, _ = clip_file
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+    that = worker._ket_thuc
+
+    def chet(conn, v, trang_thai, **k):
+        if trang_thai == "xong":
+            raise RuntimeError("tiến trình chết")
+        return that(conn, v, trang_thai, **k)
+    monkeypatch.setattr(worker, "_ket_thuc", chet)
+    with pytest.raises(RuntimeError):
+        worker.mot_luot()
+    monkeypatch.setattr(worker, "_ket_thuc", that)
+    conn = worker._mo()
+    try:
+        hang_doi.quet_khoi_dong(conn)  # máy chủ khởi động lại: dang_chay ⇒ làm lại
+    finally:
+        conn.close()
     assert worker.mot_luot() == "da_xu_ly"
     assert _trang_thai(worker, vid)["trang_thai"] == "xong"

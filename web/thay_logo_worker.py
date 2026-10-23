@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from tiktok_music_downloader.thay_logo import ap_vao_bo, canh_relay, hang_doi, nhat_ky, nhip_relay, tai_len_phien, tu_ap_vao_bo
-from tiktok_music_downloader.thay_logo import de_khi_biet_bat
+from tiktok_music_downloader.thay_logo import de_khi_biet_bat, khoanh
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -354,6 +354,7 @@ class ThayLogoWorker:
         if time.time() - self._don_luc >= CHU_KY_DON_GIAY:
             self._don_luc = time.time()
             log.info("thay logo: dọn file nhật ký %s", nhat_ky.don_dep(conn, self.data / "thay_logo"))
+            log.info("thay logo: dọn video giữ để sửa %s", khoanh.don_video_sua(conn, self.data))
 
     def _scratch(self, vid: int) -> Path:
         d = self.data / "thay_logo_scratch" / str(vid)
@@ -435,7 +436,8 @@ class ThayLogoWorker:
                     continue
                 ts = SimpleNamespace(**json.loads(r["thong_so"]))
                 boxes, man_ket = hoc_mau_agy.doc_ket_qua(ts, self.hop, r["id"])
-                if not Path(r["duong_dan_goc"]).is_file():
+                if not Path(r["duong_dan_goc"]).is_file() and not khoanh.lay_lai_goc(conn, self.data, r["job_id"], r["nguon"],
+                                                                                    Path(r["duong_dan_goc"])):
                     raise FileNotFoundError("mất file gốc trong scratch")
             except Exception as e:
                 log.warning("thay logo: video %s không chạy pha 2 được (%s): %s", r["id"], type(e).__name__, e)
@@ -457,6 +459,18 @@ class ThayLogoWorker:
         tran = max(TRAN_GIAY_MIN, HE_SO_TRAN_GIAY * nguon.so_khung / (nguon.fps or 30.0))
         self._con = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
         self._ket_thuc_con(conn, r, d, ra, tran)
+
+    def _giu_video(self, r, video_log_id, ra) -> bool:
+        """Giữ video gốc (+ bản ra) cho người xem lại / khoanh — dời ra khỏi scratch TRƯỚC `_ket_thuc` (hàm đó dọn scratch ở mọi nhánh).
+        Chỉ gọi ở nhánh thành công. Giữ trượt thì job vẫn xong (màn khoanh tải lại từ Drive sau); trả False + log, không im lặng."""
+        if not video_log_id:
+            return False
+        try:
+            khoanh.giu_video(self.data, video_log_id, Path(r["duong_dan_goc"]), ra)
+            return True
+        except OSError as e:
+            log.warning("thay logo: không giữ được video %s để sửa (%s): %s", r["id"], type(e).__name__, e)
+            return False
 
     def _ket_thuc_con(self, conn, r, d, ra, tran) -> None:
         try:
@@ -485,8 +499,10 @@ class ThayLogoWorker:
                                loi_text="Không tải được bản đã thay lên Drive.")
                 return
             nhat_ky.cap_nhat_video(conn, kq["video_log_id"], drive_file_id_ra=file_id)
+            self._giu_video(r, kq.get("video_log_id"), Path(kq["dau_ra"]))
             self._ket_thuc(conn, r["id"], "xong", video_log_id=kq["video_log_id"], drive_file_id_ra=file_id)
         elif kq.get("trang_thai") == "cho_nguoi":
+            self._giu_video(r, kq.get("video_log_id"), None)
             self._ket_thuc(conn, r["id"], "cho_nguoi", video_log_id=kq.get("video_log_id"))
         else:
             log.warning("thay logo: video %s lỗi xử lý: %s", r["id"], kq.get("loi"))
