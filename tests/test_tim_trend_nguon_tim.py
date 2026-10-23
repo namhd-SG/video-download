@@ -43,6 +43,10 @@ class _TrangGia:
         self.ket_qua = list(ket_qua)
         self.da_goto = []
         self.mouse = _ChuotGia()
+        self.dong = False
+
+    def is_closed(self):
+        return self.dong
 
     def goto(self, url, **k):
         self.da_goto.append(url)
@@ -329,3 +333,47 @@ def test_profile_tam_bi_xoa_khi_dong(monkeypatch):
     with ChromeTim(6, 0, bao=lambda s: None):
         assert Path(tao[0]).is_dir()
     assert not Path(tao[0]).exists()
+
+
+def test_hop_captcha_qua_duong_dom_thi_dung(monkeypatch):
+    """Review 23/10 H-b: chữ trang bình thường nhưng DOM có hộp captcha đang hiển thị ⇒ phải dừng qua _mo."""
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    t = _tim(monkeypatch, [{"items": [], "chu": "TikTok | Videos", "hop_captcha": True}, DOM_GD1])
+    with pytest.raises(BiCaptcha):
+        t.tim(TruyVan("q", "cau_truc", "en"))
+    assert t.da_mo == 1
+
+
+def test_dong_cua_so_luc_cho_captcha_la_loi_trang_khong_phai_captcha(monkeypatch):
+    """Review 23/10 M-a: đóng cửa sổ khi đang chờ ⇒ dừng ngay mã 5 (LoiMoTrang), không chờ hết 600 s rồi báo captcha."""
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha, LoiMoTrang
+    cap = {"items": [], "chu": "Drag the slider to fit the puzzle"}
+    t = _tim_cho(monkeypatch, [cap], cho_giai_giay=600)
+
+    def chet(js):
+        if t._page.ket_qua:
+            return t._page.ket_qua.pop(0)
+        t._page.dong = True
+        raise RuntimeError("Target page, context or browser has been closed")
+
+    t._page.evaluate = chet
+    with pytest.raises(LoiMoTrang) as e:
+        t.tim(TruyVan("q", "cau_truc", "en"))
+    assert not isinstance(e.value, BiCaptcha)
+
+
+def test_doc_lai_sau_khi_giai_bi_loi_khong_sap(monkeypatch):
+    """Review 23/10 M-a: lần đọc lại sau khi giải (lưới chưa tải) ném lỗi vì trang tải lại ⇒ không traceback."""
+    cap = {"items": [], "chu": "Drag the slider to fit the puzzle"}
+    t = _tim_cho(monkeypatch, [cap, {"items": [], "chu": "TikTok"}, RuntimeError("context destroyed"), DOM_GD1],
+                 cho_giai_giay=60)
+    goc = t._page.evaluate
+
+    def eval_co_loi(js):
+        if isinstance(t._page.ket_qua[0], Exception):
+            raise t._page.ket_qua.pop(0)
+        return goc(js)
+
+    t._page.evaluate = eval_co_loi
+    ra, ghi_chu = t.tim(TruyVan("q", "cau_truc", "en"))
+    assert len(ra) == 2 and ghi_chu == "ham phien" and t.da_mo == 2   # đọc lại lỗi ⇒ không sập; lưới rỗng ⇒ hâm phiên

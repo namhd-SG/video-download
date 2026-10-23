@@ -13,7 +13,7 @@ UV = {"url": "https://www.tiktok.com/@a/video/7000000000000000001", "video_id": 
 
 @pytest.mark.parametrize("kq, ma", [
     (KetQua(ung_vien=[UV]), 0),
-    (KetQua(ung_vien=[UV], tin_duoc=False), 2),
+    (KetQua(ung_vien=[UV], tin_duoc=False), 7),
     (KetQua(), 3),
     (KetQua(ung_vien=[UV], bi_captcha=True, dung_vi="captcha"), 4),
     (KetQua(ung_vien=[UV], loi_trang=True, dung_vi="timeout"), 5),
@@ -33,3 +33,12 @@ def test_ma_thoat(tmp_path, monkeypatch, kq, ma):
 def test_help_ghi_ranh_gioi_du_lieu():
     out = CliRunner().invoke(cli.app, ["--help"]).output
     assert "RANH GIỚI DỮ LIỆU" in out and "creative nội bộ" in out
+
+
+def test_truy_van_tay_qua_cli(tmp_path, monkeypatch):
+    nhan = {}
+    monkeypatch.setattr(cli, "chay", lambda *a, **k: nhan.update(k) or KetQua(ung_vien=[UV]))
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    CliRunner().invoke(cli.app, [str(video), "--ra", str(tmp_path / "ra"), "--truy-van", " a | b ||c "])
+    assert nhan["truy_van_tay"] == ["a", "b", "c"]

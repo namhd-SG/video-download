@@ -59,6 +59,7 @@ def gia(monkeypatch, tmp_path):
 
     def trich(video, thu_muc, tien_to="dau-vao"):
         thu_muc.mkdir(parents=True, exist_ok=True)
+        (thu_muc / khung.DANH_DAU).write_text("x")
         ra = []
         for i in range(3):
             p = thu_muc / f"{tien_to}-{i}.jpg"
@@ -236,3 +237,65 @@ def test_chay_lai_xoa_links_va_khung_cu(gia, tmp_path):
     kq2 = luong.chay(video, ra, tao_nguon=lambda: _Cap(), so_hop=1, bao=lambda s: None)
     assert not list(ra.glob("links*.txt")) and not (ra / "khung" / "cu-tu-lan-truoc.jpg").exists()
     assert luong.ghi_links(kq2, ra) == []
+
+
+def test_khung_doi_chung_chon_khung_khop_chu_ky_khi_video_nhieu_canh():
+    """Ca 3 23/10: khung giữa là cảnh hướng dẫn điện thoại, 2 khung kia là cảnh concert ⇒ ctrl phải là khung concert."""
+    from tiktok_music_downloader.tim_trend import cham
+    concert = {"so_ban_sao": 1, "chu_the": "nguoi thuong", "loai_nen": "san_dien", "hanh_dong": "khac"}
+    dien_thoai = {"so_ban_sao": 1, "chu_the": "nguoi thuong", "loai_nen": "trong_nha", "hanh_dong": "khac",
+                  "la_tutorial": True}
+    khung = [Path(f"dau-vao-{i}.jpg") for i in range(3)]
+    truong = {"dau-vao-0": tu_json(dict(concert, id="dau-vao-0")), "dau-vao-1": tu_json(dict(dien_thoai, id="dau-vao-1")),
+              "dau-vao-2": tu_json(dict(concert, id="dau-vao-2"))}
+    ck = cham.chu_ky(list(truong.values()))
+    assert luong.chon_khung_doi_chung(khung, truong, ck).name == "dau-vao-0.jpg"
+
+
+def test_khong_khung_nao_khop_thi_dung():
+    from tiktok_music_downloader.tim_trend.cham import ChuKy
+    ck = ChuKy(7, ">=3", "nguoi", "tron", "tao_dang", False)
+    khung = [Path("dau-vao-0.jpg")]
+    truong = {"dau-vao-0": tu_json(dict(F["s3-4"], id="dau-vao-0"))}
+    with pytest.raises(luong.ChuKyKhongOnDinh):
+        luong.chon_khung_doi_chung(khung, truong, ck)
+
+
+def test_ctrl_chon_tu_luot_rieng_nhung_cham_mu_trong_lo(gia, tmp_path):
+    """Không vòng tròn: khung ctrl được CHỌN theo lượt bóc riêng của khung đầu vào (khớp chữ ký), nhưng agy chấm lại MÙ
+    trong lô; lô trả hạng 0 cho ctrl ⇒ tin_duoc=False (ĐP 23/10: điểm chọn và điểm kiểm phải là hai lượt khác nhau)."""
+    trang_thai, video = gia
+    trang_thai["ctrl"] = "s3-4"   # trong lô, agy đọc ctrl thành con chó ⇒ hạng 0
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert kq.chu_ky.so_ban_sao == 7                         # khung đầu vào khớp chữ ký ⇒ chọn được ctrl
+    assert [l["hang_ctrl"] for l in kq.lo_ctrl] == ["0"]     # nhưng lượt chấm trong lô là lượt riêng
+    assert kq.tin_duoc is False
+
+
+def test_truy_van_tay_thay_han_key_tu_sinh(gia, tmp_path, monkeypatch):
+    from tiktok_music_downloader.tim_trend import agy_boc as ab
+    goi_y = []
+    monkeypatch.setattr(ab, "goi_y_tu_khoa", lambda *a, **k: goi_y.append(1) or [])
+    _, video = gia
+    nguon = _NguonGia()
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: nguon, so_hop=1, bao=lambda s: None,
+                    truy_van_tay=["kiss camera trend capcut", "efecto kiss cam coldplay"])
+    assert nguon.goi == ["kiss camera trend capcut", "efecto kiss cam coldplay"]
+    assert not goi_y and all(t["nhom"] == "tay" for t in kq.truy_van)
+
+
+def test_don_chi_xoa_dung_tep_cua_cong_cu(tmp_path):
+    """Review 23/10 H-a: không xoá links-cua-toi.txt, không sập khi có thư mục tên links-01.txt, không xoá khung/ của người dùng."""
+    ra = tmp_path / "ra"
+    (ra / "khung").mkdir(parents=True)
+    (ra / "khung" / "anh-cua-toi.jpg").write_bytes(b"x")          # không có file đánh dấu ⇒ không phải của công cụ
+    (ra / "links-01.txt").mkdir()                                 # thư mục trùng mẫu tên
+    for ten in ("links.txt", "links-02.txt", "links-cua-toi.txt", "links-100.txt"):
+        (ra / ten).write_text("x")
+    luong.don_dau_ra_cu(ra)
+    con = sorted(p.name for p in ra.iterdir())
+    assert con == ["khung", "links-01.txt", "links-100.txt", "links-cua-toi.txt"]
+    assert (ra / "khung" / "anh-cua-toi.jpg").exists()
+    (ra / "khung" / khung.DANH_DAU).write_text("x")
+    luong.don_dau_ra_cu(ra)
+    assert not (ra / "khung").exists()

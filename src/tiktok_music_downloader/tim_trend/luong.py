@@ -20,6 +20,26 @@ from .nguon_tim import BiCaptcha, HetLuot, LoiMoTrang, UngVien
 from .truong import TruongAnh
 from .truy_van import TruyVan, sinh_truy_van
 
+def chon_khung_doi_chung(ds_khung: list[Path], truong_khung: dict[str, TruongAnh], ck: ChuKy) -> Path:
+    """Khung đối chứng phải là khung ĐÃ khớp chữ ký (hạng 3), ưu tiên khung giữa.
+
+    Ca 3 (23/10): video 2 cảnh (màn hình concert + hướng dẫn trên điện thoại) ⇒ chữ ký theo đa số = cảnh concert, nhưng
+    khung giữa là cảnh điện thoại ⇒ ctrl ra hạng 1/0 ở mọi lô ⇒ cả lần chạy bị chặn dù agy đọc đúng.
+    Không khung nào khớp ⇒ chữ ký không ổn định (video nhiều cảnh khác hẳn nhau) ⇒ dừng, không chấm với thước hỏng.
+    """
+    giua = len(ds_khung) // 2
+    thu_tu = [ds_khung[giua]] + [k for i, k in enumerate(ds_khung) if i != giua]
+    for k in thu_tu:
+        t = truong_khung.get(k.stem)
+        if t is not None and hang(t, ck) == "3":
+            return k
+    raise ChuKyKhongOnDinh("không khung nào của video đầu vào khớp chữ ký của chính nó — video nhiều cảnh khác hẳn nhau")
+
+
+class ChuKyKhongOnDinh(RuntimeError):
+    """Chữ ký dạng không đại diện được cho video đầu vào (không khung nào tự khớp)."""
+
+
 def bao_ngay(chu: str) -> None:
     """In và đẩy ra ngay: chạy với stdout chuyển hướng thì print bị gom, người ngồi máy tưởng công cụ treo (23/10)."""
     print(chu, flush=True)
@@ -78,6 +98,7 @@ def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq:
 
 
 def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van: int = 6, so_hop: int = 2,
+         truy_van_tay: list[str] | None = None,
          gian_cach_anh: float = 4.0, model: str = agy_boc.MODEL_MAC_DINH,
          bao: Callable[[str], None] = bao_ngay) -> KetQua:
     kq = KetQua()
@@ -91,9 +112,13 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
     truong_khung = agy_boc.boc_truong(ds_khung, ra, model, ten="agy-truong-dau-vao")
     kq.chu_ky = ck = chu_ky(list(truong_khung.values()))
     bao(f"Chữ ký dạng: {ck}")
-    ctrl_goc = ds_khung[len(ds_khung) // 2]
+    ctrl_goc = chon_khung_doi_chung(ds_khung, truong_khung, ck)
 
-    hang_doi = sinh_truy_van(ck, agy_boc.goi_y_tu_khoa(ds_khung, ra, model), so_truy_van)
+    if truy_van_tay:
+        # Người chạy tự đưa key hop 1 (vd từ hồ sơ trend): thay HẲN key tự sinh — để so A/B chỉ đổi 1 biến.
+        hang_doi = [TruyVan(t, "tay", "goc") for t in truy_van_tay][:so_truy_van]
+    else:
+        hang_doi = sinh_truy_van(ck, agy_boc.goi_y_tu_khoa(ds_khung, ra, model), so_truy_van)
     da_dung: set[str] = set()
     theo_id: dict[str, UngVien] = {}
     with tao_nguon() as nguon:
@@ -137,18 +162,29 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
     return kq
 
 
+_TEP_LINK = re.compile(r"^links(-\d\d)?\.txt$")
+
+
+def _xoa_tep_link(ra: Path) -> None:
+    """Chỉ xoá ĐÚNG file công cụ ghi (`links.txt`, `links-NN.txt`) và chỉ file thường — `links-cua-toi.txt` hay thư mục
+    trùng tên là của người dùng (review 23/10 H-a)."""
+    for p in ra.iterdir():
+        if _TEP_LINK.match(p.name) and p.is_file() and not p.is_symlink():
+            p.unlink()
+
+
 def don_dau_ra_cu(ra: Path) -> None:
-    """Xoá `links*.txt` và khung của lần chạy trước trong cùng `--ra`: lần này thoát 2/3/4 thì file cũ KHÔNG được nằm lại
-    trông như kết quả mới (review 23/10 H1: lần 1 ra 60 link, lần 2 captcha ⇒ 3 file cũ còn nguyên)."""
-    for p in ra.glob("links*.txt"):
-        p.unlink()
-    shutil.rmtree(ra / "khung", ignore_errors=True)
+    """Xoá link và khung của lần chạy trước trong cùng `--ra`: lần này thoát lỗi thì file cũ KHÔNG được nằm lại trông như
+    kết quả mới (review 23/10 H1). `khung/` chỉ bị xoá khi có file đánh dấu do công cụ tạo (`--ra ~/Downloads` không mất
+    `~/Downloads/khung/` của người dùng)."""
+    _xoa_tep_link(ra)
+    if (ra / "khung" / khung.DANH_DAU).is_file():
+        shutil.rmtree(ra / "khung", ignore_errors=True)
 
 
 def ghi_links(kq: KetQua, ra: Path, nguong: frozenset[str] = NGUONG_MAC_DINH) -> list[Path]:
     """`links.txt` (mọi link đạt) + `links-NN.txt` mỗi file ≤50 khi vượt trần job. KHÔNG ghi gì nếu chạy không tin được."""
-    for p in ra.glob("links*.txt"):
-        p.unlink()
+    _xoa_tep_link(ra)
     if not kq.tin_duoc or kq.rong or kq.bi_captcha or kq.loi_trang:
         return []
     links = [u["url"] for u in kq.giu(nguong)]

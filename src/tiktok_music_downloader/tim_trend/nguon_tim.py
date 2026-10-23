@@ -27,7 +27,8 @@ DOC_DOM = """() => { const out = []; const seen = new Set();
     out.push({url: a.href, cover: img.src, caption: (img.alt || c.innerText || '').replace(/\\s+/g, ' ').slice(0, 300)});
   }
   const chu = document.body ? document.body.innerText.slice(0, 5000) : '';
-  const hop = !!document.querySelector('#captcha_close_button, [id^="captcha"], [class*="captcha_verify"], [class*="cap-flex"]');
+  const hop = [...document.querySelectorAll('#captcha_close_button, [id^="captcha"], [class*="captcha_verify"]')]
+    .some(e => e.getClientRects().length > 0 && getComputedStyle(e).visibility !== 'hidden');
   return {items: out, chu: chu, hop_captcha: hop}; }"""
 # Pha 4 22/10: TikTok bật captcha xoay ảnh "Drag the slider to fit the puzzle" trên trang search ⇒ lưới video không bao giờ
 # tải; công cụ cũ thấy "0 link" rồi đốt hết 12/12 lượt. Gặp captcha ⇒ dừng cả lần chạy NGAY (mở thêm chỉ làm nặng cờ IP).
@@ -166,7 +167,8 @@ class ChromeTim:
 
     def _cuon_cho_anh(self) -> None:
         """TikTok tải ảnh bìa lười: thẻ chưa cuộn tới có `img.src` = ảnh giữ chỗ `data:` ⇒ Pha 4 23/10 mất 88/181 và
-        109/220 ứng viên (InvalidSchema lúc tải). Cuộn hết trang rồi về đầu để ảnh thật kịp gắn; không mở thêm request trang."""
+        109/220 ứng viên (InvalidSchema lúc tải). Cuộn xuống từng nấc để ảnh thật kịp gắn; không goto thêm trang. CHƯA ĐO: cuộn có
+        thể làm TikTok tự gọi thêm API nạp kết quả (request ngoài trần lượt mở trang)."""
         for _ in range(SO_LAN_CUON):
             self._page.mouse.wheel(0, 1600)
             self._page.wait_for_timeout(700)
@@ -182,17 +184,26 @@ class ChromeTim:
         han = time.monotonic() + self.cho_giai_giay
         while time.monotonic() < han:
             time.sleep(GIAY_DOI_KIEM)
-            try:
-                ket_qua = self._page.evaluate(DOC_DOM)
-            except Exception:   # người giải xong ⇒ trang tự tải lại ⇒ "context destroyed": đọc lại ở vòng sau
+            ket_qua = self._doc_khi_cho()
+            if ket_qua is None:   # người giải xong ⇒ trang tự tải lại ⇒ "context destroyed": đọc lại ở vòng sau
                 continue
             if not la_captcha(str(ket_qua.get("chu", "")), bool(ket_qua.get("hop_captcha"))):
                 self.bao("✓ Captcha đã qua, chạy tiếp.")
                 if not ket_qua["items"]:   # giải xong lưới chưa kịp tải ⇒ đọc lại 1 lần, không mở trang mới
                     self._page.wait_for_timeout(3000)
-                    ket_qua = self._page.evaluate(DOC_DOM)
+                    ket_qua = self._doc_khi_cho() or ket_qua
                 return ket_qua
         raise BiCaptcha(ly_do + f"; không ai giải trong {self.cho_giai_giay} giây")
+
+    def _doc_khi_cho(self) -> dict | None:
+        """Đọc trang trong lúc chờ người giải. Trang đang tải lại ⇒ None (đọc lại sau). Cửa sổ bị ĐÓNG ⇒ LoiMoTrang ngay
+        (mã 5), không chờ hết hạn rồi báo nhầm là captcha (review 23/10 M-a)."""
+        try:
+            return self._page.evaluate(DOC_DOM)
+        except Exception as exc:
+            if self._page.is_closed():
+                raise LoiMoTrang(f"cửa sổ Chrome bị đóng trong lúc chờ giải captcha ({type(exc).__name__})") from exc
+            return None
 
     def _chup(self, ten: str) -> str:
         if self.chan_doan is None:

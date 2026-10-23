@@ -12,6 +12,7 @@ from pathlib import Path
 
 VI_TRI = (0.1, 0.5, 0.9)   # đầu / giữa / cuối: dạng ghép bung pose sau giây 0 vẫn được bắt ở khung giữa
 RONG = 360                 # cỡ agy đã dùng ở GĐ1 và ở `thay_logo/hoc_mau_agy.py`
+DANH_DAU = ".tim-trend-khung"   # file đánh dấu: chỉ thư mục có file này mới được công cụ dọn (không xoá `khung/` của người dùng)
 
 
 def _ff(ten: str) -> str:
@@ -33,6 +34,7 @@ def thoi_luong(video: Path) -> float:
 def trich_khung(video: Path, thu_muc: Path, tien_to: str = "dau-vao") -> list[Path]:
     """Ghi các khung `<tien_to>-<i>.jpg` vào `thu_muc`; trả danh sách file đã ghi được (khung lỗi bị bỏ, không đoán)."""
     thu_muc.mkdir(parents=True, exist_ok=True)
+    (thu_muc / DANH_DAU).write_text("tạo bởi tim_trend; xoá được\n")
     giay = thoi_luong(video)
     ra: list[Path] = []
     for i, vt in enumerate(VI_TRI):
