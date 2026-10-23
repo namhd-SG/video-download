@@ -74,3 +74,18 @@ Tiêu chí đạt: R1 khớp user ≥ R0 ở CẢ ca 1 và ca 2, và không gi�
   không đổi. Tiêu chí đạt như cũ: khớp ≥ R0 và TP không giảm quá 10%.
 - Dự đoán ghi trước: R2 giảm FP ở ca 2 (người thật/meme có caption không chứa "catwalk/runway") nhưng có thể mất TP ở
   caption chỉ ghi "AI model"/"fashion" — nếu TP giảm > 10% thì R2 trượt ở ca 2.
+
+## Kết quả ca 2 (user chấm 23/10 14:49, 103/103: 20 đúng · 71 sai · 12 ranh giới) — R2 TRƯỢT
+Phép đo chính bỏ 12 ranh giới (91 thẻ): R0 66/91 (TP 14 FP 19 FN 6) · **R2 63/91 (TP 10 FP 18 FN 10)** ⇒ khớp < R0 và
+TP giảm 29% > 10% ⇒ **TRƯỢT**. Độ nhạy: ranh giới = đúng ⇒ R0 74 / R2 69 (trên 103); ranh giới = sai ⇒ R0 70 / R2 69.
+Gốc: ở ca 2 user phân định theo trục **AI hay quay thật** ("AI walking", "AI fashion show" = đúng; người mẫu thật trên
+sàn diễn, Fashion Week = sai, dù caption có "runway/catwalk"). Từ khoá dạng/cấu trúc không mang trục đó.
+
+## Kết luận 3 ca (2 ngoài mẫu)
+- **Không có luật chữ chung nào thắng R0 ở cả 3 ca.** R1 trượt ca 1, R2 trượt ca 2. ⇒ KHÔNG thi công R1/R2.
+- Mỗi trend có **trục phân định riêng**: ca 1 = cấu trúc ảnh (R0 đã 77/80) · ca 3 = tên hiệu ứng trong caption (R2 50/57 vs
+  38/57, trong mẫu) · ca 2 = AI hay thật (R0 chỉ 66/91; chưa có tín hiệu nào).
+- Hướng tiếp (cần ĐP/user quyết, chưa làm): (a) mỗi lần chạy khai "dấu hiệu nhận dạng" của trend (người xác nhận trước khi
+  chạy, như định nghĩa user ca 3) thay vì regex suy ra; (b) làm mục 0 của vòng tự học — phân loại AI/thật — vì ca 2 cho thấy
+  đó là trục quyết định cho trend hiệu ứng AI.
+- Bộ đề có nhãn user: ca 1 (80) · ca 2 (103) · ca 3 (57) = **240 nhãn** trong `tests/kho_ca/tim_trend/`.

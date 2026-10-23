@@ -1,0 +1,2079 @@
+{
+ "ca": "ca2-catwalk",
+ "ngay": "2026-10-23",
+ "lan_chay_cong_cu": "Pha 4 (pha4b-v2)",
+ "mo_ta_dang": "catwalk AI một người",
+ "anh_bia": "~/kho/tim-trend-du-lieu-261023/pha4b-v2/cham-user/bia/<video_id>.jpg (ngoài repo)",
+ "nguon_nhan": "cham-user-ca2.json, user chấm 23/10; 'ranh_gioi' = lưỡng lự, không dùng để dạy máy",
+ "regex_ten_trend_dang_ky_truoc": "catwalk|runway|pasarela|passarela|desfile",
+ "chu_ky_may": {
+  "so_ban_sao": 1,
+  "bac": "1",
+  "chu_the": "nguoi",
+  "nen": "tron",
+  "hanh_dong": "catwalk",
+  "la_luoi": false
+ },
+ "the": [
+  {
+   "video_id": "6760090681487740165",
+   "url": "https://www.tiktok.com/@adrianfoster_/video/6760090681487740165",
+   "caption": "Is this true grandpa? #greenscreen #movember #invented #fyp #foryoupage #foryou created by Adrian Foster with Adrian Foster’s Home Depot uwu",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "6760090681487740165",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "when was walking invented 1938 Walking was invented in 1938",
+    "mo_ta": "Khuon mat nguoi tren nen anh chup ket qua tim kiem Google"
+   }
+  },
+  {
+   "video_id": "6951497939256724741",
+   "url": "https://www.tiktok.com/@marex.8/video/6951497939256724741",
+   "caption": "Original sound #sound #like #fyp #viral #foryou #foryoupage #brother #funny created by marex.8 with marex.8’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "6951497939256724741",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "san_dien",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Original sound",
+    "mo_ta": "Nguoi dan ong doi mu bao ho hat vao micro"
+   }
+  },
+  {
+   "video_id": "7331157131976068358",
+   "url": "https://www.tiktok.com/@brix_project_rmx/video/7331157131976068358",
+   "caption": "DJ GHOST (SLOWED&REVERB) FULL BASS ORIGINAL SOUND: DJ NATIONREMIX #fyp #slowedandreverb #fullbass🔊 #🎧 created by 𝐁𝐫𝐢𝐱 𝐌𝐮𝐬𝐢𝐜 𖦤 with 𝐁𝐫𝐢𝐱 𝐌𝐮𝐬𝐢𝐜 𖦤’s original sound - Brix Watches Accessories Shop",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7331157131976068358",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "REMIX 0:30",
+    "mo_ta": "Song nhac hinh tron mau tim truoc duoi xe hoi"
+   }
+  },
+  {
+   "video_id": "7399471234464959749",
+   "url": "https://www.tiktok.com/@sonssatisfatorio1/video/7399471234464959749",
+   "caption": "👄📱 || #fouryoupage #tryit #sound #viral #song #fyp created by user87622606488 with Sons’s som original - Sons",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7399471234464959749",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hinh ve hoat hinh mieng dang mo rong het co"
+   }
+  },
+  {
+   "video_id": "7423991462078975238",
+   "url": "https://www.tiktok.com/@reverse._.flow/video/7423991462078975238",
+   "caption": "🎧 Som Original Phonk . . . . #headphones #phonk #song created by Reverse Flow with Reverse Flow’s som original",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7423991462078975238",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "USE EARPHONES FOR THE BEST EXPERIENCE",
+    "mo_ta": "Bieu tuong tai nghe va hieu ung mau do toi"
+   }
+  },
+  {
+   "video_id": "7475365454744243476",
+   "url": "https://www.tiktok.com/@nguyen.duy.tin/video/7475365454744243476",
+   "caption": "Rehearsal Time #walk #model #catwalk #nguyenduytin #modelmale #fyp #fashion #ducstudio #fashionshow #rehearsal created by Nguyễn Duy Tín with RunwayTopModels’s sonido original",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7475365454744243476",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nam nguoi mau dau trọc dung tren san dien"
+   }
+  },
+  {
+   "video_id": "7481968273618160904",
+   "url": "https://www.tiktok.com/@aimeikan/video/7481968273618160904",
+   "caption": "【No.20】 #fyp #美女 #モデル #美女名鑑 #AI美女 created by AI美女名鑑 with ILLIT’s Magnetic",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7481968273618160904",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau nu tao dang can canh guong mat trang diem dep"
+   }
+  },
+  {
+   "video_id": "7491577703611518254",
+   "url": "https://www.tiktok.com/@bilibili1949/video/7491577703611518254",
+   "caption": "Son Original #sonoriginal #ringtone created by BiLi with BiLi’s 原聲",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7491577703611518254",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "studio",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Son Original",
+    "mo_ta": "Nguoi dan ong deo tai nghe cung song nhac anime"
+   }
+  },
+  {
+   "video_id": "7493131220524485906",
+   "url": "https://www.tiktok.com/@aibijolovepoem/video/7493131220524485906",
+   "caption": "AI美女ポートレート222。#ai美女 #aiphoto #ai美人 #aibeauty created by AI美女と恋愛ポエム with AI美女と恋愛ポエム’s オリジナル楽曲 - AI美女と恋愛ポエム",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7493131220524485906",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai toc xoan mac so mi trang dung tua tuong ngoai troi"
+   }
+  },
+  {
+   "video_id": "7508067558109596933",
+   "url": "https://www.tiktok.com/@luanaparecido0/video/7508067558109596933",
+   "caption": "“Gabriella Montez nunca foi tão estilosa! A IA colocou ela na passarela e o resultado tá surreal. Assiste até o final!” #GabriellaMontez #HighSchoolMusical #DesfileIA #DisneyFashion #IAart #NostalgiaDisney #TikTokCriativo #ParaVocê #FYP created by Luan Aparecido with Cast of High School Musical: The",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7508067558109596933",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "WILDCATS 14 GABRIELLA MONTEZ",
+    "mo_ta": "Co gai mac ao do quan trang catwalk san dien"
+   }
+  },
+  {
+   "video_id": "7516654564850896150",
+   "url": "https://www.tiktok.com/@shebuilds_ai/video/7516654564850896150",
+   "caption": "Image @Midjourney Animated @Kling AI AI Catwalk Show #fyp #aifashion #midjourney #klingai #virtualfashion #generativeart #aigeneratedvideo #aimodel #aiartist created by shebuildsai with bookclubcommunity’s original sound",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7516654564850896150",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk dam da hoi hoa trang xuyen thau"
+   }
+  },
+  {
+   "video_id": "7517366073184750854",
+   "url": "https://www.tiktok.com/@inteligecia.artif/video/7517366073184750854",
+   "caption": "Categoria Bikini desfile em passarela #inteligenciaartificial #ia #2025 created by inteligecia artificial with BEAT: Reels Maker & Templates’s Taylor Swift Ready for it",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7517366073184750854",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Veo",
+    "mo_ta": "Hai nu van dong vien the hinh bikini catwalk"
+   }
+  },
+  {
+   "video_id": "7519661361383623941",
+   "url": "https://www.tiktok.com/@efeitoscapcut2/video/7519661361383623941",
+   "caption": "Você na passarela 😍 #CapCut #viral #multiaverso #fotosia #efeitoia #ia #ai #fotoemvideo #passarela #desfile created by Modelos capcut 💯 with Modelos capcut 💯’s som original",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7519661361383623941",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk dam om kim sa mau do"
+   }
+  },
+  {
+   "video_id": "7533336118390000927",
+   "url": "https://www.tiktok.com/@tk.hoshmandd/video/7533336118390000927",
+   "caption": "Funk name :som original🎶🎧 DJ FKBASS #funk #phonk #music #phonk_music #100k #fyp #ViralSound #slowed created by Tk Hoshmand with Tk Hoshmand’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7533336118390000927",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "MS",
+    "mo_ta": "Bieu tuong phat sang mau xanh tren nen dau lau"
+   }
+  },
+  {
+   "video_id": "7535138816533810454",
+   "url": "https://www.tiktok.com/@millasucu/video/7535138816533810454",
+   "caption": "Creating first realistic AI fashion show 🌸 🎥 #fashionshow #aiart #airunway #models #virtualfashion #catwalk #trending #femalefashion created by Milla Tokyo with STM & Kareful & Mannequin’s cloud 9 (feat. pale fortress)",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7535138816533810454",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Can canh guong mat nguoi mau toc vang mat xanh"
+   }
+  },
+  {
+   "video_id": "7535942127176502550",
+   "url": "https://www.tiktok.com/@millasucu/video/7535942127176502550",
+   "caption": "Creating first realistic AI fashion show 🌸 🎥 #fashionshow #femalefashion #aiart #airunway #model #virtualfashion #runwaymodel #trending #catwalkmoment created by Milla Tokyo with STM & Kareful & Mannequin’s cloud 9 (feat. pale fortress)",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7535942127176502550",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "She isn't real person.",
+    "mo_ta": "Nu nguoi mau toc vang bo jumpsuit da bong den"
+   }
+  },
+  {
+   "video_id": "7537012874732932372",
+   "url": "https://www.tiktok.com/@ta.walks/video/7537012874732932372",
+   "caption": "Catwalk - признают все, а вот horse walk - не считают красивым (по мнению моих хейтеров) Я считаю, что модель должна уметь работать в разных стилях. Разницу дефиде описала в своем тгк: подиумная дива ❤️ #catwalk #runwaywalk #modelwalk #походка #дефиле #модельнаяпоходка #horsewalk created by ta.walks",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7537012874732932372",
+    "so_ban_sao": 2,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": true,
+    "la_tutorial": true,
+    "chu_ocr": "Horse walk Catwalk",
+    "mo_ta": "So sanh hai kieu di catwalk cua cung mot nguoi mau"
+   }
+  },
+  {
+   "video_id": "7541686910440279318",
+   "url": "https://www.tiktok.com/@millasucu/video/7541686910440279318",
+   "caption": "Realistic AI fashion show performance 🌸 🎥 #model #trending #femalefashion #catwalk #aiart #airunway #virtualfashion #fashionshow created by Milla Tokyo with Alok & Tazi & Samuele Sartini & Amanda Wilson & York’s Seek Love (On The Beach)",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7541686910440279318",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau toc vang tao dang trong bo jumpsuit da"
+   }
+  },
+  {
+   "video_id": "7546420056503176470",
+   "url": "https://www.tiktok.com/@morivaey/video/7546420056503176470",
+   "caption": "Struggling to get your AI icons consistent? Here’s how to fix it with ChatGPT and AI design prompts. No advanced tools or design background needed — just a locked prompt template, a simple grid method, and clean slicing for perfectly uniform results. Ideal for designers, startups, app creators, and ",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7546420056503176470",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "AI Icons Guide",
+    "mo_ta": "Cac icon 3D bang dat set kem chu de AI Icons Guide"
+   }
+  },
+  {
+   "video_id": "7546783912484146450",
+   "url": "https://www.tiktok.com/@tundphan06/video/7546783912484146450",
+   "caption": "#cheikhdia walking #malemodel #runway #fashiontiktok #tundphan06 created by Walking model with DJ Braia’s Phonk of Bota",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7546783912484146450",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "tundphan",
+    "mo_ta": "nguoi mau nam catwalk tren san dien ke ca ro"
+   }
+  },
+  {
+   "video_id": "7548695485930835207",
+   "url": "https://www.tiktok.com/@tiennguyenquoc75/video/7548695485930835207",
+   "caption": "QT.Art Fashion: • Những catwalk ảo đầy táo bạo với chuyển động chân thực • Gương mặt người mẫu AI beauty icon – biểu cảm đầy cá tính và cuốn hút #QTArtFashion, #AIFashionShow created by Nguyễn Quốc Tiến with boznoz’s son original",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7548695485930835207",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "QTArt KlingAI",
+    "mo_ta": "Nguoi mau catwalk ao so mi no vay xanh"
+   }
+  },
+  {
+   "video_id": "7549053378840595719",
+   "url": "https://www.tiktok.com/@tiennguyenquoc75/video/7549053378840595719",
+   "caption": "QT.Art Fashion: • Những catwalk ảo đầy táo bạo với chuyển động chân thực như đời thực • Gương mặt người mẫu AI beauty icon – biểu cảm đầy cá tính và cuốn hút #QTArtFashion , #AIFashionShow created by Nguyễn Quốc Tiến with Soundialogy’s original sound",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7549053378840595719",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "QTArt",
+    "mo_ta": "Nguoi mau catwalk so mi trang quan hong"
+   }
+  },
+  {
+   "video_id": "7549480430823689479",
+   "url": "https://www.tiktok.com/@ne_lle..58/video/7549480430823689479",
+   "caption": "#ai #trending #effect #walking 🍀🍀🍀 created by nelle09 with Larisa Siscanu’s оригинальный звук",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7549480430823689479",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai so mi do quan jean ben dai phun nuoc"
+   }
+  },
+  {
+   "video_id": "7553284150749302024",
+   "url": "https://www.tiktok.com/@magicbinh/video/7553284150749302024",
+   "caption": "The Tortoise and the Hare Dance's original song,the music visualiser is made by me #dance #beijing #china #children #fyp created by MagicBinh with MagicBinh’s The Tortoise and the Hare Dance",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7553284150749302024",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Original Song Turtle and Rabbit Dance",
+    "mo_ta": "Song am mau tim va chu tren nen den"
+   }
+  },
+  {
+   "video_id": "7554528219098090808",
+   "url": "https://www.tiktok.com/@menina_do_som/video/7554528219098090808",
+   "caption": "🎶🎧 300 Mind - Som Original #300MindSomOriginal #lirycs #vibe #aesthetic #musician created by Menina do Som with Mind’s original sound - 𝟑𝟎𝟑 𝐌𝐢𝐧𝐝",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7554528219098090808",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Anh sang loa tim mo ao khong ro chu the"
+   }
+  },
+  {
+   "video_id": "7557340091283180818",
+   "url": "https://www.tiktok.com/@djvixie.official01/video/7557340091283180818",
+   "caption": "#djvixie created by ๖ۣۜ𝘿𝙅 𝙑𝙄𝙓𝙄𝙀🇮🇩 with DJ REMIX’s suara asli - DJ REMIX",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7557340091283180818",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "VIXIE MUSIC 0:42",
+    "mo_ta": "Bieu tuong am nhac phat sang mau tim va xuc xac"
+   }
+  },
+  {
+   "video_id": "7557850005323697420",
+   "url": "https://www.tiktok.com/@croquis209/video/7557850005323697420",
+   "caption": "Desfilando sobre a cidade de Nova York . #passarela #moda #ia #tiktok #novayork created by desenhos with Ava Max’s Kings & Queens",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7557850005323697420",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac vay den cam vi dung tren duong pho"
+   }
+  },
+  {
+   "video_id": "7558085553179200776",
+   "url": "https://www.tiktok.com/@beaver_rainout/video/7558085553179200776",
+   "caption": "Let’s make the photo walk👠Try this effect✨️AI walking このエフェクトで写真を歩かせてみてね #walk #catwalk #walking #trending created by Beaver_rainout with Ives Electric’s original sound",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7558085553179200776",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai ao trang khoac den tao dang cong vien"
+   }
+  },
+  {
+   "video_id": "7561604153391222024",
+   "url": "https://www.tiktok.com/@fasion_models/video/7561604153391222024",
+   "caption": "Jordan Barrett closing for Justin Cassin #JordanBarrett #justincassin #fashion #runwaywalk #catwalk created by 𝑭𝒂𝒔𝒉𝒊𝒐𝒏 𝒎𝒐𝒅𝒆𝒍𝒔🌟 with 𝑭𝒂𝒔𝒉𝒊𝒐𝒏 𝒎𝒐𝒅𝒆𝒍𝒔🌟’s الصوت الأصلي",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7561604153391222024",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "JUSTIN CASSIN",
+    "mo_ta": "hai nguoi mau o cuoi san catwalk rong"
+   }
+  },
+  {
+   "video_id": "7561837076430294294",
+   "url": "https://www.tiktok.com/@millasucu/video/7561837076430294294",
+   "caption": "Creating realistic AI fashion show 🌸 🎥 #model #runwaymodel #fashionshow #airunway #virtualfashion #aiart #trending #femalefashion #trending created by Milla Tokyo with ODECORE’s HYPNOTIC DATA - Slowed & Reverbed",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7561837076430294294",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Can canh nu nguoi mau toc vang do da bong den"
+   }
+  },
+  {
+   "video_id": "7562771626677357842",
+   "url": "https://www.tiktok.com/@fasion_models/video/7562771626677357842",
+   "caption": "Chico Lachowski owns the Ermanno Scervino SS 2012 runway — sleek tailoring, effortless charm, and signature walk that defined a fashion moment. #ChicoOnTheCatwalk#FranciscoLachowski #ErmannoScervinoSS12 #RunwayLegend #MensFashion created by 𝑭𝒂𝒔𝒉𝒊𝒐𝒏 𝒎𝒐𝒅𝒆𝒍𝒔🌟 with 𝑭𝒂𝒔𝒉𝒊𝒐𝒏 𝒎𝒐𝒅𝒆�",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7562771626677357842",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "FASHION ERMANNO SCERVINO",
+    "mo_ta": "nguoi mau nam catwalk tren san dien thoi trang"
+   }
+  },
+  {
+   "video_id": "7563757729710361863",
+   "url": "https://www.tiktok.com/@rizky..74/video/7563757729710361863",
+   "caption": "Ai walking #tiktoktemplate #airlter #ai #r74 created by Rizky74 with Yoga Ardiansyah RMX’s Sound JJ Mashup Viral",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7563757729710361863",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac crop top quan tui hop di pho"
+   }
+  },
+  {
+   "video_id": "7563786931667029304",
+   "url": "https://www.tiktok.com/@black_boosteed/video/7563786931667029304",
+   "caption": "⚜️ 𝒕𝒉𝒂𝒏𝒉 𝒇𝒑𝒉𝒐𝒏𝒈 ⚜️ (𝒔𝒐𝒏 𝑶𝒓𝒊𝒈𝒊𝒏𝒂𝒍) #thanhphong #phonk_music #trendin #bassboosted #viraltiktok created by 𖣘🕷️𝑴𝑨𝑹𝑺𝑯𝑴𝑬𝑳𝑳𝑶🕷️𖣘 with ⚜️Thanh*Phong⚜️’s nhạc nền - ⚜️Thanh*Phong⚜️",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7563786931667029304",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hinh nhan Marshmello tao dang dab tren nen thanh pho dem"
+   }
+  },
+  {
+   "video_id": "7563790269070593301",
+   "url": "https://www.tiktok.com/@ne_lle..58/video/7563790269070593301",
+   "caption": "#ai #beautiful #model #woman #walk try this effects for free and enjoy the results of being a beautiful model 😍 created by nelle09 with Bad Boys Blue’s Gimme Gimme Your Lovin'",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7563790269070593301",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Phu nu mac vay om xanh la tao dang tren pho"
+   }
+  },
+  {
+   "video_id": "7563994349411798280",
+   "url": "https://www.tiktok.com/@wonderful_ai_beauty/video/7563994349411798280",
+   "caption": "こんばんは🌛#明日も頑張ろう #おすすめ #ai美女 created by Wonderful_ai_beauty with Yonsenkoooo’s 翼のシミ",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7563994349411798280",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mim cuoi rang ro ngoi tai ban an quan ca phe"
+   }
+  },
+  {
+   "video_id": "7570328594124246293",
+   "url": "https://www.tiktok.com/@haruna.net/video/7570328594124246293",
+   "caption": "#Ai #Aigirl #Aiphoto #Ai美女 #こちょこちょ created by haruna.net with RyuiKuyaniwa’s この笑顔、無敵でしょ？",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7570328594124246293",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao ba lo den dang gio hai tay len cao cuoi tuoi"
+   }
+  },
+  {
+   "video_id": "7572510606247415061",
+   "url": "https://www.tiktok.com/@nyannyanaiai/video/7572510606247415061",
+   "caption": "#aibeauty #ai美女 #美女図鑑 #aiart created by にゃん with CHIHIRO’s Kimi Ga Irudakede Intrro Sabi",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7572510606247415061",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai toc ngan mac vay len hoa tiet caro tao dang"
+   }
+  },
+  {
+   "video_id": "7572543635309301014",
+   "url": "https://www.tiktok.com/@millasucu/video/7572543635309301014",
+   "caption": "Creating realistic AI fashion show 🌸 🎥 #model #runwaymodel #fashionshow #airunway #virtualfashion #trending #femalefashion created by Milla Tokyo with Shankz’s just for the night Ft javicanx",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7572543635309301014",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Can canh nu nguoi mau toc vang buoc cao"
+   }
+  },
+  {
+   "video_id": "7576046349246811408",
+   "url": "https://www.tiktok.com/@pensadorlife/video/7576046349246811408",
+   "caption": "Arraza na passarela. #flyppppppppppppppppppppppppppppppp #iavideos #ia #desfile #engraçado created by Reflexãocerta with Taylor Swift’s The Fate of Ophelia",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7576046349246811408",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi hoa trang vet canh long vu catwalk san dien"
+   }
+  },
+  {
+   "video_id": "7576486120091962644",
+   "url": "https://www.tiktok.com/@jarvinten_/video/7576486120091962644",
+   "caption": "play with music #jarvinten #pageantwalk #malepageant #runway #pageant created by Jarvinten with K'NAAN’s Bang Bang",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7576486120091962644",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "nam thanh nien dang tay tap di trong phong"
+   }
+  },
+  {
+   "video_id": "7577361386393586952",
+   "url": "https://www.tiktok.com/@capmodel21/video/7577361386393586952",
+   "caption": "#CapCut desfile na passarela IA#capcutpionner #cuttok #pionnertemplate #aitrend @CapCut created by Cap Model with Cap Model’s som original",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7577361386393586952",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Desfile de moda passarela",
+    "mo_ta": "Nguoi mau catwalk dam da hoi xanh lap lanh vuong mien"
+   }
+  },
+  {
+   "video_id": "7580602990478871829",
+   "url": "https://www.tiktok.com/@bakovali/video/7580602990478871829",
+   "caption": "AI i am celebrity,try this effect and have fun#walk#redcarpet#fypppppppppppppp created by @Li fashion girl with Audrey | High Vibe Soul Pop’s Serenity Audrey Callahan FULL SONG OUT NOW",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7580602990478871829",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao khoac do kinh den buoc di"
+   }
+  },
+  {
+   "video_id": "7586736985398611212",
+   "url": "https://www.tiktok.com/@mickydrips/video/7586736985398611212",
+   "caption": "Walk it🫠 #runway #fashion #malemodel #modeling #explorepage✨ created by Michael Peprah with Ayanna Ife & Zeddy Will & Jenn Carter’s Strut",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7586736985398611212",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Jay Ray Ghartey",
+    "mo_ta": "nguoi mau nam mac vest catwalk tren san dien"
+   }
+  },
+  {
+   "video_id": "7589119096625581333",
+   "url": "https://www.tiktok.com/@nyannyanaiai/video/7589119096625581333",
+   "caption": "#ai美女 #aibeauty #aiart #美女図鑑 created by にゃん with Anything About IU’s original sound - UAENA",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7589119096625581333",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao khoac len do cam coc ca phe quan an"
+   }
+  },
+  {
+   "video_id": "7591911351036005640",
+   "url": "https://www.tiktok.com/@ophiphinee/video/7591911351036005640",
+   "caption": "AI catwalk #ai #trending #viral #meme #fashion created by phiphinee with 𝓹𝓮𝓵𝓮 🕺🏽’s La envidia se te ve",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7591911351036005640",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai doi mu luoi trai ao thun trang"
+   }
+  },
+  {
+   "video_id": "7596999007918951688",
+   "url": "https://www.tiktok.com/@official.mtpproduction/video/7596999007918951688",
+   "caption": "Male basic runway walk with MTP Models @kristoff.delumen @mirrrpeeee🧿 @davemanzano_🧿 #modeling #runway #malemodel #mtpproduction created by MTP Modeling School with Netta’s Bassa Sababa",
+   "nhan_user": "sai",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7596999007918951688",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "MALE BASIC RUNWAY WALK",
+    "mo_ta": "chu male basic runway walk tren nen phong tap"
+   }
+  },
+  {
+   "video_id": "7601887411521457439",
+   "url": "https://www.tiktok.com/@sharnae_ai_/video/7601887411521457439",
+   "caption": "Technical Breakdown - Walking on Sunshine. In this technical breakdown, we can see how this walk cycle was created using a 2D character in a 3D environment. Directed and Animated by: Olov Burman @olovburman olovburman.com 3D Rendering, Shading and Lighting: Herve Steff @minddd_design minddd.com Musi",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7601887411521457439",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "nhay",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "WALKING ON SUNSHINE TECHNICAL BREAKDOWN",
+    "mo_ta": "Nhan vat hoat hinh doi tai nghe dang gio chan nhay"
+   }
+  },
+  {
+   "video_id": "7604096274702322951",
+   "url": "https://www.tiktok.com/@number.one2415/video/7604096274702322951",
+   "caption": "son original 🎧 complet song 🎧 created by number one with Kizz Daniel & EMPIRE’s Cough (Odo)",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7604096274702322951",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Abonnez vous",
+    "mo_ta": "Bieu tuong tai nghe tren khung nen den trang"
+   }
+  },
+  {
+   "video_id": "7609412371051711751",
+   "url": "https://www.tiktok.com/@somoriginall/video/7609412371051711751",
+   "caption": "Som de osso quebrando, Efeito Sonoro 🔊 Som de Osso Quebrando | Efeito Sonoro Grátis | ASMR | Som Sem Direitos Autorais Neste vídeo você encontra um som de osso quebrando realista, ideal para uso como efeito sonoro grátis em produções audiovisuais, vídeos de ação, suspense, terror, games e projetos ",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7609412371051711751",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "studio",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "CRACK",
+    "mo_ta": "Khuc xuong bi gay doi truoc micro thu am"
+   }
+  },
+  {
+   "video_id": "7609876687207042312",
+   "url": "https://www.tiktok.com/@lamei.concept/video/7609876687207042312",
+   "caption": "Tạo trend ảnh AI cùng Concept Beauty: Vũ #Gemini #thuydiepbds #beauty #chupanhbeauty #fypシ゚viral Prompt tạo ảnh AI Beauty đẹp. Chụp ảnh Beauty nàng thơ. created by 𝑳𝒂𝑴𝒆𝒊ᥫᩣ 𝑪𝒐𝒏𝒄𝒆𝒑𝒕 with 𝑳𝒂𝑴𝒆𝒊ᥫᩣ 𝑪𝒐𝒏𝒄𝒆𝒑𝒕’s âm thanh gốc - Thúy Điệp 🦋",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7609876687207042312",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai trang diem hong cai long vu hong tren toc tao dang"
+   }
+  },
+  {
+   "video_id": "7613136391421185302",
+   "url": "https://www.tiktok.com/@charm9746/video/7613136391421185302",
+   "caption": "Young and beautiful! ❤️❤️❤️ If you like my videos, become my follower. 👇 👇 👇 👇 #aibeauty #aiart #digitalbeauty #fyp #aigirl Follow for more unreal beauty. created by Marisa with blipstudio’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7613136391421185302",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai xinh dep toc nau uon song tao dang ngoai troi"
+   }
+  },
+  {
+   "video_id": "7622551935291378964",
+   "url": "https://www.tiktok.com/@st.mncastr/video/7622551935291378964",
+   "caption": "#giselebundchen #runwaywalk #fashion #paparazzi #mncastr created by 𝑀🍸 with guilherme’s som original",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7622551935291378964",
+    "so_ban_sao": 2,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "born to be on spotlight.",
+    "mo_ta": "co gai tao dang quyen ru truoc guong"
+   }
+  },
+  {
+   "video_id": "7623314942552198401",
+   "url": "https://www.tiktok.com/@musicspherewind/video/7623314942552198401",
+   "caption": "✨NOIR EDITION - A dark, luxurious runway techno experience designed for high-fashion visuals and global vibes. “NOIR EDITION” delivers a hypnotic groove built for movement, confidence, and style. Perfect for runway shows, fashion films, and modern visual storytelling. 🖤🇰🇷 한국어 어둡고 고급스러운 런웨이 테크노 사운",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7623314942552198401",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "NOIR EDITION",
+    "mo_ta": "nguoi mau catwalk truoc thap eiffel ban dem"
+   }
+  },
+  {
+   "video_id": "7625276138947972374",
+   "url": "https://www.tiktok.com/@amethyst_90/video/7625276138947972374",
+   "caption": "Glowing model // This runway walk was beyond iconic #runwayglow #modelstyle #fashionshow #fashiontiktok #foryou created by ⋆˙⟡ Evangeline ✮⋆˙ with dsp’s som original - dsp",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7625276138947972374",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "nguoi mau phat sang trang catwalk truoc khan gia"
+   }
+  },
+  {
+   "video_id": "7627576266593406240",
+   "url": "https://www.tiktok.com/@savana__m/video/7627576266593406240",
+   "caption": "#aigirl #AIFashion #fashiontiktok #runway #runwaywalk created by Savana with AV music’s som original",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7627576266593406240",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk vay voan xe ta mau den vang"
+   }
+  },
+  {
+   "video_id": "7629331918890323222",
+   "url": "https://www.tiktok.com/@cheri.cheri.official/video/7629331918890323222",
+   "caption": "NINA RICCI Spring/Summer 25 - Alex Consani Dark romance on the runway. Alex Consani in a sculpted black silhouette and dramatic wide-brim hat—mysterious, sharp, unforgettable. #chericheri #runway #hot #fyp #viral #supermodell #modell #ninaricci #2025 #alexconsani created by CheriCheri with CheriCher",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7629331918890323222",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "CHERI cheri",
+    "mo_ta": "nguoi mau doi mu rong van catwalk tren san"
+   }
+  },
+  {
+   "video_id": "7638608270583729416",
+   "url": "https://www.tiktok.com/@shinmusicccc/video/7638608270583729416",
+   "caption": "Walking - Vodke, Klinn | Nhạc Nền Chill Gây Nghiện Hot TikTok 2026 #walking #vodke #klinn #shinmusicccc #deepchill #chill created by Shin Music with Shin Music’s âm thanh gốc - Shin Music",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7638608270583729416",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "khac",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Deep Chill Tan Huong Tung",
+    "mo_ta": "Hinh anh co gai ghep cung giao dien trinh phat nhac"
+   }
+  },
+  {
+   "video_id": "7638997706421357845",
+   "url": "https://www.tiktok.com/@ngocthomthoitrang/video/7638997706421357845",
+   "caption": "#aispin360effect #letswalk #thoitrangnu #vayxinh #viralvideo created by Ngọc Thơm Thời Trang with 𝘾𝙝𝙞𝙡𝙡 𝙩𝙖𝙢 𝙩𝙧𝙖𝙣𝙜’s nhạc nền - 𝐕𝐈𝐄𝐓 𝐌𝐈𝐗 𝐏𝐋𝐔𝐒",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7638997706421357845",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac vay do buoc di trong quan ca phe"
+   }
+  },
+  {
+   "video_id": "7643725839615397138",
+   "url": "https://www.tiktok.com/@aigc.asuka/video/7643725839615397138",
+   "caption": "#Chinesegirl#aiart#Trenddance #chinatiktok #aibeauty created by Kimi meow AGI with Kimi meow AGI’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7643725839615397138",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao hai day den tao dang o bo bien hoang hon"
+   }
+  },
+  {
+   "video_id": "7649361408198757652",
+   "url": "https://www.tiktok.com/@melani_margareta/video/7649361408198757652",
+   "caption": "Efek AI keren : Catwalk Model. #aifilter #efek #efekviral #efekkerentiktok #soundviral created by Melani 167 with DeeDee Chipmunk’s So Beautiful",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7649361408198757652",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk dam da hoi truyen thong do vang"
+   }
+  },
+  {
+   "video_id": "7653011212984159510",
+   "url": "https://www.tiktok.com/@amaliagonzalezaroca/video/7653011212984159510",
+   "caption": "Desfile de moda generado en TIEMPO REAL. Real Time World Modelo IA creando un mundo surrealista que NO existe pero parece más real que la realidad. Modelos imposibles. Telas que cambian de forma. colores que tú ojos nunca habían visto. mientras . ves esto, está geberandose. nunca será el mismo desfi",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7653011212984159510",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk dam cuoi ren dinh long vu"
+   }
+  },
+  {
+   "video_id": "7655746319503330581",
+   "url": "https://www.tiktok.com/@salmanzq/video/7655746319503330581",
+   "caption": "Walking discovered #salmanzq #hotgirl created by Salman Qureshi with Salman Qureshi’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7655746319503330581",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "OH OH",
+    "mo_ta": "Nguoi dan ong ngoi trong xe hoi dua tay che mieng"
+   }
+  },
+  {
+   "video_id": "7656383033221614861",
+   "url": "https://www.tiktok.com/@1stfirstery/video/7656383033221614861",
+   "caption": "Midnight Silver Elegance ✨ | Stunning AI Couture Runway Looks That Redefine Luxury | FirsteryDiva AI Fashion #FirsteryDiva #AIFashion #LuxuryFashion #RunwayStyle #ElegantCouture created by FirsteryDiva with FirsteryDiva’s original sound",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7656383033221614861",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "FirsteryDiva AI Fashion",
+    "mo_ta": "Nguoi mau catwalk dam da hoi sang trong den trang"
+   }
+  },
+  {
+   "video_id": "7656617119697636616",
+   "url": "https://www.tiktok.com/@vivilin.griphyn/video/7656617119697636616",
+   "caption": "animation process #art #oc #animation #animationprocess #digitalart created by Vivilin Griphyn with Vivilin Griphyn’s original sound - Vivilin Griphyn",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7656617119697636616",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Tranh ve nhan vat toc tet dai lon nguoc cam dao"
+   }
+  },
+  {
+   "video_id": "7660440240389180686",
+   "url": "https://www.tiktok.com/@1stfirstery/video/7660440240389180686",
+   "caption": "Burgundy Royale ✨ Timeless Luxury Couture Runway | Elegant AI Fashion Show 2026 | FirsteryDiva AI Fashion #BurgundyRoyale #LuxuryFashion #RunwayStyle #AIFashionShow #FirsteryDiva created by FirsteryDiva with FirsteryDiva’s original sound",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7660440240389180686",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau doi mu do vay trang catwalk san dien"
+   }
+  },
+  {
+   "video_id": "7661830045958294805",
+   "url": "https://www.tiktok.com/@marianorenz_/video/7661830045958294805",
+   "caption": "REFRESHER #malemodel #runway #modeling #catwalk created by marianorenz_ with RUNWAYV_’s son original",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7661830045958294805",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nam nguoi mau tap catwalk trong phong tap"
+   }
+  },
+  {
+   "video_id": "7661831922296884501",
+   "url": "https://www.tiktok.com/@marianorenz_/video/7661831922296884501",
+   "caption": "Anotha one!!! #malemodel #runway #modeling #catwalk created by marianorenz_ with SXCREDMANE’s byebye.wav",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7661831922296884501",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "nam thanh nien tap di catwalk trong phong tap"
+   }
+  },
+  {
+   "video_id": "7661999792981134612",
+   "url": "https://www.tiktok.com/@taacademy_catwalk/video/7661999792981134612",
+   "caption": "Buổi training catwalk nam chuyên sâu, u mê nhan sắc nam thần này, các nàng chấm nhan sắc này mấy điểm nhỉ 🥰🥰 #catwalk #model #đà_nẵng #kidfashion #TAAcademy created by TA Academy- Trung Tâm Catwalk with TA Academy- Trung Tâm Catwalk’s âm thanh gốc - TA Academy- Trung Tâm Catwalk",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7661999792981134612",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "BUOI TRAINING CATWALK CHUYEN SAU CUNG NAM THAN TAI T. A ACADEMY",
+    "mo_ta": "co gai va chang trai dung huong dan catwalk"
+   }
+  },
+  {
+   "video_id": "7662497183031217416",
+   "url": "https://www.tiktok.com/@ildadasilva923/video/7662497183031217416",
+   "caption": "som original created by pIlda da silva with ludovika’s som original",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7662497183031217416",
+    "so_ban_sao": 0,
+    "chu_the": "dong vat",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Chim bo cau choi dan cello tren nen bong ma do"
+   }
+  },
+  {
+   "video_id": "7664806236122123538",
+   "url": "https://www.tiktok.com/@lina.nguyen270/video/7664806236122123538",
+   "caption": "#ai #walking #walkingonadream #aifashionshow #effect created by Lina Nguyen 🇰🇷 with NERVO & Kandy’s Supermodel",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7664806236122123538",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi phu nu mac vest vang quan trang buoc di"
+   }
+  },
+  {
+   "video_id": "7665606933579156743",
+   "url": "https://www.tiktok.com/@ikki_team/video/7665606933579156743",
+   "caption": "DJ KURANG SAYANG SAD SONG STYLE BANGERS VIRAL TIKTOK ORIGINAL SOUND BY : @RZKY.FDL #sadsong #sadvibes #viral #djremix #fyp #fypage #fypシ゚ created by Ikki_Team [ CCM ] with Ikki_Team [ CCM ]’s KURANG SAYANG BY RZKY.FDL",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7665606933579156743",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Bong nhan vat anime va song nhac giua thanh pho"
+   }
+  },
+  {
+   "video_id": "7665962082558381330",
+   "url": "https://www.tiktok.com/@sonia_lovetravel/video/7665962082558381330",
+   "caption": "spotlights fall on me, become the center of the runway #showfocus #runwaystar #fashionglam #modelvibe #soniaxuziyan created by 徐紫嫣Sonia with 徐紫嫣Sonia’s 原声",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7665962082558381330",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "hoa hau doi vuong mien mac vay da hoi"
+   }
+  },
+  {
+   "video_id": "7670071202790100254",
+   "url": "https://www.tiktok.com/@larysakuts/video/7670071202790100254",
+   "caption": "The art of runway elegance 🏛️🌟/How to showcase your collection 💼✨ FOR CLOTHING BRANDS & DESIGNERS / BUSINESS INQUIRIES: Want to showcase your new fashion line with high-end digital runway shows to attract clients and boost sales? We create photorealistic AI catwalks, 3D presentations, and promo v",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ia desfile passarela",
+   "truong": {
+    "id": "7670071202790100254",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau catwalk dam da hoi xanh that no"
+   }
+  },
+  {
+   "video_id": "7671665559116713236",
+   "url": "https://www.tiktok.com/@guevaru_/video/7671665559116713236",
+   "caption": "It's just a matter of time... for Dasstudios SS26 #catwalk #runway #guevarucatwalk #model #fashionweek created by Guevaru with ϻ⁹⁰³’s som original",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7671665559116713236",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Bro is not on a runway lol",
+    "mo_ta": "Thanh nien mac ao choang den di may chay bo"
+   }
+  },
+  {
+   "video_id": "7672375166793420053",
+   "url": "https://www.tiktok.com/@sweetbela777/video/7672375166793420053",
+   "caption": "#Khem Viral. Effect ✨❤AI Walking ✨🚶👣#aieffectontiktok✨❤ #goviralmyvideoplz🙏😘 #fypppp✨❤🙏 created by 💲βƐꝈȺ🧶↻འƐȺͲටའ✨🌿❣️ with user47380481645’s suara asli",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7672375166793420053",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu nguoi mau mac bo cam catwalk cam micro"
+   }
+  },
+  {
+   "video_id": "7674076210611227924",
+   "url": "https://www.tiktok.com/@jajamadona/video/7674076210611227924",
+   "caption": "#ai walk#tiktok effect #fypppp2026 created by Jaja with Tops Cordell’s original sound - Tops Cordell",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7674076210611227924",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "TikTok AI",
+    "mo_ta": "Nguoi phu nu mac do den di tren pho"
+   }
+  },
+  {
+   "video_id": "7674562600218184967",
+   "url": "https://www.tiktok.com/@taya.asmr/video/7674562600218184967",
+   "caption": "うん #ai美女 #aibeauty #aiwoman created by taya with taya’s オリジナル楽曲 - taya",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7674562600218184967",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai toc dai den mim cuoi chup chan dung trong phong"
+   }
+  },
+  {
+   "video_id": "7676095162623233298",
+   "url": "https://www.tiktok.com/@x1y30/video/7676095162623233298",
+   "caption": "Its Original music #piano #originalmusic #original #fyyyyyyyyyyyyyyyy created by X with X’s original sound - X",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7676095162623233298",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Original sound",
+    "mo_ta": "Ban tay dang danh dan piano trong khong gian toi"
+   }
+  },
+  {
+   "video_id": "7676835561658682645",
+   "url": "https://www.tiktok.com/@fashion___2026/video/7676835561658682645",
+   "caption": "#spotlight #fashionworld #runway #secretmodel #fashion created by ✨World of fashion✨ with 𝑺𝑾✘’s оригинальный звук - ⛸️",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7676835561658682645",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "studio",
+    "hanh_dong": "nhay",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "bong nguoi dang hai tay truoc luong sang"
+   }
+  },
+  {
+   "video_id": "7677224363111795989",
+   "url": "https://www.tiktok.com/@fashion___2026/video/7677224363111795989",
+   "caption": "#fashion #runway #fashionworld #spotlight #model created by ✨World of fashion✨ with thur.fashion’s som original",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7677224363111795989",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Plus size models now: NYFW Fashion",
+    "mo_ta": "nguoi mau ngoai co catwalk tren san dien"
+   }
+  },
+  {
+   "video_id": "7677947184549055765",
+   "url": "https://www.tiktok.com/@fashion___2026/video/7677947184549055765",
+   "caption": "\"kinda creepy👹,but iconic✨\"#model #spotlight #makemeviral #runway #fashion created by ✨World of fashion✨ with 𝕎𝕒𝕣𝕣𝕚𝕪𝕠’s original sound - 𝕎𝕒𝕣𝕣𝕚𝕪𝕠",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7677947184549055765",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "silent hill nurse walk",
+    "mo_ta": "nguoi mau tao dang di bo trong suong mu"
+   }
+  },
+  {
+   "video_id": "7680200499823611157",
+   "url": "https://www.tiktok.com/@pporroqqsuch/video/7680200499823611157",
+   "caption": "AI Generated 📍TikTok AI Walking #aiwalkingeffect #สร้างภาพจากai #creatorsearchinsights created by PorcheAl with Monika XYZ’s oryginalny dźwięk – Monika XYZ",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7680200499823611157",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi dan ong ao trang quan short di dao tren bo bien"
+   }
+  },
+  {
+   "video_id": "7680509752157211925",
+   "url": "https://www.tiktok.com/@brocaffx/video/7680509752157211925",
+   "caption": " created by KahX 🇧🇷 with ✧ 𝗗𝗨𝗗𝗨 𝗠𝗨𝗦𝗜𝗖 ✧’s som original - ✧ 𝗗𝗨𝗗𝗨 𝗠𝗨𝗦𝗜𝗖 ✧",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7680509752157211925",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Chan dung co gai toc ngan mai bang deo vong co"
+   }
+  },
+  {
+   "video_id": "7681136536200482081",
+   "url": "https://www.tiktok.com/@arslowed06/video/7681136536200482081",
+   "caption": "Use headphones 🎧for better experience#fyp#viral#music#newmusic #akhorde 🔥🎵 original sound -f.m.lofi1 .. created by 𝐀𝐑/𝐒𝐥𝐨𝐰𝐞𝐝 🩶 with F.M LOFI 🎧’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7681136536200482081",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Cap tai nghe khong day mau trang tren nen den"
+   }
+  },
+  {
+   "video_id": "7681994611132288289",
+   "url": "https://www.tiktok.com/@techniahqrobot/video/7681994611132288289",
+   "caption": "A walking cycle can be built directly into metal. This 3D animation shows a mechanical linkage coordinating two legs through a repeatable walking motion. As the joints rotate, each foot follows a controlled path. It lifts from the ground, swings forward, lowers into position and prepares to support ",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7681994611132288289",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Mo hinh co khi kim loai hinh hai chan tren nen den"
+   }
+  },
+  {
+   "video_id": "7682195295802789128",
+   "url": "https://www.tiktok.com/@johnlorenzpasquin/video/7682195295802789128",
+   "caption": "RD (original sound) VIRAL TEKTOK MUSEC REMEX SLOW X BEAT🎧🎶 created by ✯RD≛⃝MUSEC✯🎶 with ✯RD≛⃝MUSEC✯🎶’s original sound - ✯RD≛⃝MUSEC✯🎶",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7682195295802789128",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "RD",
+    "mo_ta": "Logo hinh tron mau vang va xe the thao phia sau"
+   }
+  },
+  {
+   "video_id": "7682755350864366866",
+   "url": "https://www.tiktok.com/@statusmusicais40/video/7682755350864366866",
+   "caption": "#CapCut @Status musicais \"IA na Passarela\" #ia #romantictrends #passarela #desfile created by Status musicais with Status musicais’s som original",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ia pasarela moda",
+   "truong": {
+    "id": "7682755350864366866",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "momento Fashion",
+    "mo_ta": "Co gai mac vay hoa xanh ngoi ben lan can"
+   }
+  },
+  {
+   "video_id": "7683812560092597525",
+   "url": "https://www.tiktok.com/@misra_2255/video/7683812560092597525",
+   "caption": "#creatorsearchinsights #oromotiktok #foryou #viral created by Misra 2 with Misra 2’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7683812560092597525",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Fading Ledger Your Story Next AutoCut",
+    "mo_ta": "Man hinh dien thoai quay co gai mac trang phuc truyen thong"
+   }
+  },
+  {
+   "video_id": "7683868237745884436",
+   "url": "https://www.tiktok.com/@aichan_mitsuketa/video/7683868237745884436",
+   "caption": "今日からTikTok始めました☕️ 最初に見つけてくれた人、覚えておくね♡仲良くしてください☺️ #AI美女 #AIキャラクター #カフェ店員 #初投稿 created by あいちゃん｜これ見つけた♡ with sanusagi’s Cute heartwarming BGM(1490583)",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai beauty icon",
+   "truong": {
+    "id": "7683868237745884436",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "COFFEE Good Coffee Good Day A.I. CAFE",
+    "mo_ta": "Co gai mac tap de cafe mim cuoi tao dang trong quan ca phe"
+   }
+  },
+  {
+   "video_id": "7684377999751351574",
+   "url": "https://www.tiktok.com/@galletitaconmilk0/video/7684377999751351574",
+   "caption": "Before the trends, these were the OGs 🎶🔥 #ViralSounds #TikTokOrigins #SoundCreators #Top5 #TikTokViral created by 5AM_Factory with 5AM_Factory’s sonido original",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s original sound",
+   "truong": {
+    "id": "7684377999751351574",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "TOP 5 ORIGINAL VIDEOS FROM VIRAL SOUNDS 1. 2. 3. 4. 5.",
+    "mo_ta": "Co gai doi tai nghe tai meo mau hong ngoi noi chuyen"
+   }
+  },
+  {
+   "video_id": "7686104862509059336",
+   "url": "https://www.tiktok.com/@fashion.tape/video/7686104862509059336",
+   "caption": "Runway Icon 💜 #evaherzigova #supermodel #modeledit #runwayedit #fyp created by ✟ with .’s original sound - Roslyakova",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7686104862509059336",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "nguoi mau nu cuoi tuoi catwalk tren san dien"
+   }
+  },
+  {
+   "video_id": "7686620051998346518",
+   "url": "https://www.tiktok.com/@fashionroadman/video/7686620051998346518",
+   "caption": "@H&M just held their SS27 runway show in London and showcased many creative ways to light the runway. This included everything from models holding their own spotlights to moving image on a background screen. #fashion #londonfashionweek #fashionweek #hm #runway created by FashionRoadman with FashionR",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7686620051998346518",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "JUST WHEN YOU THINK YOU'VE SEEN EVERY WAY TO LIGHT A RUNWAY",
+    "mo_ta": "nguoi mau cam den chieu sang tao dang"
+   }
+  },
+  {
+   "video_id": "7687927382174453000",
+   "url": "https://www.tiktok.com/@arvimo14/video/7687927382174453000",
+   "caption": "#catwalk #ai created by 𝗠𝗿. 𝗔𝗿𝘃𝗶 ᵐᵒᵉ with ewfakhuszairy’s original sound - ewfakhuszairy",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai catwalk",
+   "truong": {
+    "id": "7687927382174453000",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nam nguoi mau mac vest xanh catwalk san dien"
+   }
+  },
+  {
+   "video_id": "7687954972427750688",
+   "url": "https://www.tiktok.com/@prokhorovanna/video/7687954972427750688",
+   "caption": "#modelwalk #catwalk #fashiontiktok #model #fyp created by Alekseevna Anna with marac’s som original",
+   "nhan_user": "sai",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7687954972427750688",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Trying to recreate Shalom Harlow's walk",
+    "mo_ta": "Co gai catwalk tai nha kem video goc cua Shalom Harlow"
+   }
+  },
+  {
+   "video_id": "7689943842774158600",
+   "url": "https://www.tiktok.com/@joshobiniana/video/7689943842774158600",
+   "caption": "​Stepping onto the digital runway. Who said I can't walk the ramp? #AIModel #VirtualRunway #AIFashion #fyp #trending created by Josh Obiniana with ᴄᴇᴊᴏᴛᴀ sᴏɴɢs’s som original",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7689943842774158600",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nam nguoi mau ao ba lo den catwalk san dien"
+   }
+  },
+  {
+   "video_id": "7694318925198216456",
+   "url": "https://www.tiktok.com/@_aesell_/video/7694318925198216456",
+   "caption": "Zimmermann | Fall/Winter 2025/26 | Paris Fashion Week #YasminWijnaldum #supermodel #runway #zimmermann created by 🐆 with 🐆’s оригинальный звук - 🐆",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7694318925198216456",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "The creation AESELL",
+    "mo_ta": "dan nguoi mau catwalk theo hang tren san dien"
+   }
+  },
+  {
+   "video_id": "7694415856410873118",
+   "url": "https://www.tiktok.com/@zhcyt/video/7694415856410873118",
+   "caption": " created by ZHC with ✧ 𝗗𝗨𝗗𝗨 𝗠𝗨𝗦𝗜𝗖 ✧’s som original - ✧ 𝗗𝗨𝗗𝗨 𝗠𝗨𝗦𝗜𝗖 ✧",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s som original",
+   "truong": {
+    "id": "7694415856410873118",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Phu nu mang thai ngoi canh nguoi dan ong cuoi"
+   }
+  },
+  {
+   "video_id": "7696976183992470804",
+   "url": "https://www.tiktok.com/@ai.visual60/video/7696976183992470804",
+   "caption": "#aifashion #runway #model #aitrend #Fashion created by ai.visual with S A S H A’s original sound",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7696976183992470804",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "khac",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau toc ngan mac trang phuc sci-fi catwalk"
+   }
+  },
+  {
+   "video_id": "7697082387057921300",
+   "url": "https://www.tiktok.com/@alnvolsk5/video/7697082387057921300",
+   "caption": "#runway #fashion #models RUNWAY created by lekaaa🤍 with lekaaa🤍’s оригинальный звук",
+   "nhan_user": "sai",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "model runway spotlight background",
+   "truong": {
+    "id": "7697082387057921300",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "VA",
+    "mo_ta": "nguoi mau nu catwalk tren san dien thoi trang"
+   }
+  },
+  {
+   "video_id": "7697688247333358864",
+   "url": "https://www.tiktok.com/@suely.gomes.confessor/video/7697688247333358864",
+   "caption": " created by Suely Gomes -Nós e Deus with Suely Gomes -Nós e Deus’s som original",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "walking created by",
+   "truong": {
+    "id": "7697688247333358864",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "THE WALKING STEP TikTok picsinmotion",
+    "mo_ta": "Nguoi dan ong cam gay bong chay giua dam dong duoi mua"
+   }
+  },
+  {
+   "video_id": "7697991582955572498",
+   "url": "https://www.tiktok.com/@models.house.blog/video/7697991582955572498",
+   "caption": "LỘ DIỆN TOP 3 FINAL SUPERMODELME RUNWAY KINGS 🔥Đại diện Việt Nam (Albert Trần Chấn Long) cùng hai đại diện Philippines (Noah Webb) và Ấn Độ (Sahil Sharma) sẽ thi đấu tại chung kết ngày mai 19 tháng 10! #alberttran #supermodelme #finale #powerful#pownway created by MODELS HOUSE with Over Night ✪’s L",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "men runway walk studio",
+   "truong": {
+    "id": "7697991582955572498",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": true,
+    "la_tutorial": false,
+    "chu_ocr": "Top 3 Chung ket Sieu mau Nam chau A",
+    "mo_ta": "ba khung hinh ghep ba nguoi mau nam tao dang"
+   }
+  },
+  {
+   "video_id": "7698092608463162644",
+   "url": "https://www.tiktok.com/@lihongdream1969/video/7698092608463162644",
+   "caption": "runway walking#ai#Ai#model#supermodel#movieclips created by lihongdream1969 with Ted D'souza & Dani Audiomix’s Luxury, Elegance, Refined",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7698092608463162644",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "AI生成",
+    "mo_ta": "Co gai mac dam da hoi trang tao dang canh hoa"
+   }
+  },
+  {
+   "video_id": "7699502640618687766",
+   "url": "https://www.tiktok.com/@refreshaminds.off/video/7699502640618687766",
+   "caption": "Royal Family RampWalk please follow like and repost please don't copy My designed dresses Thank you #foryou #AIstory #FashionRunway #AIAnimals #LuxuryFashion @🇵🇰@RefreshMinds🇦🇪 @MeowTales created by RefreshMinds Official with Taran’s original sound",
+   "nhan_user": "ranh_gioi",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "ai runway walk fashion",
+   "truong": {
+    "id": "7699502640618687766",
+    "so_ban_sao": 1,
+    "chu_the": "dong vat",
+    "loai_nen": "san_dien",
+    "hanh_dong": "catwalk",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hai chu tho deo vuong mien vay long catwalk"
+   }
+  }
+ ]
+}
