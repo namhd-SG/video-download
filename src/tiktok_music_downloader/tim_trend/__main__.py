@@ -52,7 +52,7 @@ def main(
         kq = chay(video, ra, tao_nguon=lambda: ChromeTim(tran_luot, gian_cach, chan_doan=ra / "chan-doan",
                                                         profile_ben=profile_ben, cho_giai_giay=cho_giai_captcha),
                   so_truy_van=so_truy_van, so_hop=hop, model=model,
-                  truy_van_tay=[t.strip() for t in truy_van.split("|") if t.strip()] or None)
+                  truy_van_tay=[t.strip() for t in truy_van.split("|") if t.strip()] or None, nguong=hang_giu)
     except VideoHuongDan as exc:
         typer.echo(f"Video đầu vào là video HƯỚNG DẪN — {exc}. Công cụ chưa tìm được theo video chỉ có cảnh hướng dẫn; "
                    "đưa video có cảnh KẾT QUẢ (hiệu ứng đã làm xong) vào để tìm.", err=True)

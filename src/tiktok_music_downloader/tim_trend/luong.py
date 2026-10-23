@@ -1,14 +1,12 @@
 """Điều phối một lần chạy: video ⇒ chữ ký ⇒ tìm theo hop ⇒ ảnh bìa ⇒ hạng ⇒ mở rộng ⇒ kết quả.
 
 Đối chứng dương KHÔNG tự chấm (agy plan-R1b ĐK5): chữ ký tính từ lượt bóc RIÊNG của khung đầu vào; mỗi lô ảnh bìa gửi agy
-có thêm 1 bản sao khung khớp chữ ký của video đầu vào (ctrl, tên số và vị trí ngẫu nhiên như ảnh bìa; tên ghi ở
-`lo_ctrl`). ctrl trong lô không ra hạng 3 ⇒ lô đó không tin được ⇒ cả lần
-chạy KHÔNG xuất `links.txt` (lọc sai là hỏng âm thầm: thà không ra link còn hơn ra link sai mà trông như đúng).
+kèm bản sao các khung khớp chữ ký (ctrl) — luật cổng nằm ở `doi_chung.py`. Mọi link xuất ra phải đến từ một lô có ctrl
+đạt (lọc sai là hỏng âm thầm: thà không ra link còn hơn ra link sai mà trông như đúng).
 """
 from __future__ import annotations
 
 import json
-import random
 import re
 import shutil
 from collections.abc import Callable
@@ -16,38 +14,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from . import agy_boc, anh_bia, khung
-from .cham import NGUONG_MAC_DINH, ChuKy, chu_ky, hang
+from .cham import NGUONG_MAC_DINH, ChuKy, chu_ky
+# ChuKyKhongOnDinh / VideoHuongDan / chon_khung_doi_chung nhập lại ở đây cho CLI và test (trước nằm trong file này).
+from .doi_chung import ChuKyKhongOnDinh, VideoHuongDan, cham_lo, chon_khung_doi_chung, tin_ca_luot  # noqa: F401
 from .khu_trung import MucKhuTrung, khu_trung
 from .mo_rong import sinh_mo_rong
 from .nguon_tim import BiCaptcha, HetLuot, LoiMoTrang, UngVien
 from .truong import TruongAnh
 from .truy_van import TruyVan, sinh_truy_van
-
-def chon_khung_doi_chung(ds_khung: list[Path], truong_khung: dict[str, TruongAnh], ck: ChuKy) -> Path:
-    """Khung đối chứng phải là khung ĐÃ khớp chữ ký (hạng 3), ưu tiên khung giữa.
-
-    Ca 3 (23/10): video 2 cảnh (màn hình concert + hướng dẫn trên điện thoại) ⇒ chữ ký theo đa số = cảnh concert, nhưng
-    khung giữa là cảnh điện thoại ⇒ ctrl ra hạng 1/0 ở mọi lô ⇒ cả lần chạy bị chặn dù agy đọc đúng.
-    Không khung nào khớp ⇒ chữ ký không ổn định (video nhiều cảnh khác hẳn nhau) ⇒ dừng, không chấm với thước hỏng.
-    """
-    giua = len(ds_khung) // 2
-    thu_tu = [ds_khung[giua]] + [k for i, k in enumerate(ds_khung) if i != giua]
-    for k in thu_tu:
-        t = truong_khung.get(k.stem)
-        if t is not None and hang(t, ck) == "3":
-            return k
-    doc_duoc = [truong_khung[k.stem] for k in ds_khung if k.stem in truong_khung]
-    if doc_duoc and all(t.la_tutorial for t in doc_duoc):
-        raise VideoHuongDan("mọi khung của video đầu vào đều là cảnh hướng dẫn — cắt cảnh không giúp được")
-    raise ChuKyKhongOnDinh("không khung nào của video đầu vào khớp chữ ký của chính nó — video nhiều cảnh khác hẳn nhau")
-
-
-class ChuKyKhongOnDinh(RuntimeError):
-    """Chữ ký dạng không đại diện được cho video đầu vào (không khung nào tự khớp)."""
-
-
-class VideoHuongDan(ChuKyKhongOnDinh):
-    """Video đầu vào chỉ có cảnh hướng dẫn: khung nào cũng ra 2A nên không có khung đối chứng hạng 3 (review 23/10 M3)."""
 
 
 def bao_ngay(chu: str) -> None:
@@ -65,7 +39,9 @@ class KetQua:
     truy_van: list[dict] = field(default_factory=list)       # {text, nhom, lang, loai, hop, so_link, ghi_chu}
     ung_vien: list[dict] = field(default_factory=list)       # UngVien + hang + truong + co
     bo: dict[str, str] = field(default_factory=dict)         # video_id ⇒ lý do bị bỏ
-    lo_ctrl: list[dict] = field(default_factory=list)        # {lo, hang_ctrl}
+    lo_ctrl: list[dict] = field(default_factory=list)        # mỗi lượt agy: {lo, lan, ten_ctrl[], hang_ctrl[], tin}
+    so_lo: int = 0                                            # lô logic xuyên các hop
+    so_lo_bo: int = 0                                         # lô ctrl vẫn trượt sau chấm lại ⇒ ảnh không có hạng
     so_lan_mo_trang: int = 0
     dung_vi: str = ""                                         # lý do dừng sớm, nếu có
     bi_captcha: bool = False
@@ -85,41 +61,8 @@ def _bo_truong(t: TruongAnh | None) -> dict | None:
     return None if t is None else asdict(t)
 
 
-def _ten_ctrl(rnd: random.Random, da_co: set[str]) -> str:
-    """Tên ctrl cùng mẫu với ảnh bìa (`<19 chữ số>`): tên `ctrl-N` lộ cho agy biết ảnh nào là đối chứng ⇒ chấm không còn mù."""
-    while True:
-        ten = str(rnd.randrange(7 * 10**18, 8 * 10**18))
-        if ten not in da_co:
-            return ten
-
-
-def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq: KetQua,
-             model: str, rnd: random.Random | None = None) -> dict[str, tuple[str | None, TruongAnh | None]]:
-    """Chấm ảnh bìa theo lô ≤ LO_TOI_DA-1, mỗi lô kèm 1 ctrl đặt tên và vị trí ngẫu nhiên. Trả {video_id: (hạng, trường)}."""
-    rnd = rnd or random.Random()
-    ra: dict[str, tuple[str | None, TruongAnh | None]] = {}
-    ids = list(bia)
-    co = agy_boc.LO_TOI_DA - 1
-    for k in range(0, len(ids), co):
-        nhom = ids[k:k + co]
-        ctrl = thu_muc / f"{_ten_ctrl(rnd, {p.stem for p in thu_muc.glob('*.jpg')})}.jpg"
-        shutil.copyfile(ctrl_goc, ctrl)
-        lo = [bia[i] for i in nhom]
-        lo.insert(rnd.randrange(len(lo) + 1), ctrl)
-        print(f"agy chấm lô {len(kq.lo_ctrl) + 1}: {len(nhom)} ảnh bìa (≈1–2 phút)…", flush=True)
-        truong = agy_boc.boc_truong(lo, thu_muc, model, ten=f"agy-truong-lo-{len(kq.lo_ctrl)}")
-        h_ctrl = hang(truong[ctrl.stem], ck) if ctrl.stem in truong else None
-        kq.lo_ctrl.append({"lo": len(kq.lo_ctrl), "ten_ctrl": ctrl.stem, "hang_ctrl": h_ctrl})
-        tin = h_ctrl == "3"
-        kq.tin_duoc = kq.tin_duoc and tin
-        for vid in nhom:
-            t = truong.get(bia[vid].stem)
-            ra[vid] = ((hang(t, ck) if (t is not None and tin) else None), t)
-    return ra
-
-
 def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van: int = 6, so_hop: int = 2,
-         truy_van_tay: list[str] | None = None,
+         truy_van_tay: list[str] | None = None, nguong: frozenset[str] = NGUONG_MAC_DINH,
          gian_cach_anh: float = 4.0, model: str = agy_boc.MODEL_MAC_DINH,
          bao: Callable[[str], None] = bao_ngay) -> KetQua:
     kq = KetQua()
@@ -133,7 +76,7 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
     truong_khung = agy_boc.boc_truong(ds_khung, ra, model, ten="agy-truong-dau-vao")
     kq.chu_ky = ck = chu_ky(list(truong_khung.values()))
     bao(f"Chữ ký dạng: {ck}")
-    ctrl_goc = chon_khung_doi_chung(ds_khung, truong_khung, ck)
+    ds_ctrl = chon_khung_doi_chung(ds_khung, truong_khung, ck, nguong)
 
     if truy_van_tay:
         # Người chạy tự đưa key hop 1 (vd từ hồ sơ trend): thay HẲN key tự sinh — để so A/B chỉ đổi 1 biến.
@@ -169,7 +112,8 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
             kq.bo.update(loi)
             giu, bo = khu_trung([MucKhuTrung(u.video_id, bia[u.video_id]) for u in moi if u.video_id in bia])
             kq.bo.update(bo)
-            cham = _cham_lo({m.video_id: bia[m.video_id] for m in giu}, ctrl_goc, thu_bia, ck, kq, model) if giu else {}
+            cham = (cham_lo({m.video_id: bia[m.video_id] for m in giu}, ds_ctrl, thu_bia, ck, kq, model, nguong)
+                    if giu else {})
             for m in giu:
                 u = theo_id[m.video_id]
                 h, t = cham[m.video_id]
@@ -179,14 +123,16 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
                 kq.ung_vien.append({**asdict(u), "hang": h, "truong": _bo_truong(t), "co": co, "hop": hop})
             if kq.dung_vi or hop == so_hop:
                 break
-            dat = [u["caption"] for u in kq.ung_vien if u["hang"] in ("3", "2A")]
+            dat = [u["caption"] for u in kq.ung_vien if u["hang"] in nguong]
             hang_doi = sinh_mo_rong(dat, da_dung, so_truy_van)
             if not hang_doi:
                 break
+    # Tính SAU khi đã gộp mọi ứng viên: vế "còn link" cần danh sách đầy đủ (agy R2b).
+    kq.tin_duoc = tin_ca_luot(kq.so_lo, kq.so_lo_bo, len(kq.giu(nguong)))
     return kq
 
 
-_TEP_LINK = re.compile(r"^links(-\d\d)?\.txt$")
+_TEP_LINK = re.compile(r"^links(-ket-qua|-huong-dan)?(-\d\d)?\.txt$")
 
 
 def _xoa_tep_link(ra: Path) -> None:
@@ -229,17 +175,28 @@ def don_dau_ra_cu(ra: Path) -> None:
         shutil.rmtree(ra / "khung", ignore_errors=True)
 
 
-def ghi_links(kq: KetQua, ra: Path, nguong: frozenset[str] = NGUONG_MAC_DINH) -> list[Path]:
-    """`links.txt` (mọi link đạt) + `links-NN.txt` mỗi file ≤50 khi vượt trần job. KHÔNG ghi gì nếu chạy không tin được."""
-    _xoa_tep_link(ra)
-    if not kq.tin_duoc or kq.rong or kq.bi_captcha or kq.loi_trang:
-        return []
-    links = [u["url"] for u in kq.giu(nguong)]
-    tep = [ra / "links.txt"]
+def _ghi_tap(ra: Path, goc: str, links: list[str]) -> list[Path]:
+    """`<goc>.txt` + `<goc>-NN.txt` mỗi file ≤50 khi vượt trần job của Video Desk."""
+    tep = [ra / f"{goc}.txt"]
     tep[0].write_text("\n".join(links) + ("\n" if links else ""))
     if len(links) > LINK_MOI_KHOI:
         for i in range(0, len(links), LINK_MOI_KHOI):
-            p = ra / f"links-{i // LINK_MOI_KHOI + 1:02d}.txt"
+            p = ra / f"{goc}-{i // LINK_MOI_KHOI + 1:02d}.txt"
             p.write_text("\n".join(links[i:i + LINK_MOI_KHOI]) + "\n")
             tep.append(p)
+    return tep
+
+
+def ghi_links(kq: KetQua, ra: Path, nguong: frozenset[str] = NGUONG_MAC_DINH) -> list[Path]:
+    """`links.txt` (mọi link đạt) + `links-ket-qua.txt` (hạng 3) + `links-huong-dan.txt` (hạng 2A) — user chốt 23/10 tìm
+    "cả 2" — nhóm rỗng thì không ghi. KHÔNG ghi gì nếu chạy không tin được."""
+    _xoa_tep_link(ra)
+    if not kq.tin_duoc or kq.rong or kq.bi_captcha or kq.loi_trang:
+        return []
+    giu = kq.giu(nguong)
+    tep = _ghi_tap(ra, "links", [u["url"] for u in giu])
+    for goc, h in (("links-ket-qua", "3"), ("links-huong-dan", "2A")):
+        nhom = [u["url"] for u in giu if u["hang"] == h]
+        if nhom:
+            tep += _ghi_tap(ra, goc, nhom)
     return tep

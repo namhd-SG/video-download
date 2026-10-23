@@ -10,7 +10,7 @@ from pathlib import Path
 from .cham import NGUONG_MAC_DINH
 from .luong import TIEU_DE_TRANG, KetQua
 
-TEN_HANG = {"3": "Đúng dạng", "2A": "Đúng dạng · tutorial", "2B": "Gần (lệch 1)", "1": "Khác dạng", "0": "Khác chủ thể",
+TEN_HANG = {"3": "Đúng dạng · kết quả", "2A": "Đúng dạng · hướng dẫn", "2B": "Gần (lệch 1)", "1": "Khác dạng", "0": "Khác chủ thể",
             None: "Chưa chấm được"}
 _CSS = """:root{--bg:#f7f6f3;--card:#fff;--ink:#1d1d1f;--mute:#6b6b70;--line:#e4e2dc;--ok:#2e7d32;--warn:#9a6b00;--bad:#b3261e}
 @media (prefers-color-scheme:dark){:root{--bg:#141416;--card:#1e1e21;--ink:#ececee;--mute:#9a9aa1;--line:#2e2e33;--ok:#7bc47f;--warn:#e2b54a;--bad:#f28b82}}
@@ -57,9 +57,15 @@ def render(kq: KetQua, ra: Path, ten_video: str, nguong: frozenset[str] = NGUONG
         tin = (f'<p class="bad">KHÔNG CÓ ỨNG VIÊN NÀO sau {kq.so_lan_mo_trang} lần mở trang — feed TikTok rỗng hoặc bị chặn. '
                'Xem ảnh chụp trong thư mục chan-doan/.</p>')
     else:
-        tin = ('<p class="ok">Đối chứng dương đạt ở mọi lô (khung video đầu vào ra hạng 3).</p>' if kq.tin_duoc else
-           '<p class="bad">ĐỐI CHỨNG DƯƠNG TRƯỢT — máy chấm không tin được ở lần chạy này ⇒ KHÔNG xuất link. '
-           f'Lô: {escape(str(kq.lo_ctrl))}</p>')
+        lo = f"{kq.so_lo - kq.so_lo_bo}/{kq.so_lo} lô đối chứng đạt"
+        if not kq.tin_duoc:
+            tin = ('<p class="bad">ĐỐI CHỨNG DƯƠNG TRƯỢT — máy chấm không tin được ở lần chạy này ⇒ KHÔNG xuất link '
+                   f'({escape(lo)}). Lô: {escape(str(kq.lo_ctrl))}</p>')
+        elif kq.so_lo_bo:
+            tin = (f'<p class="warn">Bỏ {kq.so_lo_bo}/{kq.so_lo} lô (đối chứng trượt cả sau khi chấm lại): ảnh của lô bỏ '
+                   '"Chưa chấm được"; link chỉ lấy từ lô đạt.</p>')
+        else:
+            tin = f'<p class="ok">Đối chứng dương đạt ở mọi lô ({escape(lo)}).</p>'
     html = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 {TIEU_DE_TRANG}<style>{_CSS}</style></head><body><main>
 <h1>Tìm video cùng dạng: {escape(ten_video)}</h1>

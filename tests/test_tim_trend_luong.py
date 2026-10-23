@@ -69,10 +69,14 @@ def ffmpeg_gia(tmp_path, monkeypatch):
 
 @pytest.fixture
 def gia(monkeypatch, tmp_path, ffmpeg_gia):
-    trang_thai = {"ctrl": "ctrl-1", "ctrl_thay": []}
+    # ctrl_theo_luot: danh sách mục fixture cho ctrl, mỗi lượt agy CHẤM LÔ lấy 1 phần tử (hết thì dùng "ctrl").
+    trang_thai = {"ctrl": "ctrl-1", "ctrl_thay": [], "ctrl_theo_luot": [], "goi": []}
 
     def boc(anh, thu_muc_ra, model=None, ten=""):
         ra = {}
+        if ten.startswith("agy-truong-lo-"):
+            trang_thai["goi"].append((ten, len(anh)))
+            ctrl_lan = trang_thai["ctrl_theo_luot"].pop(0) if trang_thai["ctrl_theo_luot"] else trang_thai["ctrl"]
         for a in anh:
             if a.stem.startswith("dau-vao"):
                 m = F["ctrl-0"]
@@ -80,7 +84,7 @@ def gia(monkeypatch, tmp_path, ffmpeg_gia):
                 m = F[UV[a.stem][0]]
             else:   # ctrl: tên số ngẫu nhiên, không có trong UV
                 trang_thai["ctrl_thay"].append(a.stem)
-                m = F[trang_thai["ctrl"]]
+                m = F[ctrl_lan]
             ra[a.stem] = tu_json(dict(m, id=a.stem))
         return ra
 
@@ -117,8 +121,13 @@ def test_tron_luong_chi_hang_dat_vao_links(gia, tmp_path):
     assert (ra / "links.txt").read_text().split() == [
         "https://www.tiktok.com/@u1/video/7000000000000000001", "https://www.tiktok.com/@u2/video/7000000000000000002",
         "https://www.tiktok.com/@u5/video/7000000000000000005"]
+    assert (ra / "links-ket-qua.txt").read_text().split() == [
+        "https://www.tiktok.com/@u1/video/7000000000000000001", "https://www.tiktok.com/@u5/video/7000000000000000005"]
+    assert (ra / "links-huong-dan.txt").read_text().split() == ["https://www.tiktok.com/@u2/video/7000000000000000002"]
+    assert [(l["lo"], l["lan"]) for l in kq.lo_ctrl] == [(0, 1), (1, 1)] and (kq.so_lo, kq.so_lo_bo) == (2, 0)
     html = render(kq, ra, video.name).read_text()
-    assert "Đúng dạng" in html and "7000000000000000005" in html and "TRƯỢT" not in html
+    assert "Đúng dạng · kết quả" in html and "Đúng dạng · hướng dẫn" in html and "7000000000000000005" in html
+    assert "TRƯỢT" not in html
 
 
 def test_ctrl_truot_thi_khong_xuat_link(gia, tmp_path):
@@ -140,8 +149,10 @@ def test_het_luot_dung_co_ghi_ly_do(gia, tmp_path):
 def test_chia_khoi_50(tmp_path):
     kq = luong.KetQua(ung_vien=[{"url": f"https://www.tiktok.com/@a/video/{7 * 10**18 + i}", "hang": "3"} for i in range(120)])
     tep = luong.ghi_links(kq, tmp_path)
-    assert [p.name for p in tep] == ["links.txt", "links-01.txt", "links-02.txt", "links-03.txt"]
-    assert [len(p.read_text().split()) for p in tep] == [120, 50, 50, 20]
+    assert [p.name for p in tep] == ["links.txt", "links-01.txt", "links-02.txt", "links-03.txt", "links-ket-qua.txt",
+                                     "links-ket-qua-01.txt", "links-ket-qua-02.txt", "links-ket-qua-03.txt"]
+    assert [len(p.read_text().split()) for p in tep] == [120, 50, 50, 20] * 2
+    assert not (tmp_path / "links-huong-dan.txt").exists()   # nhóm rỗng thì không ghi
 
 
 def test_khong_co_ung_vien_nao_thi_khong_ghi_links(gia, tmp_path):
@@ -231,7 +242,7 @@ def test_chay_lai_xoa_links_va_khung_cu(gia, tmp_path):
     ra = tmp_path / "ra"
     kq1 = luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
     kq1.ung_vien += [dict(kq1.ung_vien[0], url=f"https://www.tiktok.com/@a/video/{7 * 10**18 + i}") for i in range(60)]
-    assert len(luong.ghi_links(kq1, ra)) == 3
+    assert len(luong.ghi_links(kq1, ra)) == 7   # links + 2 khối, links-ket-qua + 2 khối, links-huong-dan
     (ra / "khung" / "cu-tu-lan-truoc.jpg").write_bytes(b"x")
 
     class _Cap(_NguonGia):
@@ -253,7 +264,8 @@ def test_khung_doi_chung_chon_khung_khop_chu_ky_khi_video_nhieu_canh():
     truong = {"dau-vao-0": tu_json(dict(concert, id="dau-vao-0")), "dau-vao-1": tu_json(dict(dien_thoai, id="dau-vao-1")),
               "dau-vao-2": tu_json(dict(concert, id="dau-vao-2"))}
     ck = cham.chu_ky(list(truong.values()))
-    assert luong.chon_khung_doi_chung(khung, truong, ck).name == "dau-vao-0.jpg"
+    assert [k.name for k in luong.chon_khung_doi_chung(khung, truong, ck, cham.NGUONG_MAC_DINH)] == [
+        "dau-vao-0.jpg", "dau-vao-2.jpg"]
 
 
 def test_khong_khung_nao_khop_thi_dung():
@@ -262,7 +274,7 @@ def test_khong_khung_nao_khop_thi_dung():
     khung = [Path("dau-vao-0.jpg")]
     truong = {"dau-vao-0": tu_json(dict(F["s3-4"], id="dau-vao-0"))}
     with pytest.raises(luong.ChuKyKhongOnDinh):
-        luong.chon_khung_doi_chung(khung, truong, ck)
+        luong.chon_khung_doi_chung(khung, truong, ck, frozenset({"3", "2A"}))
 
 
 def test_ctrl_chon_tu_luot_rieng_nhung_cham_mu_trong_lo(gia, tmp_path):
@@ -272,7 +284,7 @@ def test_ctrl_chon_tu_luot_rieng_nhung_cham_mu_trong_lo(gia, tmp_path):
     trang_thai["ctrl"] = "s3-4"   # trong lô, agy đọc ctrl thành con chó ⇒ hạng 0
     kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
     assert kq.chu_ky.so_ban_sao == 7                         # khung đầu vào khớp chữ ký ⇒ chọn được ctrl
-    assert [l["hang_ctrl"] for l in kq.lo_ctrl] == ["0"]     # nhưng lượt chấm trong lô là lượt riêng
+    assert [l["hang_ctrl"] for l in kq.lo_ctrl] == [["0"] * 3] * 2   # lượt chấm trong lô là lượt riêng (+ 1 lần chấm lại)
     assert kq.tin_duoc is False
 
 
@@ -334,15 +346,16 @@ def test_video_chi_co_canh_huong_dan_bao_rieng():
     ds = [Path(f"dau-vao-{i}.jpg") for i in range(3)]
     truong = {k.stem: tu_json(dict(huong_dan, id=k.stem)) for k in ds}
     with pytest.raises(luong.VideoHuongDan):
-        luong.chon_khung_doi_chung(ds, truong, cham.chu_ky(list(truong.values())))
+        luong.chon_khung_doi_chung(ds, truong, cham.chu_ky(list(truong.values())), cham.NGUONG_MAC_DINH)
 
 
 def test_ctrl_ten_so_va_lan_vao_lo(gia, tmp_path):
     """Review 23/10 LOW: ctrl mang tên `ctrl-N` thì agy biết ảnh nào là đối chứng ⇒ đặt tên cùng mẫu số với ảnh bìa."""
     trang_thai, video = gia
     kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
-    ten = [l["ten_ctrl"] for l in kq.lo_ctrl]
-    assert ten == trang_thai["ctrl_thay"] and kq.tin_duoc
+    ten = [t for l in kq.lo_ctrl for t in l["ten_ctrl"]]
+    assert sorted(ten) == sorted(trang_thai["ctrl_thay"]) and kq.tin_duoc and len(ten) == 3   # 3 khung khớp ⇒ 3 ctrl
+    assert not [p for p in (tmp_path / "ra" / "bia").glob("*.jpg") if p.stem not in UV]   # ctrl tạm đã dọn
     assert all(t.isdigit() and len(t) == 19 and t not in UV for t in ten)
 
 
@@ -368,3 +381,64 @@ def test_don_ket_qua_va_trang_cu_chi_khi_cua_cong_cu(tmp_path):
     (ra / "index.html").write_text("<title>trang cua toi</title>")
     luong.don_dau_ra_cu(ra)
     assert (ra / "ket-qua.json").exists() and (ra / "index.html").exists()
+
+
+def test_nguong_cli_ap_vao_cong_ctrl(gia, tmp_path):
+    """agy R1b ĐK1a: ctrl ra 2A (s7-1) ⇒ lô đạt với ngưỡng mặc định {3,2A}, nhưng trượt khi người chạy chỉ giữ {3}."""
+    trang_thai, video = gia
+    trang_thai["ctrl"] = "s7-1"
+    assert luong.chay(video, tmp_path / "a", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None).tin_duoc
+    kq = luong.chay(video, tmp_path / "b", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None,
+                    nguong=frozenset({"3"}))
+    assert not kq.tin_duoc and kq.so_lo_bo == 1
+
+
+def test_lo_truot_lan_1_cham_lai_dat_thi_dung_hang_lan_2(gia, tmp_path):
+    """Ca B (agy đọc lệch nền cả lô) ở lần 1, lần 2 đọc đúng ⇒ lô đạt, hạng ứng viên lấy từ lần 2; tên file lần 2 riêng."""
+    trang_thai, video = gia
+    trang_thai["ctrl_theo_luot"] = ["s3-4", "ctrl-1"]
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert [(l["lo"], l["lan"], l["tin"]) for l in kq.lo_ctrl] == [(0, 1, False), (0, 2, True)]
+    assert [g[0] for g in trang_thai["goi"]] == ["agy-truong-lo-0", "agy-truong-lo-0-lan2"]
+    assert kq.tin_duoc and (kq.so_lo, kq.so_lo_bo) == (1, 0)
+    assert {u["video_id"]: u["hang"] for u in kq.ung_vien}["7000000000000000001"] == "3"
+
+
+def test_bo_mot_trong_hai_lo_van_xuat_link_cua_lo_dat(gia, tmp_path, monkeypatch):
+    """Quyết của ĐP 23/10 + agy ĐK4: 2 lô, lô 0 đạt, lô 1 trượt cả 2 lần ⇒ link chỉ từ lô 0, cả lượt vẫn tin (1/2 ≤ 50%).
+    Cỡ lô trừ chỗ cho 3 ctrl (ĐK3a): LO_TOI_DA=5 ⇒ 2 ảnh bìa + 3 ctrl mỗi lượt."""
+    trang_thai, video = gia
+    monkeypatch.setattr(agy_boc, "LO_TOI_DA", 5)
+    trang_thai["ctrl_theo_luot"] = ["ctrl-1", "s3-4", "s3-4"]
+    ra = tmp_path / "ra"
+    kq = luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert [g[1] for g in trang_thai["goi"]] == [5, 5, 5]
+    assert [g[0] for g in trang_thai["goi"]] == ["agy-truong-lo-0", "agy-truong-lo-1", "agy-truong-lo-1-lan2"]
+    assert (kq.so_lo, kq.so_lo_bo) == (2, 1) and kq.tin_duoc
+    hang = {u["video_id"]: u["hang"] for u in kq.ung_vien}
+    assert hang["7000000000000000001"] == "3" and hang["7000000000000000002"] == "2A"    # lô 0 chấm thật
+    assert hang["7000000000000000003"] is None and hang["7000000000000000004"] is None   # lô 1 bị bỏ
+    luong.ghi_links(kq, ra)
+    assert (ra / "links.txt").read_text().split() == [
+        "https://www.tiktok.com/@u1/video/7000000000000000001", "https://www.tiktok.com/@u2/video/7000000000000000002"]
+    assert "Bỏ 1/2 lô" in render(kq, ra, video.name).read_text()
+
+
+def test_lo_dat_nhung_khong_link_nao_khi_co_lo_bo_thi_khong_tin(gia, tmp_path, monkeypatch):
+    """agy ĐK4: lô 1 đạt nhưng 0 link giữ, lô 0 bị bỏ ⇒ "0 kết quả" là giả ⇒ không tin (mã 7), không ghi links.txt."""
+    trang_thai, video = gia
+    monkeypatch.setattr(agy_boc, "LO_TOI_DA", 5)
+    trang_thai["ctrl_theo_luot"] = ["s3-4", "s3-4", "ctrl-1"]
+    ra = tmp_path / "ra"
+    kq = luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert not kq.tin_duoc and luong.ghi_links(kq, ra) == [] and not (ra / "links.txt").exists()
+
+
+def test_don_ca_tep_link_theo_nhom(tmp_path):
+    """agy R1b ĐK5: lần trước ghi links-ket-qua*/links-huong-dan* ⇒ lần sau phải dọn, file của người dùng vẫn giữ."""
+    ra = tmp_path / "ra"
+    ra.mkdir()
+    for ten in ("links-ket-qua.txt", "links-ket-qua-01.txt", "links-huong-dan.txt", "links-cua-toi.txt"):
+        (ra / ten).write_text("x")
+    luong.don_dau_ra_cu(ra)
+    assert sorted(p.name for p in ra.iterdir()) == ["links-cua-toi.txt"]
