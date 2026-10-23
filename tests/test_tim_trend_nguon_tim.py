@@ -141,3 +141,104 @@ def test_la_captcha_tren_html_that_221022():
     p.feed((Path(__file__).parent / "fixtures" / "tim_trend" / "captcha-search-221022.html").read_text())
     assert la_captcha(" | ".join(p.chu))
     assert not la_captcha("TikTok | 7 pose ai trend | Top | Users | Videos | AI collage 7 poses | saaart 4 ngày trước")
+
+
+def _chu_captcha_that():
+    """Chữ hiển thị của mảnh HTML captcha thật (Pha 4, 22/10)."""
+    from html.parser import HTMLParser
+    from pathlib import Path
+
+    class _Chu(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.chu = []
+
+        def handle_data(self, data):
+            self.chu.append(data)
+
+    p = _Chu()
+    p.feed((Path(__file__).parent / "fixtures" / "tim_trend" / "captcha-search-221022.html").read_text())
+    return " | ".join(p.chu)
+
+
+class _DongHo:
+    def __init__(self):
+        self.t = 1000.0
+
+    def monotonic(self):
+        return self.t
+
+    def sleep(self, s):
+        self.t += s
+
+
+def _tim_cho(monkeypatch, ket_qua, cho_giai_giay):
+    dong_ho = _DongHo()
+    monkeypatch.setattr(nguon_tim, "time", dong_ho)
+    t = ChromeTim(tran_luot=6, gian_cach=0, bao=lambda s: None, cho_giai_giay=cho_giai_giay)
+    t._page = _TrangGia(ket_qua)
+    return t
+
+
+def test_cho_nguoi_giai_captcha_roi_chay_tiep_khong_ton_luot(monkeypatch):
+    cap = {"items": [], "chu": _chu_captcha_that()}
+    t = _tim_cho(monkeypatch, [cap, cap, cap, {"items": DOM_GD1, "chu": "TikTok | Videos"}], cho_giai_giay=60)
+    ra, _ = t.tim(TruyVan("7 pose ai trend", "cau_truc", "en"))
+    assert len(ra) == 2 and t.da_mo == 1 and len(t._page.da_goto) == 1   # không mở trang mới khi chờ
+
+
+def test_giai_xong_luoi_chua_tai_thi_doc_lai_mot_lan(monkeypatch):
+    cap = {"items": [], "chu": _chu_captcha_that()}
+    t = _tim_cho(monkeypatch, [cap, {"items": [], "chu": "TikTok | Videos"}, {"items": DOM_GD1, "chu": "TikTok"}],
+                 cho_giai_giay=60)
+    ra, ghi_chu = t.tim(TruyVan("7 pose ai trend", "cau_truc", "en"))
+    assert len(ra) == 2 and "ham" not in ghi_chu and t.da_mo == 1
+
+
+def test_het_gio_cho_thi_dung(monkeypatch):
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    cap = {"items": [], "chu": _chu_captcha_that()}
+    t = _tim_cho(monkeypatch, [cap] * 50, cho_giai_giay=10)
+    with pytest.raises(BiCaptcha, match="không ai giải trong 10 giây"):
+        t.tim(TruyVan("7 pose ai trend", "cau_truc", "en"))
+
+
+def test_mac_dinh_tat_cho_giai_va_profile_trang(monkeypatch, tmp_path):
+    from tiktok_music_downloader.tim_trend.nguon_tim import BiCaptcha
+    t = _tim_cho(monkeypatch, [{"items": [], "chu": _chu_captcha_that()}, DOM_GD1], cho_giai_giay=0)
+    with pytest.raises(BiCaptcha):
+        t.tim(TruyVan("x", "cau_truc", "en"))
+    assert ChromeTim(6, 0).profile_ben is None and ChromeTim(6, 0).cho_giai_giay == 0
+
+
+def test_profile_ben_duoc_dung_lai(monkeypatch, tmp_path):
+    da_mo_thu_muc = []
+
+    class _Ctx:
+        def new_page(self):
+            return object()
+
+        def close(self):
+            pass
+
+    class _Chromium:
+        def launch_persistent_context(self, thu_muc, **k):
+            da_mo_thu_muc.append(thu_muc)
+            return _Ctx()
+
+    class _Pw:
+        chromium = _Chromium()
+
+        def stop(self):
+            pass
+
+    import playwright.sync_api as api
+    monkeypatch.setattr(api, "sync_playwright", lambda: type("S", (), {"start": lambda self: _Pw()})())
+    ben = tmp_path / "profile-tiktok"
+    for _ in range(2):
+        with ChromeTim(6, 0, bao=lambda s: None, profile_ben=ben):
+            pass
+    with ChromeTim(6, 0, bao=lambda s: None):
+        pass
+    assert da_mo_thu_muc[0] == da_mo_thu_muc[1] == str(ben) and ben.is_dir()
+    assert da_mo_thu_muc[2] != str(ben)

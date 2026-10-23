@@ -28,9 +28,14 @@ def main(
     tran_luot: int = typer.Option(12, "--tran-luot", min=1, max=40, help="Trần số lần mở trang TikTok (gồm lượt hâm phiên)"),
     gian_cach: float = typer.Option(12.0, "--gian-cach", min=5.0, help="Giây giữa 2 lần mở trang TikTok"),
     model: str = typer.Option(MODEL_MAC_DINH, "--model", help="Model agy bóc trường"),
+    profile_ben: Path = typer.Option(None, "--profile-ben",
+                                     help="Thư mục profile Chrome dùng lại giữa các lần chạy (mặc định: profile trắng mỗi lần)"),
+    cho_giai_captcha: int = typer.Option(0, "--cho-giai-captcha", min=0, max=600,
+                                         help="Giây chờ NGƯỜI giải captcha trong cửa sổ; 0 = gặp captcha là dừng (mặc định)"),
 ) -> None:
     hang_giu = frozenset(x.strip() for x in nguong.split(",") if x.strip())
-    kq = chay(video, ra, tao_nguon=lambda: ChromeTim(tran_luot, gian_cach, chan_doan=ra / "chan-doan"),
+    kq = chay(video, ra, tao_nguon=lambda: ChromeTim(tran_luot, gian_cach, chan_doan=ra / "chan-doan",
+                                                    profile_ben=profile_ben, cho_giai_giay=cho_giai_captcha),
               so_truy_van=so_truy_van, so_hop=hop, model=model)
     (ra / "ket-qua.json").write_text(json.dumps(asdict(kq), ensure_ascii=False, indent=1, default=str))
     tep = ghi_links(kq, ra, hang_giu)

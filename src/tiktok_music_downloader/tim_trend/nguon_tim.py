@@ -37,6 +37,7 @@ def la_captcha(chu_trang: str) -> bool:
     chu = chu_trang.lower()
     return any(d in chu for d in DAU_CAPTCHA)
 CHO_LINK_MS = 15_000
+GIAY_DOI_KIEM = 2   # chu kỳ đọc lại trang khi chờ người giải captcha
 
 
 @dataclass(frozen=True)
@@ -82,8 +83,13 @@ class ChromeTim:
     """Dùng trong `with`: mở MỘT cửa sổ Chrome cho cả lần chạy, đóng khi ra khỏi khối (kể cả khi lỗi)."""
 
     def __init__(self, tran_luot: int, gian_cach: float, bao: Callable[[str], None] = print,
-                 chan_doan: Path | None = None):
+                 chan_doan: Path | None = None, profile_ben: Path | None = None, cho_giai_giay: int = 0):
+        """`profile_ben`: thư mục profile Chrome dùng lại giữa các lần chạy (cookie sau khi người giải captcha còn giữ);
+        None = profile trắng mỗi lần (mặc định). `cho_giai_giay` > 0: gặp captcha thì CHỜ người giải trong cửa sổ tối đa
+        bấy nhiêu giây rồi mới dừng; 0 = dừng ngay (mặc định). Cả hai mặc định TẮT — chờ user chọn (ĐP 23/10)."""
         self.tran_luot = tran_luot
+        self.profile_ben = profile_ben
+        self.cho_giai_giay = cho_giai_giay
         self.chan_doan = chan_doan   # thư mục chụp màn hình khi feed rỗng (bằng chứng: trang chặn, captcha, hay rỗng thật)
         self.gian_cach = gian_cach
         self.bao = bao
@@ -96,8 +102,11 @@ class ChromeTim:
         self.bao("⚠ Sắp mở 1 cửa sổ Chrome để tìm trên TikTok (tự đóng khi xong). Đừng đóng tay giữa chừng.")
         self._pw = sync_playwright().start()
         try:
+            if self.profile_ben is not None:
+                self.profile_ben.mkdir(parents=True, exist_ok=True)
+            thu_muc = str(self.profile_ben) if self.profile_ben is not None else tempfile.mkdtemp(prefix="tim-trend-")
             self._ctx = self._pw.chromium.launch_persistent_context(
-                tempfile.mkdtemp(prefix="tim-trend-"), channel="chrome", headless=False,
+                thu_muc, channel="chrome", headless=False,
                 viewport={"width": 1280, "height": 900}, args=["--window-position=0,0"])
             self._page = self._ctx.new_page()
         except Exception:
@@ -134,8 +143,27 @@ class ChromeTim:
         ket_qua = self._page.evaluate(DOC_DOM)
         if la_captcha(str(ket_qua.get("chu", ""))):
             self._chup(f"captcha-{self.da_mo:02d}.png")
-            raise BiCaptcha(f"TikTok hỏi captcha ở lần mở trang thứ {self.da_mo} ({url})")
+            ket_qua = self._cho_nguoi_giai(url)
         return ket_qua["items"]
+
+    def _cho_nguoi_giai(self, url: str) -> dict:
+        """Chờ NGƯỜI giải captcha trong cửa sổ (không tự giải, không mở trang mới, không tốn lượt mở trang).
+        Hết giờ hoặc chế độ tắt ⇒ BiCaptcha."""
+        ly_do = f"TikTok hỏi captcha ở lần mở trang thứ {self.da_mo} ({url})"
+        if self.cho_giai_giay <= 0:
+            raise BiCaptcha(ly_do)
+        self.bao(f"⚠ TikTok hỏi captcha. Hãy GIẢI TRONG CỬA SỔ CHROME đang mở — chờ tối đa {self.cho_giai_giay} giây.")
+        han = time.monotonic() + self.cho_giai_giay
+        while time.monotonic() < han:
+            time.sleep(GIAY_DOI_KIEM)
+            ket_qua = self._page.evaluate(DOC_DOM)
+            if not la_captcha(str(ket_qua.get("chu", ""))):
+                self.bao("✓ Captcha đã qua, chạy tiếp.")
+                if not ket_qua["items"]:   # giải xong lưới chưa kịp tải ⇒ đọc lại 1 lần, không mở trang mới
+                    self._page.wait_for_timeout(3000)
+                    ket_qua = self._page.evaluate(DOC_DOM)
+                return ket_qua
+        raise BiCaptcha(ly_do + f"; không ai giải trong {self.cho_giai_giay} giây")
 
     def _chup(self, ten: str) -> str:
         if self.chan_doan is None:
