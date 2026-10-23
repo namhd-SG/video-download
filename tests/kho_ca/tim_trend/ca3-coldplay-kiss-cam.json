@@ -1,0 +1,1736 @@
+{
+ "ca": "ca3-coldplay-kiss-cam",
+ "ngay": "2026-10-23",
+ "lan_chay_cong_cu": "94a7e22",
+ "video_mau": "~/kho/tim-trend-du-lieu-261023/ca3-Download.mp4 (md5 9e7cad048b91a50855d6c26d162f588e)",
+ "anh_bia": "~/kho/tim-trend-du-lieu-261023/ca3-v2-94a7e22/cham-user/bia/<video_id>.jpg (ngoài repo)",
+ "dinh_nghia_user": "đúng trend = MÀN HÌNH CONCERT (thật hoặc AI dựng) chiếu người vào; biến thể chế ngoài concert, asset template phông xanh, template ghép selfie = SAI",
+ "nguon_nhan": "cham-user-ca3.json, user chấm 23/10 14:37, 57/57 thẻ, 0 ranh giới",
+ "chu_ky_may": {
+  "A": {
+   "so_ban_sao": 1,
+   "bac": "1",
+   "chu_the": "nguoi",
+   "nen": "san_dien",
+   "hanh_dong": "khac",
+   "la_luoi": false
+  },
+  "B": {
+   "so_ban_sao": 1,
+   "bac": "1",
+   "chu_the": "nguoi",
+   "nen": "san_dien",
+   "hanh_dong": "khac",
+   "la_luoi": false
+  }
+ },
+ "khung_dau_vao": {
+  "A": [
+   {
+    "id": "dau-vao-0",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "san_dien",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "cómo hacer un video de efectos especiales del concierto de",
+    "mo_ta": "Man hinh tron chieu khan gia tai concert ca nhac"
+   },
+   {
+    "id": "dau-vao-1",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "haga clic en el enlace en la esquina inferior izquierda",
+    "mo_ta": "Dien thoai mo video CapCut duoc chi bang but cam ung"
+   },
+   {
+    "id": "dau-vao-2",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "san_dien",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "TikTok @bora53640",
+    "mo_ta": "Man hinh lon hien thi khan gia tai buoi hoa nhac"
+   }
+  ],
+  "B": [
+   {
+    "id": "dau-vao-0",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "san_dien",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "cómo hacer un video de efectos especiales del concierto de",
+    "mo_ta": "Man hinh tron chieu khan gia tai concert"
+   },
+   {
+    "id": "dau-vao-1",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "haga clic en el enlace en la esquina inferior izquierda",
+    "mo_ta": "Dien thoai hien thi video va but cam ung huong dan"
+   },
+   {
+    "id": "dau-vao-2",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "san_dien",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "@bora53640",
+    "mo_ta": "Man hinh lon tai concert chieu cap doi khan gia"
+   }
+  ]
+ },
+ "the": [
+  {
+   "video_id": "7444361212319714606",
+   "url": "https://www.tiktok.com/@greenscreenmemes.com/video/7444361212319714606",
+   "tac_gia": "greenscreenmemes.com",
+   "caption": "Concert custom screen green screen #discord #protemplate #keepup #greenscreen#fyp #christmas #holidays #santa #christmasspirit #memes created by Green Screen Memes with Green Screen Memes’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert screen meme template",
+     "hang_may": "3",
+     "truong": {
+      "id": "7444361212319714606",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "San khau buoi toi co man hinh phong xanh phia truoc khan gia"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7492915505032940807",
+   "url": "https://www.tiktok.com/@pixparkle/video/7492915505032940807",
+   "tac_gia": "pixparkle",
+   "caption": "Replying to @. ✦ ·V I V I. ✦ · how to achieve the stage/concert effect? #tutorial #capcut #bandlab#kpopcover #kca #bandlabartist🔥 #illitticktack #ticktack #illit #makemefamous #singer #fyp created by ₊˚𝗽𝗶𝘅𝗶𝗲 ✦ with ₊˚𝗽𝗶𝘅𝗶𝗲 ✦’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7492915505032940807",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "nhay",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Tutorial How to achieve this Effect?",
+      "mo_ta": "Nu ca si khoac ao khoac den bieu dien tren san khau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7527910323681070367",
+   "url": "https://www.tiktok.com/@instaagraace/video/7527910323681070367",
+   "tac_gia": "instaagraace",
+   "caption": "trouble in paradise?? 👀 #coldplay #boston #coldplayconcert #kisscam #fyp created by grace with grace’s original sound",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "3",
+     "truong": {
+      "id": "7527910323681070367",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi om nhau chieu tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7528090461152611590",
+   "url": "https://www.tiktok.com/@c5n/video/7528090461152611590",
+   "tac_gia": "c5n",
+   "caption": "😨 Durante el show de Coldplay, la \"kiss cam\" expuso a dos amantes: los involucrados son Andy Byron, el CEO de Astronomer y Kristin Cabor, la directora de Recursos Humanos, ambos casados | #c5n #noticias #coldplay #amantes created by c5n with c5n’s original sound - c5n",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "3",
+     "truong": {
+      "id": "7528090461152611590",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "COLDPLAY EXPUSO A DOS AMANTES C5N",
+      "mo_ta": "Cap doi om nhau chieu tren man hinh concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7528430704103886102",
+   "url": "https://www.tiktok.com/@trixtokz/video/7528430704103886102",
+   "tac_gia": "trixtokz",
+   "caption": "Affair or very shy?! AI-generated parody – not real. Just political satire. #coldplay #coldplayaffair #trump #putin #soraai #meme #kisscam created by TrixTokz with ’s ",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "ai kiss cam coldplay",
+     "hang_may": "2B",
+     "truong": {
+      "id": "7528430704103886102",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "studio",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi dan ong ghep anh om nhau trong vong tron"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": true
+  },
+  {
+   "video_id": "7528831420735720726",
+   "url": "https://www.tiktok.com/@sirmrgreenscreen/video/7528831420735720726",
+   "tac_gia": "sirmrgreenscreen",
+   "caption": "kiss cam 2 green screen cold play https://capcut-yt.onelink.me/W3Oy/5zhm2q2l created by SIRMRGREENSCREEN with SIRMRGREENSCREEN’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "efecto kiss cam coldplay",
+     "hang_may": "0",
+     "truong": {
+      "id": "7528831420735720726",
+      "so_ban_sao": 0,
+      "chu_the": "khac",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Man hinh tron phu kin mau xanh la cay"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": false
+  },
+  {
+   "video_id": "7529269564840922390",
+   "url": "https://www.tiktok.com/@raffai_capcut/video/7529269564840922390",
+   "tac_gia": "raffai_capcut",
+   "caption": "Coldplay cheating meme kiss cam ceo hr filter template effect #capcut #kingcharles #coldplay #cheating #cam #kisscam #ceo created by RaffAI with ROBERTUS VANNACCIUS’s suono originale",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "trend kiss cam coldplay como fazer",
+     "hang_may": "3",
+     "truong": {
+      "id": "7529269564840922390",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi om nhau chieu tren man hinh concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7530192646342593814",
+   "url": "https://www.tiktok.com/@behind_thee_lens/video/7530192646342593814",
+   "tac_gia": "behind_thee_lens",
+   "caption": "Coldplay Kiss Cam 😳🤣 #coldplay #coldplayconcert #coldplaykisscam #kisscam #astronomerceo #coldplaycheat #coldplayceo #ohlookatthesetwo #chrismartin #ai #coldplayai #aivideo #videoai created by Behind The Lens with grace’s original sound",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "ai kiss cam coldplay",
+     "hang_may": "3",
+     "truong": {
+      "id": "7530192646342593814",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi mim cuoi chao tren man hinh concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7530320124839087374",
+   "url": "https://www.tiktok.com/@christy_l1/video/7530320124839087374",
+   "tac_gia": "christy_l1",
+   "caption": "#aiuniverse #CapCut Kiss Cam Trend! #coldplay #kisscam created by Mrs.Delicious with swishbar’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "kiss camera trend capcut",
+     "hang_may": "2B",
+     "truong": {
+      "id": "7530320124839087374",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "trong_nha",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "Kiss Cam Us at the Coldplay concert",
+      "mo_ta": "Cap doi selfie can mat trong khung tron"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": false
+  },
+  {
+   "video_id": "7565376477584280887",
+   "url": "https://www.tiktok.com/@erin_lacasse/video/7565376477584280887",
+   "tac_gia": "erin_lacasse",
+   "caption": "Coldplay kiss cam #halloween #costume #halloweencostume #coldplay #coldplaycam #concert #kisscam created by Erin LaCasse with grace’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "efecto kiss cam coldplay",
+     "hang_may": "2B",
+     "truong": {
+      "id": "7565376477584280887",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "trong_nha",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "COLDPLAY Kiss Cam Gillette STADIUM",
+      "mo_ta": "Cap doi om nhau ben trong khung giay carton"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": false
+  },
+  {
+   "video_id": "7623273335379545351",
+   "url": "https://www.tiktok.com/@chang_chang0702/video/7623273335379545351",
+   "tac_gia": "chang_chang0702",
+   "caption": "#CapCut Cho em hỏi là cảnh gì ạ😋??? @Hoàng Dũng #xoaytron #hoangdung #concert #fypシ゚ created by Changggg🌷 with Nguyễn Thị Thu Thuỷ’s nhạc nền - Thu Thuỷ🌸",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7623273335379545351",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "POV: 26 tuổi lo lấy chồng sớm đi. Không là sau này sẽ thấy \"cảnh\"",
+      "mo_ta": "Cô gái vui vẻ hòa mình giữa đám đông khán giả xem concert ban đêm"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7643386899788352798",
+   "url": "https://www.tiktok.com/@ngchunhtrucly/video/7643386899788352798",
+   "tac_gia": "ngchunhtrucly",
+   "caption": "🔥 How to put yourself on K-pop concert LED screen AI idol trend – photo or video in 30 seconds Realistic stage vibe with crowd & lightsticks 👇 link in bio how to make kpop idol on concert screen AI photo how to create kpop idol live stage video with AI ai kpop idol prompt for concert big screen kp",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7643386899788352798",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "PixVerse.ai Free Tutorial",
+      "mo_ta": "Nu ca si toc vang mim cuoi tren man hinh lon concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7643402784674499871",
+   "url": "https://www.tiktok.com/@lune.de.faux/video/7643402784674499871",
+   "tac_gia": "lune.de.faux",
+   "caption": "🔥 How to put yourself on K-pop concert LED screen AI idol trend – photo or video in 30 seconds Realistic stage vibe with crowd & lightsticks 👇 link in bio how to make kpop idol on concert screen AI photo how to create kpop idol live stage video with AI ai kpop idol prompt for concert big screen kp",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7643402784674499871",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Free Tutorial",
+      "mo_ta": "Nam ca si can canh tren man hinh concert co chu Free Tutorial"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7644154844076379406",
+   "url": "https://www.tiktok.com/@cherikakara/video/7644154844076379406",
+   "tac_gia": "cherikakara",
+   "caption": "K-pop idol AI prompt & CapCut tutorial for this viral trend: Turn yourself into a K-pop idol on a concert stage with stunning cinematic live moments. Featured close-up shots on giant LED screens, crowds recording with phones in the background to create an authentic live concert vibe. Use pink, purpl",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7644154844076379406",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "Veo",
+      "mo_ta": "Nữ ca sĩ quyến rũ trên màn hình sân khấu lớn giữa biển lightstick tím"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7645278782798007560",
+   "url": "https://www.tiktok.com/@ji.ha823/video/7645278782798007560",
+   "tac_gia": "ji.ha823",
+   "caption": "#capcut #capcutpioneer K-pop idol Al prompt & CapCut tutorial for this viral trend: Turn yourself into a K-pop idol on a concert stage with stunning cinematic live moments. Featured close-up shots on giant#fyp LED screens, crowds recording with phones in the background to create an authentic live co",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7645278782798007560",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "KlingAI 3.0",
+      "mo_ta": "Nữ ca sĩ xinh đẹp xuất hiện trên màn hình LED lớn tại concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7659800834238074133",
+   "url": "https://www.tiktok.com/@kazuo.369/video/7659800834238074133",
+   "tac_gia": "kazuo.369",
+   "caption": "🎸LIVE STAGE Template 🎸 #CapCut #CapCutTemplate #GreenScreen #ChromaKey #Concert created by kazuo.369 with kazuo.369’s オリジナル楽曲 - kazuo.369",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7659800834238074133",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Sân khấu ngoài trời ánh tím với màn hình xanh và đông đảo khán giả"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7660149089933331732",
+   "url": "https://www.tiktok.com/@kazuo.369/video/7660149089933331732",
+   "tac_gia": "kazuo.369",
+   "caption": "🎸LIVE STAGE Template🎸 #CapCut #CapCutTemplate #GreenScreen #ChromaKey #Concert created by kazuo.369 with kazuo.369’s オリジナル楽曲 - kazuo.369",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7660149089933331732",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Khán giả giơ tay trước sân khấu ca nhạc có màn hình xanh green screen"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7663151813977263374",
+   "url": "https://www.tiktok.com/@dailymail/video/7663151813977263374",
+   "tac_gia": "dailymail",
+   "caption": "It's been one year since a Coldplay kiss cam unexpectedly turned two tech executives into the internet's biggest viral story. The awkward stadium moment sparked millions of views, endless memes and worldwide speculation after frontman Chris Martin joked they were 'either having an affair or just ver",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "1",
+     "truong": {
+      "id": "7663151813977263374",
+      "so_ban_sao": 2,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "IT'S BEEN ONE YEAR SINCE VIRAL COLDPLAY KISS CAM MOMENT",
+      "mo_ta": "Anh ghep cung cap doi chieu tren man hinh tron"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": true
+  },
+  {
+   "video_id": "7664929671745768735",
+   "url": "https://www.tiktok.com/@sx414.68cv87/video/7664929671745768735",
+   "tac_gia": "sx414.68cv87",
+   "caption": "#capcut #capcutpioneer Hating me is like all you do breakfast to dinner iconic by mistake ai Create your own AI concert performance video using just a single personal photo with this viral trend! This tutorial covers two hit music themes: the viral Hating Me Is All You Do (Breakfast to Dinner) dance",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7664929671745768735",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "nhay",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "Chuck",
+      "mo_ta": "Nữ ca sĩ tóc xoăn cầm micro biểu diễn hết mình trên sân khấu"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7674486004622904583",
+   "url": "https://www.tiktok.com/@dorianlabs/video/7674486004622904583",
+   "tac_gia": "dorianlabs",
+   "caption": "Convierte tu foto favorita en una escena de ti dando un concierto el filtro funciona si das clic en probar plantilla y cuando se abra tu galería seleccionas tu foto favorita y das clic en exportar y en un par de minutos tendrás tu resuktado listo para compartirlo en tus redes. importante tener desca",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "tutorial capcut pantalla circular concierto",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7674486004622904583",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Ai FILTRO: TU FOTO A VIDEO DE TU 1ER CONCIERTO...",
+      "mo_ta": "Co gai tren man hinh san khau buoi hoa nhac voi hop thoai"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7676836310493056276",
+   "url": "https://www.tiktok.com/@dallam22/video/7676836310493056276",
+   "tac_gia": "dallam22",
+   "caption": "INTO THE SUN ☀︎ CONCERT, VLOG ★ Just click \"Capcut Anchor (try this template)\" to use #CapCut #capcutpioneer #pioneertemplate #BTSconcert #intothesun created by Dallam with nat⚯ ͛⁷’s original sound",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "3",
+     "truong": {
+      "id": "7676836310493056276",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi mau thoi trang",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "'DAWN!'",
+      "mo_ta": "Ca si tren man hinh lon san khau va phao hoa toa sang"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7684582578996710676",
+   "url": "https://www.tiktok.com/@ltng751/video/7684582578996710676",
+   "tac_gia": "ltng751",
+   "caption": "Ước j mai tỉnh dậy lại được đi Xoay tròn concert 😭😭 #CapCut #cuthe #orangesinger#oroangdung #xoaytronconcert created by Bận đi tìm chính mình with hog_hanh.Hay suy🩺’s âm thanh gốc - hog_hanh.HocY🩺",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7684582578996710676",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "XOAY TRON",
+      "mo_ta": "Sân khấu ca nhạc với ca sĩ biểu diễn dưới ánh đèn và hoa giấy rơi"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7697365037903662358",
+   "url": "https://www.tiktok.com/@capcut.ai.templat5/video/7697365037903662358",
+   "tac_gia": "capcut.ai.templat5",
+   "caption": "Try this template ⬆️⬆️⬆️ #CapCut #kisscam #coldplay #capcutpioneer #pioneertemplate Shrek and Lord Farquaad caught on the Jumbotron! 😂💚 The most unexpected duo to appear on the big screen! Shrek looks like he’d rather be back in his swamp, while Farquaad is loving every second of the spotlight! 💀",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "0",
+     "truong": {
+      "id": "7697365037903662358",
+      "so_ban_sao": 0,
+      "chu_the": "khac",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "When you get caught out by The Coldplay kiss cam",
+      "mo_ta": "Ảnh chế hoạt hình Shrek ôm Chúa tể Farquaad trong vòng tròn kiss cam"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "kiss camera trend capcut",
+     "hang_may": "0",
+     "truong": {
+      "id": "7697365037903662358",
+      "so_ban_sao": 1,
+      "chu_the": "khac",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "When you get caught out by The Coldplay kiss cam",
+      "mo_ta": "Hinh hoat hoa Shrek va Farquaad om nhau"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": true
+  },
+  {
+   "video_id": "7697477011987647757",
+   "url": "https://www.tiktok.com/@ellisonhannah5/video/7697477011987647757",
+   "tac_gia": "ellisonhannah5",
+   "caption": "Try this viral concert jumbotron template! Upload one photo and make your own awkward big-screen clip. The classic Kiss Cam meme trend is back. One tap to create your funny caught-on-camera scene. Join this hilarious trend now🔥 #awkwardmoment #pioneertemplate #concertmeme #capcut #capcutpioneer cre",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert screen meme template",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697477011987647757",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi om nhau chieu tren man hinh tron tai san khau"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "kiss camera trend capcut",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697477011987647757",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi hoa trang om nhau tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697489224970325278",
+   "url": "https://www.tiktok.com/@drewettwahdan26/video/7697489224970325278",
+   "tac_gia": "drewettwahdan26",
+   "caption": "#capcut #capcutpioneer How to get that awkward cringe effect of suddenly appearing on the big concert screen? It’s super simple, you only need one photo! 1. Haga clic en la plantilla de abajo a la izquierda ✅ 2. ¿No lo encuentras? Toca mi avatar💁 3. Abre este video📽️ 4. Encuentra la plantilla dent",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697489224970325278",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi che mat ben canh nguoi deo kinh tren man tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697541948864744726",
+   "url": "https://www.tiktok.com/@tr0igwth18/video/7697541948864744726",
+   "tac_gia": "tr0igwth18",
+   "caption": "#capcut #capcutpioneer Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium ca",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697541948864744726",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi dan ong deo kinh om nu tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697555134414458134",
+   "url": "https://www.tiktok.com/@maisie9400/video/7697555134414458134",
+   "tac_gia": "maisie9400",
+   "caption": "Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium capture big screen AI Bil",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697555134414458134",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi om mat lay tay che tren man hinh tron san khau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697579813976018190",
+   "url": "https://www.tiktok.com/@marshaldingtonk40/video/7697579813976018190",
+   "tac_gia": "marshaldingtonk40",
+   "caption": "#capcut #capcutpioneer Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium ca",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697579813976018190",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi nam nu om nhau chieu tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697580481587531022",
+   "url": "https://www.tiktok.com/@t43i7dnxjm3x9h/video/7697580481587531022",
+   "tac_gia": "t43i7dnxjm3x9h",
+   "caption": "#capcut #capcutpioneer Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium ca",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697580481587531022",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi dan ong om nhau chieu tren man hinh tron san khau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697582193098476831",
+   "url": "https://www.tiktok.com/@lea409592/video/7697582193098476831",
+   "tac_gia": "lea409592",
+   "caption": "#capcut #capcutpioneer Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium ca",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697582193098476831",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi dan ong om nhau chieu tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697606450037804319",
+   "url": "https://www.tiktok.com/@vv6od9nphh/video/7697606450037804319",
+   "tac_gia": "vv6od9nphh",
+   "caption": "#capcut #capcutpioneer Ever wanted to see yourself on the stadium big screen? Try this trending AI jumbotron effect🔥 Put your face on concert or sports venue screen with one click. AI concert big screen effect tutorial Stadium jumbotron face effect Kiss Cam stadium big screen effect Fan cam big scr",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "how to do concert screen effect",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697606450037804319",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai man hinh tron hien nguoi phu nu lay tay che mat"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697652302768917782",
+   "url": "https://www.tiktok.com/@czychpdla9l/video/7697652302768917782",
+   "tac_gia": "czychpdla9l",
+   "caption": "Don’t use this to prank your friends 🚫! Don’t skip this viral Coldplay affair template 🤩! Coldplay affair trending effect, Coldplay affair cinematic edit. Step-by-step tutorial to make the Coldplay affair filter. Coldplay affair CapCut template, Coldplay affair AI trend, concert kiss cam edit. Col",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "como hacer kiss cam coldplay",
+     "hang_may": "1",
+     "truong": {
+      "id": "7697652302768917782",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "studio",
+      "hanh_dong": "noi_chuyen",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "HOW TO DO THIS... CapCut Pro",
+      "mo_ta": "Nguoi dan ong huong dan lam video man hinh tron"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": true
+  },
+  {
+   "video_id": "7697686832095448334",
+   "url": "https://www.tiktok.com/@wendrothmontayes2477/video/7697686832095448334",
+   "tac_gia": "wendrothmontayes2477",
+   "caption": "🎥How to make the viral Coldplay cheating couple capcut trend. This is the famous Coldplay concert jumbotron kiss cam meme template. Put your photo in and recreate the funny caught hiding moment. #ColdplayCheatingCouple #ColdplayKissCam #ColdplayGate #capcut #capcutpioneer created by Loading… with L",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7697686832095448334",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Free Tutorial",
+      "mo_ta": "Khung doi chieu cac cap doi tren man hinh tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697696271544503565",
+   "url": "https://www.tiktok.com/@phoebehowell5764/video/7697696271544503565",
+   "tac_gia": "phoebehowell5764",
+   "caption": "The viral Coldplay concert CEO affair trend is blowing up🗣️Make your own CEO affair Coldplay Al video on CapCut now. 💃🕺🏻 coldplay concert affair ai video coldplay concert affair updates coldplay concert affair original video coldplay concert affair incident coldplay concertaffair location affair",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "trend kiss cam coldplay como fazer",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7697696271544503565",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Free Tutorial HOW TO MAKE",
+      "mo_ta": "Khung ghep hai man hinh tron cac cap doi"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697721777958522132",
+   "url": "https://www.tiktok.com/@jegw4g2rk5/video/7697721777958522132",
+   "tac_gia": "jegw4g2rk5",
+   "caption": "#capcut #capcutpioneer How to make the viral Coldplay cheating couple & CEO affair jumbotron kiss‑cam trend in CapCut! Try this huge viral Coldplay concert jumbotron meme template. Only one photo needed. Tap the template, upload your picture, and recreate the funny caught‑hiding kiss‑cam moment usin",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "1",
+     "truong": {
+      "id": "7697721777958522132",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": true,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai khung hình tròn ghép đôi chiếu hai cặp nam nữ và nam nam"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697721777958522132",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai khung hinh tron nguoi om nhau tren san khau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697813162803891470",
+   "url": "https://www.tiktok.com/@lira51377/video/7697813162803891470",
+   "tac_gia": "lira51377",
+   "caption": "#capcut #capcutpioneer Recreate the viral Coldplay Kiss Cam moment with this CapCut template! That iconic awkward concert kiss cam scene blew up all over social media. Now you can use your own photos to make the telescope circle effect. It takes only a few clicks: open the template, upload your imag",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697813162803891470",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi hoa trang om nhau tren man hinh tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697842903351053590",
+   "url": "https://www.tiktok.com/@maisie9400/video/7697842903351053590",
+   "tac_gia": "maisie9400",
+   "caption": "#capcut #capcutpioneer Wanna know how to make the same trending effect video? Just click the template above ⬆️⬆️⬆️ AI concert big screen effect tutorial Stadium jumbotron face effect Fan cam big screen AI trend Kiss Cam stadium big screen effect Portrait on stadium LED big screen Baseball stadium ca",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697842903351053590",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai người đàn ông ôm nhau hiển thị qua màn hình tròn tại concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697859352413129997",
+   "url": "https://www.tiktok.com/@wynn6431/video/7697859352413129997",
+   "tac_gia": "wynn6431",
+   "caption": "How to make Coldplay Affair AI template trend Coldplay Affair CapCut template tutorial Viral Coldplay Kiss Cam meme trend How to do Coldplay Affair TikTok trend Coldplay Affair circle lens photo animation ColdplayGate pioneer template tutorial Viral Coldplay Affair concert screen template How to use",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697859352413129997",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai người đàn ông ôm nhau hiển thị qua ống kính tròn concert"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "ai kiss cam coldplay",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697859352413129997",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi dan ong om nhau tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697949394666048781",
+   "url": "https://www.tiktok.com/@migf149/video/7697949394666048781",
+   "tac_gia": "migf149",
+   "caption": "coldplay concertaffair coldplay concertaffair location coldplay concertaffair ai video coldplay concerts coldplay concert affair incident coldplay concertaffair original coldplay affair coldplay concert merch coldplay concert gifts affair coldplay concert update coldplay concertaffair ai video coldp",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert circle screen capcut tutorial",
+     "hang_may": "3",
+     "truong": {
+      "id": "7697949394666048781",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cặp đôi ôm nhau tình cảm hiển thị trong khung hình tròn concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7697977267074583828",
+   "url": "https://www.tiktok.com/@niyatov/video/7697977267074583828",
+   "tac_gia": "niyatov",
+   "caption": "😂🎤 Have you seen the viral Coldplay concert incident meme? Recreate this iconic viral moment with the original Pioneer template and make your own meme video! Follow this simple CapCut tutorial to create the Coldplay concert incident meme in just a few steps. 🔥📱 coldplay concert incident coldplay",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7697977267074583828",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Free tutorial",
+      "mo_ta": "Chữ đỏ Free tutorial đè lên hình ảnh cặp đôi ôm nhau kiss cam"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698036013767167234",
+   "url": "https://www.tiktok.com/@tdqbxb0/video/7698036013767167234",
+   "tac_gia": "tdqbxb0",
+   "caption": "#capcut #capcutpioneer This viral Kiss Cam template turns any two photos into a concert surprise moment! Try the famous Coldplay kiss cam trend and make your own shocking plot twist. Everyone is going crazy over this CapCut AI kiss cam template — full tutorial here! Put your photos into the concert ",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "2B",
+     "truong": {
+      "id": "7698036013767167234",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "trong_nha",
+      "hanh_dong": "noi_chuyen",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "When the kiss cam reveals the biggest plot twist ever",
+      "mo_ta": "Co gai cam dien thoai xem video ghep Shrek"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698073142308130068",
+   "url": "https://www.tiktok.com/@kennybau439/video/7698073142308130068",
+   "tac_gia": "kennybau439",
+   "caption": "¿Quieres saber cómo hacer este filtro viral? coldplay concertaffair, coldplay concertaffair location, coldplay concertaffair ai video, coldplay concerts, coldplay concert affair incident, coldplay concertaffair original, coldplay affair, coldplay concert merch, coldplay concert gifts affair, coldpla",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "tutorial capcut pantalla circular concierto",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7698073142308130068",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Tutorial gratuito",
+      "mo_ta": "Cap doi nam om nhau chieu tren man tron kem chu tutorial"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698113442518945056",
+   "url": "https://www.tiktok.com/@capcutfever/video/7698113442518945056",
+   "tac_gia": "capcutfever",
+   "caption": "Try this template here ⬆️ #CapCut #capcutpioneer #pioneertemplate #comeflywithme #coldplay created by capcutfever with capcutfever’s original sound",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698113442518945056",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai người đàn ông mặc đồng phục nhân viên ôm nhau trên kiss cam"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698294367093607711",
+   "url": "https://www.tiktok.com/@catmemeu/video/7698294367093607711",
+   "tac_gia": "catmemeu",
+   "caption": "how to do the coldplay affair trend either they are having an affair or very shy meme coldplay concert kiss cam prank template ceo affair coldplay jumbotron video tutorial how to make the caught cheating at concert ai video look at these two coldplay capcut template viral concert big screen hiding m",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "efecto kiss cam coldplay",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7698294367093607711",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "Free tutorial",
+      "mo_ta": "Hai nguoi dan ong om nhau tren man hinh tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698341510844108062",
+   "url": "https://www.tiktok.com/@ian406542/video/7698341510844108062",
+   "tac_gia": "ian406542",
+   "caption": "🎤 Coldplay concert couple mirror edit 🪞 coldplaygate mirror edit 🔥 how to do the viral Coldplaygate mirror trend 📸 Coldplay affair AI photo trend 💋 how to make the Coldplay kiss cam trend ✨ viral coldplay mirror effect 🎬 Coldplay affair photo edit tutorial 💫 coldplay affair mirror trend 📱 ho",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "trend kiss cam coldplay como fazer",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7698341510844108062",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "video Trends Tutorial",
+      "mo_ta": "Hai nguoi dan ong om nhau tren man hinh concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698454715822001421",
+   "url": "https://www.tiktok.com/@rose738956/video/7698454715822001421",
+   "tac_gia": "rose738956",
+   "caption": "#capcut #capcutpioneer Generate fun creative AI short videos with one click. Upload one photo to create atmospheric concert Kiss Cam footage. Super simple CapCut template, create realistic snapshot visual effects in one second. Viral Spotlight Filter — Upload your photo and get the same effect in on",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "kiss camera trend capcut",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698454715822001421",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai khung hinh tron chieu cac cap doi khac nhau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698489161795325192",
+   "url": "https://www.tiktok.com/@lunita35787/video/7698489161795325192",
+   "tac_gia": "lunita35787",
+   "caption": "coldplay concert kiss cam coldplay concert kiss cam location coldplay concert kiss cam ai video coldplay concerts coldplay concert kiss cam moment coldplay concert kiss cam original coldplay concert merch coldplay concert gifts coldplay concert kiss cam update coldplay concert kiss cam ai video cold",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "como hacer kiss cam coldplay",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698489161795325192",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cap doi nam nu om nhau tren man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698509129119173909",
+   "url": "https://www.tiktok.com/@haozhen885/video/7698509129119173909",
+   "tac_gia": "haozhen885",
+   "caption": "#capcut #capcutpioneer #capcuttool ¡Cuando de repente sales en la pantalla gigante del concierto! Tu reacción incómoda se roba el show al instante Edita fácilmente este clip chistoso de reacción de la cámara de la multitud con una plantilla. Reacciones en la pantalla gigante del concierto cámara de ",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "2A",
+     "truong": {
+      "id": "7698509129119173909",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": true,
+      "chu_ocr": "quieres aparecer en el concierto de Coldplay",
+      "mo_ta": "Nguoi deo kinh om phu nu tren man tron concert Coldplay"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698537531704347922",
+   "url": "https://www.tiktok.com/@fflora77/video/7698537531704347922",
+   "tac_gia": "fflora77",
+   "caption": "coldplay concertaffair, coldplay concertaffair ai video, coldplay concert affair incident, coldplay concertaffair original, coldplay concertaffair location, coldplay affair, coldplay concert affair original video, coldplay concert affair updates, coldplay concerts, ceo affair, coldplay affair memes,",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698537531704347922",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi dan ong mac vest om phu nu toc vang tren man tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698648283282935061",
+   "url": "https://www.tiktok.com/@theinfluencer.vn/video/7698648283282935061",
+   "tac_gia": "theinfluencer.vn",
+   "caption": "Concert đã qua được 2 ngày nhưng tư liệu vẫn cứ là còn mãi 🤡 #TheInfluencer #atvncg2026concert #atvncg2026 #anhtraivuotnganchonggai2026 #Tiktokgiaitri created by The Influencer with Bỉ Ngạn Hoa💔’s âm thanh gốc - Bỉ Ngạn Hoa💔",
+   "nhan_user": "sai",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert screen meme template",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698648283282935061",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "nhay",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "THE INFLUENCER Cre: bao.vieeeee CONCERT ĐÃ QUA 2 NGÀY NHƯNG MEME VẪN CỨ LÀ CÒN MÃI HOÁ RA CON MA TRÊN ĐỒI CẮT CỎ TRONG TRUYỀN THUYẾT ĐÃ TRỞ LẠI",
+      "mo_ta": "Dien vien bay tren day cap tai buoi bieu dien concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": true
+  },
+  {
+   "video_id": "7698661563665779981",
+   "url": "https://www.tiktok.com/@jove7920/video/7698661563665779981",
+   "tac_gia": "jove7920",
+   "caption": "😂💥 How to make the viral Coldplay Kiss Cam cheating couple prank in CapCut! 🎬 Recreate the awkward concert jumbotron moment with just ONE photo using this viral AI-style CapCut template! 📸 Make your own caught-on-camera meme, recreate the “Either they’re having an affair or” moment, and turn an ",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "1",
+     "truong": {
+      "id": "7698661563665779981",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": true,
+      "la_tutorial": true,
+      "chu_ocr": "Free Tutorial CapCut",
+      "mo_ta": "Anh ghep 4 o tron cac cap doi khac nhau"
+     }
+    }
+   ],
+   "may_giu": false,
+   "bo_de": true
+  },
+  {
+   "video_id": "7698726020479814930",
+   "url": "https://www.tiktok.com/@ry78hhugj4/video/7698726020479814930",
+   "tac_gia": "ry78hhugj4",
+   "caption": "#capcut #capcutpioneer Escándalo del concierto de Coldplay, video IA del momento viral de la cámara de besos del show de Coldplay, el incidente original del concierto, ubicación del evento, el video original, memes de esta tendencia, actualizaciones del concierto, merch y regalos del show de Coldpla",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698726020479814930",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi toc vang va phu nu tre om nhau tren man tron"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "como hacer kiss cam coldplay",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698726020479814930",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi om nhau trong man hinh tron concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698729583465712909",
+   "url": "https://www.tiktok.com/@leo494088/video/7698729583465712909",
+   "tac_gia": "leo494088",
+   "caption": "#capcut #capcutpioneer Have you seen the viral Coldplay concert incident meme? Recreate this iconic viral moment with the original Pioneer template and make your own meme video! Follow this simple CapCut tutorial to create the Coldplay concert incident meme in just a few steps. coldplay concert inci",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "concert screen meme template",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698729583465712909",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai khung man hinh tron chieu cac cap doi om nhau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698819322587745556",
+   "url": "https://www.tiktok.com/@tommyxian95/video/7698819322587745556",
+   "tac_gia": "tommyxian95",
+   "caption": "coldplay concertaffair, coldplay concertaffair ai video, coldplay concert affair incident, coldplay concertaffair original, coldplay concertaffair location, coldplay affair, coldplay concert affair original video, coldplay concert affair updates, coldplay concerts, ceo affair, coldplay affair memes,",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698819322587745556",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Nguoi dan ong vest om phu nu vay xanh tren man tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698827224530701590",
+   "url": "https://www.tiktok.com/@viral.dance.trend4/video/7698827224530701590",
+   "tac_gia": "viral.dance.trend4",
+   "caption": "Try this filter ⬆️⬆️⬆️ #CapCut #eastenders #kisscam #capcutpioneer #pioneertemplate Description: Phil Mitchell and Ian Beale caught on the Coldplay Kiss Cam 😭💀😂 Imagine these two EastEnders legends getting exposed at a Coldplay concert! Walford will NEVER recover from this one 🤣📸❤️ Keywords: Ph",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "B",
+     "truy_van": "coldplay kiss cam trend",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698827224530701590",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Hai nguoi dan ong om nhau tren man hinh tron"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698910732334697748",
+   "url": "https://www.tiktok.com/@q1sagnoat8/video/7698910732334697748",
+   "tac_gia": "q1sagnoat8",
+   "caption": "#capcut #capcutpioneer Escándalo del concierto de Coldplay, video IA del momento viral de la cámara de besos del show de Coldplay, el incidente original del concierto, ubicación del evento, el video original, memes de esta tendencia, actualizaciones del concierto, merch y regalos del show de Coldpla",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "plantilla capcut pantalla concierto",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698910732334697748",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "cómo hacer que aparezca",
+      "mo_ta": "Hai nguoi dan ong mac com le om nhau tren man hinh"
+     }
+    },
+    {
+     "luot": "B",
+     "truy_van": "como hacer kiss cam coldplay",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698910732334697748",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "tao_dang",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "cómo hacer que aparezca",
+      "mo_ta": "Hai nguoi dan ong mac com le om nhau"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  },
+  {
+   "video_id": "7698937952067423502",
+   "url": "https://www.tiktok.com/@anayavanessa7/video/7698937952067423502",
+   "tac_gia": "anayavanessa7",
+   "caption": "Try this filter ▲▲ This Coldplay concert affair AI effect is everywhere! Don’t miss this viral Coldplay AI trend 😯 One photo to make the Coldplay concert affair video Everyone’s using this Coldplay affair CapCut AI template What’s the Coldplay concert affair? Make yours in one click Coldplay concer",
+   "nhan_user": "dung",
+   "luot": [
+    {
+     "luot": "A",
+     "truy_van": "coldplay screen template capcut",
+     "hang_may": "3",
+     "truong": {
+      "id": "7698937952067423502",
+      "so_ban_sao": 1,
+      "chu_the": "nguoi thuong",
+      "loai_nen": "san_dien",
+      "hanh_dong": "khac",
+      "la_luoi": false,
+      "la_tutorial": false,
+      "chu_ocr": "",
+      "mo_ta": "Cặp đôi nam nữ ôm nhau mỉm cười trong khung tròn kiss cam concert"
+     }
+    }
+   ],
+   "may_giu": true,
+   "bo_de": false
+  }
+ ]
+}
