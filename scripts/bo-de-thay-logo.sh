@@ -52,7 +52,7 @@ chay() {
   [ "$(chuan_bi_video)" = 40 ] || loi "ca-n không đủ 40 video ở $K/v"
   gui_ma "$sha"
   env_dong=$(printf '%s\n' "$@")
-  r "mkdir -p $K/ra/$luot && echo $s7 > $K/ra/$luot/sha && printf '%s' $(printf '%q' "$env_dong") > $K/ra/$luot/env"
+  r "mkdir -p $K/ra/$luot && rm -f $K/ra/$luot/xong && echo $s7 > $K/ra/$luot/sha && printf '%s' $(printf '%q' "$env_dong") > $K/ra/$luot/env"
   # KHÔNG `cd … && nohup … &`: `&` áp cho cả danh sách ⇒ subshell giữ stdout của ssh ⇒ ssh treo tới khi lượt xong (đã dẫm 23/10).
   r "nohup /bin/bash $K/cong-cu/scripts/bo-de-thay-logo-luot.sh $luot > /dev/null 2>&1 < /dev/null &"
   echo "$luot"
@@ -68,7 +68,8 @@ cho() {
 }
 
 dung() {  # dừng lượt theo NHÓM tiến trình: kill bash cha không giết python con (đã dẫm 23/10: python mồ côi ppid 1 chạy tiếp)
-  r "g=\$(pgrep -f '[b]o-de-thay-logo-luot.sh $1\$' | head -1); [ -n \"\$g\" ] && kill -TERM -- -\$(ps -o pgid= -p \$g | tr -d ' '); sleep 5
+  r "g=\$(pgrep -f '[b]o-de-thay-logo-luot.sh $1\$' | head -1); [ -n \"\$g\" ] && kill -TERM -- -\$(ps -o pgid= -p \$g | tr -d ' ')
+     pkill -TERM -f '[c]hay_mot_video.*kho-ca/thay-logo/ra/$1/' 2>/dev/null; sleep 5  # python mồ côi khi bash cha đã chết
      ps ax -o command | grep -e '[c]hay_mot_video' | grep -e 'kho-ca/thay-logo/ra/$1/' | grep -v grep | wc -l | tr -d ' '" \
     | { read -r con; [ "$con" = 0 ] || loi "còn $con tiến trình python của lượt $1"; echo "đã dừng $1" >&2; }
 }

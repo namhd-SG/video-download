@@ -29,7 +29,7 @@ HE_SO_UOC=16
 phut() { echo $(( 10#${1%:*} * 60 + 10#${1#*:} )); }
 uoc_giay() {  # <N> → giây ước (số nguyên)
   local g
-  g=$( { cat "$K"/ra/*/"$1"/kq.json 2>/dev/null | grep -o '"giay":[0-9]*' | cut -d: -f2
+  g=$( { grep -h '"rc":0,' "$K"/ra/*/"$1"/kq.json 2>/dev/null | grep -o '"giay":[0-9]*' | cut -d: -f2
          awk -v n="$1" '$1 == n {print $2}' "$K/uoc-giay" 2>/dev/null; } | sort -n | tail -1)
   if [ -z "$g" ]; then
     g=$(/Users/mktmini/micromamba/envs/work/bin/ffprobe -v error -show_entries format=duration -of csv=p=0 "$K/v/$1/goc.mp4" \
