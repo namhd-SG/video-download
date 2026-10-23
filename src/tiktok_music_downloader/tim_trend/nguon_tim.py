@@ -106,7 +106,8 @@ class ChromeTim:
         self.da_mo = 0
         self._lan_cuoi = 0.0
         self._pw = self._ctx = self._page = None
-        self._profile_tam: str | None = None   # profile trắng của lần chạy: xoá khi đóng (cookie TikTok không nằm lại)
+        self._profile_tam: str | None = None
+        self._da_luu_dom = False   # profile trắng của lần chạy: xoá khi đóng (cookie TikTok không nằm lại)
 
     def __enter__(self) -> "ChromeTim":
         from playwright.sync_api import sync_playwright
@@ -163,7 +164,21 @@ class ChromeTim:
         if la_captcha(str(ket_qua.get("chu", "")), bool(ket_qua.get("hop_captcha"))):
             self._chup(f"captcha-{self.da_mo:02d}.png")
             ket_qua = self._cho_nguoi_giai(url)
+        elif ket_qua["items"] and not self._da_luu_dom:
+            self._luu_dom_thuong()
         return ket_qua["items"]
+
+    def _luu_dom_thuong(self) -> None:
+        """Lưu HTML của trang kết quả BÌNH THƯỜNG đầu tiên (chỉ để chẩn đoán): đối chứng âm cho nhận diện hộp captcha —
+        trang thường có sẵn khung captcha ẩn trong DOM không? (review 23/10). Không mở thêm trang."""
+        self._da_luu_dom = True
+        if self.chan_doan is None:
+            return
+        try:
+            self.chan_doan.mkdir(parents=True, exist_ok=True)
+            (self.chan_doan / "dom-trang-thuong.html").write_text(self._page.content())
+        except Exception:   # chẩn đoán hỏng không được làm hỏng lần chạy
+            pass
 
     def _cuon_cho_anh(self) -> None:
         """TikTok tải ảnh bìa lười: thẻ chưa cuộn tới có `img.src` = ảnh giữ chỗ `data:` ⇒ Pha 4 23/10 mất 88/181 và

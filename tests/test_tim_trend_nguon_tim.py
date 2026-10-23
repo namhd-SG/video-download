@@ -377,3 +377,13 @@ def test_doc_lai_sau_khi_giai_bi_loi_khong_sap(monkeypatch):
     t._page.evaluate = eval_co_loi
     ra, ghi_chu = t.tim(TruyVan("q", "cau_truc", "en"))
     assert len(ra) == 2 and ghi_chu == "ham phien" and t.da_mo == 2   # đọc lại lỗi ⇒ không sập; lưới rỗng ⇒ hâm phiên
+
+
+def test_luu_dom_trang_thuong_mot_lan(monkeypatch, tmp_path):
+    t = _tim(monkeypatch, [DOM_GD1, DOM_GD1])
+    t.chan_doan = tmp_path
+    t._page.content = lambda: "<html>trang thuong</html>"
+    t.tim(TruyVan("a", "cau_truc", "en"))
+    t._page.content = lambda: "<html>lan hai</html>"
+    t.tim(TruyVan("b", "cau_truc", "en"))
+    assert (tmp_path / "dom-trang-thuong.html").read_text() == "<html>trang thuong</html>"
