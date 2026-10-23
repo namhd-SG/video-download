@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thay logo — luồng mới (mock)</title>
+<style>
+  :root { --nen:#f4f6f3; --the:#fff; --chu:#1d2a24; --mo:#6b7a72; --xanh:#1f6b4a; --vang:#d9a400; --do:#c0392b; --vien:#dfe5e1; }
+  @media (prefers-color-scheme: dark) { :root { --nen:#141a17; --the:#1d2420; --chu:#e7eee9; --mo:#9aa8a0; --vien:#2c3530; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--nen); color:var(--chu); font:15px/1.45 -apple-system, "Segoe UI", sans-serif; }
+  header { padding:14px 20px; border-bottom:1px solid var(--vien); display:flex; gap:16px; align-items:baseline; flex-wrap:wrap; }
+  header b { font-size:18px; } .nhan { color:var(--mo); font-size:13px; }
+  .tabs { display:flex; gap:6px; padding:12px 20px 0; flex-wrap:wrap; }
+  .tabs button { border:1px solid var(--vien); background:var(--the); color:var(--chu); padding:7px 14px; border-radius:999px; cursor:pointer; }
+  .tabs button.on { background:var(--xanh); color:#fff; border-color:var(--xanh); }
+  main { padding:16px 20px 40px; max-width:1180px; }
+  .man { display:none; } .man.on { display:block; }
+  .the { background:var(--the); border:1px solid var(--vien); border-radius:12px; padding:14px 16px; margin-bottom:12px; }
+  .goi-y { font-size:13px; color:var(--mo); margin:4px 0 14px; }
+  .dong { display:grid; grid-template-columns: 70px 1fr 120px; gap:12px; align-items:center; padding:10px 0; border-top:1px solid var(--vien); cursor:pointer; }
+  .dong:first-of-type { border-top:0; }
+  .anh-nho { width:70px; height:124px; object-fit:cover; border-radius:6px; background:#ccc; }
+  .dai { height:14px; border-radius:4px; display:flex; overflow:hidden; margin:6px 0; }
+  .dai span { display:block; height:100%; }
+  .x { background:var(--xanh); } .v { background:var(--vang); } .d { background:var(--do); } .g { background:#9aa39e; }
+  .so { font-size:13px; color:var(--mo); }
+  .nut { border:0; border-radius:8px; padding:10px 14px; font-weight:600; cursor:pointer; }
+  .nut.chinh { background:var(--xanh); color:#fff; } .nut.phu { background:var(--vien); color:var(--chu); } .nut.do { background:var(--do); color:#fff; }
+  .sua { display:grid; grid-template-columns: minmax(260px, 380px) 1fr; gap:18px; }
+  @media (max-width: 760px) { .sua { grid-template-columns:1fr; } .dong { grid-template-columns:56px 1fr; } .dong .nut { grid-column: 1 / -1; } }
+  .khung { position:relative; width:100%; aspect-ratio: 720/1280; background:#000; border-radius:10px; overflow:hidden; }
+  .khung img { width:100%; height:100%; object-fit:cover; display:block; }
+  .box { position:absolute; border:2px dashed #ffd400; box-shadow:0 0 0 9999px rgba(0,0,0,.18); cursor:move; }
+  .box .goc { position:absolute; right:-7px; bottom:-7px; width:14px; height:14px; background:#ffd400; border-radius:3px; cursor:nwse-resize; }
+  .tl { position:relative; height:28px; border-radius:6px; overflow:hidden; display:flex; margin:10px 0 4px; cursor:pointer; }
+  .tl span { height:100%; }
+  .kim { position:absolute; top:-3px; bottom:-3px; width:3px; background:var(--chu); }
+  .chu-tl { display:flex; justify-content:space-between; font-size:12px; color:var(--mo); }
+  .zoom { width:100%; aspect-ratio: 3/1; border-radius:8px; background-repeat:no-repeat; background-color:#000; margin:10px 0 4px; position:relative; }
+  .zoom .bz { position:absolute; border:2px dashed #ffd400; }
+  .hanh-dong { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+  .tin { font-size:13px; padding:8px 10px; border-radius:8px; background:var(--nen); margin-top:10px; }
+  .chon { display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width: 760px) { .chon { grid-template-columns:1fr; } }
+  .chon .the img { width:100%; border-radius:8px; aspect-ratio:720/1280; object-fit:cover; object-position:50% 68%; height:260px; }
+  .hq { font-weight:600; margin:8px 0 4px; }
+  .minh-hoa { font-size:12px; color:var(--do); }
+</style>
+</head>
+<body>
+<header><b>Thay logo</b><span class="nhan">MOCK luồng đề xuất — dữ liệu dải màu là MINH HOẠ; ảnh là khung thật v13 (bản đang chạy prod); ảnh nhỏ của các dòng khác dùng TẠM khung v13</span></header>
+<div class="tabs">
+  <button class="on" data-man="lo">1 · Lô: việc của bạn</button>
+  <button data-man="sua">2 · Sửa một video</button>
+  <button data-man="hoi">3 · Hỏi bạn một quyết định</button>
+</div>
+<main>
+
+<section class="man on" id="lo">
+  <div class="the">
+    <b>Lô 23/10-2 · 40 video</b> <span class="so">· máy xong 40/40 · <b>cần bạn: 3 video, 5 đoạn</b> · 31 video máy chắc · 6 video không có logo cũ</span>
+    <p class="goi-y">Sắp theo việc cần làm. Dải màu là cả video theo thời gian: <span style="color:var(--xanh)">xanh</span> máy chắc đã thay · <span style="color:#b38600">vàng</span> máy đoán (nội suy) · <span style="color:var(--do)">đỏ</span> còn lộ / máy mất dấu · xám không có logo cũ. Bấm một dòng để sửa.</p>
+    <div class="dong" data-den="sua">
+      <img class="anh-nho" src="anh/v13-63-sau.jpg" alt="">
+      <div><b>Test 03_13.mp4</b> <span class="so">5′51″ · 2 đoạn đỏ</span>
+        <div class="dai"><span class="x" style="flex:3"></span><span class="d" style="flex:.2"></span><span class="x" style="flex:40"></span><span class="v" style="flex:2"></span><span class="x" style="flex:30"></span><span class="d" style="flex:.6"></span><span class="x" style="flex:24"></span></div>
+        <span class="so">Đỏ ở 0:02 và 4:31 — bấm đoạn đỏ là nhảy tới đó</span></div>
+      <button class="nut chinh">Sửa 2 đoạn</button>
+    </div>
+    <div class="dong">
+      <img class="anh-nho" src="anh/v13-2000-sau.jpg" alt="">
+      <div><b>Test 03_12.mp4</b> <span class="so">0′18″ · máy không tìm thấy logo cũ</span>
+        <div class="dai"><span class="g" style="flex:1"></span></div>
+        <span class="so">Máy không chắc logo ở đâu. Bạn chỉ 1 lần trên 1 khung — máy tự làm phần còn lại.</span></div>
+      <button class="nut chinh">Chỉ chỗ logo</button>
+    </div>
+    <div class="dong">
+      <img class="anh-nho" src="anh/v13-6000-sau.jpg" alt="">
+      <div><b>Test 03_22.mp4</b> <span class="so">0′16″ · 1 đoạn vàng dài</span>
+        <div class="dai"><span class="x" style="flex:5"></span><span class="v" style="flex:2"></span><span class="x" style="flex:8"></span></div>
+        <span class="so">Máy đoán 2 giây giữa video — xem nhanh rồi bấm Đúng hoặc Sửa</span></div>
+      <button class="nut phu">Xem 2 giây</button>
+    </div>
+    <div class="dong">
+      <div class="anh-nho" style="display:grid;place-items:center;font-size:12px">31 video</div>
+      <div><b>31 video máy chắc</b> <span class="so">· toàn xanh</span>
+        <div class="dai"><span class="x" style="flex:1"></span></div>
+        <span class="so">Xem lướt 6 video ngẫu nhiên rồi duyệt cả nhóm (1 cú bấm)</span></div>
+      <button class="nut phu">Xem lướt 6</button>
+    </div>
+  </div>
+</section>
+
+<section class="man" id="sua">
+  <div class="sua">
+    <div>
+      <div class="khung" id="khung">
+        <img id="anh-khung" src="anh/v13-63-sau.jpg" alt="khung đang sửa">
+        <div class="box" id="box"><div class="goc" id="goc"></div></div>
+      </div>
+      <div class="tl" id="tl" title="Bấm để nhảy">
+        <span class="x" style="flex:3"></span><span class="d" style="flex:.4"></span><span class="x" style="flex:40"></span><span class="v" style="flex:2"></span><span class="x" style="flex:30"></span><span class="d" style="flex:.8"></span><span class="x" style="flex:24"></span>
+        <div class="kim" id="kim" style="left:3.2%"></div>
+      </div>
+      <div class="chu-tl"><span>0:00</span><span id="gio">0:02 · khung 63</span><span>5:51</span></div>
+    </div>
+    <div>
+      <div class="the">
+        <b>Test 03_13.mp4 — đoạn đỏ 1/2</b>
+        <p class="goi-y">Máy đè lệch trái: chữ "AI" của logo cũ còn lộ bên phải ô ASTRONEX (soi ảnh khung thật).</p>
+        <div class="zoom" id="zoom"><div class="bz" id="bz"></div></div>
+        <div class="so">Phóng to ×2,5 quanh khung vàng — đây là chỗ để nhìn, không phải khung nhỏ bên trái.</div>
+        <ol style="margin:10px 0 0 18px;padding:0;font-size:14px">
+          <li>Kéo / kéo góc khung vàng cho trùm hết logo cũ.</li>
+          <li>Bấm <b>Máy làm lại từ đây</b>: máy bám lại từ khung này cho tới khi khớp với đoạn xanh kế tiếp.</li>
+          <li>Xem 2 giây kết quả rồi bấm <b>Đúng</b>.</li>
+        </ol>
+        <div class="hanh-dong">
+          <button class="nut chinh" id="lam-lai">Máy làm lại từ đây</button>
+          <button class="nut phu">Xem 2 giây</button>
+          <button class="nut phu">Đoạn này giữ hình gốc</button>
+          <button class="nut phu">Logo ở chỗ khác (chỉ cho máy)</button>
+        </div>
+        <div class="tin" id="tin">Sửa của bạn được lưu thành một <b>ca kiểm tra</b>: mọi bản cải tiến sau phải làm đúng chỗ này trước khi được đưa lên.</div>
+      </div>
+      <div class="the">
+        <b>Phím tắt</b> <span class="so">J/L lùi/tới 1 khung · Shift+J/L đoạn đỏ trước/sau · Space xem gốc · Enter Đúng</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="man" id="hoi">
+  <div class="the">
+    <b>Hỏi bạn: khi máy biết chỗ logo nhưng có phụ đề chồng lên, máy có nên đè luôn không?</b>
+    <p class="goi-y">Mẫu CÁCH TRÌNH một quyết định: ảnh thật trước/sau + 1 câu hệ quả + số đếm. Không dùng mã nội bộ. (Câu này user ĐÃ chốt 22/10 — chỉ dùng làm ví dụ định dạng, không phải câu hỏi mới.)</p>
+    <div class="chon">
+      <div class="the">
+        <img src="anh/v13-63-sau.jpg" alt="">
+        <div class="hq">A. Đè luôn (như hiện tại)</div>
+        <div>Hệ quả: logo cũ bị che ở thêm nhiều khung hơn, nhưng ô ASTRONEX có thể đè lên một phần phụ đề.</div>
+        <div class="so minh-hoa">số khung đổi: MINH HOẠ — lấy từ bộ đề khi trình thật</div>
+      </div>
+      <div class="the">
+        <img src="anh/v13-63-goc.jpg" alt="">
+        <div class="hq">B. Giữ hình gốc ở những khung đó</div>
+        <div>Hệ quả: phụ đề luôn đọc được, nhưng logo cũ lộ lại trong các khung có phụ đề chồng.</div>
+        <div class="so minh-hoa">số khung đổi: MINH HOẠ</div>
+      </div>
+    </div>
+  </div>
+</section>
+</main>
+<script>
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => chon(b.dataset.man));
+  function chon(m) {
+    document.querySelectorAll('.tabs button').forEach(x => x.classList.toggle('on', x.dataset.man === m));
+    document.querySelectorAll('.man').forEach(x => x.classList.toggle('on', x.id === m));
+    if (m === 'sua') ve();
+  }
+  document.querySelectorAll('[data-den]').forEach(d => d.onclick = () => chon(d.dataset.den));
+  // Khung vàng: box prod (378,864,143,24) trên 720x1280 — kéo/kéo góc để sửa (mock, không gửi gì)
+  const W = 720, H = 1280, khung = document.getElementById('khung'), box = document.getElementById('box');
+  let b = { x: 378, y: 864, w: 143, h: 24 };
+  const Z = 2.5, zoom = document.getElementById('zoom'), bz = document.getElementById('bz');
+  function ve() {
+    Object.assign(box.style, { left: b.x / W * 100 + '%', top: b.y / H * 100 + '%', width: b.w / W * 100 + '%', height: b.h / H * 100 + '%' });
+    // ô phóng to: tâm = tâm khung vàng, vùng nhìn = ô hiển thị / Z, tỉ lệ 3:1
+    const zw = zoom.clientWidth || 600, zh = zw / 3, vw = zw / Z, vh = zh / Z, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    zoom.style.backgroundImage = 'url(' + document.getElementById('anh-khung').src + ')';
+    zoom.style.backgroundSize = (W * Z) + 'px ' + (H * Z) + 'px';
+    zoom.style.backgroundPosition = (-(cx - vw / 2) * Z) + 'px ' + (-(cy - vh / 2) * Z) + 'px';
+    Object.assign(bz.style, { left: (b.x - (cx - vw / 2)) * Z + 'px', top: (b.y - (cy - vh / 2)) * Z + 'px', width: b.w * Z + 'px', height: b.h * Z + 'px' });
+  }
+  ve();
+  function keo(e, doiCo) {
+    e.preventDefault(); e.stopPropagation();
+    const r = khung.getBoundingClientRect(), x0 = e.clientX, y0 = e.clientY, g = { ...b };
+    const di = ev => {
+      const dx = (ev.clientX - x0) / r.width * W, dy = (ev.clientY - y0) / r.height * H;
+      if (doiCo) { b.w = Math.max(20, g.w + dx); b.h = Math.max(10, g.h + dy); } else { b.x = g.x + dx; b.y = g.y + dy; }
+      ve();
+    };
+    const tha = () => { removeEventListener('pointermove', di); removeEventListener('pointerup', tha); };
+    addEventListener('pointermove', di); addEventListener('pointerup', tha);
+  }
+  box.addEventListener('pointerdown', e => keo(e, false));
+  document.getElementById('goc').addEventListener('pointerdown', e => keo(e, true));
+  document.getElementById('tl').onclick = e => {
+    const r = e.currentTarget.getBoundingClientRect(), p = (e.clientX - r.left) / r.width;
+    document.getElementById('kim').style.left = p * 100 + '%';
+    const s = Math.round(p * 351);
+    document.getElementById('gio').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' · (minh hoạ)';
+  };
+  document.getElementById('lam-lai').onclick = () => {
+    document.getElementById('tin').innerHTML = 'MOCK: box mới (' + [b.x, b.y, b.w, b.h].map(Math.round).join(', ') + ') — bản thật sẽ chạy lại đoạn này trên máy rồi hiện 2 giây kết quả.';
+  };
+</script>
+</body>
+</html>

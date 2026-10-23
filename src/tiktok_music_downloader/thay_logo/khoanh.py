@@ -160,6 +160,13 @@ def lay_lai_goc(conn, data: Path, job_id: int, nguon_video: str, dich: Path) -> 
     return False
 
 
+def giay_cua_khung(khung: int, fps: float | None) -> str:
+    """Mốc `-ss` để ffmpeg trả ĐÚNG khung `khung`: lùi nửa khung. Khung k có pts = k/fps; viết `k/fps` 3 chữ số thập phân làm tròn
+    LÊN quá pts với 1/3 số khung (713/30 = 23,7667 → "23.767") ⇒ ffmpeg trả khung k+1, còn khung cuối thì không ra ảnh nào (đo 23/10
+    trên video thật bằng md5 so khung giải mã chính xác)."""
+    return f"{max(0.0, (khung - 0.5) / (fps or 30.0)):.3f}"
+
+
 def duong_video(data: Path, video_log_id: int, ban: str) -> Path:
     if ban not in ("goc", "ra"):
         raise ValueError("ban phải là goc hoặc ra")

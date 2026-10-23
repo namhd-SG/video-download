@@ -17,7 +17,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi import Path as PathParam
 from pydantic import BaseModel, Field
 
-from tiktok_music_downloader.thay_logo import khoanh
+from tiktok_music_downloader.thay_logo import khoanh, soi_nhanh
 
 log = logging.getLogger("videodl.thay_logo")
 
@@ -57,6 +57,15 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
             raise HTTPException(404, "video chưa có kết quả máy")
         return r, t
 
+    def _ffmpeg() -> str:
+        ffmpeg = getattr(lay_worker(), "ffmpeg", None)
+        if not ffmpeg:
+            from tiktok_music_downloader.watermark import find_ffmpeg
+            ffmpeg = find_ffmpeg()
+        if not ffmpeg:
+            raise HTTPException(503, "máy chủ thiếu ffmpeg")
+        return ffmpeg
+
     def _track(conn, t) -> tuple[list, dict]:
         if not t["duong_dan_track"]:
             raise HTTPException(404, "không còn dữ liệu vết của video này")
@@ -95,16 +104,9 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
             raise HTTPException(404, "video đã dọn khỏi máy")
         if t["so_khung"] is None and khung >= _dem_khung(p):  # nhật ký thiếu số khung ⇒ đếm của chính file, không để ffmpeg lỗi 500
             raise HTTPException(400, "khung ngoài video")
-        w = lay_worker()
-        ffmpeg = getattr(w, "ffmpeg", None)
-        if not ffmpeg:
-            from tiktok_music_downloader.watermark import find_ffmpeg
-            ffmpeg = find_ffmpeg()
-        if not ffmpeg:
-            raise HTTPException(503, "máy chủ thiếu ffmpeg")
-        giay = khung / (t["fps"] or 30.0)
+        ffmpeg = _ffmpeg()
         # -ss TRƯỚC -i: nhảy theo keyframe (nhanh) — trích khung ở phút thứ 4 không phải giải mã từ đầu
-        cmd = ["nice", "-n", "10", ffmpeg, "-v", "error", "-ss", f"{giay:.3f}", "-i", str(p), "-frames:v", "1", "-q:v", "3", "-f", "image2pipe",
+        cmd = ["nice", "-n", "10", ffmpeg, "-v", "error", "-ss", khoanh.giay_cua_khung(khung, t["fps"]), "-i", str(p), "-frames:v", "1", "-q:v", "3", "-f", "image2pipe",
                "-vcodec", "mjpeg", "pipe:1"]
         if not _KHE_FFMPEG.acquire(timeout=TRAN_GIAY_TRICH_KHUNG):
             raise HTTPException(503, "máy đang bận trích khung, thử lại sau")
@@ -118,6 +120,48 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
             log.warning("thay logo: trích khung %s#%s lỗi: %s", vid, khung, kq.stderr[-500:])
             raise HTTPException(500, "không trích được khung")
         return Response(kq.stdout, media_type="image/jpeg")
+
+    @app.get("/api/thay-logo/videos/{vid}/soi")
+    def soi(vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> dict:
+        """3 ảnh soi nhanh của video. Worker dựng sẵn; video cũ / dựng trượt ⇒ dựng LƯỜI ở đây, dưới khoá theo video dùng chung với
+        worker (hai người mở cùng lúc, hoặc mở đúng lúc worker đang dựng ⇒ một lần dựng) và giữ một khe ffmpeg chung với trích khung.
+        Khoá lấy TRƯỚC khe: người chờ khoá không chiếm khe. `co=false` khi chưa đủ ảnh — không bao giờ trả 2/3."""
+        conn = mo()
+        try:
+            r, t = _nap(conn, vid, email)
+            if r["trang_thai"] not in TRANG_THAI_KHOANH_DUOC:
+                return {"co": False, "anh": []}
+            meta = soi_nhanh.da_co(_data(), t["id"])
+            if meta is None and khoanh.duong_video(_data(), t["id"], "goc").exists():
+                with soi_nhanh.khoa(t["id"]):
+                    meta = soi_nhanh.da_co(_data(), t["id"])  # người giữ khoá trước có thể đã dựng xong
+                    if meta is None:
+                        ffmpeg = _ffmpeg()
+                        if not _KHE_FFMPEG.acquire(timeout=TRAN_GIAY_TRICH_KHUNG):
+                            raise HTTPException(503, "máy đang bận trích khung, thử lại sau")
+                        try:
+                            soi_nhanh.dung_cho_video(conn, _data(), t["id"], r["trang_thai"], ffmpeg)
+                        finally:
+                            _KHE_FFMPEG.release()
+                        meta = soi_nhanh.da_co(_data(), t["id"])
+        finally:
+            conn.close()
+        return {"co": meta is not None, "anh": meta["anh"] if meta else []}
+
+    @app.get("/api/thay-logo/videos/{vid}/soi/{i}")
+    def anh_soi(vid: int = PathParam(ge=1, le=2**63 - 1), i: int = PathParam(ge=0, le=soi_nhanh.SO_ANH - 1),
+                email: str = Depends(require_user)) -> Response:
+        conn = mo()
+        try:
+            _, t = _nap(conn, vid, email)
+        finally:
+            conn.close()
+        if soi_nhanh.da_co(_data(), t["id"]) is None:
+            raise HTTPException(404, "chưa có ảnh soi")
+        try:
+            return Response((soi_nhanh.thu_muc(_data(), t["id"]) / f"soi-{i}.jpg").read_bytes(), media_type="image/jpeg")
+        except OSError:
+            raise HTTPException(404, "chưa có ảnh soi") from None
 
     @app.post("/api/thay-logo/videos/{vid}/khoanh", status_code=201)
     def tao_khoanh(body: Khoanh, vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> dict:
