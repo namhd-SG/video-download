@@ -1,0 +1,51 @@
+/* Màn Lô (pha 1b bước 2) — dùng token màu của app.css (sáng/tối theo data-theme). Màu dải: xanh/vàng/đỏ/xám như mock v2-2-lo. */
+.lo-dau { padding: 20px 24px 8px; }
+.lo-chon { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.lo-chon h1 { font-family: var(--display); margin: 0; font-size: 24px; }
+.lo-chon select { margin-left: 6px; padding: 4px 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); }
+.lo-tom-tat { margin: 10px 0 4px; color: var(--text); }
+.lo-chu-thich { margin: 4px 0; color: var(--text-muted); font-size: 13px; max-width: 980px; }
+.lo-mau { font-weight: 600; }
+.lo-mau-xanh { color: var(--success); }
+.lo-mau-vang { color: var(--warn); }
+.lo-mau-do { color: var(--danger); }
+.lo-mau-xam { color: var(--text-faint); }
+.lo-loi { color: var(--danger); }
+
+.lo-danh-sach { margin: 8px 24px 32px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
+.lo-dong { display: grid; grid-template-columns: 64px 1fr 150px; gap: 16px; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.lo-nhom:last-child .lo-dong, .lo-danh-sach > .lo-dong:last-child { border-bottom: 0; }
+.lo-bia { width: 64px; height: 112px; border-radius: 5px; overflow: hidden; background: var(--surface-alt); }
+.lo-bia img { width: 100%; height: 100%; object-fit: cover; }
+.lo-bia-so { display: flex; align-items: center; justify-content: center; text-align: center; white-space: pre-line; font-size: 12px; color: var(--text-muted); }
+.lo-giua { min-width: 0; }
+.lo-ten { margin: 0 0 8px; overflow-wrap: anywhere; }
+.lo-phu { color: var(--text-muted); font-size: 13px; margin: 6px 0 0; }
+.lo-ten .lo-phu { margin: 0; }
+
+.lo-dai { position: relative; height: 12px; border-radius: 3px; overflow: hidden; }
+.lo-dai-xanh { background: var(--success); }
+.lo-dai-xam { background: var(--border-strong); }
+.lo-doan { position: absolute; top: 0; bottom: 0; }
+.lo-doan-vang { background: #d4a017; }
+.lo-doan-do { background: #c0392b; }
+
+.lo-nut { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface-alt); color: var(--text); font-weight: 600; cursor: pointer; }
+.lo-nut-chinh { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.lo-nut:disabled { opacity: .55; cursor: not-allowed; }
+
+.lo-luoi { padding: 4px 16px 16px; border-bottom: 1px solid var(--border); }
+.lo-soi-video { padding: 10px 0; border-top: 1px dashed var(--border); }
+.lo-soi-hang { display: flex; gap: 8px; flex-wrap: wrap; }
+.lo-soi-anh { width: 240px; height: auto; border-radius: 4px; border: 1px solid var(--border); background: var(--surface-alt); }
+.lo-nhom-D .lo-soi-anh { width: 120px; }
+.lo-xac-nhan { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .lo-dau { padding: 16px 16px 8px; }
+  .lo-danh-sach { margin: 8px 16px 24px; }
+  .lo-dong { grid-template-columns: 48px 1fr; }
+  .lo-dong > .lo-nut { grid-column: 1 / -1; }
+  .lo-bia { width: 48px; height: 84px; }
+  .lo-soi-anh { width: calc(50% - 4px); }
+}
