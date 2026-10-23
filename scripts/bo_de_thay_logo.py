@@ -44,7 +44,17 @@ class LuotHong(Exception):
 
 
 def doc_video(d: Path) -> dict:
-    """{tt, md5, de: {frame: (x, y, w, h)}} — khung đè của video (nhiều vết cùng khung ⇒ giữ box vết đầu, ghi `trung`)."""
+    """{tt, md5, de: {frame: (x, y, w, h)}} — khung đè của video (nhiều vết cùng khung ⇒ giữ box vết đầu, ghi `trung`).
+    Mọi dữ liệu hỏng/thiếu ⇒ LuotHong (rc 3), không bao giờ thành "vi phạm" (rc 1)."""
+    try:
+        return _doc_video(d)
+    except LuotHong:
+        raise
+    except (OSError, ValueError, sqlite3.Error, KeyError, TypeError, AttributeError) as e:
+        raise LuotHong(f"{d}: dữ liệu lượt hỏng ({type(e).__name__}: {e})") from e
+
+
+def _doc_video(d: Path) -> dict:
     kq_p = d / "kq.json"
     if not kq_p.exists():
         raise LuotHong(f"{d}: thiếu kq.json")
@@ -57,10 +67,11 @@ def doc_video(d: Path) -> dict:
     de: dict[int, tuple] = {}
     trung = 0
     if tt == "render":
-        track = json.load(gzip.open(d / "files/1/track.json.gz"))
+        vid = kq["kq"]["video_log_id"]
+        track = json.load(gzip.open(d / f"files/{vid}/track.json.gz"))
         with sqlite3.connect(f"file:{d / 'log.db'}?mode=ro", uri=True) as c:
-            tt_vet = dict(c.execute("SELECT vet, trang_thai FROM tl_vet"))
-        if len(tt_vet) != len(track):
+            tt_vet = dict(c.execute("SELECT vet, trang_thai FROM tl_vet WHERE video_id = ?", (vid,)))
+        if set(tt_vet) != set(range(len(track))):
             raise LuotHong(f"{d}: tl_vet {len(tt_vet)} vết ≠ track {len(track)} vết")
         for k, vet in enumerate(track):
             if tt_vet.get(k) != "render":
@@ -82,6 +93,13 @@ def doc_luot(ra: Path, ds: list[int]) -> dict[int, dict]:
 
 def lech(a: tuple, b: tuple) -> int:
     return max(abs(p - q) for p, q in zip(a, b))
+
+
+def ho_mep(b: tuple, nhan: tuple) -> int:
+    """Số px box `b` để HỞ box nhãn ở mép tệ nhất (≤ 0 ⇒ b bao trọn nhãn). Dịch hoặc co làm hở logo cũ; nới rộng thì không."""
+    bx, by, bw, bh = b
+    x0, y0, w0, h0 = nhan
+    return max(bx - x0, by - y0, (x0 + w0) - (bx + bw), (y0 + h0) - (by + bh))
 
 
 def khung_doi(m: dict, n: dict) -> list[tuple[int, str]]:
@@ -122,15 +140,21 @@ def so_sanh(moc: dict[int, dict], nhanh: dict[int, dict], nhan: list[dict], soi:
             b = r["de"].get(f)
             if b is None:
                 vi_pham.append(f"(a) v{v}#{f} nhãn dung: nhánh KHÔNG đè")
-            elif lech(b, tuple(x["box"])) > LECH_PX:
-                vi_pham.append(f"(a) v{v}#{f} nhãn dung: lệch {lech(b, tuple(x['box']))} px > {LECH_PX}")
+            elif ho_mep(b, tuple(x["box"])) > LECH_PX:
+                vi_pham.append(f"(a) v{v}#{f} nhãn dung: hở mép {ho_mep(b, tuple(x['box']))} px > {LECH_PX}")
+            elif lech(b, tuple(x["box"])) > LECH_PX:  # vẫn bao box nhãn, chỉ nới rộng ⇒ người soi xem có đè nhầm không
+                cho_soi.append({"v": v, "frame": f, "kieu": "nhan_dung_noi_rong"})
         elif loai == "khong_duoc_de":
             bi = sorted(r["de"]) if f is None else ([f] if f in r["de"] else [])
             if bi:
                 vi_pham.append(f"(b) v{v}{'' if f is None else f'#{f}'} không được đè: nhánh đè {len(bi)} khung (đầu: #{bi[0]})")
         elif loai in LOAI_LOI:
             b = r["de"].get(f)
-            if x.get("box_dung") and b is not None and lech(b, tuple(x["box_dung"])) <= LECH_PX:
+            if b is None and moc[v]["de"].get(f) is not None and loai != "che_nham":
+                vi_pham.append(f"(a) v{v}#{f} ca lỗi {loai}: nhánh BỎ ĐÈ — cấm sửa bằng bỏ đè")
+            elif b is None:
+                pass  # mốc cũng không đè, nhánh vẫn chưa đè: chưa sửa, không có gì để soi
+            elif x.get("box_dung") and lech(b, tuple(x["box_dung"])) <= LECH_PX:
                 sua.append(f"v{v}#{f} {loai}")
             elif b != moc[v]["de"].get(f):
                 cho_soi.append({"v": v, "frame": f, "kieu": f"ca_loi:{loai}"})
@@ -140,7 +164,7 @@ def so_sanh(moc: dict[int, dict], nhanh: dict[int, dict], nhan: list[dict], soi:
     doi = {v: khung_doi(moc[v], nhanh[v]) for v in moc}
     doi = {v: fs for v, fs in doi.items() if fs}
     doi_tt = [v for v in moc if moc[v]["tt"] != nhanh[v]["tt"]]
-    md5_lech = [v for v in moc if v not in doi and v not in doi_tt and moc[v]["md5"] != nhanh[v]["md5"]]
+    md5_lech = [v for v in moc if moc[v]["de"] == nhanh[v]["de"] and v not in doi_tt and moc[v]["md5"] != nhanh[v]["md5"]]
     vi_pham += [f"md5 v{v}: không khung nào đổi mà bản ra khác mốc" for v in md5_lech]
 
     co_nhan = {(x["v"], x.get("frame")) for x in nhan}
@@ -149,7 +173,8 @@ def so_sanh(moc: dict[int, dict], nhanh: dict[int, dict], nhan: list[dict], soi:
     chua = [m for m in mau if ket_soi.get((m["v"], m["frame"])) not in ("dung", "sai", "sua")]
     sai = [m for m in mau if ket_soi.get((m["v"], m["frame"])) == "sai"]
     vi_pham += [f"(c) v{m['v']}#{m['frame']} người soi ghi SAI" for m in sai]
-    sua += [f"v{m['v']}#{m['frame']} (soi)" for m in mau if ket_soi.get((m["v"], m["frame"])) == "sua"]
+    sua += [f"v{m['v']}#{m['frame']} (soi)" for m in cho_soi
+            if m["kieu"].startswith("ca_loi:") and ket_soi.get((m["v"], m["frame"])) == "sua"]
 
     if vi_pham:
         rc, ket = 1, "KHÔNG LÊN — vi phạm"
@@ -211,7 +236,10 @@ def main(argv=None) -> int:
     except LuotHong as e:
         print(f"LƯỢT HỎNG: {e}", file=sys.stderr)
         return 3
-    soi = json.loads(a.soi.read_text()) if a.soi and a.soi.exists() else None
+    if a.soi and not a.soi.exists():
+        print(f"không có tệp soi {a.soi}", file=sys.stderr)
+        return 3
+    soi = json.loads(a.soi.read_text()) if a.soi else None
     kq = so_sanh(moc, nhanh, nhan, soi)
     txt = bang(moc, nhanh, kq, bo_de)
     print(txt)

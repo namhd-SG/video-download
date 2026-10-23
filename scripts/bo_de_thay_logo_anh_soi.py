@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Ảnh soi cho vế (c) của bộ đề thay logo: mỗi mẫu trong `mau-soi.json` ⇒ một ảnh TOÀN KHUNG cỡ gốc (không crop — bài học 20–22/10:
 soi crop nhỏ đã cho kết luận sai) gồm 3 tấm cạnh nhau: khung GỐC có box mốc (đỏ) và box nhánh (xanh), bản ra MỐC, bản ra NHÁNH.
-Kèm `soi.json` mẫu để người soi điền `ket_qua` ∈ {dung, sai, sua} — tệp này là đầu vào `--soi` của `bo_de_thay_logo.py so`.
+Kèm `soi-mau.json` để người soi điền `ket_qua` ∈ {dung, sai, sua}, rồi đưa vào `bo-de-thay-logo.sh so … --soi <tệp>`.
 
     python scripts/bo_de_thay_logo_anh_soi.py <thư mục so (có mau-soi.json)> <thư mục video gốc: <N>/goc.mp4>
 """
@@ -57,7 +57,7 @@ def main(argv=None) -> int:
         ten_anh = f"v{v}-{f}.jpg"
         cv2.imwrite(str(anh / ten_anh), np.hstack(tam), [cv2.IMWRITE_JPEG_QUALITY, 92])
         mau_ra.append({**x, "anh": f"anh/{ten_anh}", "box_moc": a, "box_nhanh": b, "ket_qua": None})
-    (so / "soi.json").write_text(json.dumps({"huong_dan": "ket_qua: dung (nhánh đúng) | sai (nhánh sai) | sua (ca lỗi đã sửa: "
+    (so / "soi-mau.json").write_text(json.dumps({"huong_dan": "ket_qua: dung (nhánh đúng) | sai (nhánh sai) | sua (ca lỗi đã sửa: "
                                              "còn đè VÀ che hết logo cũ)", "mau": mau_ra}, ensure_ascii=False, indent=1))
     print(f"{len(mau_ra)} ảnh → {anh}")
     return 0

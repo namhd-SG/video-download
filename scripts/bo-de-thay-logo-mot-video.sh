@@ -10,8 +10,9 @@ K=/Users/mktmini/kho-ca/thay-logo
 L="$K/ra/$LUOT"; D="$K/v/$N"; O="$L/$N"
 SHA=$(cat "$L/sha")
 MA="$K/ma/$SHA"
-[ -f "$O/kq.json" ] && exit 0
-# Chưa có kq.json ⇒ mọi thứ trong $O là của lần chạy bị cắt: xoá. Dùng lại log.db cũ ⇒ tl_video id 2 ⇒ track nằm ở files/2 và
+# Chỉ bỏ qua video đã chạy THÀNH CÔNG; kq.json với rc ≠ 0 (lỗi hạ tầng) thì chạy lại.
+grep -q '"rc":0,' "$O/kq.json" 2>/dev/null && exit 0
+# Chưa có kq.json rc 0 ⇒ mọi thứ trong $O là của lần chạy bị cắt: xoá. Dùng lại log.db cũ ⇒ tl_video id 2 ⇒ track nằm ở files/2 và
 # tl_vet trộn hai lần (đã dẫm 23/10: python mồ côi sau kill bash cha vẫn ghi vào log.db).
 rm -rf "$O"; mkdir -p "$O"
 
@@ -79,5 +80,6 @@ env -i HOME=/Users/mktmini PATH=/Users/mktmini/micromamba/envs/work/bin:/usr/bin
   > "$O/kq.tmp" 2> "$O/stderr.log"
 rc=$?
 if [ -f "$O/ra.mp4" ]; then md5 -q "$O/ra.mp4" > "$O/md5"; fi
-printf '{"v":%s,"luot":"%s","sha":"%s","rc":%s,"giay":%s,"kq":%s}\n' "$N" "$LUOT" "$SHA" "$rc" "$(( $(date +%s) - t0 ))" \
-  "$(tail -1 "$O/kq.tmp" 2>/dev/null || echo null)" > "$O/kq.json.tmp" && mv "$O/kq.json.tmp" "$O/kq.json"
+kq_dong=$(tail -1 "$O/kq.tmp" 2>/dev/null); [ -n "$kq_dong" ] || kq_dong=null  # tiến trình chết không in gì ⇒ "kq":null, không phải JSON hỏng
+printf '{"v":%s,"luot":"%s","sha":"%s","rc":%s,"giay":%s,"kq":%s}\n' "$N" "$LUOT" "$SHA" "$rc" "$(( $(date +%s) - t0 ))" "$kq_dong" \
+  > "$O/kq.json.tmp" && mv "$O/kq.json.tmp" "$O/kq.json"

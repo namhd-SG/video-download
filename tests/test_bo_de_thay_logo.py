@@ -30,8 +30,9 @@ def test_moc_vs_chinh_no_khong_khac_va_chua_len_vi_khong_sua_ca_nao():
     assert kq["video_doi"] == [] and kq["vi_pham"] == [] and kq["rc"] == 2 and "không ca lỗi" in kq["ket"]
 
 
-@pytest.mark.parametrize("box, vi_pham", [((103, 197, 53, 17), False), ((104, 200, 50, 20), True), (None, True)])
-def test_a_nhan_dung_lech_qua_3px_hoac_mat_de_la_vi_pham(box, vi_pham):
+@pytest.mark.parametrize("box, vi_pham", [((103, 197, 47, 23), False), ((104, 200, 50, 20), True), ((100, 200, 46, 20), True),
+                                         (None, True)])
+def test_a_nhan_dung_ho_mep_qua_3px_hoac_mat_de_la_vi_pham(box, vi_pham):
     m = luot(v1=vd({10: (100, 200, 50, 20)}))
     n = luot(v1=vd({10: box} if box else {}, md5="khac"))
     kq = bd.so_sanh(m, n, NHAN_DUNG, None)
@@ -105,14 +106,14 @@ def test_tep_nhan_hop_le():
         assert x["loai"] != "dung" or len(x["box"]) == 4
 
 
-def _ghi_video(d: Path, vet: list[tuple[str, list[dict]]], tt="render", md5=True):
-    (d / "files/1").mkdir(parents=True)
-    (d / "kq.json").write_text(json.dumps({"rc": 0, "kq": {"trang_thai": tt}}))
-    with gzip.open(d / "files/1/track.json.gz", "wt") as f:
+def _ghi_video(d: Path, vet: list[tuple[str, list[dict]]], tt="render", md5=True, vid=1):
+    (d / f"files/{vid}").mkdir(parents=True)
+    (d / "kq.json").write_text(json.dumps({"rc": 0, "kq": {"video_log_id": vid, "trang_thai": tt}}))
+    with gzip.open(d / f"files/{vid}/track.json.gz", "wt") as f:
         json.dump([t for _, t in vet], f)
     with sqlite3.connect(d / "log.db") as c:
-        c.execute("CREATE TABLE tl_vet (vet INTEGER, trang_thai TEXT)")
-        c.executemany("INSERT INTO tl_vet VALUES (?, ?)", [(k, s) for k, (s, _) in enumerate(vet)])
+        c.execute("CREATE TABLE tl_vet (video_id INTEGER, vet INTEGER, trang_thai TEXT)")
+        c.executemany("INSERT INTO tl_vet VALUES (?, ?, ?)", [(vid, k, s) for k, (s, _) in enumerate(vet)])
     if md5:
         (d / "md5").write_text("abc\n")
 
@@ -135,3 +136,49 @@ def test_doc_video_luot_hong_khong_ket_luan(tmp_path):
     _ghi_video(tmp_path / "3", [("render", [{"frame": 1, "state": "detected", "x": 0, "y": 0, "w": 1, "h": 1}])], md5=False)
     with pytest.raises(bd.LuotHong, match="thiếu md5"):
         bd.doc_video(tmp_path / "3")
+
+
+def test_a_nhan_dung_noi_rong_van_bao_tron_thi_cho_soi_khong_phat():
+    m = luot(v1=vd({10: (100, 200, 50, 20)}, md5="a"))
+    n = luot(v1=vd({10: (98, 199, 60, 24)}, md5="b"))  # rộng thêm 10 px, vẫn bao trọn box nhãn
+    kq = bd.so_sanh(m, n, NHAN_DUNG, None)
+    assert kq["vi_pham"] == [] and kq["rc"] == 2 and {"v": 1, "frame": 10, "kieu": "nhan_dung_noi_rong"} in kq["mau"]
+
+
+def test_md5_doi_khi_box_dich_trong_nguong_khong_phai_vi_pham():
+    m = luot(v1=vd({10: (100, 200, 50, 20)}, md5="a"))
+    n = luot(v1=vd({10: (102, 200, 50, 20)}, md5="b"))  # dịch 2 px ≤ LECH_PX: không "khung đổi" nhưng bản ra khác là đúng
+    kq = bd.so_sanh(m, n, NHAN_DUNG, None)
+    assert kq["md5_lech"] == [] and kq["vi_pham"] == []
+
+
+def test_ca_loi_bo_de_la_vi_pham_ke_ca_khi_nguoi_ghi_sua():
+    nhan = [{"v": 1, "frame": 30, "loai": "lo_mep", "box_dung": None}]
+    m = luot(v1=vd({30: (290, 300, 40, 10)}, md5="a"))
+    n = luot(v1=vd({}, md5="b"))
+    kq = bd.so_sanh(m, n, nhan, {"mau": [{"v": 1, "frame": 30, "ket_qua": "sua"}]})
+    assert kq["rc"] == 1 and "BỎ ĐÈ" in kq["vi_pham"][0] and kq["sua"] == []
+
+
+def test_sua_chi_tinh_tren_mau_cua_ca_loi():
+    m = luot(v1=vd({10: (100, 200, 50, 20)}, md5="a"))
+    n = luot(v1=vd({10: (100, 200, 50, 20), 20: (5, 5, 9, 9)}, md5="b"))
+    kq = bd.so_sanh(m, n, NHAN_DUNG, {"mau": [{"v": 1, "frame": 20, "ket_qua": "sua"}]})
+    assert kq["sua"] == [] and kq["rc"] == 2
+
+
+def test_doc_video_doc_dung_video_log_id_khi_log_db_co_hai_lan(tmp_path):
+    e = {"frame": 1, "state": "detected", "x": 7, "y": 1, "w": 2, "h": 3}
+    _ghi_video(tmp_path / "1", [("render", [e])], vid=2)
+    with sqlite3.connect(tmp_path / "1/log.db") as c:  # dòng của lần chạy bị cắt trước đó
+        c.execute("INSERT INTO tl_vet VALUES (1, 0, 'render')")
+        c.execute("INSERT INTO tl_vet VALUES (1, 1, 'render')")
+    assert bd.doc_video(tmp_path / "1")["de"] == {1: (7, 1, 2, 3)}
+
+
+@pytest.mark.parametrize("noi_dung", ['{"v":1,"rc":0,"kq":}', '{"rc":0,"kq":{"trang_thai":"render"}}'])
+def test_doc_video_du_lieu_hong_la_luot_hong_khong_phai_vi_pham(tmp_path, noi_dung):
+    (tmp_path / "1").mkdir()
+    (tmp_path / "1/kq.json").write_text(noi_dung)
+    with pytest.raises(bd.LuotHong):
+        bd.doc_video(tmp_path / "1")

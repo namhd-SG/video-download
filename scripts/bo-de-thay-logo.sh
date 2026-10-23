@@ -73,18 +73,24 @@ dung() {  # dừng lượt theo NHÓM tiến trình: kill bash cha không giết
     | { read -r con; [ "$con" = 0 ] || loi "còn $con tiến trình python của lượt $1"; echo "đã dừng $1" >&2; }
 }
 
-so() {
+so() {  # <mốc> <nhánh> [--soi <tệp soi ĐÃ ĐIỀN trên máy dev>]
   local moc="$1" nhanh="$2"; shift 2
-  local soi="" rc=0 ra="$K/so/${moc}__vs__${nhanh}"
-  [ "${1:-}" = --soi ] && soi="--soi $2"
+  local soi="" rc=0 ra="$K/so/${moc}__vs__${nhanh}" dich
+  dich="$BAO_CAO/$(basename "$ra")"
+  if [ "${1:-}" = --soi ]; then  # tệp người điền nằm trên máy dev ⇒ đẩy lên ca-n; thiếu thì dừng, không lặng lẽ bỏ qua
+    [ -f "${2:-}" ] || loi "không có tệp soi ${2:-}"
+    r "mkdir -p $ra"; scp -q "$2" "$CA_N:$ra/soi-nguoi.json" || loi "không đẩy được tệp soi"
+    soi="--soi $ra/soi-nguoi.json"
+  fi
   r "$PY -I $K/cong-cu/scripts/bo_de_thay_logo.py so $K/ra/$moc $K/ra/$nhanh $soi --ra $ra" || rc=$?
-  # Có mẫu soi (vế c) và chưa có tệp soi ⇒ dựng ảnh toàn khung + soi.json mẫu để người điền
+  # Có mẫu soi (vế c) mà chưa có kết quả người ⇒ dựng ảnh toàn khung + soi-mau.json để người điền
   if [ "$rc" = 2 ] && [ -z "$soi" ] && r "grep -q '\"frame\"' $ra/mau-soi.json"; then
     r "$PY -I $K/cong-cu/scripts/bo_de_thay_logo_anh_soi.py $ra $K/v" || loi "không dựng được ảnh soi"
   fi
-  mkdir -p "$BAO_CAO"
-  scp -q -r "$CA_N:$ra" "$BAO_CAO/" || loi "không kéo được báo cáo $ra"
-  echo "báo cáo: $BAO_CAO/$(basename "$ra")/bao-cao.md (rc $rc)" >&2
+  # Kéo về KHÔNG đè tệp người đang điền dở (soi-mau.json đã có ở máy dev thì giữ bản máy dev)
+  mkdir -p "$dich"
+  rsync -a $( [ -f "$dich/soi-mau.json" ] && echo "--exclude soi-mau.json" ) "$CA_N:$ra/" "$dich/" || loi "không kéo được báo cáo $ra"
+  echo "báo cáo: $dich/bao-cao.md (rc $rc)" >&2
   return "$rc"
 }
 
