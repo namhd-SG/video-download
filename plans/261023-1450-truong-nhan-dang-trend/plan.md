@@ -62,3 +62,15 @@ Dự đoán ghi trước (để không tự chấm): R1 có thể **gãy ở ca 
 phụ (sàn diễn/phố/studio đều tính) — R1 lại bắt nền khớp chữ ký. Nếu gãy đúng chỗ này ⇒ cổng nền phải theo luật của chữ
 ký (bỏ nền khi chữ ký có hành động cổng), không phải bỏ R1.
 Tiêu chí đạt: R1 khớp user ≥ R0 ở CẢ ca 1 và ca 2, và không giảm số link đúng (TP) quá 10% so với R0 ở ca nào.
+
+## Kết quả ca 1 (user chấm 23/10 14:43, 80/80) + ĐĂNG KÝ TRƯỚC R2 cho ca 2 (ghi ~14:5x, TRƯỚC khi có nhãn ca 2)
+- **R1 TRƯỢT tiêu chí ở ca 1**: khớp 71/80 < R0 77/80 (R1: TP 38 FP 8 FN 1 · R0: TP 37 FP 1 FN 2). Gốc: R1 BỎ cổng cấu trúc
+  của máy; từ "pose" chung chung kéo vào video dạy vẽ dáng / anime / JoJo pose mà cổng bản sao vốn loại đúng.
+  ⇒ R1 bị loại. Không sửa regex ca 1 sau khi thấy nhãn.
+- Giả thuyết mới (sinh SAU khi thấy nhãn ca 1 ⇒ số ca 1 và ca 3 dưới đây là TRONG MẪU):
+  **R2** giữ ⟺ R0 (hạng ∈ {3, 2A}) **VÀ** caption khớp regex tên trend — tên trend là cổng THÊM, không thay cổng ảnh.
+  ca 1: 77/80 (TP 36 FP 0 FN 3) = R0 · ca 3: 50/57 (TP 32 FP 0 FN 7) vs R0 38/57.
+- **Đăng ký cho ca 2** (ngoài mẫu thật, chưa có nhãn): R2 với regex ca 2 đã ghi ở trên (`catwalk|runway|pasarela|passarela|desfile`),
+  không đổi. Tiêu chí đạt như cũ: khớp ≥ R0 và TP không giảm quá 10%.
+- Dự đoán ghi trước: R2 giảm FP ở ca 2 (người thật/meme có caption không chứa "catwalk/runway") nhưng có thể mất TP ở
+  caption chỉ ghi "AI model"/"fashion" — nếu TP giảm > 10% thì R2 trượt ở ca 2.
