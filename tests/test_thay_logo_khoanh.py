@@ -261,6 +261,29 @@ def test_route_khung_tai_trich_dung_khung_tu_video_giu(ctx):
     assert c.get(f"/api/thay-logo/videos/{vid}/dai", headers=_h("a@x")).json()["co_video"] == {"goc": False, "ra": True}
 
 
+@pytest.mark.parametrize("khung", [0, 19, 20, 28, 29])  # 20, 29 = khung có k/30 làm tròn LÊN; 29 = khung cuối
+def test_route_khung_tai_dung_tung_khung_ke_ca_khung_cuoi(ctx, khung):
+    """Bước sáng 8/khung, sai số < 4 ⇒ lệch MỘT khung là đỏ (test cũ cho ±12 nên khung k+1 vẫn lọt)."""
+    import cv2
+    import numpy as np
+
+    from tiktok_music_downloader.watermark import find_ffmpeg
+    if find_ffmpeg() is None:
+        pytest.skip("không có ffmpeg")
+    c, db, tmp = ctx
+    vid, log_id = _job(db, tmp)
+    d = tmp / khoanh.THU_MUC_VIDEO / str(log_id)
+    d.mkdir(parents=True)
+    out = cv2.VideoWriter(str(d / "ra.mp4"), cv2.VideoWriter_fourcc(*"mp4v"), 30.0, (64, 96))
+    for i in range(30):
+        out.write(np.full((96, 64, 3), i * 8, np.uint8))
+    out.release()
+    r = c.get(f"/api/thay-logo/videos/{vid}/khung-tai/{khung}", headers=_h("a@x"))
+    assert r.status_code == 200
+    anh = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_GRAYSCALE)
+    assert abs(float(anh.mean()) - khung * 8) < 4
+
+
 def test_file_tai_tu_may_cua_video_co_khoanh_giu_180_ngay(tmp_path):
     from tiktok_music_downloader.thay_logo import tai_len_phien
     conn = nhat_ky.mo(tmp_path / "l.db")

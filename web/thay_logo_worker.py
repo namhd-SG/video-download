@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Callable
 
 from tiktok_music_downloader.thay_logo import ap_vao_bo, canh_relay, hang_doi, nhat_ky, nhip_relay, tai_len_phien, tu_ap_vao_bo
-from tiktok_music_downloader.thay_logo import de_khi_biet_bat, khoanh
+from tiktok_music_downloader.thay_logo import de_khi_biet_bat, khoanh, soi_nhanh
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu
 
 # `hoc_mau_agy` / `nguon_khung` cần OpenCV. `web/app.py` import file này lúc khởi động, nên OpenCV chỉ được nạp KHI tính năng bật
@@ -472,6 +472,19 @@ class ThayLogoWorker:
             log.warning("thay logo: không giữ được video %s để sửa (%s): %s", r["id"], type(e).__name__, e)
             return False
 
+    def _dung_soi(self, conn, video_log_id, trang_thai) -> bool:
+        """Dựng sẵn 3 ảnh soi cho màn Lô SAU khi job đã kết thúc (trạng thái job không chờ việc này). Trượt ⇒ log + False;
+        route dựng lười lại khi có người mở."""
+        bat_dau = time.monotonic()
+        try:
+            ok = soi_nhanh.dung_cho_video(conn, self.data, video_log_id, trang_thai, self.ffmpeg)
+        except Exception as e:  # ảnh soi là phụ: không để nó làm sập vòng worker
+            log.warning("thay logo: dựng ảnh soi video %s lỗi (%s): %s", video_log_id, type(e).__name__, e)
+            ok = False
+        log.info("thay logo: ảnh soi video %s %s sau %.1fs", video_log_id, "xong" if ok else "KHÔNG dựng được",
+                 time.monotonic() - bat_dau)
+        return ok
+
     def _ket_thuc_con(self, conn, r, d, ra, tran) -> None:
         try:
             out, err = self._con.communicate(timeout=tran)
@@ -499,11 +512,15 @@ class ThayLogoWorker:
                                loi_text="Không tải được bản đã thay lên Drive.")
                 return
             nhat_ky.cap_nhat_video(conn, kq["video_log_id"], drive_file_id_ra=file_id)
-            self._giu_video(r, kq.get("video_log_id"), Path(kq["dau_ra"]))
+            giu = self._giu_video(r, kq.get("video_log_id"), Path(kq["dau_ra"]))
             self._ket_thuc(conn, r["id"], "xong", video_log_id=kq["video_log_id"], drive_file_id_ra=file_id)
+            if giu:
+                self._dung_soi(conn, kq["video_log_id"], "xong")
         elif kq.get("trang_thai") == "cho_nguoi":
-            self._giu_video(r, kq.get("video_log_id"), None)
+            giu = self._giu_video(r, kq.get("video_log_id"), None)
             self._ket_thuc(conn, r["id"], "cho_nguoi", video_log_id=kq.get("video_log_id"))
+            if giu:
+                self._dung_soi(conn, kq["video_log_id"], "cho_nguoi")
         else:
             log.warning("thay logo: video %s lỗi xử lý: %s", r["id"], kq.get("loi"))
             self._ket_thuc(conn, r["id"], "loi", video_log_id=kq.get("video_log_id"), loi_text="Xử lý video bị lỗi.")

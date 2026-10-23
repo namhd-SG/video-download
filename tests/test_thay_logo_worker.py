@@ -130,6 +130,9 @@ def test_di_tron_hai_pha_qua_tien_trinh_con(worker, clip_file):
     giu = worker.data / "thay_logo_video" / str(r["video_log_id"])  # video gốc + bản ra GIỮ lại cho người khoanh, ngoài scratch
     assert (giu / "goc.mp4").stat().st_size > 0 and (giu / "ra.mp4").stat().st_size > 0
     assert not (worker.data / "thay_logo" / str(r["video_log_id"]) / "goc.mp4").exists()  # không chung thư mục có trần dọn
+    soi = tw.soi_nhanh.da_co(worker.data, r["video_log_id"])  # 3 ảnh soi màn Lô dựng sẵn từ bản ra thật, theo box máy thật
+    assert soi is not None and [a["ban"] for a in soi["anh"]] == ["ra"] * 3
+    assert all((giu / f"soi-{i}.jpg").read_bytes()[:2] == b"\xff\xd8" for i in range(3))
 
 
 def test_nhuong_lane_tai_khi_co_job_running(worker, tmp_path, clip_file):
@@ -588,8 +591,51 @@ def test_giu_video_loi_os_van_xong_job(worker, clip_file, monkeypatch):
     def hong(*a, **k):
         raise OSError("đĩa đầy")
     monkeypatch.setattr(tw.khoanh, "giu_video", hong)
+    goi = []
+    monkeypatch.setattr(tw.soi_nhanh, "dung_cho_video", lambda *a, **k: goi.append(a))
     assert worker.mot_luot() == "da_xu_ly"
     assert _trang_thai(worker, vid)["trang_thai"] == "xong"
+    assert goi == []  # không giữ được video ⇒ không dựng ảnh soi
+
+
+def test_nhanh_cho_nguoi_giu_video_roi_dung_anh_soi_tu_ban_goc(worker, monkeypatch):
+    """Nhánh máy không chắc: video vẫn được giữ và dựng ảnh soi với trạng thái `cho_nguoi` (3 khung cả hình từ bản gốc)."""
+    vid = _tao(worker)
+    conn = worker._mo()
+    try:
+        conn.execute("UPDATE tl_job_video SET duong_dan_goc='goc.mp4' WHERE id=?", (vid,))
+        conn.commit()
+        r = conn.execute("SELECT * FROM tl_job_video WHERE id=?", (vid,)).fetchone()
+
+        class Con:
+            def communicate(self, timeout=None):
+                return json.dumps({"trang_thai": "cho_nguoi", "video_log_id": 77}) + "\n", ""
+        worker._con = Con()
+        giu, dung = [], []
+        monkeypatch.setattr(tw.khoanh, "giu_video", lambda data, vlid, goc, ra: giu.append((vlid, ra)))
+        monkeypatch.setattr(tw.soi_nhanh, "dung_cho_video", lambda c, data, vlid, tt, ff: dung.append((vlid, tt)) or True)
+        worker._ket_thuc_con(conn, r, None, None, 5)
+    finally:
+        conn.close()
+    assert _trang_thai(worker, vid)["trang_thai"] == "cho_nguoi"
+    assert giu == [(77, None)] and dung == [(77, "cho_nguoi")]
+
+
+def test_dung_anh_soi_loi_van_xong_job_va_job_xong_truoc_khi_dung(worker, clip_file, monkeypatch):
+    """Ảnh soi là phụ: dựng nổ ngoại lệ không làm hỏng job; và job đã ở trạng thái cuối LÚC dựng (không chờ việc phụ)."""
+    clip, _ = clip_file
+    vid = _tao(worker)
+    worker.mot_luot()
+    relay_may_dev.mot_vong(_Mini(worker.hop), _agy_tu_ground_truth(clip, worker.hop, vid))
+    luc_dung = []
+
+    def hong(conn, data, video_log_id, trang_thai, ffmpeg):
+        luc_dung.append((_trang_thai(worker, vid)["trang_thai"], trang_thai))
+        raise RuntimeError("ffmpeg chết")
+    monkeypatch.setattr(tw.soi_nhanh, "dung_cho_video", hong)
+    assert worker.mot_luot() == "da_xu_ly"
+    assert _trang_thai(worker, vid)["trang_thai"] == "xong"
+    assert luc_dung == [("xong", "xong")]
 
 
 def test_chet_giua_giu_video_va_ket_thuc_khoi_dong_lai_van_chay_tiep(worker, clip_file, monkeypatch):
