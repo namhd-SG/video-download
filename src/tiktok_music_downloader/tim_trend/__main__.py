@@ -40,7 +40,8 @@ def main(
     cho_giai_captcha: int = typer.Option(0, "--cho-giai-captcha", min=0, max=600,
                                          help="Giây chờ NGƯỜI giải captcha trong cửa sổ; 0 = gặp captcha là dừng (mặc định)"),
 ) -> None:
-    """Tìm thêm video TikTok CÙNG DẠNG với video đầu vào; ra links.txt cho Video Desk + trang index.html.
+    """Tìm thêm video TikTok CÙNG DẠNG với video đầu vào; ra links.txt cho Video Desk (kèm links-ket-qua.txt = bản kết
+    quả, links-huong-dan.txt = bản hướng dẫn) + trang index.html.
 
     Chỉ máy dev (cần agy + Chrome có cửa sổ). RANH GIỚI DỮ LIỆU: khung hình được gửi lên agy (dịch vụ ngoài) — CHỈ dùng
     cho video công khai (đối thủ, trend); KHÔNG dùng cho creative nội bộ chưa chạy ads hay dữ liệu khách.
@@ -78,6 +79,9 @@ def main(
     if not kq.tin_duoc:
         typer.echo("ĐỐI CHỨNG DƯƠNG TRƯỢT — không xuất links.txt (máy chấm không tin được lần này).", err=True)
         raise typer.Exit(7)
+    if kq.so_lo_bo:
+        typer.echo(f"CẢNH BÁO: bỏ {kq.so_lo_bo}/{kq.so_lo} lô (đối chứng trượt cả sau khi chấm lại) — ảnh của lô bỏ "
+                   "chưa được chấm; link chỉ lấy từ lô đạt.", err=True)
     typer.echo(f"Giữ {len(kq.giu(hang_giu))} link: {', '.join(str(p) for p in tep)}")
 
 

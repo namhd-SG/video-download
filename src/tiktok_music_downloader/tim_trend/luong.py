@@ -136,8 +136,8 @@ _TEP_LINK = re.compile(r"^links(-ket-qua|-huong-dan)?(-\d\d)?\.txt$")
 
 
 def _xoa_tep_link(ra: Path) -> None:
-    """Chỉ xoá ĐÚNG file công cụ ghi (`links.txt`, `links-NN.txt`) và chỉ file thường — `links-cua-toi.txt` hay thư mục
-    trùng tên là của người dùng (review 23/10 H-a)."""
+    """Chỉ xoá ĐÚNG file công cụ ghi (`links`, `links-ket-qua`, `links-huong-dan`, mỗi tập kèm khối `-NN`, đuôi `.txt`)
+    và chỉ file thường — `links-cua-toi.txt` hay thư mục trùng tên là của người dùng (review 23/10 H-a)."""
     for p in ra.iterdir():
         if _TEP_LINK.match(p.name) and p.is_file() and not p.is_symlink():
             p.unlink()

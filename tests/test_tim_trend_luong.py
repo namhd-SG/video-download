@@ -61,7 +61,8 @@ def ffmpeg_gia(tmp_path, monkeypatch):
     bin_gia = tmp_path / "bin-gia"
     bin_gia.mkdir()
     (bin_gia / "ffprobe").write_text('#!/bin/sh\necho \'{"format": {"duration": "3.0"}}\'\n')
-    (bin_gia / "ffmpeg").write_text('#!/bin/sh\nfor a in "$@"; do dich="$a"; done\nprintf x > "$dich"\n')
+    # nội dung khung = tên khung ⇒ bản chép làm ctrl vẫn truy được về khung gốc
+    (bin_gia / "ffmpeg").write_text('#!/bin/sh\nfor a in "$@"; do dich="$a"; done\nbasename "$dich" .jpg > "$dich"\n')
     for f in bin_gia.iterdir():
         f.chmod(0o755)
     monkeypatch.setenv("PATH", f"{bin_gia}{os.pathsep}{os.environ['PATH']}")
@@ -70,7 +71,8 @@ def ffmpeg_gia(tmp_path, monkeypatch):
 @pytest.fixture
 def gia(monkeypatch, tmp_path, ffmpeg_gia):
     # ctrl_theo_luot: danh sách mục fixture cho ctrl, mỗi lượt agy CHẤM LÔ lấy 1 phần tử (hết thì dùng "ctrl").
-    trang_thai = {"ctrl": "ctrl-1", "ctrl_thay": [], "ctrl_theo_luot": [], "goi": []}
+    # khung: {tên khung đầu vào: mục trường} — ghi đè đọc của TỪNG khung (mặc định F["ctrl-0"]), áp cả cho bản chép ctrl.
+    trang_thai = {"ctrl": "ctrl-1", "ctrl_thay": [], "ctrl_theo_luot": [], "goi": [], "khung": {}, "ctrl_goc": {}}
 
     def boc(anh, thu_muc_ra, model=None, ten=""):
         ra = {}
@@ -79,12 +81,14 @@ def gia(monkeypatch, tmp_path, ffmpeg_gia):
             ctrl_lan = trang_thai["ctrl_theo_luot"].pop(0) if trang_thai["ctrl_theo_luot"] else trang_thai["ctrl"]
         for a in anh:
             if a.stem.startswith("dau-vao"):
-                m = F["ctrl-0"]
+                m = trang_thai["khung"].get(a.stem, F["ctrl-0"])
             elif a.stem in UV:
                 m = F[UV[a.stem][0]]
             else:   # ctrl: tên số ngẫu nhiên, không có trong UV
                 trang_thai["ctrl_thay"].append(a.stem)
-                m = F[ctrl_lan]
+                goc = a.read_text().strip()
+                trang_thai["ctrl_goc"][a.stem] = goc
+                m = trang_thai["khung"].get(goc, F[ctrl_lan]) if trang_thai["khung"] else F[ctrl_lan]
             ra[a.stem] = tu_json(dict(m, id=a.stem))
         return ra
 
@@ -442,3 +446,24 @@ def test_don_ca_tep_link_theo_nhom(tmp_path):
         (ra / ten).write_text("x")
     luong.don_dau_ra_cu(ra)
     assert sorted(p.name for p in ra.iterdir()) == ["links-cua-toi.txt"]
+
+
+def test_hat_giong_hop_2_theo_nguong(gia, tmp_path, monkeypatch):
+    """Review 352c096 M1: --nguong 3 ⇒ caption của ứng viên 2A KHÔNG được làm hạt giống hop 2."""
+    _, video = gia
+    hat = []
+    monkeypatch.setattr(luong, "sinh_mo_rong", lambda dat, da_dung, n: hat.extend(dat) or [])
+    luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=2, bao=lambda s: None,
+               nguong=frozenset({"3"}))
+    assert hat == [UV["7000000000000000001"][1]]   # chỉ caption hạng 3; 002 (2A) bị loại
+
+
+def test_ctrl_chinh_la_khung_neo_hang_3(gia, tmp_path):
+    """Review 352c096 L1: khung giữa đọc ra 2A (chữ hướng dẫn in đè) ⇒ vẫn làm ctrl, nhưng ctrl CHÍNH (vị trí 0, luật
+    chấm lại dùng nó) phải là khung neo hạng 3, không phải khung giữa."""
+    trang_thai, video = gia
+    trang_thai["khung"] = {"dau-vao-1": dict(F["ctrl-0"], la_tutorial=True)}
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    lo = kq.lo_ctrl[0]
+    assert [trang_thai["ctrl_goc"][t] for t in lo["ten_ctrl"]] == ["dau-vao-0", "dau-vao-2", "dau-vao-1"]
+    assert lo["hang_ctrl"] == ["3", "3", "2A"] and lo["tin"]

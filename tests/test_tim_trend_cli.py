@@ -68,3 +68,23 @@ def test_ma_thoat_6_va_khong_de_ket_qua_cu(tmp_path, monkeypatch, loi, chu, khon
     assert kq_cli.exit_code == 6
     assert chu in kq_cli.output and khong_co not in kq_cli.output
     assert not any((ra / t).exists() for t in ("links.txt", "ket-qua.json", "index.html"))
+
+
+def test_nguong_cli_truyen_vao_chay(tmp_path, monkeypatch):
+    """Review 352c096 M2: --nguong phải tới được chay (cổng ctrl dùng nó), không chỉ tới ghi_links."""
+    nhan = {}
+    monkeypatch.setattr(cli, "chay", lambda *a, **k: nhan.update(k) or KetQua(ung_vien=[UV]))
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    CliRunner().invoke(cli.app, [str(video), "--ra", str(tmp_path / "ra"), "--nguong", "3"])
+    assert nhan["nguong"] == frozenset({"3"})
+
+
+def test_ma_0_co_lo_bi_bo_thi_canh_bao(tmp_path, monkeypatch):
+    """Có lô bị bỏ mà vẫn thoát 0 ⇒ phải in cảnh báo, người chạy không tưởng mọi ảnh đã được chấm."""
+    monkeypatch.setattr(cli, "chay", lambda *a, **k: KetQua(ung_vien=[UV], so_lo=2, so_lo_bo=1))
+    video = tmp_path / "v.mp4"
+    video.write_bytes(b"x")
+    (tmp_path / "ra").mkdir()
+    kq_cli = CliRunner().invoke(cli.app, [str(video), "--ra", str(tmp_path / "ra")])
+    assert kq_cli.exit_code == 0 and "bỏ 1/2 lô" in kq_cli.output
