@@ -45,3 +45,20 @@ do this" agy đọc nền studio; 2 caption không có tên trend, 1 là ES "pan
 - R1 dựa vào caption: có cách nào phá được "bảo đảm theo từng link" của cổng ctrl không (ctrl là khung video mẫu, không có
   caption ⇒ cổng trend phải bỏ qua ctrl)?
 - Nguồn `ten_trend` tự động (caption hạng 3 lượt đầu) có tự khuếch đại sai (vòng phản hồi) không?
+
+## ĐĂNG KÝ TRƯỚC phép thử ngoài mẫu (ghi 23/10 ~14:5x, TRƯỚC khi user chấm ca 1 + ca 2)
+ĐP chọn (b): kiểm R1 trên ca 1 (7 pose, `pha4b-v1`, 80 ứng viên) + ca 2 (catwalk, `pha4b-v2`, 103 ứng viên) — dữ liệu Pha 4
+sẵn có, 0 lượt TikTok. User chấm TOÀN BỘ ứng viên (không chỉ link giữ) để đo được cả recall.
+
+Luật cố định, không sửa sau khi thấy nhãn:
+- **R0** giữ ⟺ hạng máy ∈ {3, 2A}.
+- **R1** giữ ⟺ caption (bỏ dấu, chữ thường) khớp regex tên trend VÀ `nhom_nen(loai_nen) == chu_ky.nen` (nền khớp chữ ký).
+- Tên trend (lấy từ sổ know-how §2/§4 + truy vấn đã chạy ở Pha 4, có từ 22–23/10, KHÔNG từ nhãn):
+  - ca 1: `pose|kolase|collage`
+  - ca 2: `catwalk|runway|pasarela|passarela|desfile`
+  - ca 3 (đã đo trong mẫu): `kiss ?cam|coldplay`
+
+Dự đoán ghi trước (để không tự chấm): R1 có thể **gãy ở ca 2** vì luật hạng hiện tại coi catwalk là cổng cứng còn nền chỉ
+phụ (sàn diễn/phố/studio đều tính) — R1 lại bắt nền khớp chữ ký. Nếu gãy đúng chỗ này ⇒ cổng nền phải theo luật của chữ
+ký (bỏ nền khi chữ ký có hành động cổng), không phải bỏ R1.
+Tiêu chí đạt: R1 khớp user ≥ R0 ở CẢ ca 1 và ca 2, và không giảm số link đúng (TP) quá 10% so với R0 ở ca nào.
