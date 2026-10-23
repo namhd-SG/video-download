@@ -258,3 +258,20 @@ def test_route_khung_tai_trich_dung_khung_tu_video_giu(ctx):
     anh = cv2.imdecode(np.frombuffer(r.content, np.uint8), cv2.IMREAD_GRAYSCALE)
     assert abs(float(anh.mean()) - 160) < 12  # khung 20 ⇒ ~160, không phải khung 0
     assert c.get(f"/api/thay-logo/videos/{vid}/dai", headers=_h("a@x")).json()["co_video"] == {"goc": False, "ra": True}
+
+
+def test_file_tai_tu_may_cua_video_co_khoanh_giu_180_ngay(tmp_path):
+    from tiktok_music_downloader.thay_logo import tai_len_phien
+    conn = nhat_ky.mo(tmp_path / "l.db")
+    hang_doi.khoi_tao(conn)
+    j = hang_doi.tao_job(conn, "a@x", [{"kieu": "may", "file_id": "M" * 20, "token": "t", "ten": "a.mp4"}])
+    vid = conn.execute("SELECT id FROM tl_job_video WHERE job_id=?", (j,)).fetchone()[0]
+    log_id = nhat_ky.bat_dau_video(conn, nguon_video="x")
+    hang_doi.dat(conn, vid, "xong", video_log_id=log_id)
+    bay = time.time()
+    conn.execute("UPDATE tl_job_video SET cap_nhat_luc=? WHERE id=?", (bay - 90 * 86400, vid))
+    conn.commit()
+    assert tai_len_phien._het_han_giu(conn, "M" * 20, bay)  # 90 ngày, không khoanh ⇒ hết hạn (60)
+    khoanh.ghi_ca(conn, video_log_id=log_id, job_video_id=vid, member="a@x", khung=1, vung=(1, 1, 9, 9), mau_loi="lo_mep",
+                  chan_cu=None, box_may=None)
+    assert not tai_len_phien._het_han_giu(conn, "M" * 20, bay)  # có khoanh ⇒ giữ 180 ngày để tải lại chạy ca
