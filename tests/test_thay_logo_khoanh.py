@@ -235,6 +235,7 @@ def test_route_khung_tai_video_da_don_tra_404(ctx):
     c, db, tmp = ctx
     vid, _ = _job(db, tmp)
     assert c.get(f"/api/thay-logo/videos/{vid}/khung-tai/5?ban=goc", headers=_h("a@x")).status_code == 404
+    assert c.get(f"/api/thay-logo/videos/{vid}/khung-tai/5?ban=goc", headers=_h("b@x")).status_code == 403  # người khác: chặn trước khi chạm file
     assert c.get(f"/api/thay-logo/videos/{vid}/khung-tai/5?ban=xx", headers=_h("a@x")).status_code == 422
 
 
