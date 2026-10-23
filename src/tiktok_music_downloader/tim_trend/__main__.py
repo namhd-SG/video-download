@@ -4,7 +4,7 @@ trả rỗng, đo Pha 0 22/10). Cửa sổ Chrome bật lên trong lúc chạy v
 RANH GIỚI DỮ LIỆU (ĐP 23/10): khung hình video được gửi lên agy (dịch vụ ngoài). CHỈ dùng cho video công khai (đối thủ,
 trend). KHÔNG dùng cho creative nội bộ chưa chạy ads hay dữ liệu khách.
 
-Mã thoát: 0 có kết quả · 3 không có ứng viên · 4 TikTok hỏi captcha · 5 mở trang lỗi · 6 chữ ký không ổn định (video nhiều cảnh) · 7 đối chứng dương trượt (2 là lỗi tham số của Click).
+Mã thoát: 0 có kết quả · 3 không có ứng viên · 4 TikTok hỏi captcha · 5 mở trang lỗi · 6 chữ ký không dùng được (video nhiều cảnh / chỉ có cảnh hướng dẫn) · 7 đối chứng dương trượt (2 là lỗi tham số của Click).
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ import typer
 
 from .agy_boc import MODEL_MAC_DINH
 from .cham import NGUONG_MAC_DINH
-from .luong import ChuKyKhongOnDinh, chay, ghi_links
+from .luong import ChuKyKhongOnDinh, VideoHuongDan, chay, ghi_links
 from .nguon_tim import ChromeTim
 from .trang import render
 
@@ -45,7 +45,7 @@ def main(
     Chỉ máy dev (cần agy + Chrome có cửa sổ). RANH GIỚI DỮ LIỆU: khung hình được gửi lên agy (dịch vụ ngoài) — CHỈ dùng
     cho video công khai (đối thủ, trend); KHÔNG dùng cho creative nội bộ chưa chạy ads hay dữ liệu khách.
 
-    Mã thoát: 0 có kết quả · 3 không có ứng viên · 4 TikTok hỏi captcha · 5 mở trang lỗi · 6 chữ ký không ổn định (video nhiều cảnh) · 7 đối chứng dương trượt (2 là lỗi tham số của Click).
+    Mã thoát: 0 có kết quả · 3 không có ứng viên · 4 TikTok hỏi captcha · 5 mở trang lỗi · 6 chữ ký không dùng được (video nhiều cảnh / chỉ có cảnh hướng dẫn) · 7 đối chứng dương trượt (2 là lỗi tham số của Click).
     """
     hang_giu = frozenset(x.strip() for x in nguong.split(",") if x.strip())
     try:
@@ -53,6 +53,10 @@ def main(
                                                         profile_ben=profile_ben, cho_giai_giay=cho_giai_captcha),
                   so_truy_van=so_truy_van, so_hop=hop, model=model,
                   truy_van_tay=[t.strip() for t in truy_van.split("|") if t.strip()] or None)
+    except VideoHuongDan as exc:
+        typer.echo(f"Video đầu vào là video HƯỚNG DẪN — {exc}. Công cụ chưa tìm được theo video chỉ có cảnh hướng dẫn; "
+                   "đưa video có cảnh KẾT QUẢ (hiệu ứng đã làm xong) vào để tìm.", err=True)
+        raise typer.Exit(6)
     except ChuKyKhongOnDinh as exc:
         typer.echo(f"Chữ ký dạng không ổn định — {exc}. Thử cắt video còn 1 cảnh chính rồi chạy lại.", err=True)
         raise typer.Exit(6)

@@ -8,7 +8,7 @@ from html import escape
 from pathlib import Path
 
 from .cham import NGUONG_MAC_DINH
-from .luong import KetQua
+from .luong import TIEU_DE_TRANG, KetQua
 
 TEN_HANG = {"3": "Đúng dạng", "2A": "Đúng dạng · tutorial", "2B": "Gần (lệch 1)", "1": "Khác dạng", "0": "Khác chủ thể",
             None: "Chưa chấm được"}
@@ -61,7 +61,7 @@ def render(kq: KetQua, ra: Path, ten_video: str, nguong: frozenset[str] = NGUONG
            '<p class="bad">ĐỐI CHỨNG DƯƠNG TRƯỢT — máy chấm không tin được ở lần chạy này ⇒ KHÔNG xuất link. '
            f'Lô: {escape(str(kq.lo_ctrl))}</p>')
     html = f"""<!doctype html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Tìm video cùng dạng</title><style>{_CSS}</style></head><body><main>
+{TIEU_DE_TRANG}<style>{_CSS}</style></head><body><main>
 <h1>Tìm video cùng dạng: {escape(ten_video)}</h1>
 <p class="mute">Kết quả theo IP Việt Nam (chưa có proxy theo thị trường). Chấm theo ảnh bìa; ngưỡng giữ {escape(", ".join(sorted(nguong)))}
 — thước người 22/10: precision 0,95 / recall 0,90 trên 70 ảnh. Mở trang TikTok {kq.so_lan_mo_trang} lần.

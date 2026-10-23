@@ -1,11 +1,14 @@
 """Điều phối một lần chạy: video ⇒ chữ ký ⇒ tìm theo hop ⇒ ảnh bìa ⇒ hạng ⇒ mở rộng ⇒ kết quả.
 
 Đối chứng dương KHÔNG tự chấm (agy plan-R1b ĐK5): chữ ký tính từ lượt bóc RIÊNG của khung đầu vào; mỗi lô ảnh bìa gửi agy
-có thêm 1 bản sao khung giữa của video đầu vào (`ctrl-*`). ctrl trong lô không ra hạng 3 ⇒ lô đó không tin được ⇒ cả lần
+có thêm 1 bản sao khung khớp chữ ký của video đầu vào (ctrl, tên số và vị trí ngẫu nhiên như ảnh bìa; tên ghi ở
+`lo_ctrl`). ctrl trong lô không ra hạng 3 ⇒ lô đó không tin được ⇒ cả lần
 chạy KHÔNG xuất `links.txt` (lọc sai là hỏng âm thầm: thà không ra link còn hơn ra link sai mà trông như đúng).
 """
 from __future__ import annotations
 
+import json
+import random
 import re
 import shutil
 from collections.abc import Callable
@@ -33,11 +36,18 @@ def chon_khung_doi_chung(ds_khung: list[Path], truong_khung: dict[str, TruongAnh
         t = truong_khung.get(k.stem)
         if t is not None and hang(t, ck) == "3":
             return k
+    doc_duoc = [truong_khung[k.stem] for k in ds_khung if k.stem in truong_khung]
+    if doc_duoc and all(t.la_tutorial for t in doc_duoc):
+        raise VideoHuongDan("mọi khung của video đầu vào đều là cảnh hướng dẫn — cắt cảnh không giúp được")
     raise ChuKyKhongOnDinh("không khung nào của video đầu vào khớp chữ ký của chính nó — video nhiều cảnh khác hẳn nhau")
 
 
 class ChuKyKhongOnDinh(RuntimeError):
     """Chữ ký dạng không đại diện được cho video đầu vào (không khung nào tự khớp)."""
+
+
+class VideoHuongDan(ChuKyKhongOnDinh):
+    """Video đầu vào chỉ có cảnh hướng dẫn: khung nào cũng ra 2A nên không có khung đối chứng hạng 3 (review 23/10 M3)."""
 
 
 def bao_ngay(chu: str) -> None:
@@ -75,20 +85,31 @@ def _bo_truong(t: TruongAnh | None) -> dict | None:
     return None if t is None else asdict(t)
 
 
+def _ten_ctrl(rnd: random.Random, da_co: set[str]) -> str:
+    """Tên ctrl cùng mẫu với ảnh bìa (`<19 chữ số>`): tên `ctrl-N` lộ cho agy biết ảnh nào là đối chứng ⇒ chấm không còn mù."""
+    while True:
+        ten = str(rnd.randrange(7 * 10**18, 8 * 10**18))
+        if ten not in da_co:
+            return ten
+
+
 def _cham_lo(bia: dict[str, Path], ctrl_goc: Path, thu_muc: Path, ck: ChuKy, kq: KetQua,
-             model: str) -> dict[str, tuple[str | None, TruongAnh | None]]:
-    """Chấm ảnh bìa theo lô ≤ LO_TOI_DA-1, mỗi lô kèm 1 ctrl. Trả {video_id: (hạng, trường)}."""
+             model: str, rnd: random.Random | None = None) -> dict[str, tuple[str | None, TruongAnh | None]]:
+    """Chấm ảnh bìa theo lô ≤ LO_TOI_DA-1, mỗi lô kèm 1 ctrl đặt tên và vị trí ngẫu nhiên. Trả {video_id: (hạng, trường)}."""
+    rnd = rnd or random.Random()
     ra: dict[str, tuple[str | None, TruongAnh | None]] = {}
     ids = list(bia)
     co = agy_boc.LO_TOI_DA - 1
     for k in range(0, len(ids), co):
         nhom = ids[k:k + co]
-        ctrl = thu_muc / f"ctrl-{len(kq.lo_ctrl)}.jpg"
+        ctrl = thu_muc / f"{_ten_ctrl(rnd, {p.stem for p in thu_muc.glob('*.jpg')})}.jpg"
         shutil.copyfile(ctrl_goc, ctrl)
+        lo = [bia[i] for i in nhom]
+        lo.insert(rnd.randrange(len(lo) + 1), ctrl)
         print(f"agy chấm lô {len(kq.lo_ctrl) + 1}: {len(nhom)} ảnh bìa (≈1–2 phút)…", flush=True)
-        truong = agy_boc.boc_truong([bia[i] for i in nhom] + [ctrl], thu_muc, model, ten=f"agy-truong-{ctrl.stem}")
+        truong = agy_boc.boc_truong(lo, thu_muc, model, ten=f"agy-truong-lo-{len(kq.lo_ctrl)}")
         h_ctrl = hang(truong[ctrl.stem], ck) if ctrl.stem in truong else None
-        kq.lo_ctrl.append({"lo": len(kq.lo_ctrl), "hang_ctrl": h_ctrl})
+        kq.lo_ctrl.append({"lo": len(kq.lo_ctrl), "ten_ctrl": ctrl.stem, "hang_ctrl": h_ctrl})
         tin = h_ctrl == "3"
         kq.tin_duoc = kq.tin_duoc and tin
         for vid in nhom:
@@ -116,7 +137,10 @@ def chay(video: Path, ra: Path, *, tao_nguon: Callable[[], object], so_truy_van:
 
     if truy_van_tay:
         # Người chạy tự đưa key hop 1 (vd từ hồ sơ trend): thay HẲN key tự sinh — để so A/B chỉ đổi 1 biến.
-        hang_doi = [TruyVan(t, "tay", "goc") for t in truy_van_tay][:so_truy_van]
+        khong_trung = list(dict.fromkeys(truy_van_tay))
+        if len(khong_trung) > so_truy_van:
+            bao(f"Chỉ chạy {so_truy_van}/{len(khong_trung)} key đưa tay (--so-truy-van); bỏ: {khong_trung[so_truy_van:]}")
+        hang_doi = [TruyVan(t, "tay", "goc") for t in khong_trung[:so_truy_van]]
     else:
         hang_doi = sinh_truy_van(ck, agy_boc.goi_y_tu_khoa(ds_khung, ra, model), so_truy_van)
     da_dung: set[str] = set()
@@ -173,11 +197,34 @@ def _xoa_tep_link(ra: Path) -> None:
             p.unlink()
 
 
+TIEU_DE_TRANG = "<title>Tìm video cùng dạng</title>"   # `trang.render` ghi; nhận diện index.html của công cụ
+
+
+def _cua_cong_cu(p: Path) -> bool:
+    """`ket-qua.json`/`index.html` do công cụ ghi? Nhận theo NỘI DUNG — file trùng tên của người dùng không bị xoá."""
+    if not p.is_file() or p.is_symlink():
+        return False
+    try:
+        chu = p.read_text()
+    except (OSError, UnicodeDecodeError):
+        return False
+    if p.suffix == ".html":
+        return TIEU_DE_TRANG in chu
+    try:
+        du_lieu = json.loads(chu)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(du_lieu, dict) and {"chu_ky", "lo_ctrl", "ung_vien"} <= du_lieu.keys()
+
+
 def don_dau_ra_cu(ra: Path) -> None:
-    """Xoá link và khung của lần chạy trước trong cùng `--ra`: lần này thoát lỗi thì file cũ KHÔNG được nằm lại trông như
-    kết quả mới (review 23/10 H1). `khung/` chỉ bị xoá khi có file đánh dấu do công cụ tạo (`--ra ~/Downloads` không mất
-    `~/Downloads/khung/` của người dùng)."""
+    """Xoá link, ket-qua.json, index.html và khung của lần chạy trước trong cùng `--ra`: lần này thoát lỗi (vd mã 6 thoát
+    trước khi ghi gì) thì file cũ KHÔNG được nằm lại trông như kết quả mới (review 23/10 H1, M4). `khung/` chỉ bị xoá khi
+    có file đánh dấu do công cụ tạo (`--ra ~/Downloads` không mất `~/Downloads/khung/` của người dùng)."""
     _xoa_tep_link(ra)
+    for ten in ("ket-qua.json", "index.html"):
+        if _cua_cong_cu(ra / ten):
+            (ra / ten).unlink()
     if (ra / "khung" / khung.DANH_DAU).is_file():
         shutil.rmtree(ra / "khung", ignore_errors=True)
 

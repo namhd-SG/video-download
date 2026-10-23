@@ -3,6 +3,7 @@ caption kết quả đạt, ctrl trượt ⇒ không xuất link, hết lượt 
 from __future__ import annotations
 
 import json
+import os
 import random
 from pathlib import Path
 
@@ -54,28 +55,32 @@ class _NguonGia:
 
 
 @pytest.fixture
-def gia(monkeypatch, tmp_path):
-    trang_thai = {"ctrl": "ctrl-1"}
+def ffmpeg_gia(tmp_path, monkeypatch):
+    """ffmpeg/ffprobe GIẢ trên PATH: `trich_khung` chạy mã thật (gồm file đánh dấu) mà không cần video thật.
+    Fixture trước tự ghi file đánh dấu nên xoá dòng đó trong khung.py test vẫn xanh (review 23/10 M11)."""
+    bin_gia = tmp_path / "bin-gia"
+    bin_gia.mkdir()
+    (bin_gia / "ffprobe").write_text('#!/bin/sh\necho \'{"format": {"duration": "3.0"}}\'\n')
+    (bin_gia / "ffmpeg").write_text('#!/bin/sh\nfor a in "$@"; do dich="$a"; done\nprintf x > "$dich"\n')
+    for f in bin_gia.iterdir():
+        f.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_gia}{os.pathsep}{os.environ['PATH']}")
 
-    def trich(video, thu_muc, tien_to="dau-vao"):
-        thu_muc.mkdir(parents=True, exist_ok=True)
-        (thu_muc / khung.DANH_DAU).write_text("x")
-        ra = []
-        for i in range(3):
-            p = thu_muc / f"{tien_to}-{i}.jpg"
-            Image.new("RGB", (36, 64), "white").save(p)
-            ra.append(p)
-        return ra
+
+@pytest.fixture
+def gia(monkeypatch, tmp_path, ffmpeg_gia):
+    trang_thai = {"ctrl": "ctrl-1", "ctrl_thay": []}
 
     def boc(anh, thu_muc_ra, model=None, ten=""):
         ra = {}
         for a in anh:
             if a.stem.startswith("dau-vao"):
                 m = F["ctrl-0"]
-            elif a.stem.startswith("ctrl-"):
-                m = F[trang_thai["ctrl"]]
-            else:
+            elif a.stem in UV:
                 m = F[UV[a.stem][0]]
+            else:   # ctrl: tên số ngẫu nhiên, không có trong UV
+                trang_thai["ctrl_thay"].append(a.stem)
+                m = F[trang_thai["ctrl"]]
             ra[a.stem] = tu_json(dict(m, id=a.stem))
         return ra
 
@@ -90,7 +95,6 @@ def gia(monkeypatch, tmp_path):
             img.save(tot[vid])
         return tot, {}
 
-    monkeypatch.setattr(khung, "trich_khung", trich)
     monkeypatch.setattr(agy_boc, "boc_truong", boc)
     monkeypatch.setattr(agy_boc, "goi_y_tu_khoa", lambda *a, **k: [])
     monkeypatch.setattr(anh_bia, "tai_anh_bia", tai)
@@ -299,3 +303,68 @@ def test_don_chi_xoa_dung_tep_cua_cong_cu(tmp_path):
     (ra / "khung" / khung.DANH_DAU).write_text("x")
     luong.don_dau_ra_cu(ra)
     assert not (ra / "khung").exists()
+
+
+def test_khung_co_san_cua_nguoi_dung_khong_bi_danh_dau_va_khong_bi_xoa(gia, tmp_path):
+    """Review 23/10 vòng 3 HIGH: `--ra` trỏ vào thư mục đã có `khung/` của người dùng ⇒ chạy 2 lần (trich_khung thật)
+    vẫn còn ảnh của họ, và công cụ không đánh dấu thư mục đó là của mình."""
+    _, video = gia
+    ra = tmp_path / "ra"
+    (ra / "khung").mkdir(parents=True)
+    (ra / "khung" / "anh-cua-toi.jpg").write_bytes(b"x")
+    for _ in range(2):
+        luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert (ra / "khung" / "anh-cua-toi.jpg").exists()
+    assert not (ra / "khung" / khung.DANH_DAU).exists()
+
+
+def test_khung_moi_duoc_danh_dau(gia, tmp_path):
+    """Chiều thuận của test trên: thư mục do công cụ tạo thì có đánh dấu (để lần sau dọn được)."""
+    _, video = gia
+    ra = tmp_path / "ra"
+    luong.chay(video, ra, tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    assert (ra / "khung" / khung.DANH_DAU).is_file()
+
+
+def test_video_chi_co_canh_huong_dan_bao_rieng():
+    """Review 23/10 M3: video 1 cảnh hướng dẫn ⇒ mọi khung ra 2A ⇒ báo là video hướng dẫn, không khuyên cắt cảnh."""
+    from tiktok_music_downloader.tim_trend import cham
+    huong_dan = {"so_ban_sao": 1, "chu_the": "nguoi thuong", "loai_nen": "trong_nha", "hanh_dong": "khac",
+                 "la_tutorial": True}
+    ds = [Path(f"dau-vao-{i}.jpg") for i in range(3)]
+    truong = {k.stem: tu_json(dict(huong_dan, id=k.stem)) for k in ds}
+    with pytest.raises(luong.VideoHuongDan):
+        luong.chon_khung_doi_chung(ds, truong, cham.chu_ky(list(truong.values())))
+
+
+def test_ctrl_ten_so_va_lan_vao_lo(gia, tmp_path):
+    """Review 23/10 LOW: ctrl mang tên `ctrl-N` thì agy biết ảnh nào là đối chứng ⇒ đặt tên cùng mẫu số với ảnh bìa."""
+    trang_thai, video = gia
+    kq = luong.chay(video, tmp_path / "ra", tao_nguon=lambda: _NguonGia(), so_hop=1, bao=lambda s: None)
+    ten = [l["ten_ctrl"] for l in kq.lo_ctrl]
+    assert ten == trang_thai["ctrl_thay"] and kq.tin_duoc
+    assert all(t.isdigit() and len(t) == 19 and t not in UV for t in ten)
+
+
+def test_truy_van_tay_bo_trung_va_bao_khi_cat(gia, tmp_path):
+    _, video = gia
+    nguon, bao = _NguonGia(), []
+    luong.chay(video, tmp_path / "ra", tao_nguon=lambda: nguon, so_truy_van=2, so_hop=1, bao=bao.append,
+               truy_van_tay=["a", "b", "a", "c"])
+    assert nguon.goi == ["a", "b"]
+    assert any("2/3" in b and "'c'" in b for b in bao)
+
+
+def test_don_ket_qua_va_trang_cu_chi_khi_cua_cong_cu(tmp_path):
+    """Review 23/10 M4: ket-qua.json/index.html của lần trước bị dọn; file trùng tên của người dùng thì giữ."""
+    ra = tmp_path / "ra"
+    ra.mkdir()
+    luong.ghi_links(luong.KetQua(), ra)
+    (ra / "ket-qua.json").write_text(json.dumps({"chu_ky": None, "lo_ctrl": [], "ung_vien": []}))
+    render(luong.KetQua(), ra, "v.mp4")
+    luong.don_dau_ra_cu(ra)
+    assert not (ra / "ket-qua.json").exists() and not (ra / "index.html").exists()
+    (ra / "ket-qua.json").write_text('{"cua": "toi"}')
+    (ra / "index.html").write_text("<title>trang cua toi</title>")
+    luong.don_dau_ra_cu(ra)
+    assert (ra / "ket-qua.json").exists() and (ra / "index.html").exists()

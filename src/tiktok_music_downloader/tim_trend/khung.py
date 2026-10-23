@@ -32,9 +32,14 @@ def thoi_luong(video: Path) -> float:
 
 
 def trich_khung(video: Path, thu_muc: Path, tien_to: str = "dau-vao") -> list[Path]:
-    """Ghi các khung `<tien_to>-<i>.jpg` vào `thu_muc`; trả danh sách file đã ghi được (khung lỗi bị bỏ, không đoán)."""
+    """Ghi các khung `<tien_to>-<i>.jpg` vào `thu_muc`; trả danh sách file đã ghi được (khung lỗi bị bỏ, không đoán).
+
+    Chỉ đánh dấu thư mục khi nó MỚI hoặc RỖNG: đánh dấu cả `khung/` có sẵn của người dùng thì lần chạy sau `don_dau_ra_cu`
+    xoá luôn ảnh của họ (review 23/10 vòng 3, HIGH)."""
+    cua_cong_cu = not thu_muc.exists() or not any(thu_muc.iterdir())
     thu_muc.mkdir(parents=True, exist_ok=True)
-    (thu_muc / DANH_DAU).write_text("tạo bởi tim_trend; xoá được\n")
+    if cua_cong_cu:
+        (thu_muc / DANH_DAU).write_text("tạo bởi tim_trend; xoá được\n")
     giay = thoi_luong(video)
     ra: list[Path] = []
     for i, vt in enumerate(VI_TRI):
