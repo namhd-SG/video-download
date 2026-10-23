@@ -15,7 +15,25 @@ mkdir -p "$O"
 
 # Gác cổng (luật cũ, ĐP 22/10): RAM trống ≥ 30%, không job thay logo prod đang chạy, không chồng BẤT KỲ tiến trình Creative Tracker /
 # chay-thu / vn-slot / daily-bo. Mẫu [c]… + awk bỏ dòng grep: cổng không được tự khớp chính mình (đã dẫm 20/10, 21/10).
+# Khung cấm (Creative Tracker ưu tiên, ĐP 23/10): $K/khung-cam, mỗi dòng `HH:MM-HH:MM` giờ VN. Không BẮT ĐẦU video khi giờ hiện tại
+# nằm trong [đầu − DU_PHUT, cuối): cổng chỉ kiểm lúc bắt đầu, video dài nhất ~8 phút ⇒ dư 10 phút để không chồng lên khung.
+DU_PHUT=10
+phut() { echo $(( 10#${1%:*} * 60 + 10#${1#*:} )); }
+trong_khung_cam() {
+  [ -s "$K/khung-cam" ] || return 1
+  local bay dong a b
+  bay=$(phut "$(TZ=Asia/Ho_Chi_Minh date +%H:%M)")
+  while IFS= read -r dong; do
+    case "$dong" in [0-9][0-9]:[0-9][0-9]-[0-9][0-9]:[0-9][0-9]) ;; *) continue ;; esac
+    a=$(( $(phut "${dong%-*}") - DU_PHUT )); b=$(phut "${dong#*-}")
+    if [ "$bay" -ge "$a" ] && [ "$bay" -lt "$b" ]; then echo "$dong"; return 0; fi
+  done < "$K/khung-cam"
+  return 1
+}
 while :; do
+  if cam=$(trong_khung_cam); then
+    echo "$(date +%T) $LUOT v$N chờ: khung cấm $cam (VN)" >> "$K/ra/gac-cong.log"; sleep 60; continue
+  fi
   ram=$(memory_pressure | awk -F': ' '/free percentage/{gsub("%","",$2); print $2}')
   prod=$(sqlite3 'file:/Users/mktmini/Projects/video-download/web/data/thay_logo_log.db?immutable=1' \
          "select count(*) from tl_job_video where trang_thai in ('dang_chay','cho_agy','cho')" 2>/dev/null || echo 0)
