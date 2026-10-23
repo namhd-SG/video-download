@@ -28,7 +28,7 @@ from tiktok_music_downloader.thay_logo import (ap_vao_bo, hang_doi, link_da_kiem
                                                tu_ap_vao_bo)
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
-from web import thay_logo_tai_len_routes
+from web import thay_logo_khoanh_routes, thay_logo_tai_len_routes
 
 log = logging.getLogger(__name__)
 
@@ -811,6 +811,10 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
     # ======================================================== đợt 4: Tải từ máy (3 route trong `thay_logo_tai_len_routes`; cờ `TL_TAI_TU_MAY`)
     thay_logo_tai_len_routes.dang_ky(app, lay_log_db=lay_log_db, require_user=require_user, lay_worker=lay_worker,
                                      lay_tran_cho=lambda: TRAN_CHO_MOI_NGUOI, mau_file_id=_DRIVE_ID, lay_session=lay_session_tai)
+
+    # ======================================================== khoanh chỗ lộ (dải đỏ/vàng, khung bất kỳ, lưu ca) — `thay_logo_khoanh_routes`
+    thay_logo_khoanh_routes.dang_ky(app, mo=_mo, video_cua=_video_cua, lay_log_db=lay_log_db, require_user=require_user,
+                                    lay_worker=lay_worker)
 
 
 # ============================================================================ trợ giúp đợt 1b (module-level; gọi LÚC CHẠY)

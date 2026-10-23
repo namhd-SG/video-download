@@ -449,9 +449,10 @@ def _don_bo_do_co_file(conn, drive, bay_gio: float) -> int:
 
 def _het_han_giu(conn, file_id: str, bay_gio: float) -> bool:
     """Mọi video dùng file đã ở trạng thái cuối VÀ quá hạn giữ cùng luật với khung/ảnh soi cục bộ (`nhat_ky`): 60 ngày; có video đánh giá
-    MỚI NHẤT là `hong` ⇒ 180 ngày. Tuổi tính từ lần cập nhật trạng thái cuối muộn nhất."""
+    MỚI NHẤT là `hong` hoặc có ca khoanh ⇒ 180 ngày (ca khoanh cần tải lại được nguồn để chạy lại). Tuổi tính từ lần cập nhật trạng thái cuối muộn nhất."""
     rows = conn.execute(
-        "SELECT v.trang_thai, v.cap_nhat_luc, (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.video_log_id ORDER BY luc DESC LIMIT 1) AS dg "
+        "SELECT v.trang_thai, v.cap_nhat_luc, CASE WHEN EXISTS (SELECT 1 FROM tl_ca_khoanh c WHERE c.video_log_id = v.video_log_id) THEN 'hong' "
+        "ELSE (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.video_log_id ORDER BY luc DESC LIMIT 1) END AS dg "
         "FROM tl_job_video v WHERE json_extract(v.nguon, '$.kieu') = 'may' AND json_extract(v.nguon, '$.file_id') = ?", (file_id,)).fetchall()
     if not rows or any(r["trang_thai"] not in TRANG_THAI_CUOI_VIDEO for r in rows):
         return False

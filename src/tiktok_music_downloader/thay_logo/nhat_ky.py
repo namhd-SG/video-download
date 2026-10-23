@@ -36,6 +36,15 @@ CREATE TABLE IF NOT EXISTS tl_vet (
 CREATE TABLE IF NOT EXISTS tl_danh_gia (
   video_id INTEGER NOT NULL REFERENCES tl_video(id), member TEXT NOT NULL, ket_qua TEXT NOT NULL CHECK (ket_qua IN ('dat', 'hong')),
   loai_loi TEXT, ghi_chu TEXT, luc REAL NOT NULL);
+-- Ca khoanh chỗ lộ (khoanh.py): mỗi lần người khoanh = một ca kiểm tra cho vòng tự học. video_log_id = tl_video.id;
+-- job_video_id = tl_job_video.id (khoá route dùng). x,y,w,h px khung gốc; box_may JSON box máy đang đè ở khung đó.
+CREATE TABLE IF NOT EXISTS tl_ca_khoanh (
+  id INTEGER PRIMARY KEY, video_log_id INTEGER NOT NULL REFERENCES tl_video(id), job_video_id INTEGER NOT NULL,
+  member TEXT NOT NULL, khung INTEGER NOT NULL, x INTEGER, y INTEGER, w INTEGER, h INTEGER,
+  mau_loi TEXT NOT NULL CHECK (mau_loi IN ('may_khong_thay', 'che_nham', 'lo_mep', 'de_lech_cho', 'lo_do_cong_chan', 'lo_mat_dau')),
+  chan_cu TEXT, box_may TEXT, phien_ban TEXT NOT NULL, luc REAL NOT NULL,
+  trang_thai TEXT NOT NULL DEFAULT 'cho' CHECK (trang_thai IN ('cho', 'da_sua', 'huy')));
+CREATE INDEX IF NOT EXISTS ix_tl_ca_khoanh_video ON tl_ca_khoanh(video_log_id);
 CREATE INDEX IF NOT EXISTS ix_tl_video_bat_dau ON tl_video(bat_dau);
 CREATE INDEX IF NOT EXISTS ix_tl_danh_gia_video ON tl_danh_gia(video_id);
 CREATE INDEX IF NOT EXISTS ix_tl_vet_video ON tl_vet(video_id);
@@ -156,12 +165,13 @@ def luu_track(thu_muc_goc: Path, video_id: int, cac_track: list[list[dict]]) -> 
 
 def don_dep(conn, thu_muc_goc: Path, bay_gio: float | None = None, tran_byte: int = TRAN_FILE_BYTE) -> dict:
     """Xoá THƯ MỤC FILE theo tuổi rồi theo trần (cũ nhất trước); hàng DB giữ, chỉ xoá đường dẫn.
-    Video có đánh giá MỚI NHẤT là `hong` giữ tới NGAY_GIU_FILE_HONG ngày — dữ liệu tune quý nhất — và chỉ bị xoá vì trần
+    Video có đánh giá MỚI NHẤT là `hong` HOẶC có ca khoanh (`tl_ca_khoanh`) giữ tới NGAY_GIU_FILE_HONG ngày — dữ liệu tune quý nhất — và chỉ bị xoá vì trần
     khi đã hết mọi video khác để xoá."""
     bay_gio = bay_gio or time.time()
     hang = conn.execute("""
         SELECT v.id, v.bat_dau,
-               (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.id ORDER BY luc DESC LIMIT 1) AS danh_gia_cuoi
+               CASE WHEN EXISTS (SELECT 1 FROM tl_ca_khoanh c WHERE c.video_log_id = v.id) THEN 'hong'
+                    ELSE (SELECT ket_qua FROM tl_danh_gia d WHERE d.video_id = v.id ORDER BY luc DESC LIMIT 1) END AS danh_gia_cuoi
         FROM tl_video v WHERE v.duong_dan_track IS NOT NULL OR v.duong_dan_sheet IS NOT NULL
            OR v.duong_dan_truoc IS NOT NULL OR v.duong_dan_sau IS NOT NULL ORDER BY v.bat_dau""").fetchall()
 

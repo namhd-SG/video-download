@@ -127,6 +127,9 @@ def test_di_tron_hai_pha_qua_tien_trinh_con(worker, clip_file):
     assert tuple(v) == ("render", "drive-ra-1")
     assert not (worker.data / "thay_logo_scratch" / str(vid)).exists()  # scratch dọn sau trạng thái cuối
     assert not (worker.hop.goc / str(vid)).exists()  # hộp thư cũng dọn
+    giu = worker.data / "thay_logo_video" / str(r["video_log_id"])  # video gốc + bản ra GIỮ lại cho người khoanh, ngoài scratch
+    assert (giu / "goc.mp4").stat().st_size > 0 and (giu / "ra.mp4").stat().st_size > 0
+    assert not (worker.data / "thay_logo" / str(r["video_log_id"]) / "goc.mp4").exists()  # không chung thư mục có trần dọn
 
 
 def test_nhuong_lane_tai_khi_co_job_running(worker, tmp_path, clip_file):
