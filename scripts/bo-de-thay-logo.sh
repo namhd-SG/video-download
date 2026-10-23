@@ -4,6 +4,7 @@
 #   scripts/bo-de-thay-logo.sh <sha> [KEY=VAL ...]        một lệnh: gửi mã → chạy 40 video → chờ → so với mốc → kéo báo cáo về
 #   scripts/bo-de-thay-logo.sh chay <sha> [KEY=VAL ...]   chỉ khởi động lượt (nền trên ca-n), in tên lượt
 #   scripts/bo-de-thay-logo.sh cho <lượt>                 chờ lượt xong (đếm kq.json)
+#   scripts/bo-de-thay-logo.sh dung <lượt>                dừng lượt (giết cả nhóm tiến trình, kiểm 0 python còn sống)
 #   scripts/bo-de-thay-logo.sh so <lượt mốc> <lượt nhánh> [--soi <soi.json trên ca-n>]
 #
 # Mốc mặc định: lượt `$BO_DE_MOC` (mặc định 061417c — bản deploy ca-n 22/10). Mã thoát = mã của bước so (scripts/bo_de_thay_logo.py):
@@ -66,6 +67,12 @@ cho() {
   done
 }
 
+dung() {  # dừng lượt theo NHÓM tiến trình: kill bash cha không giết python con (đã dẫm 23/10: python mồ côi ppid 1 chạy tiếp)
+  r "g=\$(pgrep -f '[b]o-de-thay-logo-luot.sh $1\$' | head -1); [ -n \"\$g\" ] && kill -TERM -- -\$(ps -o pgid= -p \$g | tr -d ' '); sleep 5
+     ps ax -o command | grep -e '[c]hay_mot_video' | grep -e 'kho-ca/thay-logo/ra/$1/' | grep -v grep | wc -l | tr -d ' '" \
+    | { read -r con; [ "$con" = 0 ] || loi "còn $con tiến trình python của lượt $1"; echo "đã dừng $1" >&2; }
+}
+
 so() {
   local moc="$1" nhanh="$2"; shift 2
   local soi="" rc=0 ra="$K/so/${moc}__vs__${nhanh}"
@@ -84,7 +91,8 @@ so() {
 case "${1:-}" in
   chay) shift; chay "$@" ;;
   cho) cho "$2" ;;
+  dung) dung "$2" ;;
   so) shift; so "$@" ;;
-  ""|-h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+  ""|-h|--help) sed -n '2,13p' "$0"; exit 0 ;;
   *) luot=$(chay "$@"); cho "$luot"; so "$MOC" "$luot" ;;
 esac

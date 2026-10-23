@@ -10,8 +10,10 @@ K=/Users/mktmini/kho-ca/thay-logo
 L="$K/ra/$LUOT"; D="$K/v/$N"; O="$L/$N"
 SHA=$(cat "$L/sha")
 MA="$K/ma/$SHA"
-mkdir -p "$O"
 [ -f "$O/kq.json" ] && exit 0
+# Chưa có kq.json ⇒ mọi thứ trong $O là của lần chạy bị cắt: xoá. Dùng lại log.db cũ ⇒ tl_video id 2 ⇒ track nằm ở files/2 và
+# tl_vet trộn hai lần (đã dẫm 23/10: python mồ côi sau kill bash cha vẫn ghi vào log.db).
+rm -rf "$O"; mkdir -p "$O"
 
 # Gác cổng (luật cũ, ĐP 22/10): RAM trống ≥ 30%, không job thay logo prod đang chạy, không chồng BẤT KỲ tiến trình Creative Tracker /
 # chay-thu / vn-slot / daily-bo. Mẫu [c]… + awk bỏ dòng grep: cổng không được tự khớp chính mình (đã dẫm 20/10, 21/10).
