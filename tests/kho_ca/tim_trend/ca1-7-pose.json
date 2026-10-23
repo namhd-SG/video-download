@@ -1,0 +1,1609 @@
+{
+ "ca": "ca1-7-pose",
+ "ngay": "2026-10-23",
+ "lan_chay_cong_cu": "Pha 4 (pha4b-v1)",
+ "mo_ta_dang": "AI ghép 7 pose một người trong một khung",
+ "anh_bia": "~/kho/tim-trend-du-lieu-261023/pha4b-v1/cham-user/bia/<video_id>.jpg (ngoài repo)",
+ "nguon_nhan": "cham-user-ca1.json, user chấm 23/10; 'ranh_gioi' = lưỡng lự, không dùng để dạy máy",
+ "regex_ten_trend_dang_ky_truoc": "pose|kolase|collage",
+ "chu_ky_may": {
+  "so_ban_sao": 7,
+  "bac": ">=3",
+  "chu_the": "nguoi",
+  "nen": "tron",
+  "hanh_dong": "tao_dang",
+  "la_luoi": false
+ },
+ "the": [
+  {
+   "video_id": "6879681921966738690",
+   "url": "https://www.tiktok.com/@ailbohol/video/6879681921966738690",
+   "caption": "Reply to @mavic155inocentesganda here it is.. #tutorial #foryou #greenscreen #videoeffect created by Ailyn with Vengaboys’s Boom, Boom, Boom, Boom!!",
+   "nhan_user": "sai",
+   "hang_may": null,
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": null
+  },
+  {
+   "video_id": "7054185006175948058",
+   "url": "https://www.tiktok.com/@ustad.g/video/7054185006175948058",
+   "caption": "how to make a triple roll video #clonetrio #effect #ustadg created by Ustad G with Ustad G’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7054185006175948058",
+    "so_ban_sao": 3,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "7:25 LTE",
+    "mo_ta": "Ba ban sao cung mot nguoi dan ong gio tay tao dang"
+   }
+  },
+  {
+   "video_id": "7126003074002357531",
+   "url": "https://www.tiktok.com/@christiankesniel/video/7126003074002357531",
+   "caption": "sometimes i mix and match to get a better result :)) created by kesniel with Calvin Harris, Justin Timberlake, Halsey & Pharrell Williams’s Stay With Me",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7126003074002357531",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "studio",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "how i clone myself :D green screen",
+    "mo_ta": "Nguoi mac ao hoodie dung truoc phong xanh green screen"
+   }
+  },
+  {
+   "video_id": "7282719538808982789",
+   "url": "https://www.tiktok.com/@donatkentangbukus/video/7282719538808982789",
+   "caption": " created by donat Kentang Bu kus with ki misri🍁’s Terima Kasih",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7282719538808982789",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Temukan konten terkait Cari Lirik Lagu",
+    "mo_ta": "Giao dien ung dung phat nhac hien thi loi bai hat"
+   }
+  },
+  {
+   "video_id": "7305345842230217989",
+   "url": "https://www.tiktok.com/@enabelenoart/video/7305345842230217989",
+   "caption": "What's your favorite Art Pose Tool? Here's mine and I hope it helps 🥰 #noviceartist #illustrations #artpose #3dpose #learningartist #artresources #begginerartist #arttutorial #howtodraw #learningtodraw #digitalillustration #procreate #procreateartist #artlesson #artisthelp #dailypractice #anatomy #",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7305345842230217989",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Ban ve nhan vat anime ben canh mo hinh manocanh 3D"
+   }
+  },
+  {
+   "video_id": "7321343929469783298",
+   "url": "https://www.tiktok.com/@khlnr20/video/7321343929469783298",
+   "caption": "trying the 7 people pose ✨ #poseideas #posewithbestie created by カリダ with Duy Review Đảo Phú Quý’s nhạc nền - Duy review đảo Phú Quý",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "7 pose created",
+   "truong": {
+    "id": "7321343929469783298",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "nhay",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nhom phu nu doi khan trum vui dua ngoai cong vien"
+   }
+  },
+  {
+   "video_id": "7424508750985219335",
+   "url": "https://www.tiktok.com/@ru.ka0226/video/7424508750985219335",
+   "caption": "【鹿児島/天文館/縮毛矯正/髪質改善】 7ポーズ✨️ 今、HIPHOP会がすごく盛りあがっている中で その中心で引っ張っていってる7さんが縮毛矯正指名でご来店して下さりました！ 沢山、色々な夢などの話が出来て刺激を受ける部分があり、夢があるってすごく大事だなと感じました❤️‍🔥 💁‍♂️美髪への一番の近道は最高ランクケア縮毛矯正＋髪質改善トリートメントの組み合わせが1番です✨️ ・このようなお悩みがある方は縮毛矯正向いてます。 1.うねりが気になる。 2.パヤパヤした毛がきになる。 3.アホ毛が気になる。 4.広がりが気になる。 ・このようなお客様髪質改善トリートメント向いてます。 1.ダ",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "7 pose created",
+   "truong": {
+    "id": "7424508750985219335",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "7 ナナ ポーズ",
+    "mo_ta": "Tho lam toc va co gai tao dang trong salon"
+   }
+  },
+  {
+   "video_id": "7444796989960654088",
+   "url": "https://www.tiktok.com/@mochi_bocchi/video/7444796989960654088",
+   "caption": "lelouch pose green screen #trend #anime #pose #fyp #fyp #anime #trend #fypシ #viral #tiktok created by mochi with Lemarikita’s suara asli - 一只妖妹",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7444796989960654088",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "bilibili",
+    "mo_ta": "Hinh ve anime chi co than mac ao vest tay vao phia tren"
+   }
+  },
+  {
+   "video_id": "7460795454863854855",
+   "url": "https://www.tiktok.com/@cynthiakatarinacikeyokey/video/7460795454863854855",
+   "caption": "Membalas @hendrawinada masih ga percaya juga ??? itu beneran suara asli aku ✌️😥 created by Cikey with Cikey’s suara asli - Cikey",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7460795454863854855",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Can canh guong mat co gai nham mat mo mieng"
+   }
+  },
+  {
+   "video_id": "7464170249944976658",
+   "url": "https://www.tiktok.com/@aoi_seii/video/7464170249944976658",
+   "caption": "clone. || oc lore. || inspiration: @_.sunny._.ray._ || #gacha #gach️acomunity #oc #lore #oclore #viral #trend #trending #fyp #fypage #fyppppppppppppppppppppppp #greenscreen #xybca #phonk created by aoi ! with aoi !’s original sound - #NETTLER",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7464170249944976658",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "nhay",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "#NETTLER",
+    "mo_ta": "Nhan vat hoat hinh phong cach anime dang tao dang"
+   }
+  },
+  {
+   "video_id": "7465648154768198919",
+   "url": "https://www.tiktok.com/@jerwinintang511/video/7465648154768198919",
+   "caption": "kambal effects #edits #trendingvideo #fypage #greenscreen #cupcat #cloning created by intang jerwin with intang jerwin’s orihinal na tunog - intang jerwin",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7465648154768198919",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hai nguoi dan ong khac nhau dang ngoi va dung trong nha"
+   }
+  },
+  {
+   "video_id": "7483628551674023174",
+   "url": "https://www.tiktok.com/@olaalmaoficial/video/7483628551674023174",
+   "caption": "🎧... 🎶 Música: \"Suara Asli – 𝙀𝙫𝙚𝙣𝙞𝙣𝙜\" #musica #lyrics #videoviral #fy #fyp #song #viral created by Olá. with 𝙀𝙫𝙚𝙣𝙞𝙣𝙜’s suara asli - 𝙀𝙫𝙚𝙣𝙞𝙣𝙜",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7483628551674023174",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Innervoid",
+    "mo_ta": "Dien thoai cam tai nghe phat nhac am thanh ma mi"
+   }
+  },
+  {
+   "video_id": "7525157169499589918",
+   "url": "https://www.tiktok.com/@aplussocials/video/7525157169499589918",
+   "caption": "#greenscreenvideo cloning tutorial: how to add multiple characters in one frame ( great for skits ) #clonetutorial #capcuttutorial #editingtutorial #easyedits #easyugcedits #ugc #contentcreator created by Anna | UGC coach | A+ Socials with Anna | UGC coach | A+ Socials’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7525157169499589918",
+    "so_ban_sao": 3,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "How to create this CLONING effect",
+    "mo_ta": "Video huong dan tao hieu ung phan than 3 ban sao"
+   }
+  },
+  {
+   "video_id": "7532161412081159455",
+   "url": "https://www.tiktok.com/@nikolipartiyeli/video/7532161412081159455",
+   "caption": "FIELD TEST! [CLONES] exploring cloning VFX 👨‍💻 what i learned: 1. film each person with a green screen behind them. otherwise you will be stuck with rotoscoping each person in order to achieve a fluid clone edit. 2. always film a video plate that will be used as the background of the edit 3. it lo",
+   "nhan_user": "sai",
+   "hang_may": "2B",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7532161412081159455",
+    "so_ban_sao": 4,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Cung mot nguoi dan ong o 4 vi tri trong phong"
+   }
+  },
+  {
+   "video_id": "7546215977919286536",
+   "url": "https://www.tiktok.com/@truyenanh888/video/7546215977919286536",
+   "caption": "pose phong cách sáng tạo #truyenanh888 #art #drawing #pose #xuhuong created by Moon Scorpion🦂🦂 with Moon Scorpion🦂🦂’s nhạc nền - Moon Scorpion🦂🦂",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7546215977919286536",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "以为是: 粉色的裙撑 其实是: 绽开的蔷薇花",
+    "mo_ta": "Hinh ve minh hoa so sanh vay xoe va hoa hong"
+   }
+  },
+  {
+   "video_id": "7554896246163475719",
+   "url": "https://www.tiktok.com/@yyu_1xu/video/7554896246163475719",
+   "caption": "I’m back with the Oc pose challenge PT.2, Sorry for a long hiatus but I’m back with a new post! I made sure to add more details to this one with more variety’s ‼️, have fun creating your own special character and make sure to tag me once you draw them ‼️🫵 I want to see your amazing work 🫶‼️ Have f",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7554896246163475719",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "CapCut BASE/GENDER YYU_1XU",
+    "mo_ta": "Net ve phac thao khuon mat nu huong dan ve"
+   }
+  },
+  {
+   "video_id": "7560612205855526164",
+   "url": "https://www.tiktok.com/@djmarsell/video/7560612205855526164",
+   "caption": "BERISI SONG MUSICA SUARA ASLI DJ DUGEM DJ BISA TIK TOK JBL BASS BASS created by M A R S E L L with M A R S E L L’s BERISI SONG MUSICA SUARA ASLI",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7560612205855526164",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "FL STUDIO JBL",
+    "mo_ta": "Hieu ung song am nhac phat sang mau xanh la"
+   }
+  },
+  {
+   "video_id": "7572784724746276103",
+   "url": "https://www.tiktok.com/@kamu.gpp.wil2/video/7572784724746276103",
+   "caption": "suara asli Lia 🤩❤️ imut banget sih@Lia Cimumuet @Putri aliaaa created by venss lia with venss lia’s suara asli - venss lia",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7572784724746276103",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nhom ban tre dung noi chuyen trong phong"
+   }
+  },
+  {
+   "video_id": "7579487676118732049",
+   "url": "https://www.tiktok.com/@korinex_tutorial/video/7579487676118732049",
+   "caption": "tut for am clone on capcut (NO PRO) #tutorial #capcut #mangaedit #clones #fyp created by korinex tutoriaal with PonPieHi’s Lazy",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7579487676118732049",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial on this clone App:capcut (no pro)",
+    "mo_ta": "Huong dan tao hieu ung phan than clone tren CapCut"
+   }
+  },
+  {
+   "video_id": "7587654357731020048",
+   "url": "https://www.tiktok.com/@vxyanzz_/video/7587654357731020048",
+   "caption": "#lagu#spotfy#nggakdulu#lirik#suaraaslii created by ￴ with ￴’s suara asli - crafttyywle",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7587654357731020048",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Se-se-senyumanmu buatku candu",
+    "mo_ta": "Man hinh trinh phat nhac nen xanh duong hien thi loi"
+   }
+  },
+  {
+   "video_id": "7588831200584682772",
+   "url": "https://www.tiktok.com/@justine_justin_justi/video/7588831200584682772",
+   "caption": " created by JUSJUSJUS22 with Dudley G’s Pink bubble",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "7 pose created",
+   "truong": {
+    "id": "7588831200584682772",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Welcome to my video",
+    "mo_ta": "Hinh nen do hoa chu chao mung mau cam pastel"
+   }
+  },
+  {
+   "video_id": "7598709851098778887",
+   "url": "https://www.tiktok.com/@fgskashw/video/7598709851098778887",
+   "caption": "#CapCut created by Emmanuel robosa with Emmanuel robosa’s original sound - fgskashw",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "7 pose created",
+   "truong": {
+    "id": "7598709851098778887",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Welcome to my video",
+    "mo_ta": "Hinh anh chu cat dan chao mung tren nen giay"
+   }
+  },
+  {
+   "video_id": "7607995536301395221",
+   "url": "https://www.tiktok.com/@sirnoired.tuts/video/7607995536301395221",
+   "caption": "Tut on clones in #capcut | Tags : #fyp #viral #xyzcba #foryou created by SirNoired Tut's with SirNoired Tut's’s original sound - SirNoired Tut's",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7607995536301395221",
+    "so_ban_sao": 1,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "khac",
+    "la_luoi": true,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial on this clone App : Capcut",
+    "mo_ta": "Huong dan tao hieu ung phan than luoi neon CapCut"
+   }
+  },
+  {
+   "video_id": "7618488450550893845",
+   "url": "https://www.tiktok.com/@extraceo.offcial/video/7618488450550893845",
+   "caption": "suara asli - wonniech #BNK48 #HoopBNK48 #pitchapaeyah #FondNatticha #ChampooKodcha created by คามิโอชิคนน่ารัก No.1 with wonniech’s suara asli - wonniech",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7618488450550893845",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": true,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Khung ghep 4 o hinh anh co gai xinh dep"
+   }
+  },
+  {
+   "video_id": "7619314162379787542",
+   "url": "https://www.tiktok.com/@mrtosinajiboye/video/7619314162379787542",
+   "caption": "1.2.3.4.5.6.7 Poses on Fire🔥📸👌 #4you #poses #posesformen #posingtips #pose created by Mr Tosin Ajiboye with MilanoDealsⓂ️’s Originalton",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "7 pose created",
+   "truong": {
+    "id": "7619314162379787542",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "7 Poses",
+    "mo_ta": "Nam thanh nien deo kinh dung tao dang tren via he"
+   }
+  },
+  {
+   "video_id": "7632297309564423432",
+   "url": "https://www.tiktok.com/@khocongnghe/video/7632297309564423432",
+   "caption": "App AI hỗ trợ tạo dáng không thua kém gì điện thoại xịn, không ngờ ae Việt Nam đỉnh vữ luôn #khocongnghe #snapedit #camerapose created by KHO CÔNG NGHỆ with KHO CÔNG NGHỆ’s âm thanh gốc - KHO CÔNG NGHỆ",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7632297309564423432",
+    "so_ban_sao": 2,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "1x Thêm",
+    "mo_ta": "Co gai huong dan tao dang chup anh qua ung dung"
+   }
+  },
+  {
+   "video_id": "7647064260631088405",
+   "url": "https://www.tiktok.com/@shkfv1/video/7647064260631088405",
+   "caption": "Make anime using this pose created by ༺𓆩หัวจะปวด𓆪༻ with bunga_gabut🗿 💅🏻’s suara asli",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7647064260631088405",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "khac",
+    "hanh_dong": "tao_dang",
+    "la_luoi": true,
+    "la_tutorial": true,
+    "chu_ocr": "Make anime using this pose",
+    "mo_ta": "Ban phac thao tao dang cam mat na ben nhan vat game"
+   }
+  },
+  {
+   "video_id": "7650328809488551201",
+   "url": "https://www.tiktok.com/@leunamf_yt/video/7650328809488551201",
+   "caption": "Poses You can Use for Your Manga 📝 - Part 1 #howtodraw #pose #manga #draw #drawing created by Leunamf with MXCCREE & DJ GL3CHEKY & MC PR’s X-TALI",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7650328809488551201",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hinh ve phac thao dang nguoi dung cam thanh kiem katana"
+   }
+  },
+  {
+   "video_id": "7651865874508369159",
+   "url": "https://www.tiktok.com/@sukma.ayu.puji/video/7651865874508369159",
+   "caption": "perhatikan baik-baik.!! ada yang aneh, fokus pada anak laki-laki 😨jika kalian melihat tolong sedikit cerita pada saya.! #horor #Ratuparitangker #mandidiparitangker #suaraasli #fyp created by Sukma Ayu Puji with Sukma Ayu Puji’s suara asli - Sukma Ayu Puji",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7651865874508369159",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Hai ban nho dang boi duoi dong suoi giua rung"
+   }
+  },
+  {
+   "video_id": "7656319477792984336",
+   "url": "https://www.tiktok.com/@paparazzi1208/video/7656319477792984336",
+   "caption": "#fyp #paparazzi #paparazzichallenge #paparazzitiktok #viral created by PAPARAZZI with PAPARAZZI’s suara asli - PAPARAZZI",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7656319477792984336",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "cukup suara asli paparazzi1208",
+    "mo_ta": "Co gai cam micro cuoi tuoi tren san khau ngoai troi"
+   }
+  },
+  {
+   "video_id": "7663524387525643528",
+   "url": "https://www.tiktok.com/@bang97ded/video/7663524387525643528",
+   "caption": "ouu ini sound asli #ketawa #nangis #ngakak #fyp #asli created by BangDed 24/7 with BangDed 24/7’s suara asli - BangDed",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7663524387525643528",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Can canh guong mat chang trai bieu cam meo mo"
+   }
+  },
+  {
+   "video_id": "7664155144837156116",
+   "url": "https://www.tiktok.com/@softbeanarts.original/video/7664155144837156116",
+   "caption": "No I can study poses/anatomy or make my own pose!!! app name is : EL poses 3D#poseapp#anatomyapp#fyppppppppppppppppppppppp #art #wholesome created by 𝑩𝒖𝒏𝑩𝒖𝒏 {Commissionopen} with lex.llw3’s الصوت الأصلي",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7664155144837156116",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "i love this app so much! Title Untitled Navigator Material",
+    "mo_ta": "Giao dien ung dung mo hinh 3D hinh the nguoi"
+   }
+  },
+  {
+   "video_id": "7665340247584099604",
+   "url": "https://www.tiktok.com/@jounesair/video/7665340247584099604",
+   "caption": "Want aesthetic photos without showing your face? These poses are for you. 📸✨ Save this for your next photoshoot and thank me later. #noface #poses #posesforpictures #howtopose #creativity created by jounesair with jounesair’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7665340247584099604",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "NO FACE PHOTO IDEAS You'll need these poses later",
+    "mo_ta": "Nam thanh nien gio tay lam kieu che mat chup anh"
+   }
+  },
+  {
+   "video_id": "7665394580900039950",
+   "url": "https://www.tiktok.com/@rayqauza_editz/video/7665394580900039950",
+   "caption": "Dexter hussing 33.67% accuracy || Dexter Morgan edit || Clone edit trending style || #dexter #dextermorganedits #dexterhussing #cloneedit #fyp created by RAYQUAZA with RAYQUAZA’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "2B",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7665394580900039950",
+    "so_ban_sao": 3,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "[RAYQUAZA]",
+    "mo_ta": "Nguoi dan ong dang chay tao thanh 3 ban sao"
+   }
+  },
+  {
+   "video_id": "7673415991476620562",
+   "url": "https://www.tiktok.com/@milaanakevibusur_/video/7673415991476620562",
+   "caption": "#selaluterbayang#suaraaslii created by milaanakevibusur_ with milaanakevibusur_’s suara asli - igsheismila_",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7673415991476620562",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Sound tiktok Saound asli",
+    "mo_ta": "Co gai doi khan trum dau hijab mac ao caro"
+   }
+  },
+  {
+   "video_id": "7674276785902701844",
+   "url": "https://www.tiktok.com/@user6349567731755/video/7674276785902701844",
+   "caption": "#capcut #capcutpioneer Do you wanna make the viral Pickle Tung dance filter with your clone opponent? Full green screen tutorial here! Finally figured out how to make the viral Pickle Tung dance edit! This tutorial teaches you the green screen trick to make your clone as your dance opponent, super e",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "green screen clone trend",
+   "truong": {
+    "id": "7674276785902701844",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "nhay",
+    "la_luoi": true,
+    "la_tutorial": true,
+    "chu_ocr": "Free Tutorial",
+    "mo_ta": "Anh ghep 4 o nguoi nhay canh nhan vat qua dua chuot"
+   }
+  },
+  {
+   "video_id": "7687958772597148946",
+   "url": "https://www.tiktok.com/@n1ka.joestar/video/7687958772597148946",
+   "caption": "Origina JOJO Poses🥹//ib:@Ｆｌｙｅｒ🦅 //#CapCut #jjba #jjbaedit #jojo #jojosbizarreadventure created by 𝓝1𝓚𝓐 with 𝓝1𝓚𝓐’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7687958772597148946",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Tranh ve nhan vat anime toc vang giua canh hoa roi"
+   }
+  },
+  {
+   "video_id": "7688041924686581014",
+   "url": "https://www.tiktok.com/@lumaliving02/video/7688041924686581014",
+   "caption": "✨ Master Your Pose 📸🔥 Look Better, Pose Better! 😎 #fyp #foryou #viral #trending #picoftheday created by 𝐋𝐮𝐦𝐚 𝐋𝐢𝐯𝐢𝐧𝐠 🇧🇭 with zhaira🥱’s original sound - 𝓀𝑒𝒾𝓉𝒽𝓁𝓁𝒶𝒾𝓃𝑒 😝",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7688041924686581014",
+    "so_ban_sao": 2,
+    "chu_the": "khac",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "",
+    "mo_ta": "Hinh ve huong dan tu the dung nghieng va thang nguoi"
+   }
+  },
+  {
+   "video_id": "7694063277252349197",
+   "url": "https://www.tiktok.com/@xyy.amv/video/7694063277252349197",
+   "caption": "Completely necessary poses btw #jojosbizarreadventure #jjba #fyp #sbr #jojobizarreadventure created by Xy with Xy’s original sound - Xy",
+   "nhan_user": "sai",
+   "hang_may": "0",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7694063277252349197",
+    "so_ban_sao": 0,
+    "chu_the": "khac",
+    "loai_nen": "ngoai_troi",
+    "hanh_dong": "khac",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "completely necessary poses btw that Dio and I had been working to achieve?",
+    "mo_ta": "Canh cay co va bau troi phong cach hoat hinh anime"
+   }
+  },
+  {
+   "video_id": "7695286070467890452",
+   "url": "https://www.tiktok.com/@onyxdmg.kuncung/video/7695286070467890452",
+   "caption": " created by ONYX DUMANG with ONYX DUMANG’s suara asli - ONYX DUMANG",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "s suara asli",
+   "truong": {
+    "id": "7695286070467890452",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Pov:suara asli keluar",
+    "mo_ta": "Hai cau be ngoi duoi san nha cuoi dua"
+   }
+  },
+  {
+   "video_id": "7697124685464636693",
+   "url": "https://www.tiktok.com/@zie_template/video/7697124685464636693",
+   "caption": "#CapCut AI kolase 7 pose #fyp #ai #aieffect #trend #ootd created by Zie Template with Zie Template’s suara asli - Zie Template",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697124685464636693",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao len soc quan jean 7 dang"
+   }
+  },
+  {
+   "video_id": "7697135208260242695",
+   "url": "https://www.tiktok.com/@siskuuldr/video/7697135208260242695",
+   "caption": "#CapCut Ai kolase 7 pose #ai #aitrend #aieffect #ootd created by siskuu l template with siskuu l template’s suara asli - siskuu l template",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai collage 7 poses",
+   "truong": {
+    "id": "7697135208260242695",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Lous studio",
+    "mo_ta": "Nu ao do vay ngan den tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7697138665771830534",
+   "url": "https://www.tiktok.com/@zie_template/video/7697138665771830534",
+   "caption": "#CapCut AI kolase 7 pose #ootd #trend #aieffect #fypage created by Zie Template with Zie Template’s suara asli - Zie Template",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697138665771830534",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu mac ao do vay dai tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7697167854394707216",
+   "url": "https://www.tiktok.com/@siskuuldr/video/7697167854394707216",
+   "caption": "#CapCut AI colase 7 pose #ootd #aieffect #aitrend #fyp created by siskuu l template with siskuu l template’s suara asli - siskuu l template",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697167854394707216",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "IT'S GOING GIVE YOU NISTY LOOK",
+    "mo_ta": "Nu deo kinh den ao xanh quan jean 7 dang"
+   }
+  },
+  {
+   "video_id": "7697274495605689618",
+   "url": "https://www.tiktok.com/@siskuuldr/video/7697274495605689618",
+   "caption": "#CapCut AI kolase 7 pose #trending #ai #templatecapcut #viral created by siskuu l template with siskuu l template’s suara asli - siskuu l template",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697274495605689618",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai mac ao thun vang quan ong rong 7 dang"
+   }
+  },
+  {
+   "video_id": "7697499118826048775",
+   "url": "https://www.tiktok.com/@queencapcuters/video/7697499118826048775",
+   "caption": "trend Ai kolase 7 foto #trendai #collagephoto #ai #templatecapcut #aesthetic created by Queen_Tiktok with Queen_Tiktok’s suara asli - Queen_Tiktok",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai collage 7 poses",
+   "truong": {
+    "id": "7697499118826048775",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai toc dai mac set den tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7697615659303177490",
+   "url": "https://www.tiktok.com/@rkvugcez/video/7697615659303177490",
+   "caption": "✨ Tren Kolase 7 pose ultra-realistis potret hijab 🤍 Ubah selfie menjadi 7 pose berbeda dalam satu gambar. Outfit sama, gaya candid jalan-jalan, latar putih bersih, hasil foto sangat realistis seperti sesi pemotretan fashion 📸🔥 kolase 7 pose ultra-realistis hijab capcut template capcut kolase 7 po",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "7 pose berbeda",
+   "truong": {
+    "id": "7697615659303177490",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "CapCut Tutorial Buat Gratis AI-generated @aleisandr0",
+    "mo_ta": "Nam thanh nien mac ao hoa tiet tao nhieu dang chup anh"
+   }
+  },
+  {
+   "video_id": "7697644617277148423",
+   "url": "https://www.tiktok.com/@saaart3/video/7697644617277148423",
+   "caption": "AI Collage 7 poses #CapCut #aiglobal #aieffect #aitrend #fyp created by saaart with chacksson’s NUEVAyol X Goyang Dumang by chacksson",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697644617277148423",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai ao ba lo quan jean rach 7 dang"
+   }
+  },
+  {
+   "video_id": "7697687141865803060",
+   "url": "https://www.tiktok.com/@template.fyp5/video/7697687141865803060",
+   "caption": "7 pose trend#CapCut #aitrend #fujiantiutami #fuji #fujian created by Template FYp with Template FYp’s suara asli - Template FYp",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697687141865803060",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu mac vay ngan mau be hoa tiet 7 dang"
+   }
+  },
+  {
+   "video_id": "7697969447553813778",
+   "url": "https://www.tiktok.com/@saaart3/video/7697969447553813778",
+   "caption": "AI collage 7 poses #CapCut #fyp #aitrend #aieffect #aiglobal created by saaart with ADÉLA’s Ain't In LA",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7697969447553813778",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi mau nu mac ao da quan ngan 7 dang"
+   }
+  },
+  {
+   "video_id": "7698028019855936788",
+   "url": "https://www.tiktok.com/@ridho.ledox/video/7698028019855936788",
+   "caption": "Tutorial membuat gambar AI 7 Poses Fashion Collage cuman di aplikasi CapCut! Ubah satu foto jadi kolase fashion dengan 7 pose berbeda yang stylish, aesthetic, dan keren. : #capcut #capcutpioneer #capcutphoto #CapCut #tutorialcapcut created by Creator Ai with Creator Ai’s suara asli - Creator Ai",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "ai collage 7 poses",
+   "truong": {
+    "id": "7698028019855936788",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": true,
+    "la_tutorial": true,
+    "chu_ocr": "TUTORIAL MEMBUAT GAMBAR AI 7 POSES FASHION COLLAGE APP CAPCUT",
+    "mo_ta": "Tutorial huong dan ghep anh 7 dang tren nen luoi"
+   }
+  },
+  {
+   "video_id": "7698269783346695445",
+   "url": "https://www.tiktok.com/@yinni19984/video/7698269783346695445",
+   "caption": "🤍📸 **Satu Selfie Jadi 7 Pose Fashion Sekaligus! Coba Tren Kolase AI Hijab yang Lagi Viral!** ✨🔥 Pengen punya banyak foto dengan gaya berbeda tanpa harus berkali-kali berpose di depan kamera? 😍 Sekarang kamu bisa mencoba tren kolase AI dengan template CapCut! Cukup gunakan satu selfie untuk membu",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7698269783346695445",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai trum khan hijab tao 7 dang khac nhau"
+   }
+  },
+  {
+   "video_id": "7698381030994038068",
+   "url": "https://www.tiktok.com/@yinni19984/video/7698381030994038068",
+   "caption": "🔥🧕 **Tren Kolase AI 7 Pose! Satu Foto Hijab Jadi Potret Fashion Super Realistis!** 📸🤍 Bayangkan punya tujuh potret dengan pose berbeda hanya bermodalkan satu selfie! 😍 Dengan template CapCut, kamu bisa mencoba tren kolase AI yang membuat fotomu tampil seperti hasil pemotretan fashion sungguhan.",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai kolase 7",
+   "truong": {
+    "id": "7698381030994038068",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai doi khan hijab hong tao nhieu dang thoi trang"
+   }
+  },
+  {
+   "video_id": "7698603497159232776",
+   "url": "https://www.tiktok.com/@rkvugcez/video/7698603497159232776",
+   "caption": "lookbook ai kolase multi pose foto potret template capcut lookbook ai same girl different angles ubah selfie jadi kolase lookbook ai berbagai pose foto ai lookbook satu orang banyak pose studio putih tutorial capcut buat kolase potret lookbook ai tren foto ai lookbook kolase 6 pose realistis prompt ",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7698603497159232776",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Buat Gratis",
+    "mo_ta": "Nu mac dong phuc bao ho tao 6 dang lookbook"
+   }
+  },
+  {
+   "video_id": "7698620356323577109",
+   "url": "https://www.tiktok.com/@chloerose077/video/7698620356323577109",
+   "caption": "Ai outfit Lookbook | New template#CapCut #aioutfit #trending #aitrend #fyp created by Chloe Rose with Chloe Rose’s suara asli - Chloe Rose",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7698620356323577109",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu mac ao len do vay xep ly 7 dang"
+   }
+  },
+  {
+   "video_id": "7698657711105346848",
+   "url": "https://www.tiktok.com/@duc.newyen/video/7698657711105346848",
+   "caption": "Send this your friend who needs this inspo #posesforpictures #poseideas #bestposes #aestheticposes #fyp created by duc.newyen with song_lyrics1789’s original sound",
+   "nhan_user": "sai",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "pose created by",
+   "truong": {
+    "id": "7698657711105346848",
+    "so_ban_sao": 1,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trong_nha",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "I don't know how to pose aesthetic",
+    "mo_ta": "Chang trai dung dang hai tay trong phong thay do"
+   }
+  },
+  {
+   "video_id": "7698730892520394005",
+   "url": "https://www.tiktok.com/@ganluk/video/7698730892520394005",
+   "caption": "#capcut #capcutpioneer #capcutnow template lookbook outfit banyak pose ✨ cara buat kolase lookbook outfit 🪄 kolase foto outfit satu foto jadi banyak pose 📸 capcut template lookbook gratis 🎀 edit foto jadi lookbook fashion 👗 template kolase pose outfit ✨ cara edit foto outfit di capcut 🎬 lookboo",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7698730892520394005",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "Workwear Vibes",
+    "mo_ta": "Nu mac dong phuc bao ho xam 6 dang lookbook"
+   }
+  },
+  {
+   "video_id": "7698871534810647816",
+   "url": "https://www.tiktok.com/@outfit.hup/video/7698871534810647816",
+   "caption": "AI LOOKBOOK TREND 🔥✨ 6 pose, 1 outfit! 😍 #AILookbook #AIImage #AIFashion #Lookbook #FashionTok created by Outfit Hup with Muslih Fvnky’s Negoro Angin",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7698871534810647816",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu doi mu luoi trai mac nguyen cay den 6 dang"
+   }
+  },
+  {
+   "video_id": "7699014883936980245",
+   "url": "https://www.tiktok.com/@lovinglylov3ly0/video/7699014883936980245",
+   "caption": "✨ Tren AI ubah foto menjadi kolase 7 pose! 📸🤍 Ubah satu foto selfie kamu menjadi kolase fashion lookbook dengan 7 pose berbeda dalam satu frame. Wajah, ciri khas, warna kulit, dan penampilan kamu tetap sama, tetapi tampil dengan berbagai pose stylish layaknya model profesional dalam pemotretan maj",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7699014883936980245",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Nu trum khan hijab ao khoac hong 7 dang"
+   }
+  },
+  {
+   "video_id": "7699014896226241793",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699014896226241793",
+   "caption": "✨📸 **Tren Kolase AI 7 Pose Hijab! Satu Foto, Banyak Gaya Fashion yang Memukau 🤍👗** Pengen punya koleksi foto dengan beragam pose tanpa perlu sesi pemotretan di studio? 😍 Sekarang kamu bisa memanfaatkan template AI CapCut untuk mengubah satu selfie menjadi kolase berisi tujuh pose berbeda! Dengan",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7699014896226241793",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "@andimahiraldrus_",
+    "mo_ta": "Nu mac le phuc tot nghiep tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7699078351868202261",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699078351868202261",
+   "caption": "🤍📸 **Viral Tren AI 7 Pose Hijab! Sulap Satu Selfie Jadi Kolase Fashion yang Elegan ✨👗** Mau punya banyak foto dengan gaya berbeda tanpa harus berkali-kali berganti pose di depan kamera? 😍 Cukup gunakan satu selfie untuk membuat kolase AI berisi tujuh pose hijab yang menarik! Perpaduan outfit kas",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai kolase 7",
+   "truong": {
+    "id": "7699078351868202261",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai deo kinh toc dai mac set do den tao dang"
+   }
+  },
+  {
+   "video_id": "7699106959399881990",
+   "url": "https://www.tiktok.com/@hnfnswnqa3/video/7699106959399881990",
+   "caption": "✨ Tren Kolase 7 pose ultra-realistis potret hijab 🤍 Ubah selfie menjadi 7 pose berbeda dalam satu gambar. Outfit sama, gaya candid jalan-jalan, latar putih bersih, hasil foto sangat realistis seperti sesi pemotretan fashion 📸🔥 kolase 7 pose ultra-realistis hijab capcut template capcut kolase 7 po",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "kolase 7 pose",
+   "truong": {
+    "id": "7699106959399881990",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Cap doi mac ao nau quan jean tao nhieu dang"
+   }
+  },
+  {
+   "video_id": "7699114715208797460",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699114715208797460",
+   "caption": "🌸📸 **Tren Kolase AI 7 Pose Hijab! Ubah Satu Foto Jadi Deretan Potret Fashion yang Cantik 🤍✨** Pernah ingin memiliki banyak foto dengan pose berbeda dalam satu frame? 💕 Sekarang kamu bisa mewujudkannya lewat tren AI 7 pose hijab di CapCut! Gunakan satu selfie untuk menghasilkan kolase berisi tuju",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "ai kolase 7",
+   "truong": {
+    "id": "7699114715208797460",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "W",
+    "mo_ta": "Nu nguoi mau mac vay dai satin tao nhieu dang"
+   }
+  },
+  {
+   "video_id": "7699133977797332232",
+   "url": "https://www.tiktok.com/@tutorial.capcut58/video/7699133977797332232",
+   "caption": "TUTORIAL MEMBUAT TREND FOTO POSE DI CAPCUT #capcut #capcutpioneer Create an ultra-realistic 6-pose Korean streetwear fashion lookbook using the uploaded photograph as the ONLY reference image. Transform the person in the uploaded photo into a professional fashion editorial photoshoot featuring SIX D",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7699133977797332232",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "mau_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "TUTORIAL MEMBUAT TREN",
+    "mo_ta": "Co gai mac ao phong rong quan ong suong tao dang"
+   }
+  },
+  {
+   "video_id": "7699146800430583060",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699146800430583060",
+   "caption": "🤍👗 **Tren AI Kolase 7 Pose Hijab! Satu Selfie Jadi Tujuh Potret Fashion yang Stylish 📸🌷** Ingin punya foto dengan berbagai gaya tanpa harus melakukan pemotretan satu per satu? ✨ Tren kolase AI hijab ini bisa jadi pilihan seru untuk dicoba! Cukup masukkan satu selfie, lalu ubah menjadi satu kolas",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "tendencia ia 7 poses",
+   "truong": {
+    "id": "7699146800430583060",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu trum khan hijab mac ao so mi trang 6 dang"
+   }
+  },
+  {
+   "video_id": "7699156135470746901",
+   "url": "https://www.tiktok.com/@capcut.ai73/video/7699156135470746901",
+   "caption": "lookbook trend | couple version#CapCut #lookbook #instagramtrend #aitrend #collage created by Capcut Ai with Alex the Animator’s She Loves Me Like That",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7699156135470746901",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Cap doi nam nu mac do dong dieu tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7699318910683827463",
+   "url": "https://www.tiktok.com/@ayla74250/video/7699318910683827463",
+   "caption": "Tren kolase potret hijab 7 gaya dengan hasil super nyata 🤍 Sekali swafoto, kamu bisa tampil dalam tujuh pose berbeda di satu frame. Busana tetap sama, nuansa candid seperti sedang jalan-jalan, latar putih polos, dan hasilnya tampak seperti sesi pemotretan mode profesional 📸 Template CapCut kolase ",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "kolase 7 pose",
+   "truong": {
+    "id": "7699318910683827463",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "mau tahu cara membuat banyak foto dengan berbagai pose",
+    "mo_ta": "Nu mac dong phuc xanh tao nhieu tu the chup anh"
+   }
+  },
+  {
+   "video_id": "7699366506576088326",
+   "url": "https://www.tiktok.com/@quzamiwuukd/video/7699366506576088326",
+   "caption": "✨ Tren Kolase 7 Pose Potret Hijab Ultra Realistis 🤍 Ubah selfie kamu jadi 7 pose berbeda dalam satu gambar. Pakai outfit yang sama, gaya candid jalan-jalan, latar putih bersih, hasil fotonya sangat realistis seperti sesi pemotretan fashion 📸 kolase 7 pose ultra realistis hijab template capcut kola",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "tendencia ia 7 poses",
+   "truong": {
+    "id": "7699366506576088326",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Nam quan nhan mac do ran ri tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7699375807298391317",
+   "url": "https://www.tiktok.com/@lovinglylov3ly0/video/7699375807298391317",
+   "caption": "✨ Tren AI ubah foto menjadi kolase 7 pose! 📸🤍 Ubah satu foto selfie kamu menjadi kolase fashion lookbook dengan 7 pose berbeda dalam satu frame. Wajah, ciri khas, warna kulit, dan penampilan kamu tetap sama, tetapi tampil dengan berbagai pose stylish layaknya model profesional dalam pemotretan maj",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "trend ia 7 poses",
+   "truong": {
+    "id": "7699375807298391317",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Nu mac dam hoa xoe mau do do tao 6 dang"
+   }
+  },
+  {
+   "video_id": "7699387523788786965",
+   "url": "https://www.tiktok.com/@lovinglylov3ly0/video/7699387523788786965",
+   "caption": "✨ Tren AI ubah foto menjadi kolase 7 pose! 📸🤍 Ubah satu foto selfie kamu menjadi kolase fashion lookbook dengan 7 pose berbeda dalam satu frame. Wajah, ciri khas, warna kulit, dan penampilan kamu tetap sama, tetapi tampil dengan berbagai pose stylish layaknya model profesional dalam pemotretan maj",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7699387523788786965",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Nu mac so mi hong quan den tao 7 dang"
+   }
+  },
+  {
+   "video_id": "7699410891607035157",
+   "url": "https://www.tiktok.com/@user6146182580663/video/7699410891607035157",
+   "caption": "lookbook ai kolase multi pose foto potret template capcut lookbook ai same girl different angles ubah selfie jadi kolase lookbook ai berbagai pose foto ai lookbook satu orang banyak pose studio putih tutorial capcut buat kolase potret lookbook ai tren foto ai lookbook kolase 6 pose realistis prompt ",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "lookbook ai multi pose collage outfit",
+   "truong": {
+    "id": "7699410891607035157",
+    "so_ban_sao": 5,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "DAILY LOOKBOOK",
+    "mo_ta": "Co gai ao trang quan jean xanh 5 dang lookbook"
+   }
+  },
+  {
+   "video_id": "7699424808483687686",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699424808483687686",
+   "caption": "🌸📸 **Viral AI Hijab 7 Pose! Ubah Satu Selfie Jadi Kolase Fashion yang Stylish dan Elegan 🤍👗** Mau punya foto dengan tujuh gaya berbeda tanpa harus melakukan pemotretan berkali-kali? 😍✨ Sekarang kamu bisa mencoba tren **AI Hijab 7 Pose** yang mengubah satu foto menjadi kolase fashion dengan berb",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "kolase 7 pose",
+   "truong": {
+    "id": "7699424808483687686",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "pwpwow",
+    "mo_ta": "Co gai mang khan trum hijab tao dang thoi trang denim"
+   }
+  },
+  {
+   "video_id": "7699434649021320468",
+   "url": "https://www.tiktok.com/@kue.stroberi/video/7699434649021320468",
+   "caption": "Tren kolase potret hijab 7 gaya dengan hasil super nyata 🤍 Sekali swafoto, kamu bisa tampil dalam tujuh pose berbeda di satu frame. Busana tetap sama, nuansa candid seperti sedang jalan-jalan, latar putih polos, dan hasilnya tampak seperti sesi pemotretan mode profesional 📸 Template CapCut kolase ",
+   "nhan_user": "dung",
+   "hang_may": "1",
+   "may_giu": false,
+   "truy_van": "trend ia 7 poses",
+   "truong": {
+    "id": "7699434649021320468",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "studio",
+    "hanh_dong": "noi_chuyen",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "",
+    "mo_ta": "Nguoi phu nu cam mic huong dan ghep anh dong phuc"
+   }
+  },
+  {
+   "video_id": "7699437528109092116",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699437528109092116",
+   "caption": "🌸📸 **Trend AI Hijab 7 Pose! Satu Selfie Jadi Kolase Fashion yang Estetik dan Kekinian 🤍✨** Pengen punya banyak foto fashion dengan pose berbeda tanpa harus foto berkali-kali? 😍💕 Coba tren **AI Hijab 7 Pose** yang mengubah satu selfie menjadi kolase berisi tujuh gaya sekaligus! Dengan outfit hij",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7699437528109092116",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Co gai trum khan hijab ao nau tao 6 dang"
+   }
+  },
+  {
+   "video_id": "7699441774854491400",
+   "url": "https://www.tiktok.com/@boguhizq80k/video/7699441774854491400",
+   "caption": "✨ Tren Kolase 7 pose ultra-realistis potret hijab 🤍 Ubah selfie menjadi 7 pose berbeda dalam satu gambar. Outfit sama, gaya candid jalan-jalan, latar putih bersih, hasil foto sangat realistis seperti sesi pemotretan fashion 📸🔥 kolase 7 pose ultra-realistis hijab capcut template capcut kolase 7 po",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "kolase 7 pose",
+   "truong": {
+    "id": "7699441774854491400",
+    "so_ban_sao": 6,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Cap nam nu mac do xam tao dang huong dan"
+   }
+  },
+  {
+   "video_id": "7699443994878659846",
+   "url": "https://www.tiktok.com/@lovinglylov3ly0/video/7699443994878659846",
+   "caption": "✨ Tren AI ubah foto menjadi kolase 7 pose! 📸🤍 Ubah satu foto selfie kamu menjadi kolase fashion lookbook dengan 7 pose berbeda dalam satu frame. Wajah, ciri khas, warna kulit, dan penampilan kamu tetap sama, tetapi tampil dengan berbagai pose stylish layaknya model profesional dalam pemotretan maj",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "tendencia ia 7 poses",
+   "truong": {
+    "id": "7699443994878659846",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Nu trum khan ao khoac do do quan be 7 dang"
+   }
+  },
+  {
+   "video_id": "7699461610611658005",
+   "url": "https://www.tiktok.com/@aro.pnye/video/7699461610611658005",
+   "caption": "#hypic #Godpic #hypiccreator ✨Tren Kolase 7 Pose Potret Ultra Realistis ❤️ Ubah selfie kamu menjadi 7 pose berbeda dalam satu gambar! Pakai baju yang sama, gaya candid jalan-jalan, background putih bersih, hasil foto sangat nyata seperti pemotretan fashion. kolase 7 pose ultra realistis hijab templa",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7699461610611658005",
+    "so_ban_sao": 8,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "studio",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "",
+    "mo_ta": "Nu trum khan xanh ao trang vay jean tao 8 dang"
+   }
+  },
+  {
+   "video_id": "7699462119590350087",
+   "url": "https://www.tiktok.com/@aisyah.ai992/video/7699462119590350087",
+   "caption": "✨ Tren Kolase 7 pose ultra-realistis potret hijab 🤍 Ubah selfie menjadi 7 pose berbeda dalam satu gambar. Outfit sama, gaya candid jalan-jalan, latar putih bersih, hasil foto sangat realistis seperti sesi pemotretan fashion 📸🔥 kolase 7 pose ultra-realistis hijab capcut template capcut kolase 7 po",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "tendencia ia 7 poses",
+   "truong": {
+    "id": "7699462119590350087",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi thuong",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "@zha.zha26",
+    "mo_ta": "Be trai doi mu tai beo tao 7 dang dang yeu"
+   }
+  },
+  {
+   "video_id": "7699490870638251284",
+   "url": "https://www.tiktok.com/@quzamiwuukd/video/7699490870638251284",
+   "caption": "✨ Tren Kolase 7 pose ultra-realistis potret hijab 🤍 Ubah selfie menjadi 7 pose berbeda dalam satu gambar. Outfit sama, gaya candid jalan-jalan, latar putih bersih, hasil foto sangat realistis seperti sesi pemotretan fashion 📸🔥 kolase 7 pose ultra-realistis hijab capcut template capcut kolase 7 po",
+   "nhan_user": "dung",
+   "hang_may": "2A",
+   "may_giu": true,
+   "truy_van": "trend ia 7 poses",
+   "truong": {
+    "id": "7699490870638251284",
+    "so_ban_sao": 5,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": true,
+    "chu_ocr": "Tutorial Pembuatan Gratis",
+    "mo_ta": "Cap doi nam nu mac trang phuc tone sur tone"
+   }
+  },
+  {
+   "video_id": "7699512914520345876",
+   "url": "https://www.tiktok.com/@yinni19984/video/7699512914520345876",
+   "caption": "🌸📸 **Trend AI Hijab 7 Pose! Satu Foto Jadi Kolase Fashion dengan 7 Pose Cantik 🤍✨** Mau punya foto hijab dengan banyak gaya menarik tanpa harus melakukan pemotretan berulang kali? 😍💕 Sekarang kamu bisa mencoba tren **AI Hijab 7 Pose** yang mengubah satu selfie menjadi kolase fashion dengan tuju",
+   "nhan_user": "dung",
+   "hang_may": "3",
+   "may_giu": true,
+   "truy_van": "7 pose ai trend",
+   "truong": {
+    "id": "7699512914520345876",
+    "so_ban_sao": 7,
+    "chu_the": "nguoi mau thoi trang",
+    "loai_nen": "trang_tron",
+    "hanh_dong": "tao_dang",
+    "la_luoi": false,
+    "la_tutorial": false,
+    "chu_ocr": "@maryati_umabaihi",
+    "mo_ta": "Nu trum khan hijab ao len hong 7 dang"
+   }
+  }
+ ]
+}
