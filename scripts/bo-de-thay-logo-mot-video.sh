@@ -52,6 +52,11 @@ trong_khung_cam() {  # <N> [giờ VN HH:MM, để thử giả giờ] → in lý 
   done < "$K/khung-cam"
   return 1
 }
+# Tiến trình CT được phép chạy CHỒNG (ĐP d1bd356f 23/10 11:1x, theo tiền lệ ĐP 7740 22/10 07:5x): đúng cặp job thumbs-backlog —
+# wrapper `vn-slot.sh thumbs-backlog` + `creative_tracker.collect --live --thumbs-only` (tải ảnh bìa: nặng mạng, nhẹ CPU).
+# Vẫn chặn collect thường, collect-chain, daily-bo, chay-thu, probe. Đầu vào: dòng `pgrep -fl`; đầu ra: số tiến trình phải nhường.
+BO_QUA_CT='^[0-9]+ /bin/bash [^ ]*/vn-slot\.sh thumbs-backlog |^[0-9]+ [^ ]*python[^ ]* -m creative_tracker\.collect --live --thumbs-only$'
+dem_ct() { awk '$2 != "grep"' | grep -v -E "$BO_QUA_CT" | wc -l | tr -d " "; }
 while :; do
   if cam=$(trong_khung_cam "$N"); then
     echo "$(date +%T) $LUOT v$N chờ: khung cấm $cam (VN)" >> "$K/ra/gac-cong.log"; sleep 60; continue
@@ -59,7 +64,7 @@ while :; do
   ram=$(memory_pressure | awk -F': ' '/free percentage/{gsub("%","",$2); print $2}')
   prod=$(sqlite3 'file:/Users/mktmini/Projects/video-download/web/data/thay_logo_log.db?immutable=1' \
          "select count(*) from tl_job_video where trang_thai in ('dang_chay','cho_agy','cho')" 2>/dev/null || echo 0)
-  ct=$(pgrep -fl "[c]hay-thu|[c]reative_tracker|[v]n-slot|[d]aily.bo" | awk '$2 != "grep"' | wc -l | tr -d " ")
+  ct=$(pgrep -fl "[c]hay-thu|[c]reative_tracker|[v]n-slot|[d]aily.bo|ct-checks-[0-9]*/[p]robe" | dem_ct)
   if [ "${ram:-0}" -ge 30 ] && [ "$ct" = 0 ] && [ "${prod:-0}" = 0 ]; then break; fi
   echo "$(date +%T) $LUOT v$N chờ: ram=$ram prod=$prod ct=$ct" >> "$K/ra/gac-cong.log"; sleep 60
 done
