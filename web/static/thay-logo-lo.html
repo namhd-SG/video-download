@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video Desk — Lô thay logo</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="app.css" />
+<link rel="stylesheet" href="thay-logo-lo.css" />
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk</div>
+    <nav class="topbar-nav">
+      <a href="/">⬇ Tải video</a>
+      <a href="/thay-logo.html" class="here" aria-current="page">◐ Thay logo</a>
+      <a href="/settings.html">⚙ Cài đặt</a>
+      <a href="/huong-dan.html#thay-logo">ⓘ Hướng dẫn</a>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+    </nav>
+  </header>
+  <p id="session-expired" class="session-expired" role="alert" hidden>
+    Phiên đăng nhập đã hết hạn — <a href="">tải lại trang</a> để đăng nhập lại.
+  </p>
+
+  <section class="lo-dau">
+    <div class="lo-chon">
+      <h1>Lô: việc của bạn</h1>
+      <label>Lô <select id="lo-chon-lo"></select></label>
+    </div>
+    <p id="lo-tom-tat" class="lo-tom-tat"></p>
+    <p class="lo-chu-thich">Dải màu = cả video theo thời gian:
+      <span class="lo-mau lo-mau-xanh">xanh</span> đã thay chắc ·
+      <span class="lo-mau lo-mau-vang">vàng</span> máy cảnh báo (đoán, hoặc ô đè chồng phụ đề / đổi cỡ đột ngột) ·
+      <span class="lo-mau lo-mau-do">đỏ</span> máy biết còn lộ ·
+      <span class="lo-mau lo-mau-xam">xám</span> máy chưa thay gì.
+      Máy KHÔNG tự thấy được chỗ đè lệch nếu nó tưởng mình đúng — vì vậy có dải ảnh soi nhanh.</p>
+    <p id="lo-loi" class="lo-loi" role="alert" hidden></p>
+  </section>
+
+  <section id="lo-danh-sach" class="lo-danh-sach" aria-live="polite"></section>
+</div>
+<p id="tl-loi" hidden></p><p id="tl-loi-tai" hidden></p>
+<script src="thay-logo-chung.js"></script>
+<script src="thay-logo-lo.js"></script>
+</body>
+</html>
