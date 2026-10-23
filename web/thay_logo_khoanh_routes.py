@@ -77,6 +77,31 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
         tt = dict(conn.execute("SELECT vet, trang_thai FROM tl_vet WHERE video_id=?", (t["id"],)).fetchall())
         return track, tt
 
+    def _box_tai(conn, r, t, khung: int) -> tuple[tuple | None, list]:
+        """(box máy ĐANG ĐÈ ở `khung`, các box cổng chặn) — MỘT chỗ cho cả màn Sửa (`GET /box`) và `POST /khoanh`, để khung vàng người
+        thấy trùng đúng box mà ca khoanh ghi lại. Chỉ đọc track (không ffmpeg). Video máy không chắc: máy chưa đè gì ⇒ (None, [])."""
+        if r["trang_thai"] == "cho_nguoi":
+            return None, []
+        track, tt = _track(conn, t)
+        return khoanh.khung_tai(track, tt, khung)
+
+    @app.get("/api/thay-logo/videos/{vid}/box/{khung}")
+    def box(vid: int = PathParam(ge=1, le=2**63 - 1), khung: int = PathParam(ge=0, le=10_000_000),
+            email: str = Depends(require_user)) -> dict:
+        """Box máy ở một khung cho màn Sửa (khung vàng đứt + ô phóng to). Bấm J/L gọi liên tục ⇒ chỉ tra track, không trích ảnh."""
+        conn = mo()
+        try:
+            r, t = _nap(conn, vid, email)
+            if r["trang_thai"] not in TRANG_THAI_KHOANH_DUOC:
+                raise HTTPException(409, "chỉ xem video máy đã xong hoặc máy không chắc")
+            if t["so_khung"] is not None and khung >= t["so_khung"]:
+                raise HTTPException(400, "khung ngoài video")
+            box_may, chan = _box_tai(conn, r, t, khung)
+        finally:
+            conn.close()
+        return {"khung": khung, "box_may": list(box_may) if box_may else None,
+                "chan": [{"state": s, "box": list(b)} for s, b in chan]}
+
     @app.get("/api/thay-logo/videos/{vid}/dai")
     def dai(vid: int = PathParam(ge=1, le=2**63 - 1), email: str = Depends(require_user)) -> dict:
         conn = mo()
@@ -182,10 +207,7 @@ def dang_ky(app: FastAPI, *, mo: Callable, video_cua: Callable, lay_log_db: Call
                 raise HTTPException(400, str(e) if "vùng" in str(e) else "video thiếu kích thước khung") from None
             if vung is None and not body.giu_goc:
                 raise HTTPException(400, "cần vùng khoanh")
-            box_may, chan = (None, [])
-            if not cho_nguoi:
-                track, tt = _track(conn, t)
-                box_may, chan = khoanh.khung_tai(track, tt, body.khung)
+            box_may, chan = _box_tai(conn, r, t, body.khung)
             if body.giu_goc and box_may is None:
                 raise HTTPException(409, "ở khung này máy không đè gì")
             mau, chan_cu = khoanh.gan_mau_loi(cho_nguoi, body.giu_goc, vung, box_may, chan)
