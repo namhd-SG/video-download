@@ -7,8 +7,8 @@
 
   // Chip tên bộ + ảnh bìa nhỏ; ảnh không tải được thì tự gỡ (không để ô vỡ).
   const chipBo = (v) => el("span", "tl-chip-bo", v.ten_bo || `Lượt #${v.job_id}`);
-  function anhBia(v, cls) {
-    const img = el("img", cls); img.alt = ""; img.loading = "lazy"; img.src = v.anh_bia;
+  function anhBia(v, cls, ngay) {
+    const img = el("img", cls); img.alt = ""; img.loading = ngay ? "eager" : "lazy"; img.src = v.anh_bia;
     img.addEventListener("error", () => img.remove(), { once: true });
     return img;
   }
@@ -79,6 +79,43 @@
     } finally { dangDanhGia = false; }
   }
 
+  // Lưới thẻ lớn (mock B): mỗi video chờ duyệt một thẻ — ảnh, tên, dòng "Lượt · nguồn → nơi nhận", nhãn "Cần soi kỹ", Đạt / Hỏng….
+  // Bấm ảnh/tên ⇒ chọn thẻ đó vào khung "Soi kỹ" bên dưới (so trước/sau, phóng to, link, lý do hỏng). "Hỏng…" mở sẵn ô lý do ở khung đó
+  // (cần chọn loại lỗi + ghi chú nên không gửi thẳng). Đạt gửi cùng API với nút Đạt ở khung soi.
+  const SO_THE_GON = 6;  // lưới gọn hiện 6 thẻ đầu; "Xem thêm" mở hết (thẻ đang chọn nằm ngoài ⇒ mở hết để không giấu nó)
+  let hienHetThe = false;
+  function veLuoi(ds) {
+    const wrap = el("div", "tl-luoi-hop"), luoi = el("div", "tl-luoi"); wrap.append(luoi);
+    const gioiHan = hienHetThe || vi >= SO_THE_GON ? ds.length : SO_THE_GON;
+    ds.forEach((v, i) => {
+      if (i >= gioiHan) return;
+      const the = el("article", "tl-the-duyet" + (T.soiKy(v) ? " soi" : "") + (i === vi ? " chon" : ""));
+      const chon = () => { vi = i; moHong = false; veDuyet(); };
+      const anh = el("button", "tl-the-anh"); anh.type = "button"; anh.setAttribute("aria-label", `Soi kỹ: ${T.tenVideo(v)}`);
+      if (v.anh_bia) anh.append(anhBia(v, "", true))  // thẻ lớn ở giữa trang: tải ngay, không để ô trống chờ cuộn tới;
+      anh.addEventListener("click", chon);
+      const ten = el("div", "tl-the-ten"); ten.append(el("b", "", T.tenVideo(v)));
+      if (T.soiKy(v)) ten.append(el("span", "chip warn", "⚠ Cần soi kỹ"));
+      const b = T.bo.find((x) => x.job_id === v.job_id);
+      const dong = T.dongLuot ? T.dongLuot(b) : "";
+      const nut = el("div", "tl-the-nut");
+      const dat = el("button", "btn sm primary tl-the-dat", "Đạt"); dat.type = "button"; dat.disabled = T.tat;
+      const hong = el("button", "btn sm danger-line tl-the-hong", "Hỏng…"); hong.type = "button";
+      dat.addEventListener("click", () => { if (!T.tat) danhGia(v, { ket_qua: "dat" }); });
+      hong.addEventListener("click", () => { vi = i; moHong = true; veDuyet(); const s = $("tl-duyet").querySelector(".tl-ly-do select"); if (s) s.focus(); });
+      nut.append(dat, hong);
+      the.append(anh, ten, el("span", "tl-the-dong", dong || `Lượt #${v.job_id}`), nut);
+      luoi.append(the);
+    });
+    if (ds.length > SO_THE_GON && vi < SO_THE_GON) {
+      const m = el("button", "btn ghost tl-luoi-them", hienHetThe ? "Thu gọn ▴" : `Xem thêm ${ds.length - SO_THE_GON} video ▾`); m.type = "button";
+      m.setAttribute("aria-expanded", String(hienHetThe));
+      m.addEventListener("click", () => { hienHetThe = !hienHetThe; veDuyet(); });
+      wrap.append(m);
+    }
+    return wrap;
+  }
+
   function veDuyet() {
     const hop = $("tl-duyet"); hop.replaceChildren();
     const ds = hangDuyet();
@@ -92,6 +129,7 @@
     sau.addEventListener("click", () => { vi = (vi + 1) % ds.length; moHong = false; veDuyet(); });
     head.append(truoc, sau); hop.append(head);
     if (!ds.length) { hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
+    hop.append(veLuoi(ds));
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
     const trai = el("div", "tl-so-sanh");

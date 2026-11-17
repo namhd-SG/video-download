@@ -19,11 +19,15 @@
     const dem = {}; for (const v of T.videos) dem[T.nhomCua(v)] = (dem[T.nhomCua(v)] || 0) + 1;
     const soi = T.videos.filter((v) => T.nhomCua(v) === "cho_duyet" && T.soiKy(v)).length;
     const p = $("tl-tom-tat"); p.replaceChildren();
-    const b = document.createElement("b"); b.textContent = `${dem.cho_duyet || 0} video chờ duyệt`;
+    const b = document.createElement("b"); b.textContent = `${dem.cho_duyet || 0} video chờ bạn duyệt`;
     // Ca máy không chắc cũng là việc của người (xem lý do + video gốc) ⇒ phải có trên dòng này, không thì dòng toàn số 0 trong khi
     // khối "Máy không chắc" bên dưới có video.
     const kc = (dem.khong_chac ? ` · ${dem.khong_chac} video máy không chắc` : "") + (dem.loi ? ` · ${dem.loi} video không làm được` : "");
-    p.append("Việc của bạn: ", b, ` · ${soi} cần bạn xem kỹ${kc} · ${dem.dang_xu_ly || 0} video máy đang làm, bạn không cần chờ.`);
+    p.append(b, ` · ${soi} cần soi kỹ${kc} · ${dem.dang_xu_ly || 0} video máy đang làm, bạn không cần chờ. `);
+    // ⓘ cuối dòng: giải thích gốc (mock B) — mở bằng popover `#ti-pop` dùng chung (thay-logo-link.js), chạm/Enter/Space đều mở được.
+    const gt = "Máy tự tìm watermark trôi trên video rồi đè logo công ty lên. Video gốc giữ nguyên; bản thay là file mới trên Drive. Chỗ nào máy chưa chắc hoặc có phụ đề chồng lên thì giữ nguyên chỗ đó.";
+    const ti = document.createElement("span"); ti.className = "ti"; ti.tabIndex = 0; ti.setAttribute("role", "note");
+    ti.title = gt; ti.setAttribute("aria-label", gt); ti.textContent = "ⓘ"; p.append(ti);
   }
   T.ve.tomTat = veTomTat;
 

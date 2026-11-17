@@ -156,7 +156,7 @@ def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     chu = p.locator("aside.tl-cot").inner_text()
     assert "Máy đang làm" in chu and "Máy không chắc" in chu and "Không làm được" in chu and "Hết chỗ đĩa" in chu
     # 5 video: 2 xong chờ duyệt (1 cờ soi kỹ), 1 chờ agy, 1 không chắc, 1 lỗi
-    assert "2 video chờ duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần bạn xem kỹ" in p.locator("#tl-tom-tat").inner_text()
+    assert "2 video chờ bạn duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần soi kỹ" in p.locator("#tl-tom-tat").inner_text()
     assert "Máy đang tìm chỗ logo cũ · đã 14 phút" in p.locator("#tl-dang-lam").inner_text()
     _anh(p, "khung-1280.png")
     p.locator("#tl-tabs [role=tab]").nth(3).click()  # tab "Dán link" có module nhưng chưa dán gì ⇒ không dữ liệu giả
@@ -823,7 +823,7 @@ def test_luot_cua_ban_dai_tien_do_va_hen_gio_tra_ve_bo(may_chu, trinh_duyet, mon
     assert "Nhận 3" in t1 and "Máy xong 3/3" in t1 and "Sẽ tự trả vào bộ lúc" in t1
     assert "✓ Đã trả 2 video vào bộ" in t2 and "Trả ngay" not in t2
     assert "Máy đang làm 1/4" in t3 and "Máy định vị logo chưa phản hồi 25 phút" in t3 and "Chờ bạn duyệt 1" in t3 and "Thư mục Drive riêng" in t3
-    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ duyệt')")  # đầu trang cùng số với dòng lượt
+    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ bạn duyệt')")  # đầu trang cùng số với dòng lượt
     _anh(p, "ux-luot-cua-ban-1280.png")
     the.nth(0).get_by_role("button", name="Trả ngay").click()
     p.wait_for_function("1")
