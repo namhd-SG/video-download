@@ -14,22 +14,30 @@
   <header class="topbar">
     <div class="brand"><span class="dot"></span>Video Desk</div>
     <nav class="topbar-nav">
-      <a href="/">⬇ Tải video</a>
-      <a href="/thay-logo.html" id="link-thay-logo" hidden>◐ Thay logo</a>
-      <a href="/settings.html" class="here" aria-current="page">⚙ Cài đặt</a>
-      <a href="/huong-dan.html">ⓘ Hướng dẫn</a>
-      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+      <a href="/">Tải video</a>
+      <a href="/thay-logo.html" id="link-thay-logo" hidden>Thay logo</a>
+      <a href="/settings.html" class="here" aria-current="page">Cài đặt</a>
+      <a href="/huong-dan.html">Hướng dẫn</a>
     </nav>
+    <div class="topbar-user">
+      <span id="topbar-email" class="topbar-email" hidden></span>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">◐</button>
+    </div>
   </header>
 
   <p id="session-expired" class="session-expired" role="alert" hidden>
     Phiên đăng nhập đã hết hạn — tải lại trang để đăng nhập lại.
   </p>
 
+  <div class="st-dau">
+    <h1>Cài đặt</h1>
+    <p class="st-mo-ta">Cookie và hạn mức của bạn. Quản trị đặt hạn mức cho từng người.</p>
+  </div>
+
   <div class="tabs" role="tablist">
     <button class="tab on" id="tab-cua-toi" role="tab" aria-selected="true">Của tôi</button>
     <button class="tab" id="tab-quan-tri" role="tab" aria-selected="false" hidden>
-      Quản trị <span class="badge">admin</span>
+      Quản trị
     </button>
   </div>
 
@@ -38,7 +46,8 @@
     <!-- Một THẺ mỗi nền tảng. Hôm nay chỉ TikTok; Instagram/Facebook sau này dùng
          đúng khuôn này (plans/260923-1023-cookie-ui/brainstorm.md §4). -->
     <div class="panel nt-the" data-nen-tang="tiktok">
-      <div class="nt-dau"><span class="nt-logo" aria-hidden="true">T</span><h2>TikTok</h2></div>
+      <div class="nt-dau"><h2>Cookie TikTok</h2><span class="grow"></span>
+        <span class="ti" tabindex="0" role="note" title="1. Cài tiện ích Cookie-Editor. 2. Mở tiktok.com khi đã đăng nhập. 3. Cookie-Editor → Export → Export as JSON. 4. Dán vào đây (hoặc chọn tệp .json) → Lưu cookie. Máy chủ kiểm trước khi nhận; bị từ chối thì cookie cũ vẫn giữ." aria-label="Cách lấy cookie: Cookie-Editor, mở tiktok.com khi đã đăng nhập, Export as JSON, dán vào đây hoặc chọn tệp .json rồi Lưu cookie. Máy chủ kiểm trước khi nhận; bị từ chối thì cookie cũ vẫn giữ.">ⓘ</span></div>
 
       <!-- Khối trạng thái: màu + tiêu đề + một câu. Đây là thứ người ta đọc TRƯỚC. -->
       <div id="ck-tt" class="tt tt-trong" role="status">
@@ -60,20 +69,20 @@
            Ở TRÌNH DUYỆT rồi đổ vào ô dán. Không thêm endpoint, không có đường thứ hai
            để quên kiểm tra. -->
       <div class="dan" id="cookie-drop">
+        <label for="cookie-json" class="dan-nhan">Dán cookie mới</label>
         <textarea id="cookie-json" rows="4"
                   placeholder="Dán chuỗi JSON xuất từ Cookie-Editor… hoặc kéo tệp .json vào đây"></textarea>
         <div class="dan-nut cookie-actions">
-          <button type="button" id="cookie-luu">Lưu cookie</button>
-          <button type="button" id="cookie-chon-tep" class="ghost">Chọn tệp…</button>
-          <button type="button" id="cookie-xoa" class="ghost danger">Xoá</button>
+          <button type="button" id="cookie-luu" class="btn primary">Lưu cookie</button>
+          <button type="button" id="cookie-chon-tep" class="btn ghost">Chọn tệp…</button>
+          <span class="grow"></span>
+          <button type="button" id="cookie-xoa" class="btn danger-line">Xoá</button>
         </div>
       </div>
       <input type="file" id="cookie-file" accept=".json,application/json" hidden />
       <p class="muted nho" id="cookie-ten-tep"></p>
       <!-- Phản hồi dán ngay dưới nút vừa bấm, không ở cuối thẻ. -->
       <div id="cookie-error" class="ph" role="alert" hidden></div>
-      <p class="huong-dan">Cookie-Editor → mở tiktok.com khi <strong>đã đăng nhập</strong> →
-        Export → Export as JSON → dán hoặc chọn tệp.</p>
     </div>
 
     <div class="panel">

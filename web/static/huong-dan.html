@@ -14,12 +14,15 @@
   <header class="topbar">
     <div class="brand"><span class="dot"></span>Video Desk</div>
     <nav class="topbar-nav">
-      <a href="/">⬇ Tải video</a>
-      <a href="/thay-logo.html" id="link-thay-logo" hidden>◐ Thay logo</a>
-      <a href="/settings.html">⚙ Cài đặt</a>
-      <a href="/huong-dan.html" class="here" aria-current="page">ⓘ Hướng dẫn</a>
-      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+      <a href="/">Tải video</a>
+      <a href="/thay-logo.html" id="link-thay-logo" hidden>Thay logo</a>
+      <a href="/settings.html">Cài đặt</a>
+      <a href="/huong-dan.html" class="here" aria-current="page">Hướng dẫn</a>
     </nav>
+    <div class="topbar-user">
+      <span id="topbar-email" class="topbar-email" hidden></span>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">◐</button>
+    </div>
   </header>
 
   <p id="session-expired" class="session-expired" role="alert" hidden>
@@ -29,6 +32,11 @@
   <!-- Quy ước của trang này: số và danh sách nền tảng KHÔNG viết tay — `huong-dan.js`
        điền từ GET /tinh-nang (hằng thật trong code). Đoạn chữ tả HÀNH VI thì ghi nguồn
        file:dòng ngay trong comment cạnh nó; đổi hành vi ở đó thì sửa câu ở đây. -->
+  <div class="st-dau">
+    <h1>Hướng dẫn</h1>
+    <p class="st-mo-ta">Số và danh sách nền tảng đọc từ máy chủ lúc mở trang.</p>
+  </div>
+
   <main class="hd">
 
     <nav class="panel hd-muc-luc" aria-label="Mục lục">

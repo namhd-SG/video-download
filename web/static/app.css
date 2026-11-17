@@ -1039,3 +1039,143 @@ h1, h2, h3 { font-weight: 600; }
   .hd-muc-luc a { white-space: nowrap; border-left: 0; border-bottom: 2px solid var(--border); }
   .hd .panel { padding: var(--s-4); }
 }
+
+/* ======================================================================
+   M4 — KHỚP MOCK HƯỚNG B (17/11/2026): thanh trên, chip cụm, thẻ hàng đợi + menu ⋯, Cài đặt.
+   Chỉ dùng token sẵn có (không hex mới). Khối `.gc-*` không bị đụng; popup captcha ăn chung `.btn`.
+   ====================================================================== */
+.grow { flex: 1; }
+/* nút nhỏ / nút icon dùng chung (menu ⋯, ‹ ›, Chép link, Chia cụm) */
+.btn.sm { height: var(--h-ctl-sm); padding: 0 var(--s-3); font-size: .8rem; display: inline-flex; align-items: center; }
+.btn.icon { width: var(--h-ctl-sm); padding: 0; justify-content: center; }
+.btn.ghost { border-color: transparent; }
+.chip.ok { background: var(--success-bg); color: var(--success); border-color: transparent; }
+.chip.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.chip.bad { background: var(--danger-bg); color: var(--danger); border-color: transparent; }
+
+/* ---- thanh trên: tab chữ gạch chân + email + ◐ ---- */
+.topbar { gap: var(--s-6); }
+.topbar-nav { flex: 1; margin-left: var(--s-2); gap: var(--s-1); align-self: stretch; align-items: stretch; }
+.topbar-nav a { display: flex; align-items: center; padding: 0 var(--s-3); border-radius: 0; font-size: .9rem; font-weight: 500;
+  color: var(--text-muted); background: none; box-shadow: inset 0 -2px 0 transparent; white-space: nowrap; }
+.topbar-nav a:hover { background: none; color: var(--text); }
+.topbar .topbar-nav a.here, .topbar .topbar-nav a[aria-current="page"] { background: none; color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.topbar-user { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
+.topbar-email { font: 500 .72rem var(--mono); color: var(--text-muted); background: var(--surface-alt); border-radius: var(--r-pill);
+  padding: 4px var(--s-3); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#theme-toggle { width: var(--h-ctl-sm); height: var(--h-ctl-sm); padding: 0; border: 0; background: none; color: var(--text-muted);
+  font-size: 1.05rem; line-height: 1; display: grid; place-items: center; }
+#theme-toggle:hover { background: var(--surface-alt); color: var(--text); }
+@media (max-width: 480px) {
+  .topbar { flex-wrap: wrap; row-gap: 0; gap: 0 var(--s-2); }
+  .brand { order: 1; height: 52px; }
+  .topbar-user { order: 2; margin-left: auto; }
+  .topbar-email { max-width: 150px; }
+  .topbar-nav { order: 3; width: 100%; flex: none; margin-left: 0; height: 40px; border-bottom: 1px solid var(--border); }
+}
+
+/* ---- hero: chip cookie + gợi ý phím ---- */
+.goi-y-phim { font: .72rem var(--mono); color: var(--text-faint); cursor: help; }
+.hero-ck.chip { font: 500 .75rem var(--body); display: inline-flex; align-items: center; gap: var(--s-1); padding: 3px var(--s-3); }
+.hero-ck a { color: inherit; text-decoration: none; }
+.hero-ck a:hover { text-decoration: underline; }
+
+/* ---- hàng đợi ---- */
+.queue-head .can-ban { color: var(--info); }
+.queue-list { grid-auto-columns: 232px; }
+.queue-list:has(.menu:not([hidden])) { padding-bottom: 130px; margin-bottom: -110px; }
+.queue-item { min-height: 168px; }
+.queue-item-top .ti { margin-left: 0; }
+.queue-item .qi-big { margin-top: var(--s-1); }
+.queue-item .progress-row { order: 0; }
+.queue-item .qi-src .btn { flex: none; }
+.queue-item .foot { margin-top: auto; display: flex; align-items: center; gap: var(--s-2); }
+.queue-item .xs, .xs { font-size: .72rem; }
+.faint { color: var(--text-faint); }
+.status-running { background: var(--accent-soft); color: var(--accent); }
+.status-pending { background: var(--surface-alt); color: var(--text-muted); }
+.status-cho_xac_minh { background: var(--info-bg); color: var(--info); border: 0; }
+.queue-item .actions [data-chep-link] { display: none; }
+.queue-item .actions:not(:has(> :not([data-chep-link]))) { display: none; }
+.menu-wrap { position: relative; display: inline-flex; }
+.menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 30; min-width: 190px; display: flex; flex-direction: column;
+  padding: var(--s-1); background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-2); box-shadow: var(--shadow-pop); }
+.menu [role="menuitem"] { display: block; text-align: left; border: 0; background: none; color: var(--text); font: inherit; font-size: .85rem;
+  padding: 8px var(--s-3); border-radius: var(--r-1); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.menu [role="menuitem"]:hover:not(:disabled), .menu [role="menuitem"]:focus-visible { background: var(--surface-alt); }
+.menu [role="menuitem"]:disabled { color: var(--text-faint); cursor: not-allowed; }
+/* thẻ "cần bạn": nền tối, nút to "Tôi giải ngay →" */
+.queue-item.can-xn .btn.ghost, .queue-item.can-xn .ti { color: var(--on-spot-2); }
+.queue-item.can-xn .btn.ghost:hover { background: transparent; color: var(--on-spot); }
+.queue-item.can-xn .actions { flex-direction: column; align-items: stretch; gap: var(--s-1); }
+.queue-item.can-xn .nut-giai-ngay { width: 100%; padding: 10px var(--s-3); font-size: .9rem; font-weight: 600; }
+.queue-item.can-xn .nut-giai-ngay::after { content: " →"; }
+.queue-item.can-xn .giai-luot { color: var(--on-spot-2); font-size: .72rem; text-align: center; }
+.queue-item.can-xn .xn-note { display: none; }  /* câu giải thích đã dời vào ⓘ cạnh nhãn */
+.queue-item.can-xn .queue-cancel { color: var(--on-spot); border-color: var(--on-spot-2); }
+
+/* ---- thư viện: chip cụm thay thanh bên, lưới 5 cột, hộp chọn cả trang ---- */
+.library-head { justify-content: flex-start; gap: var(--s-3); }
+.library-head > div { display: contents; }
+.library-head .refresh-btn { margin-left: auto; border-color: transparent; background: none; color: var(--text-muted); }
+.lib-layout { display: block; }
+.cum-rail { position: static; display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); background: none; border: 0; padding: 0; margin-bottom: var(--s-3); }
+.cum-rail h3, .rail-sep { display: none; }
+.cum-row { width: auto; height: var(--h-ctl-sm); padding: 0 var(--s-3); border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+  background: var(--surface); font-size: .8rem; font-weight: 500; white-space: nowrap; }
+.cum-row:hover { background: var(--surface-alt); }
+.cum-row.on, .cum-row.on:hover { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.cum-row .n, .cum-row.chua .n { margin-left: 0; font-family: var(--body); color: inherit; }
+.cum-row .n::before { content: "· "; }
+.cum-row.chua { color: var(--text); }
+.cum-row.chua.on { color: var(--accent-ink); }
+.cum-sub { padding-left: var(--s-3); }
+.ins-head { display: inline-flex; margin: 0 0 0 var(--s-2); }
+.ins-head .n { display: none; }
+.rail-add { display: inline-flex; align-items: center; gap: var(--s-1); width: auto; height: var(--h-ctl-sm); margin: 0; padding: 0 var(--s-3);
+  border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: var(--r-pill); font-size: .8rem; font-weight: 500; }
+.rail-add .ti { margin-left: 0; }
+#cum-moi-form { flex-basis: 100%; }
+.lib-toolbar { margin: var(--s-3) 0 var(--s-4); }
+.lib-toolbar .chon-trang { display: inline-flex; align-items: center; gap: var(--s-2); border: 0; background: none; padding: 0; color: var(--text-muted); font-size: .82rem; font-weight: 500; }
+.lib-toolbar .chon-trang.on { background: none; }
+.hop-tick { width: 16px; height: 16px; border: 1.5px solid var(--border-strong); border-radius: 4px; background: var(--surface); position: relative; flex: none; }
+.chon-trang.on .hop-tick { background: var(--accent); border-color: var(--accent); }
+.chon-trang.on .hop-tick::after { content: ""; position: absolute; left: 4px; top: 0; width: 4px; height: 9px; border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.lib-toolbar-phai { display: contents; }
+.lib-toolbar { flex-wrap: wrap; }
+.lib-toolbar .per-page { order: 1; margin-left: auto; }
+.lib-toolbar .trang { order: 2; }
+.trang button { height: var(--h-ctl-sm); min-width: var(--h-ctl-sm); }
+@media (min-width: 1100px) { .card-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .rail-add { display: inline-flex; }
+  #cum-moi-form { display: block; }
+  .cum-rail { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .lib-toolbar .per-page { margin-left: 0; }
+}
+
+/* ---- Cài đặt: tiêu đề + lưới hai thẻ ---- */
+.st-dau { margin: var(--s-4) 0 var(--s-5); }
+.st-dau h1 { margin: 0; font: 600 44px/1.05 var(--display); letter-spacing: -.02em; }
+.st-mo-ta { margin: var(--s-2) 0 0; color: var(--text-muted); font-size: 1.05rem; }
+#vung-cua-toi.cai-dat { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: var(--s-5); align-items: start; }
+.nt-dau { margin-bottom: var(--s-3); }
+.nt-dau h2 { font: 600 20px/1.2 var(--display); }
+.dan { grid-template-columns: minmax(0, 1fr); gap: var(--s-2); }
+.dan-nhan { font-size: .8rem; font-weight: 600; color: var(--text-muted); }
+.dan-nut.cookie-actions { flex-direction: row; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.quota-row { grid-template-columns: minmax(0, 1fr) auto; gap: var(--s-2) var(--s-3); padding: var(--s-3) 0; border-top: 1px solid var(--border); align-items: end; }
+.quota-row:first-child { border-top: 0; }
+.quota-so { font: 500 .9rem var(--display); color: var(--text-faint); text-align: right; }
+.quota-so strong { font: 600 28px/1 var(--display); color: var(--text); }
+.quota-bar { grid-column: 1 / -1; }
+@media (max-width: 860px) { #vung-cua-toi.cai-dat { grid-template-columns: minmax(0, 1fr); } .st-dau h1 { font-size: 30px; } }
+.cai-dat .panel-head h2 { font: 600 20px/1.2 var(--display); }
+/* 390 px: bộ lọc xếp chip ngang như mock (trước đây mỗi hộp một hàng), chip cụm không gãy chữ */
+@media (max-width: 720px) {
+  .filter-box { flex: 0 0 auto; position: static; }
+  .filter-bar { position: relative; }
+  .filter-trigger { width: auto; justify-content: flex-start; }
+}
+.cum-row, .rail-add { flex: none; white-space: nowrap; }
