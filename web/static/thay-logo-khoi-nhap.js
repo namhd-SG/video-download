@@ -17,6 +17,7 @@
 
   function datTab(k) {
     tab = k;
+    $("tl-vung").scrollTop = 0;  // mở/chuyển về tab nào cũng bắt đầu từ đầu danh sách (khung có thể đang cuộn dở từ lần xem trước)
     for (const b of document.querySelectorAll("#tl-tabs [role=tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === k));
     veVung();
   }

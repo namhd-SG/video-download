@@ -548,7 +548,7 @@ def test_hop_duyet_canh_bao_nen_xem_ky_chi_hien_cho_video_can_soi(may_chu, trinh
     _soi(p)
     assert "Video cần soi" in p.locator("#tl-duyet h3").inner_text()
     assert p.locator(".tl-canh-bao").is_visible() and "Nên xem kỹ" in p.locator(".tl-canh-bao").inner_text()
-    p.locator(".tl-nav").nth(1).click()  # › video kế
+    p.locator("#tl-duyet .tl-phim-o").nth(1).click()  # video kế (nút › ẩn khi mọi thẻ vừa một hàng ⇒ dùng hàng duyệt 1–N)
     assert "Video thường" in p.locator("#tl-duyet h3").inner_text()
     assert p.locator(".tl-canh-bao").count() == 0
 

@@ -100,3 +100,34 @@ def test_bo_tu_tim_la_luoi_the_ba_cot_va_hang_luot_chi_mot_chip(may_chu, trinh_d
     assert p.locator("#tl-bo-list .tl-bo-tt").count() == hang.count() and hang.count() >= 1
     assert all(hang.nth(i).locator(".tl-bo-tt").get_attribute("title") for i in range(hang.count()))  # chuỗi bước nằm ở title + dòng phụ
     assert not loi
+
+
+def test_khung_bo_tu_tim_mo_trang_cuon_ve_dau(may_chu, trinh_duyet):
+    p, loi = _mo(trinh_duyet, may_chu, 1440)
+    _tab_bo(p)
+    assert p.evaluate("document.getElementById('tl-vung').scrollTop") == 0
+    p.evaluate("document.getElementById('tl-vung').scrollTop = 99999")
+    p.locator('#tl-tabs [data-tab="thu-vien"]').click()
+    p.locator('#tl-tabs [data-tab="bo"]').click()
+    assert p.evaluate("document.getElementById('tl-vung').scrollTop") == 0  # chuyển về tab Bộ tự tìm ⇒ về đầu
+    assert not loi
+
+
+def test_khung_bo_tu_tim_1440_the_cuoi_nam_tron_trong_khung(may_chu, trinh_duyet):
+    p, loi = _mo(trinh_duyet, may_chu, 1440)
+    _tab_bo(p)
+    r = p.evaluate("""() => { const k = document.getElementById('tl-vung').getBoundingClientRect(), t = [...document.querySelectorAll('#tl-tab-bo .tl-vb-khoi')];
+      return { n: t.length, duoi: Math.max(...t.map(x => x.getBoundingClientRect().bottom)), khung: k.bottom }; }""")
+    assert r["n"] >= 1 and r["duoi"] <= r["khung"] + 0.5, r
+    assert not loi
+
+
+def test_nut_truoc_sau_chi_hien_khi_luoi_the_duyet_tran(may_chu, trinh_duyet, monkeypatch):
+    from test_thay_logo_trang_browser import _danh_sach, _dong_mo, _tra_json, _trang_gia
+    for so, hien in ((3, False), (8, True)):  # 3 thẻ vừa một hàng ở 1440 ⇒ ẩn; 8 thẻ (nhiều hàng + "Xem thêm") ⇒ hiện
+        ds = [_dong_mo(60 + i) for i in range(so)]
+        p = _trang_gia(trinh_duyet, may_chu, monkeypatch, (lambda d: lambda r: _tra_json(r, _danh_sach(d)))(ds))
+        p.set_viewport_size({"width": 1440, "height": 900})
+        p.goto(f"{may_chu}/thay-logo.html")
+        p.wait_for_selector("#tl-duyet .tl-the-duyet")
+        assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, so

@@ -119,6 +119,15 @@
     return wrap;
   }
 
+  // ‹ › chỉ có ích khi lưới thẻ tràn (nhiều hàng hoặc còn "Xem thêm"); mọi thẻ đã nằm trọn một hàng (vd 3 thẻ ở 1440) ⇒ ẩn. Đo sau khi thẻ đã vào DOM.
+  function capNutNav() {
+    const navs = document.querySelectorAll("#tl-duyet .tl-nav"), the = document.querySelectorAll("#tl-duyet .tl-the-duyet");
+    if (!navs.length) return;
+    const mot = new Set([...the].map((t) => t.offsetTop)).size <= 1 && !document.querySelector("#tl-duyet .tl-luoi-them");
+    for (const n of navs) n.hidden = mot;
+  }
+  window.addEventListener("resize", capNutNav);
+
   function veDuyet() {
     const hop = $("tl-duyet"); hop.replaceChildren();
     const ds = hangDuyet();
@@ -133,6 +142,7 @@
     head.append(truoc, sau); hop.append(head);
     if (!ds.length) { if (!T.dangTaiLoc) daMo = false; hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
     hop.append(veLuoi(ds));
+    capNutNav();
     if (!daMo) return;  // chưa chọn thẻ nào: dừng ở lưới thẻ
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");

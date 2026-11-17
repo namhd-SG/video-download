@@ -572,6 +572,7 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
 @media (max-width: 560px) { .tl-cot { grid-template-columns: minmax(0, 1fr); } }
 
 /* Tab Bộ tự tìm: lưới thẻ cao hơn khung cố định cũ ⇒ để khung tự co theo số hàng (tối đa 560px rồi cuộn). Lưới thẻ duyệt: tối đa 6 thẻ/hàng ở 1440. */
-.tl-vung:has(#tl-tab-bo:not([hidden])) { height: auto; min-height: 200px; max-height: 560px; }
+.tl-vung:has(#tl-tab-bo:not([hidden])) { height: auto; min-height: 200px; max-height: 720px; }
 .tl-luoi-hop .tl-luoi { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 @media (max-width: 560px) { .tl-luoi-hop .tl-luoi { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.tl-nav[hidden] { display: none; }

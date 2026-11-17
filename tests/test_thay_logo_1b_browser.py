@@ -224,7 +224,7 @@ def test_hai_o_phong_to_cat_dung_vung_logo(may_chu, trinh_duyet):
 
 def test_khong_co_cap_anh_thi_roi_ve_anh_soi(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
-    p.locator(".tl-duyet-head .tl-nav").nth(1).click()  # › sang video chỉ có ảnh soi
+    p.locator("#tl-duyet .tl-phim-o").nth(1).click()  # sang video chỉ có ảnh soi (nút › ẩn khi mọi thẻ vừa một hàng ⇒ dùng hàng duyệt 1–N)
     p.wait_for_function("!document.querySelector('#tl-cmp')")
     assert p.locator("#tl-duyet .tl-so-sanh img").get_attribute("src").endswith("/sheet.jpg") and p.locator(".tl-zoom-o").count() == 0
     assert "sắp có" not in p.locator("#tl-duyet").inner_text().lower()
