@@ -651,6 +651,12 @@ KHONG_CAN_KIEM_CHU = {
     "GET /api/thay-logo/videos/{vid}/dai": "`_video_cua` qua `web/thay_logo_khoanh_routes.py:_nap`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_khoanh.py)",
     "GET /api/thay-logo/videos/{vid}/khung-tai/{khung}": "`_video_cua` qua `_nap`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_khoanh.py)",
     "POST /api/thay-logo/videos/{vid}/khoanh": "`_video_cua` qua `_nap`: chủ lượt hoặc admin, 403 (tests/test_thay_logo_khoanh.py)",
+    "GET /api/thay-logo/videos/{vid}/box/{khung}": "`_video_cua` qua `_nap`: chủ lượt hoặc admin, 403 "
+                                                   "(tests/test_thay_logo_khoanh.py::test_route_box_quyen_trang_thai_va_khung)",
+    "GET /api/thay-logo/videos/{vid}/soi": "`_video_cua` qua `_nap`: chủ lượt hoặc admin, 403 "
+                                           "(tests/test_thay_logo_khoanh.py::test_route_soi_va_anh_soi_chan_nguoi_la, có đột biến)",
+    "GET /api/thay-logo/videos/{vid}/soi/{i}": "`_video_cua` qua `_nap`: chủ lượt hoặc admin, 403 TRƯỚC khi chạm file ảnh "
+                                               "(tests/test_thay_logo_khoanh.py::test_route_soi_va_anh_soi_chan_nguoi_la)",
     "GET /api/thay-logo/da-vao-bo": "tự lọc chủ video `j.nguoi_tao = email` trong SQL (admin thấy hết) "
                                     "(tests/test_thay_logo_vao_bo_khung.py, có đột biến)",
     "GET /api/thay-logo/admin/worker": "chỉ admin (`la_admin`), 403 cho người thường (tests/test_thay_logo_routes_member.py)",
