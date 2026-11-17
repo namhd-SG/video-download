@@ -1530,20 +1530,27 @@ def test_lenh_huy_treo_het_gio_thi_thu_lai_roi_mo_chan(mo_trang, db):
     assert _so(ghi, "down") == 2
 
 
-def test_mo_chan_bo_ca_su_kien_bo_gom_vua_nhat_luc_dang_chan(mo_trang, db):
+def test_mo_chan_bo_ca_su_kien_bo_gom_vua_nhat_luc_dang_chan(mo_trang, db, monkeypatch):
     """ĐP-729 NIT-3: sự kiện bộ gom nhặt trong lúc chặn mà chưa tới lượt `xaLo` xoá thì cũng phải bỏ khi
     mở chặn. Bắn một hover NGAY trước khi popup nhận phản hồi 200 của `huy_gesture`. ĐỘT BIẾN: không
-    xoá `buf` lúc mở chặn ⇒ ĐỎ."""
-    page, ghi, _, _ = mo_popup_dang_giai(mo_trang, db)
+    xoá `buf` lúc mở chặn ⇒ ĐỎ.
+    R-06: bỏ `trang_thai` THẬT — máy chủ đổi kỳ ở `huy_gesture` và đánh thức SSE ngay, nên `trang_thai` kỳ mới có
+    thể tới TRƯỚC phản hồi huỷ ⇒ `doiKy` gỡ chặn sớm (đúng thiết kế) ⇒ hover bắn sau đó là hover hợp lệ và được gửi
+    (hỏng lẻ ~2/40). Lọc đi thì chặn chỉ mở qua phản hồi huỷ — đúng đường test này đo.
+    Phản hồi huỷ trả về popup KHÔNG mang `ky` (200 trơn, như máy chủ chưa có kỳ): có `ky` mới thì `doiKy` chạy trước
+    và tự xoá `buf`, che mất đúng dòng xoá lúc mở chặn mà đột biến nhắm tới (đột biến khi đó vẫn xanh 5/5)."""
+    page, ghi, _ = _mo_popup_loc_trang_thai(mo_trang, db, monkeypatch)
+    page.evaluate("() => { window.__boTrangThai = true; }")
     r = khung_rect(page)
     page.evaluate("""() => { const f = window.fetch;
         window.fetch = async (u, o) => {
             const res = await f(u, o);
-            if (String((o && o.body) || "").includes("huy_gesture")) {
+            if (String((o && o.body) || "").includes("huy_gesture") && res.ok) {
                 const a = document.querySelector('#gc-anh').getBoundingClientRect();
                 document.querySelector('#gc-khung').dispatchEvent(new PointerEvent('pointermove', {
                     pointerId: 1, pointerType: 'mouse', bubbles: true, buttons: 0,
                     clientX: a.x + a.width / 2, clientY: a.y + a.height / 2 }));
+                return new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
             }
             return res; }; }""")
     _keo_roi_blur(page, r)
