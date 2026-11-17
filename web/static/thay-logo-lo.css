@@ -27,8 +27,8 @@
 .lo-dai-xanh { background: var(--success); }
 .lo-dai-xam { background: var(--border-strong); }
 .lo-doan { position: absolute; top: 0; bottom: 0; }
-.lo-doan-vang { background: #d4a017; }
-.lo-doan-do { background: #c0392b; }
+.lo-doan-vang { background: var(--warn); }
+.lo-doan-do { background: var(--danger); }
 
 .lo-nut { padding: 8px 12px; border-radius: var(--radius); border: 1px solid var(--border-strong); background: var(--surface-alt); color: var(--text); font-weight: 600; cursor: pointer; }
 .lo-nut-chinh { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -54,18 +54,18 @@
 .lo-sua { margin: 8px 24px 32px; }
 .sua-ve { display: inline-block; margin-bottom: 10px; color: var(--accent); }
 .sua-than { display: grid; grid-template-columns: minmax(260px, 360px) 1fr; gap: 20px; align-items: start; }
-.sua-khung { position: relative; border-radius: var(--radius); overflow: hidden; background: #000; }
+.sua-khung { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--media-bg); }
 .sua-khung img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
 .sua-lop { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
 .sua-o { position: absolute; box-sizing: border-box; pointer-events: none; }
-.sua-o-may { border: 2px dashed #e0b400; }
-.sua-o-cho { border: 2px dashed #e5484d; }
-.sua-o-luu { border: 2px solid #e5484d; background: rgba(229, 72, 77, .12); }
+.sua-o-may { border: 2px dashed var(--warn); }
+.sua-o-cho { border: 2px dashed var(--danger); }
+.sua-o-luu { border: 2px solid var(--danger); background: var(--danger-bg); }
 .sua-dai { margin-top: 10px; height: 18px; cursor: pointer; }
 .sua-kim { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1px; background: var(--text); pointer-events: none; }
 .sua-phai { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); min-width: 0; }
 .sua-tieu-de { font-size: 17px; margin: 0 0 4px; overflow-wrap: anywhere; }
-.sua-zoom { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 6px; background: #000; margin-top: 10px; }
+.sua-zoom { position: relative; width: 100%; aspect-ratio: 4 / 3; overflow: hidden; border-radius: 6px; background: var(--media-bg); margin-top: 10px; }
 .sua-zoom img { position: absolute; max-width: none; user-select: none; -webkit-user-drag: none; }
 .sua-buoc { margin: 10px 0; padding-left: 20px; }
 .sua-nut { display: flex; flex-wrap: wrap; gap: 8px; }

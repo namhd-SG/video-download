@@ -1,123 +1,61 @@
   /* ======================================================================
-     THEME TOKENS
-     Light is the default (`:root`); dark is picked either by OS preference
-     (`prefers-color-scheme`) or by the user's own toggle, which writes
-     `data-theme` on <html> and wins over the media query because it comes
-     later in the cascade. localStorage remembers the manual choice across
-     reloads; no choice made yet falls back to the OS setting.
+     THEME TOKENS — hướng B "giấy ấm, nhấn đỏ đất" (user duyệt mock 17/11/2026)
+     MỘT nơi duy nhất khai báo cả sáng lẫn tối: mỗi token là `light-dark(sáng, tối)`.
+     Theme chọn bằng `color-scheme`: mặc định `light dark` = theo hệ điều hành;
+     nút đổi giao diện ghi `data-theme` lên <html> để ép một bên (`light`/`dark`).
+     Tên token cũ giữ nguyên (popup giải captcha `.gc-*` dùng chung) — chỉ đổi giá trị.
      ====================================================================== */
   :root {
-    /* Bảng màu lấy NGUYÊN từ mock đã duyệt (artifact 15/09). Trung tính lệch
-       nhẹ về xanh của nhấn, không phải xám thuần — đó là thứ làm nó trông
-       được chọn chứ không phải mặc định. */
-    --bg: #f3f6f4;
-    --surface: #ffffff;
-    --surface-alt: #e7ede9;
-    --border: #d5ded9;
-    --border-strong: #b4c2bb;
-    --text: #14201d;
-    --text-muted: #4c5a56;
-    --text-faint: #7d8b86;
-    --accent: #0d5c55;
-    --accent-soft: #d8eae6;
-    --accent-ink: #ffffff;
-    --success: #1d6b3f;
-    --success-bg: #dcefe2;
-    --warn: #8a5a00;
-    --warn-bg: #f7ecd6;
-    --danger: #a33;
-    --danger-bg: #f7dede;
-    --pending-bg: #e7ede9;
-    --pending-text: #4c5a56;
-    /* Dải điều khiển giữ nền tối ở CẢ HAI theme — trong mock nó là một mặt
-       phẳng riêng, không phải một thẻ sáng màu; đó là nửa nhận diện của trang. */
-    /* Dải điều khiển ĐI THEO THEME. Tới 18/09 nó giữ nền tối ở cả hai
-       theme (mock 15/09 dựng nó như một mặt phẳng riêng) — USER BÁC ngày
-       18/09: ở chế độ sáng, một khối đen sì chiếm nửa trên trông như trang
-       chưa đổi theme. Đừng "sửa lại cho khớp mock": mock cũ hơn quyết định
-       này. Dark vẫn giữ nguyên tông cũ. */
-    --strip: #ffffff;
-    --strip-ink: #14201d;
-    --strip-ink-2: #4c5a56;
-    --strip-line: #d5ded9;
-    --strip-accent: #0d5c55;
-    --strip-accent-ink: #ffffff;
-    --strip-field: #f3f6f4;
-    --strip-raise: #f3f6f4;
-    --strip-track: #e7ede9;
-    --shadow: 0 1px 2px rgba(20, 32, 29, .06), 0 10px 28px rgba(20, 32, 29, .06);
-    --radius: 7px;
-    --display: "Bricolage Grotesque", "Trebuchet MS", sans-serif;
-    --body: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    color-scheme: light dark;
+    --bg: light-dark(#f6f1e9, #16120e);
+    --surface: light-dark(#fffdf9, #201b16);
+    --surface-alt: light-dark(#f0e9de, #2a241d);
+    --border: light-dark(#e6ddcf, #3a3229);
+    --border-strong: light-dark(#d3c6b3, #4d4337);
+    --text: light-dark(#1f1a14, #f3ece2);
+    --text-muted: light-dark(#5b5145, #cdbfad);
+    --text-faint: light-dark(#766a5c, #a39583);
+    --accent: light-dark(#b8432f, #ec7c63);
+    --accent-hover: light-dark(#983322, #f4957f);
+    --accent-soft: light-dark(#f7e2da, #3c2219);
+    --accent-ink: light-dark(#ffffff, #1a0e0a);
+    --success: light-dark(#2f6b3f, #7fc996);
+    --success-bg: light-dark(#e1eedf, #1b2e20);
+    --warn: light-dark(#8a5a0c, #e5bd73);
+    --warn-bg: light-dark(#f6e9cf, #33281a);
+    --danger: light-dark(#a3302b, #f09a90);
+    --danger-bg: light-dark(#f7dfdc, #3b1d1a);
+    --info: light-dark(#2a5b86, #8ebde6);
+    --info-bg: light-dark(#e0eaf3, #17293a);
+    --pending-bg: var(--surface-alt);
+    --pending-text: var(--text-muted);
+    /* Thẻ "cần bạn" (cần xác minh) — mặt phẳng tối nổi nhất ở cả hai theme. */
+    --spot: light-dark(#1f1a14, #3a2b20);
+    --on-spot: light-dark(#fbf6ee, #fbf1e4);
+    --on-spot-2: light-dark(#c9bca9, #d8c3a8);
+    --scrim: light-dark(rgba(31, 26, 20, .5), rgba(0, 0, 0, .62));
+    --shadow: 0 1px 0 light-dark(rgba(60, 40, 20, .04), rgba(0, 0, 0, .3)), 0 6px 20px light-dark(rgba(60, 40, 20, .06), rgba(0, 0, 0, .3));
+    --shadow-pop: 0 18px 50px light-dark(rgba(60, 40, 20, .22), rgba(0, 0, 0, .6));
+    --focus: 0 0 0 3px light-dark(rgba(184, 67, 47, .28), rgba(236, 124, 99, .32));
+    --media-ink: #ffffff;   /* chữ/ô chọn nằm trên ẢNH thumbnail: luôn trắng, không đổi theo theme */
+    --media-scrim: rgba(0, 0, 0, .6);
+    --media-bg: #111111;    /* nền khung xem ảnh/video (so sánh logo, vùng sửa) */
+    --media-ink-dark: #14201d; /* chữ tối trên nền trắng của tay cầm kéo */
+    --mark-bg: #ffe59a;     /* nền chữ khớp tìm kiếm (mark) */
+    /* dải điều khiển cũ: nay là alias của token chung (giữ tên cho code cũ) */
+    --strip: var(--surface); --strip-ink: var(--text); --strip-ink-2: var(--text-muted);
+    --strip-line: var(--border); --strip-accent: var(--accent); --strip-accent-ink: var(--accent-ink);
+    --strip-field: var(--bg); --strip-raise: var(--surface-alt); --strip-track: var(--surface-alt);
+    /* thang khoảng cách 4px, bo góc, chiều cao điều khiển */
+    --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 20px; --s-6: 24px; --s-8: 32px;
+    --radius: 12px; --r-1: 8px; --r-2: 12px; --r-3: 20px; --r-pill: 999px;
+    --h-ctl: 40px; --h-ctl-sm: 32px;
+    --display: "Fraunces", Georgia, serif;
+    --body: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
     --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
-    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      --bg: #0e1413;
-      --surface: #161e1c;
-      --surface-alt: #1e2926;
-      --border: #293430;
-      --border-strong: #3a4844;
-      --text: #e7efec;
-      --text-muted: #a6b4af;
-      --text-faint: #74827d;
-      --accent: #5ecdbf;
-      --accent-soft: #12302c;
-      --accent-ink: #04100e;
-      --success: #63c48c;
-      --success-bg: #14301f;
-      --warn: #e0b872;
-      --warn-bg: #2e2415;
-      --danger: #e08a8a;
-      --danger-bg: #3a1c1c;
-      --pending-bg: #1e2926;
-      --pending-text: #a6b4af;
-      --strip: #0a100f;
-      --strip-ink: #d9e6e2;
-      --strip-ink-2: #7d9a94;
-      --strip-line: #1a2a27;
-      --strip-accent: #5ecdbf;
-      --strip-accent-ink: #04100e;
-      --strip-field: #08120f;
-      --strip-raise: rgba(255, 255, 255, .04);
-      --strip-track: #16302c;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
-      color-scheme: dark;
-    }
-  }
-  html[data-theme="dark"] {
-    --bg: #0e1413;
-    --surface: #161e1c;
-    --surface-alt: #1e2926;
-    --border: #293430;
-    --border-strong: #3a4844;
-    --text: #e7efec;
-    --text-muted: #a6b4af;
-    --text-faint: #74827d;
-    --accent: #5ecdbf;
-    --accent-soft: #12302c;
-    --accent-ink: #04100e;
-    --success: #63c48c;
-    --success-bg: #14301f;
-    --warn: #e0b872;
-    --warn-bg: #2e2415;
-    --danger: #e08a8a;
-    --danger-bg: #3a1c1c;
-    --pending-bg: #1e2926;
-    --pending-text: #a6b4af;
-    --strip: #0a100f;
-    --strip-ink: #d9e6e2;
-    --strip-ink-2: #7d9a94;
-    --strip-line: #1a2a27;
-    --strip-accent: #5ecdbf;
-    --strip-accent-ink: #04100e;
-    --strip-field: #08120f;
-    --strip-raise: rgba(255, 255, 255, .04);
-    --strip-track: #16302c;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .45), 0 10px 28px rgba(0, 0, 0, .32);
-    color-scheme: dark;
-  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"] { color-scheme: dark; }
 
   * { box-sizing: border-box; }
   /* `.selection-bar`/`.empty-state`/`.card-grid` each set their own `display`
@@ -134,7 +72,7 @@
 
   body {
     margin: 0;
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-family: var(--body);
     background: var(--bg);
     color: var(--text);
     -webkit-font-smoothing: antialiased;
@@ -157,67 +95,6 @@
     border-radius: 999px; padding: .4rem .7rem; cursor: pointer; font-size: .85rem;
   }
   #theme-toggle:hover { border-color: var(--accent); }
-
-  /* ---- control strip: form (trái) + hàng đợi (phải) --------------------- */
-  /* Trong mock, dải điều khiển KHÔNG phải hai thẻ sáng đặt cạnh nhau — nó là
-     một mặt phẳng tối liền, và thư viện bên dưới nằm trên nền giấy sáng. Hai
-     tông đó là nhận diện của trang; bỏ đi thì còn lại một dashboard bất kỳ. */
-  .control-strip {
-    /* HAI panel: 'Tạo lượt tải mới' + 'Hàng đợi'. Từng có panel thứ ba
-       ('Cookie của tôi', 17/09) nên lưới khai 3 cột `340px 320px 1fr`;
-       panel đó đã dời sang /settings.html nhưng cột `1fr` ở lại và trở
-       thành một MẢNG ĐEN chiếm gần nửa dải — user báo 18/09.
-       Bài học: gỡ panel thì phải gỡ cả rãnh của nó; số cột là một khai
-       báo về nội dung, không phải một hằng số trang trí. Không test nào
-       bắt được (không có test bố cục) — chỉ lộ khi mở trang thật. */
-    display: grid; grid-template-columns: 340px 1fr; gap: 0;
-    margin-bottom: 28px; background: var(--strip); color: var(--strip-ink);
-    border: 1px solid var(--strip-line); border-radius: var(--radius);
-    overflow: hidden; box-shadow: var(--shadow);
-  }
-  /* Dải định nghĩa lại TOKEN cho vùng của nó, thay vì đè từng thuộc tính.
-     Đè thuộc tính là đánh nhau bằng specificity, và nó đã thua ba lần trong
-     một ngày: `.job-meta a` cùng hạng nhưng đứng sau `.control-strip a` nên
-     thắng; `#job-form button` có id nên thắng mọi thứ. Mỗi lần thua là một
-     chỗ chữ tối trên nền tối, và chỉ hiện ở MỘT theme.
-     Custom property thì không có trận đánh đó: nó kế thừa xuống và được giải
-     tại chỗ dùng, nên mọi luật con viết `var(--accent)` tự động lấy màu của
-     dải mà không cần biết dải tồn tại. */
-  .control-strip {
-    --accent: var(--strip-accent);
-    --accent-ink: var(--strip-accent-ink);
-    --text: var(--strip-ink);
-    --text-muted: var(--strip-ink-2);
-    --text-faint: var(--strip-ink-2);
-    --border: var(--strip-line);
-    --border-strong: var(--strip-line);
-    --surface: transparent;
-    --surface-alt: var(--strip-raise);
-    /* `--bg` là nền trang; trong dải nó là nền ô nhập. Nhờ đặt ở đây mà
-       `#job-form input { background: var(--bg) }` — một selector có id, tức
-       thắng mọi luật lớp — tự lấy đúng màu, không cần ai đè nó. Là token
-       theo theme từ 18/09: giá trị cứng `#08120f` biến ô nhập thành hố đen
-       trên dải sáng. */
-    --bg: var(--strip-field);
-  }
-
-  .control-strip .panel {
-    background: transparent; border: 0; border-radius: 0; box-shadow: none;
-    color: var(--strip-ink);
-  }
-  .control-strip .queue-item {
-    background: var(--strip-raise); border-color: var(--strip-line);
-  }
-  .control-strip .queue-url { color: var(--strip-ink); }
-  .control-strip .queue-meta, .control-strip .empty-hint { color: var(--strip-ink-2); }
-  .control-strip a { color: var(--strip-accent); }
-  .control-strip progress::-webkit-progress-bar { background: var(--strip-track); }
-  .control-strip progress::-webkit-progress-value { background: var(--strip-accent); }
-  /* Còn đúng một mốc: dưới 860px thì form và hàng đợi xếp chồng một cột.
-     Mốc 1100px cũ đặt lưới về `340px 1fr` — nay đó ĐÃ là lưới mặc định,
-     nên luật đó không còn đổi gì; giữ lại chỉ làm người đọc tưởng có hai
-     bố cục khác nhau. */
-  @media (max-width: 860px) { .control-strip { grid-template-columns: 1fr; } }
 
   /* Dòng "thứ N trong hàng" + nút rút. Nút dùng token của vùng nó đứng
      (`var(--border)`, `var(--text)`) nên tự đúng màu trong dải tối lẫn
@@ -244,25 +121,65 @@
   .panel-head h2 { margin: 0; }
   .muted { color: var(--text-muted); font-size: .8rem; }
 
-  #job-form { display: flex; flex-direction: column; gap: 10px; }
-  #job-form input, #job-form textarea {
-    border: 1px solid var(--border); background: var(--bg); color: var(--text);
-    border-radius: 8px; padding: .55rem .7rem; font-size: .88rem; width: 100%;
-  }
-  #job-form textarea { font-family: inherit; resize: vertical; }
-  #job-form input:focus, #job-form textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  #job-form button {
-    background: var(--accent); color: var(--accent-ink); border: none; border-radius: 8px;
-    padding: .6rem 1rem; font-weight: 600; font-size: .88rem; cursor: pointer;
-  }
-  #job-form button:hover { filter: brightness(1.08); }
+  /* ---- hero: ô dán link lớn + hàng tuỳ chọn nhỏ (hướng B) ---------------- */
+  .hero { display: flex; flex-direction: column; gap: var(--s-4); margin-bottom: var(--s-8); }
+  .hero h1 { margin: 0; font: 600 44px/1.05 var(--display); letter-spacing: -.02em; }
+  .hero-sub { margin: var(--s-2) 0 0; color: var(--text-muted); font-size: 1rem; }
+  /* ⓘ: mọi câu hướng dẫn rải rác nằm trong title/aria-label của dấu này. */
+  .ti { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; font-size: 12px;
+    line-height: 1; color: var(--text-faint); cursor: help; vertical-align: middle; border-radius: 50%; }
+  .ti:hover, .ti:focus-visible { color: var(--accent); }
+  #job-form { display: flex; flex-direction: column; gap: var(--s-3); }
+  .b-create { display: flex; gap: var(--s-3); align-items: stretch; padding: var(--s-3); background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--r-3); box-shadow: var(--shadow); }
+  #job-form textarea { border: 0; background: transparent; color: var(--text); font: inherit; font-size: 1rem;
+    min-height: 56px; padding: var(--s-2) var(--s-3); resize: vertical; flex: 1; min-width: 0; width: auto; }
+  #job-form textarea:focus { outline: none; box-shadow: none; }
+  .b-create:focus-within { border-color: var(--accent); box-shadow: var(--focus); }
+  #job-form button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 14px;
+    padding: 0 var(--s-8); font: 600 1rem var(--body); cursor: pointer; }
+  #job-form button:hover { background: var(--accent-hover); }
   #job-form button:disabled { opacity: .6; cursor: wait; }
+  .b-opts { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; color: var(--text-faint); font-size: .8rem; }
+  #job-form .b-opts input { height: 30px; width: auto; border: 1px solid var(--border-strong); border-radius: var(--r-pill);
+    background: var(--surface); color: var(--text); padding: 0 var(--s-3); font: inherit; font-size: .8rem; }
+  #job-form .b-opts input[type="number"] { width: 72px; font-family: var(--mono); }
+  #job-form .b-opts input:focus { outline: none; border-color: var(--accent); box-shadow: var(--focus); }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .error-text { color: var(--danger); font-size: .8rem; min-height: 1.1em; margin: 2px 0 0; }
+  .hero-ck { margin-left: auto; }
 
-  .queue-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 380px; overflow-y: auto; }
-  .queue-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface-alt); }
-  .queue-item-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .queue-url { font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+  /* ---- hàng đợi = dải thẻ cuộn ngang, số lớn got/want ------------------- */
+  .queue-sec { margin-bottom: var(--s-8); }
+  .queue-head { display: flex; align-items: baseline; gap: var(--s-3); flex-wrap: wrap; margin-bottom: var(--s-3); }
+  .queue-head h2 { margin: 0; font: 600 26px/1.1 var(--display); }
+  .queue-head .grow { flex: 1; }
+  .queue-head .btn { padding: .3rem .7rem; font-size: .8rem; }
+  .queue-head .nut-cuon { width: var(--h-ctl-sm); padding: .3rem 0; text-align: center; }
+  .queue-list { list-style: none; margin: 0; padding: 0 0 var(--s-2); display: grid; grid-auto-flow: column;
+    grid-auto-columns: 260px; gap: var(--s-3); overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: thin; align-items: stretch; }
+  .queue-list.xem-het { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-columns: auto; overflow-x: visible; }
+  .queue-item { position: relative; min-width: 0; scroll-snap-align: start; display: flex; flex-direction: column; gap: var(--s-2);
+    border: 1px solid var(--border); border-radius: var(--r-3); padding: var(--s-4); background: var(--surface); box-shadow: var(--shadow); }
+  .queue-item-top { display: flex; justify-content: space-between; align-items: center; gap: var(--s-2); }
+  .queue-item .qi-big { font: 600 34px/1 var(--display); }
+  .queue-item .qi-big small { font-size: 16px; color: var(--text-faint); }
+  .queue-url { font-family: var(--mono); font-size: .76rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .qi-src { display: flex; align-items: center; gap: var(--s-1); min-width: 0; }
+  .qi-src .queue-url { flex: 1; }
+  .chep-link { font: inherit; font-size: .72rem; color: var(--text-muted); background: transparent; border: 0; border-radius: var(--r-1);
+    padding: 2px 6px; cursor: pointer; flex: none; }
+  .chep-link:hover { background: var(--surface-alt); color: var(--text); }
+  /* thẻ cần xác minh: nền tối nổi nhất */
+  .queue-item.can-xn { background: var(--spot); color: var(--on-spot); border-color: var(--spot); }
+  .queue-item.can-xn .queue-url, .queue-item.can-xn .qi-big small, .queue-item.can-xn .job-meta, .queue-item.can-xn .xn-note,
+  .queue-item.can-xn .chep-link { color: var(--on-spot-2); }
+  .queue-item.can-xn .progress-row { color: var(--on-spot-2); }
+  .queue-item.can-xn .progress-track { background: var(--on-spot-2); opacity: .5; }
+  .queue-item.can-xn .job-meta a, .queue-item.can-xn .chia-link { color: var(--on-spot); }
+  @media (max-width: 720px) { .queue-list { grid-auto-columns: 78%; } .hero h1 { font-size: 30px; }
+    .b-create { flex-direction: column; } #job-form button { height: 48px; } }
+
   .status-badge { font-size: .7rem; font-weight: 700; padding: .18rem .55rem; border-radius: 999px; white-space: nowrap; flex: none; }
   .status-pending { background: var(--pending-bg); color: var(--pending-text); }
   .status-running { background: var(--warn-bg); color: var(--warn); }
@@ -326,7 +243,7 @@
     border-radius: 8px; padding: .45rem .7rem; font-size: .82rem; cursor: pointer;
   }
   .chip-vao-bo:hover { border-color: var(--accent); }
-  .chip-vao-bo.on { background: var(--accent); border: 1px solid var(--accent); color: #fff; }
+  .chip-vao-bo.on { background: var(--accent); border: 1px solid var(--accent); color: var(--accent-ink); }
   .canh-bao-gioi-han {
     background: var(--danger-bg); color: var(--danger); border: 1px solid var(--danger);
     border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; font-size: .88rem; font-weight: 600;
@@ -334,7 +251,7 @@
   /* Mức "sắp chạm trần" — vàng; đỏ để dành cho "đã cắt" (xem `veCanhBaoGioiHan`). */
   .canh-bao-gioi-han.som { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
   .badge-don-loi {
-    align-self: center; background: var(--danger); color: #fff; border-radius: 999px;
+    align-self: center; background: var(--danger); color: var(--surface); border-radius: 999px;
     padding: 2px 10px; font-size: .74rem; font-weight: 600; cursor: help;
   }
   .badge-do-loi-lap { background: var(--surface-alt); color: var(--danger); border: 1px solid var(--danger); }
@@ -354,7 +271,7 @@
   .filter-trigger:hover { border-color: var(--accent); }
   .filter-trigger .caret { color: var(--text-muted); font-size: .7rem; }
   .filter-trigger .count {
-    background: var(--accent); color: #fff; border-radius: 999px; font-size: .68rem;
+    background: var(--accent); color: var(--accent-ink); border-radius: 999px; font-size: .68rem;
     padding: 0 .4rem; min-width: 1.1em; text-align: center;
   }
   /* `.filter-box.disabled` + `.filter-note` gỡ 18/09 cùng nhóm lọc "Khung":
@@ -402,14 +319,7 @@
     background: repeating-linear-gradient(135deg, var(--surface-alt), var(--surface-alt) 9px, var(--bg) 9px, var(--bg) 18px);
   }
   .card-thumb.no-thumb span { font-size: .68rem; text-align: center; padding: 0 8px; }
-  /* Dải nhập giữ nền tối ở CẢ hai theme (bố cục hai tông của mock), nhưng
-     ::placeholder chưa bao giờ được đặt màu, nên nó rơi về xám mặc định
-     của trình duyệt (#757575) — màu đó tính cho nền SÁNG, đặt lên nền
-     #08120f chỉ còn 4,13:1. Không ai chọn màu đó; nó là giá trị mặc định
-     lọt vào. Dải này đã tự định nghĩa lại --text-muted (dòng ~166) nên
-     dùng đúng token đó, không cắm hex. axe KHÔNG bắt ca này (nó bỏ qua
-     placeholder), chỉ đo tay mới thấy. */
-  .control-strip input::placeholder { color: var(--text-muted); }
+  #job-form ::placeholder { color: var(--text-faint); }
 
   /* Ghi chú nguồn hỏng: đủ rõ để đọc trước khi dán URL, không to đến mức
      trông như lỗi. Dùng token của dải điều khiển vì nó nằm trong dải đó. */
@@ -419,7 +329,7 @@
 
   .card-check {
     position: absolute; top: 6px; left: 6px; width: 20px; height: 20px; border-radius: 5px;
-    border: 2px solid #fff; background: rgba(0, 0, 0, .35); z-index: 2;
+    border: 2px solid var(--media-ink); background: var(--media-scrim); z-index: 2;
     /* Viền trắng + nền đen-35% được vẽ để nằm TRÊN ẢNH. Thẻ không có ảnh dùng
        nền sọc sáng, nên ở theme sáng viền trắng tan vào nền và ô chọn trông
        như bị vô hiệu hoá — nó vẫn chọn được (đã bấm thử), chỉ là nhìn không
@@ -427,9 +337,9 @@
     box-shadow: 0 0 0 1px rgba(0, 0, 0, .3);
   }
   .card.selected .card-check { background: var(--accent); border-color: var(--accent); }
-  .card.selected .card-check::after { content: "✓"; display: block; color: #fff; font-size: .72rem; text-align: center; line-height: 16px; }
+  .card.selected .card-check::after { content: "✓"; display: block; color: var(--accent-ink); font-size: .72rem; text-align: center; line-height: 16px; }
   .card-duration {
-    position: absolute; right: 6px; bottom: 6px; background: rgba(0, 0, 0, .6); color: #fff;
+    position: absolute; right: 6px; bottom: 6px; background: var(--media-scrim); color: var(--media-ink);
     font-size: .68rem; padding: 1px 5px; border-radius: 4px;
   }
   .card-body { padding: 8px 9px 10px; }
@@ -479,7 +389,7 @@
     border: 1px solid var(--border); background: var(--surface-alt); color: var(--text);
     border-radius: 8px; padding: .5rem .9rem; font-size: .82rem; cursor: pointer;
   }
-  .selection-actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .selection-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
   .selection-actions button.ghost { background: transparent; }
   /* Xoá là việc khó lùi ở phía người dùng — nút phải TRÔNG khác nút thường,
      không chỉ khác ở chữ. */
@@ -513,7 +423,7 @@
 
   /* ===== Trang Cài đặt ===== */
   .topbar-nav { display: flex; align-items: center; gap: 14px; margin-left: auto; }
-  .topbar-nav a { color: var(--strip-accent); text-decoration: none; font-size: .86rem; }
+  .topbar-nav a { color: var(--text-muted); text-decoration: none; font-size: .86rem; }
   .topbar-here { color: var(--text-muted); font-weight: 400; }
 
   .banner-an-danh {
@@ -644,9 +554,9 @@
 .tt h3 { margin: 0 0 3px; font: 600 15px/1.3 var(--body); }
 .tt p { margin: 0; font-size: 13.5px; color: var(--text-muted); }
 .tt-ok { background: var(--success-bg); border-color: color-mix(in srgb, var(--success) 25%, transparent); }
-.tt-ok .tt-icon { background: var(--success); color: #fff; }
+.tt-ok .tt-icon { background: var(--success); color: var(--surface); }
 .tt-loi { background: var(--danger-bg); border-color: color-mix(in srgb, var(--danger) 25%, transparent); }
-.tt-loi .tt-icon { background: var(--danger); color: #fff; }
+.tt-loi .tt-icon { background: var(--danger); color: var(--surface); }
 .tt-trong { background: var(--surface-alt); border-color: var(--border); }
 .tt-trong .tt-icon { background: var(--border-strong); color: var(--surface); }
 /* Lưới ô thông tin. `auto-fit` để ô Tài khoản (ẩn khi chưa có cơ chế đọc tên)
@@ -891,7 +801,7 @@ body.cc-lock-scroll .session-expired {
 /* Làn Hướng dẫn / Nghi: chọn để LOẠI — dấu chọn phải thấy ngay, không chỉ viền mảnh. */
 .cc-t-loai { cursor: pointer; }
 .cc-t-loai .cc-chk { position: absolute; top: 4px; left: 4px; z-index: 1; width: 18px; height: 18px;
-  border-radius: 4px; border: 2px solid #fff; background: rgba(0, 0, 0, .35); color: #fff;
+  border-radius: 4px; border: 2px solid var(--media-ink); background: var(--media-scrim); color: var(--media-ink);
   font: 700 12px/14px system-ui, sans-serif; text-align: center; }
 .cc-t-loai.sel { border-color: var(--danger); outline: 3px solid var(--danger); outline-offset: -3px; }
 .cc-t-loai.sel::after { content: ""; position: absolute; inset: 0;
@@ -1036,4 +946,95 @@ body.gc-lock-scroll { overflow: hidden; }
   .brand, .topbar-nav a, #theme-toggle { white-space: nowrap; }
   .topbar-nav { flex-wrap: wrap; gap: 6px 14px; margin-left: 0; width: 100%; }
   .topbar-nav #theme-toggle { margin-left: auto; }
+}
+
+/* ======================================================================
+   HƯỚNG B — lớp áp lên các thành phần chung (17/11/2026).
+   Đặt CUỐI file: chỉ đổi dáng (bo góc lớn, chữ serif cho tiêu đề, khoảng thở), không đổi hành vi.
+   Khối `.gc-*` ở trên không bị đụng; `.btn` / `.btn.primary` / `.btn.ghost` đổi giá trị để popup captcha ăn chung.
+   ====================================================================== */
+.app { max-width: 1200px; padding: var(--s-2) var(--s-8) 100px; }
+.topbar { height: 64px; margin-bottom: var(--s-6); }
+.brand { font-size: 1.25rem; font-weight: 600; }
+.topbar-nav a { padding: 6px var(--s-3); border-radius: var(--r-pill); font-weight: 500; }
+.topbar-nav a:hover, .topbar-nav a.here, .topbar-nav a[aria-current="page"] { background: var(--surface-alt); color: var(--text); }
+#theme-toggle { font-family: inherit; }
+h1, h2, h3 { font-weight: 600; }
+.panel { border-radius: var(--r-3); padding: var(--s-5); }
+.library-head { align-items: baseline; margin-bottom: var(--s-4); }
+.library-head h2 { font: 600 26px/1.1 var(--display); }
+.refresh-btn, .btn, .chip-vao-bo, .filter-trigger, .lib-toolbar .chon-trang, .selection-actions button { border-radius: var(--r-1); }
+.btn, .refresh-btn, .filter-trigger, .lib-toolbar .chon-trang { font-weight: 600; }
+.btn:hover { background: var(--surface-alt); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.danger-line { background: transparent; color: var(--danger); border-color: var(--danger); }
+.chip-vao-bo { border-radius: var(--r-pill); }
+.pill, .tax, .cum-chip, .status-badge { border-radius: var(--r-pill); }
+.session-expired, .banner-an-danh, .canh-bao-gioi-han { border-radius: var(--r-2); }
+.banner-an-danh.hero-ck { margin: 0 0 0 auto; padding: 4px var(--s-3); font-size: .78rem; border-radius: var(--r-pill); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:focus-visible, .btn.focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* thư viện: lưới thẻ to 4:5, thẻ không viền, ô chọn khoanh khi chọn */
+.card-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-5); }
+.card-grid .card { border: 0; background: transparent; border-radius: 18px; overflow: visible; box-shadow: none; }
+.card-grid .card:hover { box-shadow: none; }
+.card-grid .card.selected { box-shadow: none; }
+.card-grid .card.selected .card-thumb { outline: 3px solid var(--accent); outline-offset: 3px; }
+.card-grid .card-thumb { aspect-ratio: 4 / 5; border-radius: 18px; }
+.card-grid .card-body { padding: var(--s-2) 2px; }
+.card-grid .card-title { font-size: .875rem; }
+/* thanh chọn nhiều: thẻ nổi giữa đáy màn */
+.selection-bar { left: 50%; right: auto; bottom: var(--s-4); transform: translateX(-50%); width: fit-content; max-width: calc(100% - 2 * var(--s-4));
+  border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow-pop); padding: var(--s-2) var(--s-3); }
+.selection-bar .selection-actions { margin-left: var(--s-2); }
+.toast { box-shadow: var(--shadow-pop); border-radius: var(--r-1); }
+/* khung lọc/phân trang: nhóm nút bo tròn đồng bộ */
+.per-page .seg { border-color: var(--border-strong); border-radius: var(--r-1); }
+.per-page .seg button.on { background: var(--accent); color: var(--accent-ink); }
+.trang button { border-radius: var(--r-1); }
+.cum-rail, .cum-head, .popover, .filter-panel { border-radius: var(--r-2); }
+.popover, .filter-panel { box-shadow: var(--shadow-pop); }
+/* thẻ lượt tải đang chạy: tiêu đề phụ + hành động gọn */
+.queue-item .actions, .queue-item .progress-row, .queue-item .job-meta { margin-top: 0; }
+.queue-item .job-meta { margin-top: auto; }
+/* tab: gạch chân (Cài đặt Của tôi / Quản trị) */
+.tabs { gap: var(--s-1); }
+.tab { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; font-weight: 600; }
+.tab:hover { color: var(--text); }
+.tab.on { background: none; border-color: transparent; border-bottom-color: var(--accent); color: var(--accent); margin-bottom: -1px; }
+/* trạng thái rỗng + màn chia cụm */
+.empty-state { border-radius: var(--r-3); }
+#chia-view .cc-luot, #chia-view .cc-nhom, #chia-view .cc-rail { border-radius: var(--r-3); }
+.cc-nhom-h .cc-ten, .cc-luot h2, .cc-modal h3 { font-family: var(--display); }
+.cc-modal-bg { background: var(--scrim); }
+.cc-dock { border-radius: 16px; box-shadow: var(--shadow-pop); }
+.cc-t { border-radius: 8px; }
+.cc-t.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
+/* Cài đặt: khối trạng thái + ô thông tin */
+.tt, .o4 .o { border-radius: var(--r-2); }
+.cai-dat .panel { border-radius: var(--r-3); }
+.nt-dau h2 { font: 600 20px/1.2 var(--display); }
+@media (max-width: 720px) {
+  .app { padding: var(--s-2) var(--s-4) 110px; }
+  .card-grid { grid-template-columns: 1fr 1fr; gap: var(--s-3); }
+  .selection-bar { left: 0; right: 0; bottom: 0; transform: none; width: 100%; max-width: none; border-radius: 0; border-left: 0; border-right: 0; }
+}
+
+/* Hướng dẫn: mục lục dọc bên trái (dính khi cuộn) + thẻ mục bên phải. */
+.hd { display: grid; grid-template-columns: 220px minmax(0, 1fr); column-gap: var(--s-8); row-gap: var(--s-4); align-items: start; }
+.hd > * { grid-column: 2; min-width: 0; }
+.hd > .hd-muc-luc { grid-column: 1; grid-row: 1 / span 12; position: sticky; top: var(--s-4); flex-direction: column; align-items: stretch;
+  gap: 2px; background: transparent; border: 0; box-shadow: none; padding: 0; }
+.hd-muc-luc strong { font: 600 .7rem var(--body); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 var(--s-2) var(--s-3); }
+.hd-muc-luc a { padding: 6px var(--s-3); border-left: 2px solid var(--border); font-size: .82rem; color: var(--text-muted); }
+.hd-muc-luc a:hover { border-left-color: var(--accent); color: var(--accent); }
+.hd .panel { scroll-margin-top: var(--s-4); padding: var(--s-6); }
+.hd .panel h2 { font: 600 26px/1.15 var(--display); }
+.hd p, .hd li { max-width: 70ch; }
+@media (max-width: 720px) {
+  .hd { grid-template-columns: minmax(0, 1fr); }
+  .hd > * { grid-column: 1; }
+  .hd > .hd-muc-luc { grid-row: auto; position: static; flex-direction: row; overflow-x: auto; }
+  .hd-muc-luc a { white-space: nowrap; border-left: 0; border-bottom: 2px solid var(--border); }
+  .hd .panel { padding: var(--s-4); }
 }
