@@ -192,7 +192,9 @@ def test_loc_trang_thai_thu_hep_cot_phai(may_chu, trinh_duyet):
 @pytest.mark.parametrize("rong", [1280, 390])
 def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet, rong):
     p, _ = _mo(trinh_duyet, may_chu, rong)
+    p.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")  # ảnh nhỏ cột phải lazy: cuộn tới đáy để tải, rồi về đầu
     p.wait_for_function("[...document.images].every(i => i.complete)")
+    p.evaluate("window.scrollTo(0, 0)")
     dat, hong = p.locator(".tl-dat"), p.locator(".tl-hong-nut")
     bd, bh = dat.bounding_box(), hong.bounding_box()
     if rong > 600:

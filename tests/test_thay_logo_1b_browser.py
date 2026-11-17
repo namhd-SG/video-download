@@ -156,7 +156,10 @@ def _mo(br, goc, rong=1280, truoc=None):
 
 
 def _chup(p, ten):
+    # Ảnh nhỏ cột phải là loading=lazy: trang 390 nay dài hơn (lưới thẻ duyệt) nên chúng nằm xa khung nhìn ⇒ cuộn xuống đáy rồi về đầu để chúng tải.
+    p.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
     p.wait_for_function("[...document.images].every(i => i.complete)")
+    p.evaluate("window.scrollTo(0, 0)")
     d = os.environ.get("VIDEODL_ANH_THAY_LOGO")
     if d:
         Path(d).mkdir(parents=True, exist_ok=True)
