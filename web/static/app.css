@@ -420,7 +420,6 @@
   /* ===== Trang Cài đặt ===== */
   .topbar-nav { display: flex; align-items: center; gap: 14px; margin-left: auto; }
   .topbar-nav a { color: var(--text-muted); text-decoration: none; font-size: .86rem; }
-  .topbar-here { color: var(--text-muted); font-weight: 400; }
 
   .banner-an-danh {
     background: var(--warn-bg); border: 1px solid var(--warn); color: var(--text);
