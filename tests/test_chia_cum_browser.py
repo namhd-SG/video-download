@@ -960,6 +960,33 @@ def test_dock_chua_chon_gi_thi_nut_xam_chon_1_thi_bat(page, dulieu):
     assert [nut.nth(i).is_disabled() for i in range(4)] == [True] * 4
 
 
+def test_dock_390_an_khi_chua_chon_va_hien_khi_da_chon(page, dulieu):
+    """≤480px: dock cao 3 hàng che cột Nhóm·Kiểu ⇒ ẨN khi 0 video, hiện (4 nút bật) khi đã chọn, ẩn lại khi bỏ chọn.
+    Màn rộng vẫn "luôn hiện, nút xám" (test ngay trên). ĐỘT BIẾN: bỏ lớp `cc-dock-rong` ⇒ ĐỎ."""
+    page.set_viewport_size({"width": 390, "height": 800})
+    _mo_chia(page, dulieu["job_full"])
+    nut = page.locator("#cc-dock > button, #cc-dock > .pop-wrap > button")
+    assert nut.count() == 4 and not page.locator("#cc-dock").is_visible()
+    page.locator(".cc-t").first.click()
+    assert page.locator("#cc-dock").is_visible()
+    assert [nut.nth(i).is_disabled() for i in range(4)] == [False] * 4
+    page.click('#cc-dock [data-cc-action="dock-bo-chon"]')
+    assert not page.locator("#cc-dock").is_visible()
+
+
+def test_hop_kieu_moi_co_nut_x_dong_nhu_huy(page, dulieu):
+    """Hộp "Kiểu mới từ N video": nút × góc phải (aria-label Huỷ) đóng hộp y như nút "Huỷ", không gọi máy chủ."""
+    _mo_chia(page, dulieu["job_full"])
+    goi = []
+    page.on("request", lambda r: goi.append(r.url) if "/thao-tac" in r.url else None)
+    page.locator(".cc-t").first.click()
+    page.click('#cc-dock [data-cc-action="dock-tach"]')
+    page.wait_for_selector(".cc-modal")
+    assert page.locator(".cc-modal-h .cc-modal-x").get_attribute("aria-label") == "Huỷ"
+    page.click(".cc-modal-h .cc-modal-x")
+    assert page.locator(".cc-modal").count() == 0 and goi == []
+
+
 def _loai_o_thu_vien(db, vid: str) -> None:
     """Như bấm Loại ở thư viện / tab khác: chỉ đánh dấu video, nháp chia giữ nguyên hàng."""
     with models._connect(db) as conn:

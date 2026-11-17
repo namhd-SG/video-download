@@ -1240,3 +1240,12 @@ h1, h2, h3 { font-weight: 600; }
   #chia-view .cc-why { max-width: none; text-align: left; }
   .cc-dock { margin: 0; max-width: none; width: auto; border-radius: 0; border-inline: 0; justify-content: flex-start; bottom: 0; }
 }
+
+/* Lane B (b): hộp "Kiểu mới từ N video" — nút × góc phải + vạch dưới tiêu đề (mock B); dock ẩn khi chưa chọn ở màn hẹp. */
+.cc-modal-h { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--s-3);
+  margin: 0 0 var(--s-4); padding-bottom: var(--s-3); border-bottom: 1px solid var(--border); }
+.cc-modal-h h3 { margin: 0; }
+.cc-modal-x { flex: none; width: 32px; height: 32px; margin-top: -2px; border: 0; border-radius: var(--r-1); background: none;
+  color: var(--text-muted); font: 400 1.5rem/1 var(--body); cursor: pointer; }
+.cc-modal-x:hover { background: var(--surface-alt); color: var(--text); }
+@media (max-width: 480px) { .cc-dock.cc-dock-rong { display: none; } }
