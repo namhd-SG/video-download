@@ -291,6 +291,8 @@ def _cum_api(p) -> list[dict]:
 
 
 def _chon(p, n: int) -> None:
+    if n > 20:  # 17/11/2026: mặc định 20 thẻ/trang (bộ chọn 20/50/100) ⇒ muốn chọn nhiều hơn phải nới lên 50
+        p.click("#so-moi-trang [data-so='50']")
     the = p.locator("#card-grid .card")
     for i in range(n):
         the.nth(i).click()
@@ -517,7 +519,7 @@ def test_gan_sang_cum_khac_la_chuyen_va_loc_cum_ve_trang_1_giu_lua_chon(page):
     _nut.click()
     page.locator("#card-grid .card").first.click()
     page.click("#cum-rail [data-cum-loc='chua']")
-    assert "Hiện 1–40 / 84 video" in page.inner_text("#lib-pager-dem")
+    assert "Hiện 1–20 / 84 video" in page.inner_text("#lib-pager-dem")
     assert page.inner_text("#selection-count") == "1 đã chọn"
 
 
