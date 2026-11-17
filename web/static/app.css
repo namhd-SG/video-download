@@ -1198,8 +1198,8 @@ h1, h2, h3 { font-weight: 600; }
   font: 500 var(--t-sm, .8rem) var(--mono); color: var(--text-faint); margin-right: var(--s-2); }
 /* Hàng đợi: dải mờ cuối dải thẻ cuộn ngang (thẻ cuối cuộn ra khỏi vùng mờ nhờ padding cuối) */
 .queue-list:not(.xem-het) { padding-inline-end: 48px;
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent); }
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 56px), transparent); }
 
 /* ===== Màn chia cụm + hộp "Kiểu mới" theo mock B ===== */
 .cc-h1 { margin: 6px 0 4px; font: 600 40px/1.05 var(--display); letter-spacing: -.02em; }
