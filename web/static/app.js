@@ -284,7 +284,9 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     // phía) thì tự đếm như trước.
     const n = typeof state.tongVaoBo === "number" ? state.tongVaoBo
       : state.videos.filter(videoDaVaoBo).length;
-    chip.textContent = `Đã vào bộ (${n})`;
+    // Chỉ ghi vào nhãn: chip còn có ⓘ (`.ti`) — ghi textContent của cả chip sẽ đè mất nó.
+    const nhan = chip.querySelector(".chip-vao-bo-nhan") || chip;
+    nhan.textContent = `Đã vào bộ (${n})`;
     chip.classList.toggle("on", state.chiVaoBo);
     chip.setAttribute("aria-pressed", String(state.chiVaoBo));
   }
@@ -465,11 +467,6 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     const skipText = boQua > 0 && !nguonText
       ? `Bỏ qua ${boQua} video đã có trong kho.`
       : "";
-    // Chữ giải thích của thẻ "cần bạn" dời vào ⓘ (user 17/11: bỏ chữ hướng dẫn rải). Nội dung giữ nguyên.
-    const gioiThichXn = job.trang_thai === "cho_xac_minh"
-      ? [GT.cauDung(job), "Chưa ai giải thì job tự kết thúc sau 24 giờ. Không giải được? Rút lượt để trả hạn mức."]
-        .filter(Boolean).join(" ")
-      : "";
     const hienUrl = BT.nhanUrl(job.url).replace(/^https?:\/\/(www\.)?/, "");
     // Chân thẻ (mock B): lượt xong = "+N mới" + nút Chia cụm; còn lại để các khối riêng của thẻ nói.
     const chan = job.trang_thai === "done" && !nguonText
@@ -480,7 +477,6 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
-          ${gioiThichXn ? `<span class="ti" tabindex="0" role="note" title="${escapeHtml(gioiThichXn)}" aria-label="${escapeHtml(gioiThichXn)}">ⓘ</span>` : ""}
           <span class="grow"></span>
           ${menuLuot(job)}
         </div>
@@ -496,7 +492,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
         ${nguonText ? `<div class="nguon">${nguonText}</div>` : ""}
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${BT.khungLoi(job)}
-        ${stopText && !gioiThichXn ? `<div class="stop-reason">${stopText}</div>` : ""}
+        ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
         ${buocGiai ? GT.khungHanhDong(job)
           : BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
             state.dangGuiChayLai.has(job.id))}

@@ -1114,7 +1114,6 @@ h1, h2, h3 { font-weight: 600; }
 .queue-item.can-xn .nut-giai-ngay { width: 100%; padding: 10px var(--s-3); font-size: .9rem; font-weight: 600; }
 .queue-item.can-xn .nut-giai-ngay::after { content: " →"; }
 .queue-item.can-xn .giai-luot { color: var(--on-spot-2); font-size: .72rem; text-align: center; }
-.queue-item.can-xn .xn-note { display: none; }  /* câu giải thích đã dời vào ⓘ cạnh nhãn */
 .queue-item.can-xn .queue-cancel { color: var(--on-spot); border-color: var(--on-spot-2); }
 
 /* ---- thư viện: chip cụm thay thanh bên, lưới 5 cột, hộp chọn cả trang ---- */
@@ -1182,3 +1181,22 @@ h1, h2, h3 { font-weight: 600; }
   .filter-trigger { width: auto; justify-content: flex-start; }
 }
 .cum-row, .rail-add { flex: none; white-space: nowrap; }
+
+/* ===== M4 vòng 2 ===== */
+/* Khung giải thích của ⓘ (thay-logo-link.js): một khung dùng chung, nổi trên mọi lớp trừ popup giải xác minh. */
+.ti[aria-expanded="true"] { color: var(--accent); }
+.ti-pop { position: fixed; z-index: 60; padding: var(--s-2) var(--s-3); background: var(--spot); color: var(--on-spot);
+  border-radius: var(--r-2, 8px); font-size: .8rem; line-height: 1.45; box-shadow: var(--shadow); pointer-events: none; }
+.ti-pop[hidden] { display: none; }
+/* chip "Đã vào bộ (N)" kèm ⓘ: nhãn và ⓘ cùng một hàng */
+.chip-vao-bo { display: inline-flex; align-items: center; gap: 2px; }
+.chip-vao-bo.on .ti { color: inherit; }
+/* Hướng dẫn: số thứ tự mục 01…08 (đếm bằng CSS ⇒ thêm/bớt mục không phải đánh số lại) */
+.hd { counter-reset: hd-muc; }
+.hd > section.panel h2 { font: 600 26px/1.15 var(--display); }
+.hd > section.panel h2::before { counter-increment: hd-muc; content: counter(hd-muc, decimal-leading-zero);
+  font: 500 var(--t-sm, .8rem) var(--mono); color: var(--text-faint); margin-right: var(--s-2); }
+/* Hàng đợi: dải mờ cuối dải thẻ cuộn ngang (thẻ cuối cuộn ra khỏi vùng mờ nhờ padding cuối) */
+.queue-list:not(.xem-het) { padding-inline-end: 48px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent); }

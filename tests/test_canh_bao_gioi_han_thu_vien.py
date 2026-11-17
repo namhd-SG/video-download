@@ -220,7 +220,7 @@ def test_vuot_tran_ca_hai_phia_chip_moi_phia_nap_rieng(base_url):
 
         assert goi == [(0, o) for o in OFFSETS], goi
         assert p.inner_text("#canh-bao-gioi-han") == f"Thư viện có {n0} video, lưới chỉ nạp {TRAN} video mới nhất"
-        assert p.inner_text("#chip-vao-bo") == f"Đã vào bộ ({n1})"
+        assert p.inner_text("#chip-vao-bo .chip-vao-bo-nhan") == f"Đã vào bộ ({n1})"
         assert f"(đang hiện {TRAN} trong {n0})" in p.inner_text("#library-count")
         chup(f"pr2-luoi-mac-dinh-{n0}")
 
@@ -446,7 +446,7 @@ def test_moi_video_da_vao_bo_luoi_mac_dinh_la_khong_khop_khong_phai_thu_vien_tro
     """Phía 0 rỗng, phía 1 có 4 ⇒ chip tắt: thư viện KHÔNG trống — "không khớp bộ lọc"."""
     p, br, pw, _, _ = _mo_hai_phia(base_url, {0: 0, 1: 4})
     try:
-        assert p.inner_text("#chip-vao-bo") == "Đã vào bộ (4)"
+        assert p.inner_text("#chip-vao-bo .chip-vao-bo-nhan") == "Đã vào bộ (4)"
         assert p.locator("#no-match-state").is_visible()
         assert not p.locator("#empty-state").is_visible()
     finally:

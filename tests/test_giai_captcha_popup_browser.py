@@ -263,12 +263,9 @@ def test_the_job_bon_buoc_giai_co_nhan_nut_va_cau_dung(mo_trang, db):
     assert the(a).locator(".status-badge").inner_text() == "Cần xác minh"
     assert the(a).locator(".nut-giai-ngay").count() == 1
     assert "còn 2 lần" in the(a).locator(".giai-luot").inner_text()
-    # Mock B: câu giải thích của thẻ "cần bạn" dời vào ⓘ cạnh nhãn (không còn khối chữ rải trên thẻ) — nội dung giữ nguyên.
-    gioi_thich = the(a).locator(".queue-item-top .ti").get_attribute("title")
-    assert "không tự giải" in gioi_thich
-    assert the(a).locator(".stop-reason").count() == 0
+    assert "không tự giải" in the(a).locator(".stop-reason").inner_text()
     assert the(a).locator("[data-huy]").count() == 1
-    assert "24 giờ" in gioi_thich
+    assert "24 giờ" in the(a).locator(".xn-note").inner_text()
     # cho_giai: nhãn, mở lại cửa sổ, rút được; KHÔNG câu dừng cũ (lý do cũ còn nguyên trong DB).
     assert the(b).locator(".status-badge").inner_text() == "Chờ mở trang giải"
     assert the(b).locator("[data-mo-giai]").count() == 1 and the(b).locator("[data-huy]").count() == 1
