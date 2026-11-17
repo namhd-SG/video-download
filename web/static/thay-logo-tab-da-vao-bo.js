@@ -34,7 +34,7 @@
   }
 
   function datChon(v, ma, bat) {
-    if (bat) { chon.set(v.ban_copy_id, { video_id: v.video_id, ma_bo: ma }); T.nhapChon.add(v.ban_copy_id); }
+    if (bat) { chon.set(v.ban_copy_id, { video_id: v.video_id, ma_bo: ma, ten: v.ten_video, anh: v.anh_bia }); T.nhapChon.add(v.ban_copy_id); }
     else { chon.delete(v.ban_copy_id); T.nhapChon.delete(v.ban_copy_id); }
   }
   function xong() { T.capNhatChan(); tuDienTenBo(); if (hopVe) ve(hopVe); }
@@ -72,14 +72,14 @@
     giua.append(maToSang(bo.ma_bo),
       el("span", "tl-vb-meta", [`vào bộ ${ngayNgan(bo.vao_bo_luc)}`, `${ds.length} video`, nens, daThay ? `${daThay} video đã thay logo trước đó` : ""].filter(Boolean).join(" · ")));
     const dai = el("div", "tl-vb-dai"); dai.setAttribute("aria-hidden", "true");
-    for (const v of ds.slice(0, 12)) {
+    for (const v of ds.slice(0, 4)) {  // thẻ bộ: 4 ô ảnh như mock
       const o = el("i");
       if (v.anh_bia) { const img = el("img"); img.alt = ""; img.src = v.anh_bia; img.addEventListener("error", () => img.remove(), { once: true }); o.append(img); }
       dai.append(o);
     }
     giua.append(dai);
     // Nút chính: bật/tắt cả bộ. Giữ vai checkbox ba trạng thái (aria-checked) để trình đọc màn hình nói đúng.
-    const b = el("button", "tl-vb-chon-ca btn" + (trangThai === "true" ? "" : " primary")); b.type = "button"; b.setAttribute("role", "checkbox");
+    const b = el("button", "tl-vb-chon-ca btn" + (trangThai === "true" ? " primary" : "")); b.type = "button"; b.setAttribute("role", "checkbox");
     b.setAttribute("aria-checked", trangThai); b.disabled = T.tat || !chonDuoc.length;
     b.append(el("span", "tl-vb-hop"), !chonDuoc.length ? "Đã thay hết" : trangThai === "true" ? "Bỏ khỏi giỏ"
       : daThay || trangThai === "mixed" ? `+ Nạp ${chonDuoc.length - daChon} video còn lại` : `+ Nạp cả bộ (${chonDuoc.length})`);
@@ -90,7 +90,7 @@
     const phai = el("div", "tl-vb-phai");
     phai.append(b, el("span", "tl-vb-dem", daChon ? `đã nạp ${daChon}/${chonDuoc.length}` : ""), mo);
     dong.append(el("span", "tl-vb-dau", trangThai === "true" ? "✓" : ""), giua, phai);
-    const khoi = el("div", "tl-vb-khoi"); khoi.append(dong);
+    const khoi = el("div", "tl-vb-khoi" + (moRong.has(bo.folder_id) ? " mo" : "")); khoi.append(dong);
     if (moRong.has(bo.folder_id)) {
       const luoi = el("div", "tl-luoi tl-vb-luoi");
       for (const v of ds) luoi.append(theVideo(v, bo.ma_bo));
@@ -183,7 +183,9 @@
     id: "bo",
     giai: "Tìm bộ theo mã hoặc ngày rồi bấm “Nạp cả bộ”. Thay xong, bạn bấm Đạt thì video được trả lại đúng bộ đó.",
     ve(hop) { daHoi = false; ve(hop); },
-    dem() { dongBoChon(); return chon.size; },  // số trên nhãn tab = số video đã chọn từ tab này
+    dem() { dongBoChon(); return chon.size; },
+    // Giỏ theo từng video (có ×): `bo()` bỏ video khỏi giỏ.
+    dsGio() { dongBoChon(); return [...chon].map(([id, c]) => ({ ten: c.ten || "Video", ma: c.ma_bo, anh: c.anh, bo() { chon.delete(id); T.nhapChon.delete(id); xong(); } })); },  // số trên nhãn tab = số video đã chọn từ tab này
     // Giỏ: mỗi mã bộ một dòng (số video đã nạp).
     gio() { dongBoChon(); const n = new Map(); for (const c of chon.values()) n.set(c.ma_bo, (n.get(c.ma_bo) || 0) + 1); return [...n].map(([ma, so]) => ({ ma, so })); },
   });

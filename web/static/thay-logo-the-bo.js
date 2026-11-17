@@ -87,7 +87,9 @@
       noi.append(a);
     }
     const act = o("tl-o-act", ...nutHanhDong(b));
-    the.append(o("tl-o-luot", nut), o("tl-o-buoc", el("span", "tl-bo-tt", chu), dongTienDo(b)), o("tl-o-video", bar, tien), noi,
+    const pipe = dongTienDo(b), chip = el("span", "tl-bo-tt", chu);
+    chip.title = pipe.textContent;  // MỘT chip trạng thái chính/hàng; chuỗi bước đưa vào nằm ở dòng phụ nhỏ bên dưới và ở title
+    the.append(o("tl-o-luot", nut), o("tl-o-buoc", chip, pipe), o("tl-o-video", bar, tien), noi,
                o("tl-o-cap", el("span", "tl-bo-cap", capNhatCua(b))), act);
     // Lượt nguồn khác chọn "Tạo bộ tự tìm mới": có video Đạt ⇒ MỘT cú bấm bàn giao sang Creative Desk (như trang Tải video).
     if (coNutTaoBo(b)) {
@@ -112,7 +114,11 @@
     const dang = b.tong - (b.xong + b.cho_nguoi + (b.bo_qua || 0) + b.loi);
     const dan = (chu, cls, dich) => {
       const n = el("button", "btn sm " + cls, chu); n.type = "button";
-      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $(dich); if (h) h.scrollIntoView({ block: "start" }); });
+      n.addEventListener("click", () => {
+        if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id);
+        if (dich === "tl-khong-chac" && T.moNhomCot) T.moNhomCot(dich);  // nhóm cột phải gập mặc định ⇒ mở nhóm đích trước khi cuộn tới
+        const h = $(dich); if (h) h.scrollIntoView({ block: "start" });
+      });
       return n;
     };
     if (b.cho_duyet > 0) return [dan(`Duyệt ${b.cho_duyet} →`, "primary tl-bo-duyet", "tl-duyet")];
