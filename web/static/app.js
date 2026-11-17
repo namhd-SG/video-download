@@ -368,6 +368,11 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     const emptyHint = document.getElementById("queue-empty");
     document.getElementById("queue-count").textContent =
       state.jobs.length ? `${state.jobs.length} lượt` : "";
+    const xemHet = document.getElementById("queue-xem-het");
+    if (xemHet) {
+      xemHet.hidden = state.jobs.length < 2;
+      xemHet.textContent = list.classList.contains("xem-het") ? "Thu gọn" : `Xem tất cả ${state.jobs.length} →`;
+    }
     emptyHint.hidden = state.jobs.length > 0;
     // Đang gõ số trong ô "chạy lại" thì KHÔNG vẽ lại: mỗi nhịp poll thay cả
     // `innerHTML` và ô mất focus giữa chừng. Dữ liệu vẫn nạp vào `state.jobs`;
@@ -438,8 +443,12 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     return `
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
-          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
+        </div>
+        <div class="qi-big">${Number(job.xong) || 0}<small>/${BT.mauSo(job)}</small></div>
+        <div class="qi-src">
+          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
+          <button type="button" class="chep-link" data-chep="${job.id}" title="Chép link nguồn">Chép link</button>
         </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
@@ -542,8 +551,9 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // 26/09 thêm 30: "thêm phần 30 video/page").
   // `loadVideos` đã nạp TRỌN thư viện (lô `LIBRARY_PAGE`, trần `LIBRARY_MAX` mỗi phía chip), bộ lọc chạy ở đây ⇒
   // phân trang cắt trên danh sách ĐÃ LỌC, không cần tham số trang ở API.
-  const SO_MOI_TRANG = Object.freeze([10, 20, 30, 40, 100]);
-  const SO_MOI_TRANG_MAC_DINH = 40;
+  // 17/11/2026 (user, đại tu giao diện hướng B): bộ chọn còn 20 / 50 / 100, mặc định 20.
+  const SO_MOI_TRANG = Object.freeze([20, 50, 100]);
+  const SO_MOI_TRANG_MAC_DINH = 20;
 
   // Hàm thuần — test gọi thẳng. `trang` 1-based; kẹp vào [1, soTrang] để một
   // trang cũ (vd trang 3 khi bộ lọc chỉ còn 5 video) không ra lưới rỗng.
@@ -596,7 +606,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
       `<button type="button" data-trang="${ct.trang + 1}" ${ct.trang === ct.soTrang ? "disabled" : ""}>Sau ›</button>`;
     document.querySelectorAll("[data-pager]").forEach((el) => { el.innerHTML = nav; });
     document.getElementById("so-moi-trang").innerHTML = SO_MOI_TRANG.map((n) =>
-      `<button type="button" data-so="${n}" class="${n === state.soMoiTrang ? "on" : ""}">${n}</button>`).join("");
+      `<button type="button" data-so="${n}" class="${n === state.soMoiTrang ? "on" : ""}" aria-pressed="${n === state.soMoiTrang}">${n}</button>`).join("");
     document.getElementById("lib-pager-dem").textContent =
       `Hiện ${ct.dau + 1}–${ct.dau + ct.muc.length} / ${tongLoc} video`;
     veNutChonTrang();
@@ -817,6 +827,29 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // Rút lượt. Uỷ quyền trên `queue-list` vì hàng đợi vẽ lại mỗi nhịp poll —
   // gắn trực tiếp lên từng nút thì nút mới sau mỗi lần vẽ sẽ không có tay
   // nghe nào, và hỏng ÂM THẦM: nút vẫn ở đó, bấm không ra gì.
+  // Hàng đợi hướng B: "Chép link" trên thẻ, "Xem tất cả N" bung dải ngang thành lưới, nút ‹ › cuộn dải.
+  document.getElementById("queue-list").addEventListener("click", async (ev) => {
+    const cp = ev.target.closest("[data-chep]");
+    if (!cp) return;
+    const job = state.jobs.find((j) => String(j.id) === cp.dataset.chep);
+    if (!job) return;
+    try {
+      await navigator.clipboard.writeText(job.url);
+      showToast("Đã chép link nguồn");
+    } catch (e) {
+      showToast("Không chép được link — trình duyệt chặn clipboard");
+    }
+  });
+  const xemHetNut = document.getElementById("queue-xem-het");
+  if (xemHetNut) xemHetNut.addEventListener("click", () => {
+    const l = document.getElementById("queue-list");
+    l.classList.toggle("xem-het");
+    xemHetNut.textContent = l.classList.contains("xem-het") ? "Thu gọn" : `Xem tất cả ${state.jobs.length} →`;
+  });
+  document.querySelectorAll("[data-cuon]").forEach((b) => b.addEventListener("click", () => {
+    const l = document.getElementById("queue-list");
+    l.scrollBy({ left: Number(b.dataset.cuon) * 272, behavior: "smooth" });
+  }));
   document.getElementById("queue-list").addEventListener("click", async (ev) => {
     const btn = ev.target.closest("[data-huy]");
     if (!btn) return;

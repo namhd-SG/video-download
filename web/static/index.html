@@ -4,10 +4,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Video Desk — TikTok Music Downloader</title>
-<!-- Ba khuôn chữ của mock đã duyệt. Google Fonts là host duy nhất được dùng ở
-     đây; mỗi khuôn đều khai fallback thật để trang không đổi dáng khi mạng
-     công ty chặn hoặc font chưa về. -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" />
+<!-- Ba khuôn chữ hướng B (Fraunces / Inter / IBM Plex Mono), nạp từ Google Fonts trên CẢ 4 trang:
+     đơn giản nhất, không thêm file tĩnh phải tái kiểm; mỗi khuôn khai fallback thật ở `--display/--body/--mono`
+     (app.css) nên mạng chặn thì trang chỉ đổi dáng chữ, không vỡ bố cục. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="app.css" />
 </head>
 <body>
@@ -32,53 +33,53 @@
   </p>
 
   <!-- ================= DẢI ĐIỀU KHIỂN (trên) ================= -->
-  <p id="cookie-banner" class="banner-an-danh" hidden>Chưa có cookie — lượt tải của bạn
-    chạy <strong>ẩn danh</strong> và chia chung hạn mức với mọi người chưa dán.
-    <a href="/settings.html">Dán cookie của bạn →</a></p>
-
-  <section class="control-strip" aria-label="Điều khiển tải">
-    <div class="panel">
-      <h2>Tạo lượt tải mới</h2>
-      <form id="job-form">
-        <textarea id="url" rows="2" placeholder="URL TikTok (music / hashtag / @profile), Facebook Ads Library, thư mục Google Drive — hoặc kênh / tab Shorts / playlist YouTube (một URL, lấy N video mới theo ô số lượng) — hoặc link video lẻ (YouTube, TikTok, Instagram, Facebook, X…): mỗi dòng một link, cùng một nền tảng, tối đa 50" required></textarea>
-        <input type="number" id="so-luong" min="1" max="2000" value="20" required />
-        <!-- Tuỳ chọn: bỏ trống thì hỏi lại lúc duyệt màn nháp. `maxlength`
-             khớp trần server (`USECASE_TOI_DA`/`INSIGHT_CON_TOI_DA` ở
-             web/models_cum.py) — chặn ở giao diện không thay cho kiểm ở
-             server, chỉ đỡ một vòng round-trip 400. Nhãn gắn `for` để không
-             ai gõ nhầm ô — hai placeholder trông giống nhau khi ô kia đã có
-             chữ. -->
-        <label for="usecase" class="lb">Usecase</label>
-        <input type="text" id="usecase" placeholder="Usecase (tuỳ chọn)" maxlength="80" />
-        <label for="insight-goc" class="lb">Insight gốc</label>
-        <input type="text" id="insight-goc" placeholder="Insight gốc (tuỳ chọn)" maxlength="120" />
+  <!-- ================= HERO: ô dán link + tuỳ chọn (trên) ================= -->
+  <section class="hero" aria-label="Tạo lượt tải mới">
+    <div>
+      <h1>Tạo lượt tải mới</h1>
+      <!-- Lịch sử đo nguồn /search (16/09: 5 lượt ra 0 video, HTTP 200 body RỖNG; hashtag 3 video, music 10 video
+           cùng lúc, cùng cookie; 18/09: 1 lượt ra 1 video). Một lần được sau năm lần trượt không đủ để nói "đã khỏi"
+           cũng không đủ để nói "chết" — câu trong ⓘ nói ĐÚNG hai con số đó và để người dùng tự quyết. -->
+      <p class="hero-sub">Dán link nguồn, tool tải và gom vào thư viện.
+        <span class="ti" tabindex="0" role="note" title="Dán URL TikTok (music / hashtag / @profile), Facebook Ads Library, thư mục Google Drive — hoặc kênh / tab Shorts / playlist YouTube (một URL, lấy N video mới theo ô số lượng) — hoặc link video lẻ (YouTube, TikTok, Instagram, Facebook, X…): mỗi dòng một link, cùng một nền tảng, tối đa 50. Ctrl/⌘+Enter để tạo. Nguồn tìm kiếm (/search) chập chờn: 16/09 chạy 5 lượt ra 0 video, 18/09 chạy 1 lượt ra 1 video (đo 16 và 18/09). Hashtag, music và @profile thì ổn định." aria-label="Dán URL TikTok (music / hashtag / @profile), Facebook Ads Library, thư mục Google Drive — hoặc kênh / tab Shorts / playlist YouTube (một URL, lấy N video mới theo ô số lượng) — hoặc link video lẻ (YouTube, TikTok, Instagram, Facebook, X…): mỗi dòng một link, cùng một nền tảng, tối đa 50. Ctrl/⌘+Enter để tạo. Nguồn tìm kiếm (/search) chập chờn: 16/09 chạy 5 lượt ra 0 video, 18/09 chạy 1 lượt ra 1 video (đo 16 và 18/09). Hashtag, music và @profile thì ổn định.">ⓘ</span></p>
+    </div>
+    <form id="job-form">
+      <div class="b-create">
+        <textarea id="url" rows="2" placeholder="Dán link TikTok, Facebook Ads Library, Drive, YouTube…" aria-label="Link nguồn, mỗi dòng một link" required></textarea>
         <button type="submit">Tạo lượt tải</button>
-        <p class="muted" id="goi-y-o-nhap">Mỗi dòng một link · Ctrl/⌘+Enter để tạo</p>
-      </form>
-      <p id="error" class="error-text" role="alert"></p>
-      <!-- Lịch sử đo, không phải một lời phán:
-             16/09 — 5 lượt `/search` với cookie thật: 0 video, cả 5 lần TikTok
-                     trả HTTP 200 với body RỖNG. Đối chứng cùng lúc, cùng cookie:
-                     music page 10 video, hashtag 3 video.
-             18/09 — 1 lượt `/search`: ra 1 video.
-           Một lần được sau năm lần trượt không đủ để nói "đã khỏi", cũng không
-           còn đủ để nói "chết". Câu chữ dưới đây nói ĐÚNG hai con số đó và để
-           người dùng tự quyết — bản cũ ghi "hiện không lấy được video" và nay
-           đã sai. -->
-      <p class="note-nguon">Nguồn <strong>tìm kiếm</strong> (<code>/search</code>)
-        <strong>chập chờn</strong>: 16/09 chạy 5 lượt ra 0 video, 18/09 chạy 1 lượt
-        ra 1 video. <strong>Hashtag</strong>, <strong>music</strong> và
-        <strong>@profile</strong> thì ổn định. <span class="note-ngay">đo 16 và 18/09</span></p>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head">
-        <h2>Hàng đợi</h2>
-        <span id="queue-count" class="muted"></span>
       </div>
-      <ul id="queue-list" class="queue-list"></ul>
-      <p id="queue-empty" class="empty-hint" hidden>Chưa có lượt tải nào — tạo một lượt ở khung bên trái.</p>
+      <!-- Tuỳ chọn: bỏ trống thì hỏi lại lúc duyệt màn nháp. `maxlength` khớp trần server
+           (`USECASE_TOI_DA`/`INSIGHT_CON_TOI_DA` ở web/models_cum.py) — chặn ở giao diện không thay cho kiểm ở
+           server, chỉ đỡ một vòng round-trip 400. Nhãn `.sr-only` gắn `for` để đọc màn hình vẫn phân biệt hai ô. -->
+      <div class="b-opts">
+        <span>Lấy</span>
+        <input type="number" id="so-luong" min="1" max="2000" value="20" required aria-label="Số lượng video mới" />
+        <span>video mới</span>
+        <label for="usecase" class="lb sr-only">Usecase</label>
+        <input type="text" id="usecase" placeholder="+ usecase (tuỳ chọn)" maxlength="80" />
+        <label for="insight-goc" class="lb sr-only">Insight gốc</label>
+        <input type="text" id="insight-goc" placeholder="+ insight gốc (tuỳ chọn)" maxlength="120" />
+        <span class="muted" id="goi-y-o-nhap">Mỗi dòng một link · Ctrl/⌘+Enter để tạo</span>
+        <p id="cookie-banner" class="banner-an-danh hero-ck" hidden>Chưa có cookie — lượt tải của bạn
+          chạy <strong>ẩn danh</strong> và chia chung hạn mức với mọi người chưa dán.
+          <a href="/settings.html">Dán cookie của bạn →</a></p>
+      </div>
+    </form>
+    <p id="error" class="error-text" role="alert"></p>
+  </section>
+
+  <!-- ================= HÀNG ĐỢI: dải thẻ cuộn ngang ================= -->
+  <section class="queue-sec" aria-label="Hàng đợi">
+    <div class="queue-head">
+      <h2>Hàng đợi</h2>
+      <span id="queue-count" class="muted"></span>
+      <span class="grow"></span>
+      <button type="button" class="btn nut-cuon" data-cuon="-1" aria-label="Cuộn hàng đợi sang trái">‹</button>
+      <button type="button" class="btn nut-cuon" data-cuon="1" aria-label="Cuộn hàng đợi sang phải">›</button>
+      <button type="button" class="btn" id="queue-xem-het" hidden>Xem tất cả →</button>
     </div>
+    <ul id="queue-list" class="queue-list"></ul>
+    <p id="queue-empty" class="empty-hint" hidden>Chưa có lượt tải nào — tạo một lượt ở ô phía trên.</p>
   </section>
 
   <!-- ================= THƯ VIỆN CREATIVE (dưới) ================= -->
