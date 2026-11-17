@@ -16,8 +16,10 @@ from playwright.sync_api import (
     Page,
     Response,
     TimeoutError as PWTimeout,
-    sync_playwright,
+    sync_playwright as _sync_playwright_goc,
 )
+
+from tiktok_music_downloader import trinh_duyet_patchright
 
 from tiktok_music_downloader.utils import (
     che_url,
@@ -454,12 +456,20 @@ def _open_context(
     profile_dir: Path | None,
     user_agent: str,
 ) -> tuple[Browser | None, BrowserContext]:
-    """Open a persistent or ephemeral Chromium context with stealth + UA."""
+    """Open a persistent or ephemeral Chromium context with stealth + UA.
+
+    Bật `VIDEODL_PATCHRIGHT` ⇒ Chrome thật, bỏ UA giả và STEALTH_INIT_JS (xem `trinh_duyet_patchright`)."""
     common_kwargs = dict(
         user_agent=user_agent,
         viewport={"width": 1280, "height": 900},
         locale="en-US",
     )
+    stealth = True
+    launch_kwargs: dict = {}
+    if trinh_duyet_patchright.patchright_dang_bat():
+        common_kwargs = trinh_duyet_patchright.kwargs_context_patchright(common_kwargs)
+        launch_kwargs["channel"] = common_kwargs.pop("channel")
+        stealth = False
     proxy_cfg = {"server": proxy} if proxy else None
 
     if profile_dir is not None:
@@ -470,19 +480,31 @@ def _open_context(
                 user_data_dir=str(profile_dir),
                 headless=headless,
                 proxy=proxy_cfg,
+                **launch_kwargs,
                 **common_kwargs,
             )
-            ctx.add_init_script(STEALTH_INIT_JS)
+            if stealth:
+                ctx.add_init_script(STEALTH_INIT_JS)
         except BaseException:
             # Mở trượt thì không có context nào để đóng ⇒ không ai nhả khoá sau này.
             _nha_profile_dir(profile_dir)
             raise
         return None, ctx
 
-    browser = pw.chromium.launch(headless=headless, proxy=proxy_cfg)
+    browser = pw.chromium.launch(headless=headless, proxy=proxy_cfg, **launch_kwargs)
     ctx = browser.new_context(**common_kwargs)
-    ctx.add_init_script(STEALTH_INIT_JS)
+    if stealth:
+        ctx.add_init_script(STEALTH_INIT_JS)
     return browser, ctx
+
+
+def sync_playwright():
+    """`sync_playwright()` của patchright khi bật `VIDEODL_PATCHRIGHT`, ngược lại của Playwright.
+
+    Giữ tên `sync_playwright` trong module: worker captcha và test gọi/thay đúng tên đó."""
+    if trinh_duyet_patchright.patchright_dang_bat():
+        return trinh_duyet_patchright.sync_playwright_patchright()
+    return _sync_playwright_goc()
 
 
 def _loai_feed_can_ham(url: str) -> str | None:
