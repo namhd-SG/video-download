@@ -22,3 +22,10 @@ def _dem_ky_moi_moi_test(monkeypatch):
     ở đầu mỗi test để kỳ đầu của phiên đầu là 0 và các test so số kỳ tuyệt đối không phụ thuộc thứ tự chạy."""
     from web import giai_captcha
     monkeypatch.setattr(giai_captcha, "_DEM_KY", itertools.count())
+
+
+@pytest.fixture(autouse=True)
+def _tat_profile_yt_dlp(monkeypatch):
+    """Nhánh @profile qua yt-dlp (`nguon_profile_yt_dlp`) gọi mạng thật: TẮT mặc định cho mọi test để test cũ
+    của nhánh trình duyệt (vá `scrape_music_page`) chạy y như trước. Test của nhánh yt-dlp tự `setenv` "1"."""
+    monkeypatch.setenv("VIDEODL_PROFILE_YT_DLP", "0")

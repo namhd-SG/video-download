@@ -334,6 +334,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     la_profile_giai = (profile_theo_job.profile_captcha_dang_bat() and is_profile_page(url)
                        and db_path is not None and job_id is not None)
     tk_feed: dict[str, int] = {}
+    nguon_ra: dict[str, str] = {}
     if la_profile_giai:
         kw_profile = {
             "profile_dir": str(profile_theo_job.chuan_bi_profile_job(db_path, job_id)),
@@ -345,6 +346,9 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             "dung_som_khi_feed_rong": True,
             # Bộ đếm feed cộng dồn mọi lượt: 0/0 (không đo được feed nào) khác "feed rỗng".
             "thong_ke_feed_ra": tk_feed,
+            # Ghi nhận nhánh thực sự chạy ("yt_dlp" | "browser"); `TikTokCollection.liet_ke`
+            # bóc khoá này ra trước khi `**` vào `scrape_music_page_multi`.
+            "nguon_ra": nguon_ra,
         }
     # Lỗi RIÊNG một link của job link lẻ (video riêng tư, quá dài, lỗi mạng…): đếm vào `loi` và đi tiếp. Lỗi do
     # phía nguồn (riêng tư/giới hạn tuổi/quá dài/quá nặng/playlist/trực tiếp) xếp vào `loi_tiktok` — cột này
@@ -409,7 +413,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # Ba nhóm đó bảo người dùng ba việc khác nhau; gộp lại là quay về "một dòng
     # chữ lặng lẽ" — thứ đã khiến người dùng hỏi "có lỗi không, sao hai link
     # khác nhau lại ra giống nhau".
-    if la_profile_giai and xac_minh_ra is not None:
+    if la_profile_giai and xac_minh_ra is not None and nguon_ra.get("nguon") == "browser":
         ly_do_xm = giai_captcha.ly_do_can_xac_minh(tk_feed, _ly_do_cuoi["v"], len(refs), max_videos)
         if ly_do_xm is not None:
             xac_minh_ra["ly_do"] = ly_do_xm

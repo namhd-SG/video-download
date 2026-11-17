@@ -32,6 +32,7 @@ from yt_dlp.extractor.youtube import YoutubeTabIE
 
 from tiktok_music_downloader import downloader, gdrive
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.nguon_profile_yt_dlp import liet_ke_profile_yt_dlp
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
 from tiktok_music_downloader.phan_loai_loi import (
@@ -44,11 +45,14 @@ from tiktok_music_downloader.phan_loai_loi import (
 )
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
+    STOP_COMPLETE,
     STOP_SOURCE_EMPTY,
+    STOP_STALLED,
     VideoRef,
     che_url,
     is_fb_ads_library,
     is_gdrive_folder,
+    is_profile_page,
     is_tiktok_collection,
     loai_nguon,
     parse_tag_slug,
@@ -97,7 +101,7 @@ class TikTokCollection:
                 on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
                 on_pages: Callable[[int], None], dem_trang: Callable[[], None],
                 passes: int, max_seconds: float | None,
-                kw_profile: dict) -> list[VideoRef]:
+                kw_profile: dict, nguon_ra: dict | None = None) -> list[VideoRef]:
         tag = parse_tag_slug(url)
         if tag is not None:
             # Hashtag đi đường chỉ mục bên thứ ba, không có cookie/profile; lọc từng trang
@@ -105,8 +109,37 @@ class TikTokCollection:
             return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
                                      already_have=already_have, on_skip=on_skip,
                                      on_stop=on_stop, on_pages=on_pages)
-        # music/search/profile: đào sâu nhiều lượt (`scrape_music_page_multi`); `kw_profile`
-        # do người gọi dựng (cờ TẮT ⇒ chỉ `profile_dir=None`).
+        # Tách `nguon_ra` khỏi bản sao `kw_profile` trước khi `**` vào `scrape_music_page_multi`:
+        # không để khoá lạ lọt xuống trình quét trình duyệt.
+        kw_prof = dict(kw_profile)
+        dich_nguon = kw_prof.pop("nguon_ra", None)
+        if nguon_ra is None:
+            nguon_ra = dich_nguon
+        if is_profile_page(url):
+            # Trang @profile thử yt-dlp (`TikTokUserIE` → `/api/creator/item_list/`) trước,
+            # không mở trình duyệt và không dùng cookie; hỏng hoặc 0 mục hợp lệ ⇒ rơi về browser.
+            refs = liet_ke_profile_yt_dlp(
+                url,
+                max_videos=max_videos,
+                proxy=proxy,
+                already_have=already_have,
+                on_skip=on_skip,
+                dem_trang=dem_trang,
+            )
+            if refs is not None:
+                if nguon_ra is not None:
+                    nguon_ra["nguon"] = "yt_dlp"
+                if len(refs) >= max_videos:
+                    on_stop(STOP_COMPLETE)
+                elif not refs:
+                    on_stop(STOP_ALREADY_OWNED)
+                else:
+                    on_stop(STOP_STALLED)
+                return refs
+        if nguon_ra is not None:
+            nguon_ra["nguon"] = "browser"
+        # music/search/profile (khi yt-dlp trả None): đào sâu nhiều lượt (`scrape_music_page_multi`);
+        # `kw_prof` do người gọi dựng (cờ TẮT ⇒ chỉ `profile_dir=None`).
         return scrape_music_page_multi(
             url,
             passes=passes,
@@ -118,7 +151,7 @@ class TikTokCollection:
             cookies_path=cookies_path,
             proxy=proxy,
             dem_trang=dem_trang,
-            **kw_profile,
+            **kw_prof,
         )
 
 
