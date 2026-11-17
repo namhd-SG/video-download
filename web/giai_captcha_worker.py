@@ -11,8 +11,10 @@ Quy tắc của vòng giải:
   · Mọi lời gọi Playwright trong `dang_*` nằm trong try: lỗi (kể cả `TargetClosedError`) ⇒ đóng
     sạch ⇒ `cho_xac_minh`, luồng worker SỐNG.
   · Đóng context TRƯỚC khi UPDATE sang `cho_xac_minh`/`failed`.
-  · Ranh giới ĐP-606: tool KHÔNG phát sự kiện chuột/wheel nào người không tạo. Sự kiện cuối cùng
-    tool phát là sự kiện của người; sau lệnh `da_giai` tắt screencast + nhả khoá + đóng SSE TRƯỚC
+  · Ranh giới ĐP-606 (NỚI 17/11 — USER gỡ cho M5): khi bật `VIDEODL_TU_GIAI_CAPTCHA`, tool được tự
+    kéo nút captcha xoay MỘT lần đầu vòng (`captcha_xoay.thu_tu_giai`), trước khi phát sự kiện nào
+    của người; qua ⇒ coi như `da_giai`. Ngoài phần đó (và khi cờ tắt) giữ nguyên: tool KHÔNG phát
+    sự kiện chuột/wheel nào người không tạo. Sự kiện cuối cùng tool phát là sự kiện của người; sau lệnh `da_giai` tắt screencast + nhả khoá + đóng SSE TRƯỚC
     khi `_auto_scroll` (sự kiện của tool, như `bfbafc1`) chạy, và nếu vẫn thấy dấu hiệu bị chặn thì
     KHÔNG cuộn.
 """
@@ -25,7 +27,7 @@ from pathlib import Path
 from typing import Callable
 from urllib.parse import urlsplit
 
-from tiktok_music_downloader import scraper
+from tiktok_music_downloader import captcha_xoay, scraper
 from tiktok_music_downloader.utils import VideoRef
 from web import giai_captcha as gc
 from web import models, profile_theo_job
@@ -401,7 +403,14 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
 
     luot = _nhan_luot(job)
     bat_dau = gc.dong_ho()
-    ket, ly_do = _vong_giai(page, cdp, phien, guard, profile_url, bat_dau + con_lai)
+    # M5 (cờ `VIDEODL_TU_GIAI_CAPTCHA`, mặc định TẮT): tool thử tự giải TRƯỚC, người là dự phòng.
+    tu_giai = captcha_xoay.thu_tu_giai(page) if captcha_xoay.tu_giai_dang_bat() else None
+    if tu_giai is not None:
+        log.info("[giai] job %s: tu_giai=%s", job_id, tu_giai)
+    if tu_giai == captcha_xoay.DA_QUA:
+        ket, ly_do = "da_giai", None
+    else:
+        ket, ly_do = _vong_giai(page, cdp, phien, guard, profile_url, bat_dau + con_lai)
     sd = phien.so_do_luot()
     # Chỉ job_id + số + nhãn cố định. `gesture_nop` là PROXY (số lần nhả chuột), KHÔNG phải số bước captcha.
     log.info("[giai] job %s: vòng giải kết thúc (%s) — luot=%s mo_s=%.1f so_phat=%d gop=%d "

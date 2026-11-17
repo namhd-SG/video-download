@@ -4,6 +4,8 @@
 // Popup KHÔNG tự giải, không sinh sự kiện chuột nào người không tạo ra, không nội suy, không làm
 // tròn toạ độ, không sửa `buttons` (ĐP-529/602/606). Mọi sự kiện gửi lên đều là `PointerEvent` thật
 // của người (gửi đúng sự kiện `pointermove`, không bung `getCoalescedEvents()`).
+// Phía MÁY CHỦ, khi bật `VIDEODL_TU_GIAI_CAPTCHA` (mặc định TẮT, USER gỡ ĐP-606 cho M5 ngày 17/11), tool có
+// thể tự giải captcha xoay trước khi người thao tác — popup không đổi: nó vẫn chỉ gửi sự kiện của người.
 //
 // Hợp đồng API: docstring `web/giai_captcha.py`. Mock đã duyệt (nguồn sự thật về giao diện):
 // plans/261002-1505-video-desk-captcha-headful/mock-popup-giai-captcha.html — KHÔNG có nút ×

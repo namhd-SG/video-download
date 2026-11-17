@@ -19,7 +19,7 @@ from playwright.sync_api import (
     sync_playwright as _sync_playwright_goc,
 )
 
-from tiktok_music_downloader import trinh_duyet_patchright
+from tiktok_music_downloader import captcha_xoay, trinh_duyet_patchright
 
 from tiktok_music_downloader.utils import (
     che_url,
@@ -581,6 +581,19 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
     )
 
 
+def _tu_giai_neu_bi_chan(page: Page, feed_luot: dict[str, int]) -> None:
+    """Cờ `VIDEODL_TU_GIAI_CAPTCHA` bật VÀ lượt mở chưa có feed dữ liệu ⇒ tool thử tự giải captcha xoay
+    (`captcha_xoay`); qua thì tải lại trang MỘT lần để feed về trong cùng bộ đếm. Trượt/lỗi/không có captcha
+    xoay ⇒ không làm gì thêm, đường cũ (dừng sớm ⇒ người giải qua popup) chạy như trước."""
+    if not captcha_xoay.tu_giai_dang_bat() or feed_luot.get("co_du_lieu", 0) > 0:
+        return
+    kq = captcha_xoay.thu_tu_giai(page)
+    log.info("[tu-giai] quet ket_qua=%s", kq)
+    if kq == captcha_xoay.DA_QUA:
+        page.reload(wait_until="domcontentloaded", timeout=30_000)
+        _cho_link(page)
+
+
 def quet_tren_trang(
     page: Page,
     url: str,
@@ -625,6 +638,7 @@ def quet_tren_trang(
             _cho_link(page)
         else:
             _mo_trang_co_ham_phien(page, url, feed_luot)
+            _tu_giai_neu_bi_chan(page, feed_luot)
         if kiem_truoc_khi_cuon is not None and not kiem_truoc_khi_cuon(feed_luot):
             refs = set()
         else:

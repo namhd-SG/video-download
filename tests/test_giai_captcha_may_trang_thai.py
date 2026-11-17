@@ -1320,3 +1320,59 @@ def test_log_duong_dan_chi_ghi_loai_khong_ghi_path(monkeypatch, db, caplog):
     dong = _dong_giai(caplog)
     assert any("đóng trang mới host=www.tiktok.com loai=video" in d for d in dong), dong
     assert not any("khach.hang" in d or "7692740350766517525" in d for d in dong)
+
+
+# ---------------------------------------------------------------------------
+# M5: tool tự giải captcha xoay TRƯỚC (cờ VIDEODL_TU_GIAI_CAPTCHA, mặc định TẮT), người là dự phòng
+# ---------------------------------------------------------------------------
+
+def _tu_giai_harness(monkeypatch, db, ket_qua_tu_giai, co_bat=True, nguoi_da_giai=False):
+    from tiktok_music_downloader import captcha_xoay as cx
+    if co_bat:
+        monkeypatch.setenv(cx.ENV_TU_GIAI, "1")
+    else:
+        monkeypatch.delenv(cx.ENV_TU_GIAI, raising=False)
+    goi = {"thu": 0, "vong": 0}
+
+    def thu(page):
+        goi["thu"] += 1
+        return ket_qua_tu_giai
+
+    monkeypatch.setattr(cx, "thu_tu_giai", thu)
+    that = worker._vong_giai
+
+    def vong(*a, **k):
+        goi["vong"] += 1
+        return that(*a, **k)
+
+    monkeypatch.setattr(worker, "_vong_giai", vong)
+    h, rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)], ra=[_ref("201")])
+    if not nguoi_da_giai:
+        h.trang.kich_ban = [(30.0, h.lenh("dung"))]  # người không làm gì; chỉ chặn treo nếu tool trượt
+    return h, rec, goi
+
+
+def test_tu_giai_qua_thi_bo_vong_nguoi_va_quet_luon(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.DA_QUA)
+    kq = h.chay()
+    assert goi == {"thu": 1, "vong": 0}
+    assert kq.loai == "refs" and [r.video_id for r in kq.refs] == ["201"]
+    assert len(rec.goi) == 1 and rec.goi[0]["db"] == "running"
+    assert h.input_da_phat() == [], "không phát sự kiện nào của người"
+
+
+def test_tu_giai_truot_thi_nguoi_giai_nhu_cu(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.TRUOT, nguoi_da_giai=True)
+    kq = h.chay()
+    assert goi == {"thu": 1, "vong": 1}
+    assert kq.loai == "refs" and len(h.input_da_phat()) == 1
+
+
+def test_co_tu_giai_tat_thi_khong_goi_tu_giai(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.DA_QUA, co_bat=False, nguoi_da_giai=True)
+    kq = h.chay()
+    assert goi == {"thu": 0, "vong": 1}
+    assert kq.loai == "refs"

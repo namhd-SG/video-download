@@ -2,8 +2,11 @@
 phiên RAM) và HỢP ĐỒNG API. Sau cờ `VIDEODL_PROFILE_CAPTCHA` (mặc định TẮT).
 
 Người (chủ job hoặc admin) nhìn khung ảnh trang TikTok đang mở trên máy chủ rồi thao tác chuột
-trong popup; máy chủ chuyển ĐÚNG thao tác đó qua CDP vào trang. Tool KHÔNG tự giải, không sinh
-sự kiện chuột nào người không tạo ra, không làm mượt / nội suy / làm tròn toạ độ (ĐP-529/602/606).
+trong popup; máy chủ chuyển ĐÚNG thao tác đó qua CDP vào trang. Đường phát của NGƯỜI không sinh
+sự kiện chuột nào người không tạo ra, không làm mượt / nội suy / làm tròn toạ độ (ĐP-529/602); riêng
+move quá hạn liên tiếp cùng nút được gộp về điểm cuối (M2, xem `BoPhatLai.den_han`).
+Ranh giới ĐP-606 "tool KHÔNG tự giải" NỚI 17/11 (USER gỡ cho M5): khi bật `VIDEODL_TU_GIAI_CAPTCHA`
+(mặc định TẮT) tool tự giải captcha xoay TRƯỚC (`tiktok_music_downloader.captcha_xoay`), người là dự phòng.
 
 Máy trạng thái của job profile (cột `jobs.trang_thai`):
 
