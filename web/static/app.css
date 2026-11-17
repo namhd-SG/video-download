@@ -1055,11 +1055,13 @@ h1, h2, h3 { font-weight: 600; }
 
 /* ---- thanh trên: tab chữ gạch chân + email + ◐ ---- */
 .topbar { gap: var(--s-6); }
-.topbar-nav { flex: 1; margin-left: var(--s-2); gap: var(--s-1); align-self: stretch; align-items: stretch; }
-.topbar-nav a { display: flex; align-items: center; padding: 0 var(--s-3); border-radius: 0; font-size: .9rem; font-weight: 500;
-  color: var(--text-muted); background: none; box-shadow: inset 0 -2px 0 transparent; white-space: nowrap; }
+.topbar-nav { flex: 1; margin-left: var(--s-2); gap: var(--s-1); align-items: center; }
+/* Tab chữ: link giữ chiều cao một dòng (test đo "không gãy dòng"); gạch chân là ::after kéo xuống đáy thanh 64px. */
+.topbar-nav a { position: relative; display: block; padding: 2px var(--s-3); border-radius: 0; font-size: .9rem; font-weight: 500;
+  color: var(--text-muted); background: none; white-space: nowrap; }
 .topbar-nav a:hover { background: none; color: var(--text); }
-.topbar .topbar-nav a.here, .topbar .topbar-nav a[aria-current="page"] { background: none; color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+.topbar .topbar-nav a.here, .topbar .topbar-nav a[aria-current="page"] { background: none; color: var(--accent); font-weight: 600; }
+.topbar-nav a.here::after, .topbar-nav a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -19px; height: 2px; background: var(--accent); }
 .topbar-user { display: flex; align-items: center; gap: var(--s-3); min-width: 0; }
 .topbar-email { font: 500 .72rem var(--mono); color: var(--text-muted); background: var(--surface-alt); border-radius: var(--r-pill);
   padding: 4px var(--s-3); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1067,11 +1069,12 @@ h1, h2, h3 { font-weight: 600; }
   font-size: 1.05rem; line-height: 1; display: grid; place-items: center; }
 #theme-toggle:hover { background: var(--surface-alt); color: var(--text); }
 @media (max-width: 480px) {
-  .topbar { flex-wrap: wrap; row-gap: 0; gap: 0 var(--s-2); }
-  .brand { order: 1; height: 52px; }
-  .topbar-user { order: 2; margin-left: auto; }
+  .topbar { flex-wrap: wrap; row-gap: 0; gap: 0 var(--s-2); padding-top: var(--s-3); }
+  .brand { order: 1; margin-bottom: var(--s-3); }
+  .topbar-user { order: 2; margin-left: auto; margin-bottom: var(--s-3); }
   .topbar-email { max-width: 150px; }
   .topbar-nav { order: 3; width: 100%; flex: none; margin-left: 0; height: 40px; border-bottom: 1px solid var(--border); }
+  .topbar-nav a.here::after, .topbar-nav a[aria-current="page"]::after { bottom: -8px; }
 }
 
 /* ---- hero: chip cookie + gợi ý phím ---- */
