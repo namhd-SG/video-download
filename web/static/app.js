@@ -448,7 +448,6 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
         <div class="qi-big">${Number(job.xong) || 0}<small>/${BT.mauSo(job)}</small></div>
         <div class="qi-src">
           <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
-          <button type="button" class="chep-link" data-chep="${job.id}" title="Chép link nguồn">Chép link</button>
         </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
@@ -827,19 +826,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // Rút lượt. Uỷ quyền trên `queue-list` vì hàng đợi vẽ lại mỗi nhịp poll —
   // gắn trực tiếp lên từng nút thì nút mới sau mỗi lần vẽ sẽ không có tay
   // nghe nào, và hỏng ÂM THẦM: nút vẫn ở đó, bấm không ra gì.
-  // Hàng đợi hướng B: "Chép link" trên thẻ, "Xem tất cả N" bung dải ngang thành lưới, nút ‹ › cuộn dải.
-  document.getElementById("queue-list").addEventListener("click", async (ev) => {
-    const cp = ev.target.closest("[data-chep]");
-    if (!cp) return;
-    const job = state.jobs.find((j) => String(j.id) === cp.dataset.chep);
-    if (!job) return;
-    try {
-      await navigator.clipboard.writeText(job.url);
-      showToast("Đã chép link nguồn");
-    } catch (e) {
-      showToast("Không chép được link — trình duyệt chặn clipboard");
-    }
-  });
+  // Hàng đợi hướng B: "Chép link" đã có sẵn trên thẻ (bao-thieu.js `data-chep-link`); đây chỉ thêm "Xem tất cả N" + nút ‹ ›.
   const xemHetNut = document.getElementById("queue-xem-het");
   if (xemHetNut) xemHetNut.addEventListener("click", () => {
     const l = document.getElementById("queue-list");
