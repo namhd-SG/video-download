@@ -122,8 +122,14 @@ def page(dulieu):
         br.close()
 
 
+def _bam_chia(p, job_id: int) -> None:
+    """"Chia cụm" nay nằm trong menu ⋯ của thẻ lượt tải (mock B): mở menu rồi bấm mục — cùng một thao tác của người dùng."""
+    p.click(f'#job-{job_id} [data-menu]')
+    p.click(f'#job-{job_id} .menu [data-chia="{job_id}"]')
+
+
 def _mo_chia(p, job_id: int) -> None:
-    p.click(f'[data-chia="{job_id}"]')
+    _bam_chia(p, job_id)
     p.wait_for_function("!document.getElementById('chia-view').hidden")
     p.wait_for_function("document.getElementById('cc-tieude').textContent.length > 0")
 
@@ -580,7 +586,7 @@ def test_refresh_bo_qua_phan_hoi_cu_ve_muon_hon(page, dulieu):
 
     page.route(f"**/chia/{job}", _chan)
 
-    page.click(f'[data-chia="{job}"]')   # refresh #1 — server đã trả lời (usecase CŨ), CHƯA giao cho JS
+    _bam_chia(page, job)   # refresh #1 — server đã trả lời (usecase CŨ), CHƯA giao cho JS
     page.wait_for_timeout(150)   # đủ để route.fetch() (đồng bộ, nhanh) của request #1 chạy xong ở trên
 
     lan_id = goc(db, job, NGUOI)["id"]

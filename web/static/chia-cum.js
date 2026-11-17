@@ -338,6 +338,19 @@
     const empty = chuaCoNhap();
     const data = CC.data;
     const ctx = document.getElementById("cc-context");
+    // Tiêu đề lớn "Chia cụm #nauan" (mock B): nhãn lấy từ link nguồn của lượt (tag/@kênh/tên miền), thiếu thì mã lượt.
+    const nhanNguon = (() => {
+      try {
+        const u = new URL(CC.job.url);
+        const doan = u.pathname.split("/").filter(Boolean);
+        const cuoi = decodeURIComponent(doan[doan.length - 1] || "");
+        if (doan[0] === "tag" && cuoi) return "#" + cuoi;
+        if (cuoi.startsWith("@")) return cuoi;
+        return cuoi || u.hostname.replace(/^www\./, "");
+      } catch (_) { return CC.job ? "#" + CC.job.id : ""; }
+    })();
+    const h1 = document.getElementById("cc-h1");
+    if (h1) h1.textContent = CC.job ? `Chia cụm ${nhanNguon}` : "Chia cụm";
     ctx.textContent = CC.job ? `Lượt tải #${CC.job.id} · ${CC.job.tong} video` : "";
 
     const tieude = document.getElementById("cc-tieude");
@@ -418,7 +431,7 @@
 
   function renderRail() {
     const rail = document.getElementById("cc-rail");
-    let r = "<h3>Lượt này</h3>";
+    let r = "<h3>Nhóm · kiểu</h3>";
     if (chuaCoNhap()) {
       r += `<div class="cc-ri"><span>Chưa vào cụm</span><span class="cc-n">${CC.job ? CC.job.tong : 0}</span></div>`;
     } else {

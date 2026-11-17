@@ -398,6 +398,17 @@ def test_route_box_quyen_trang_thai_va_khung(ctx):
     assert c.get(f"/api/thay-logo/videos/{vid3}/box/9", headers=_h("a@x")).json() == {"khung": 9, "box_may": None, "chan": []}
 
 
+def test_route_soi_va_anh_soi_chan_nguoi_la(ctx):
+    """`/soi` và `/soi/{i}` đi qua `_nap` ⇒ người lạ 403; chủ lượt và admin qua được (video chưa có ảnh soi)."""
+    c, db, tmp = ctx
+    vid, _ = _job(db, tmp)
+    assert c.get(f"/api/thay-logo/videos/{vid}/soi", headers=_h("b@x")).status_code == 403
+    assert c.get(f"/api/thay-logo/videos/{vid}/soi/0", headers=_h("b@x")).status_code == 403  # chặn trước khi chạm file
+    for ai in ("a@x", "sep@x"):
+        assert c.get(f"/api/thay-logo/videos/{vid}/soi", headers=_h(ai)).json() == {"co": False, "anh": []}
+        assert c.get(f"/api/thay-logo/videos/{vid}/soi/0", headers=_h(ai)).status_code == 404
+
+
 def test_route_dai_dem_ca_khoanh_con_cho_sua(ctx):
     """Màn Sửa dựa vào `so_ca_cho` để không mời "đánh Đạt" video đã có chỗ khoanh từ lượt mở trước."""
     c, db, tmp = ctx

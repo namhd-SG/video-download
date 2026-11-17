@@ -164,14 +164,14 @@ def test_luoi_mac_dinh_an_video_da_vao_bo_va_khong_hien_video_da_don(page):
     assert not ids & {_id(65), _id(66), _id(67)}, "video đã vào bộ bị ẩn khỏi lưới mặc định"
     assert _id(4) not in ids, "video đã dọn không hiện ở đâu"
     assert page.inner_text("#library-count") == "66 video"
-    assert page.inner_text("#chip-vao-bo") == "Đã vào bộ (3)", "chip đếm đúng 3, không đếm video đã dọn"
+    assert page.inner_text("#chip-vao-bo .chip-vao-bo-nhan") == "Đã vào bộ (3)", "chip đếm đúng 3, không đếm video đã dọn"
     assert page.locator("#card-grid .card-bo").count() == 0
     # Số đếm trong hộp lọc khớp lưới đang nhìn (66), không tính video đang ẩn.
     page.click('[data-toggle="thi_truong"]')
     assert page.inner_text('.filter-panel[data-panel="thi_truong"] .opt-count') == "66"
     page.keyboard.press("Escape")
-    page.click('#so-moi-trang [data-so="10"]')       # ảnh chụp gọn: 10 thẻ đầu
-    page.wait_for_function("document.querySelectorAll('#card-grid .card').length === 10")
+    page.click('#so-moi-trang [data-so="20"]')       # ảnh chụp gọn: 20 thẻ đầu (bộ chọn 20/50/100)
+    page.wait_for_function("document.querySelectorAll('#card-grid .card').length === 20")
     _chup(page, "01-luoi-mac-dinh")
 
 
@@ -239,7 +239,7 @@ def test_cum_sau_khi_don_lo_1_hut_mot_video_lo_2_lo_3_giu_nguyen(page, may_chu):
     assert [i["n"] for i in p3["items"]] == [f"Video {k}" for k in range(61, 66)]
     assert (len(p1["items"]), p1["so_video"]) == (29, 30)
     assert "Video 5" not in [i["n"] for i in p1["items"]]
-    page.click('#so-moi-trang [data-so="10"]')
+    page.click('#so-moi-trang [data-so="20"]')
     _chup(page, "03-cum-sau-don-lo-1-x-tren-n")
 
 
@@ -254,7 +254,7 @@ def test_khi_don_ngay7_tat_the_khong_hien_ngay_xoa_nhung_van_hien_ma_bo(page):
     os.environ.pop("VIDEODL_BAT_DON_NGAY7", None)
     try:
         page.click("#library-refresh")
-        page.wait_for_function("document.getElementById('chip-vao-bo').textContent === 'Đã vào bộ (3)'")
+        page.wait_for_function("document.querySelector('#chip-vao-bo .chip-vao-bo-nhan').textContent === 'Đã vào bộ (3)'")
         _bam_chip(page, 1)
         assert page.locator("#card-grid .bo-ma").count() == 3
         assert page.locator("#card-grid .bo-don").count() == 0, "tắt ⇒ không hứa ngày xoá"

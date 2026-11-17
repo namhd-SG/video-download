@@ -100,12 +100,13 @@ def _bam_trang(p, n: int) -> None:
     _nut_so(p, "#lib-toolbar", n).click()
 
 
-def test_mac_dinh_40_moi_trang_ra_40_40_6(page):
-    assert _the(page) == 40
-    assert "Hiện 1–40 / 86 video" in page.inner_text("#lib-pager-dem")
+def test_mac_dinh_20_moi_trang_ra_20_20_20_20_6(page):
+    # 17/11/2026 (user, hướng B): bộ chọn mỗi trang còn 20/50/100, mặc định 20 (trước: 10/20/30/40/100, mặc định 40).
+    assert _the(page) == 20
+    assert "Hiện 1–20 / 86 video" in page.inner_text("#lib-pager-dem")
     _bam_trang(page, 2)
-    assert _the(page) == 40
-    _bam_trang(page, 3)
+    assert _the(page) == 20
+    _bam_trang(page, 5)
     assert _the(page) == 6
     assert "Hiện 81–86 / 86 video" in page.inner_text("#lib-pager-dem")
 
@@ -114,17 +115,20 @@ def test_nut_trang_o_ca_tren_lan_duoi(page):
     """Điều phối 14:50: 40 thẻ mà chỉ có nút ở đáy thì vẫn kéo mỏi tay."""
     assert _nut_so(page, "#lib-toolbar", 2).count() == 1
     assert _nut_so(page, "#lib-pager", 2).count() == 1
-    _nut_so(page, "#lib-pager", 3).click()   # nút ở DƯỚI cũng phải chạy
+    _nut_so(page, "#lib-pager", 5).click()   # nút ở DƯỚI cũng phải chạy
     assert _the(page) == 6
 
 
 def test_chon_tat_ca_chi_lay_trang_dang_xem(page):
     page.click("#chon-trang")
-    assert _chon(page) == 40
-    assert _so_da_chon(page) == "40 đã chọn", "chỉ 40 id của trang 1, không phải 86"
-    assert "Bỏ chọn trang này" in page.inner_text("#chon-trang")
+    assert _chon(page) == 20
+    assert _so_da_chon(page) == "20 đã chọn", "chỉ 20 id của trang 1, không phải 86"
+    # Hộp tick thật (role=checkbox): nhãn cố định "Chọn cả trang (N)", đã chọn đủ trang ⇒ aria-checked=true.
+    assert page.get_attribute("#chon-trang", "aria-checked") == "true"
+    assert "Chọn cả trang (20)" in page.inner_text("#chon-trang")
     page.click("#chon-trang")
     assert _chon(page) == 0 and page.is_hidden("#selection-bar")
+    assert page.get_attribute("#chon-trang", "aria-checked") == "false"
 
 
 def test_doi_trang_giu_lua_chon_va_dem_ngoai_trang(page):
@@ -132,22 +136,24 @@ def test_doi_trang_giu_lua_chon_va_dem_ngoai_trang(page):
     page.click("#chon-trang")
     _bam_trang(page, 2)
     assert page.is_visible("#selection-bar")
-    assert _so_da_chon(page) == "40 đã chọn"
+    assert _so_da_chon(page) == "20 đã chọn"
     assert _chon(page) == 0, "trang 2 chưa chọn thẻ nào"
-    assert page.inner_text("#selection-ngoai") == "· 40 không hiện ở trang này"
+    assert page.inner_text("#selection-ngoai") == "· 20 không hiện ở trang này"
     assert "Đã bỏ chọn" not in page.inner_text("#toast")
     _bam_trang(page, 1)
-    assert _chon(page) == 40 and page.inner_text("#selection-ngoai") == ""
+    assert _chon(page) == 20 and page.inner_text("#selection-ngoai") == ""
 
 
 def test_doi_so_moi_trang_giu_lua_chon(page):
     """User 26/09 10:35 — đổi số/trang: "giữ"."""
+    page.click("#so-moi-trang [data-so='50']")
     page.click("#chon-trang")
-    page.click("#so-moi-trang [data-so='30']")
-    assert _the(page) == 30
-    assert _so_da_chon(page) == "40 đã chọn"
-    assert _chon(page) == 30
-    assert page.inner_text("#selection-ngoai") == "· 10 không hiện ở trang này"
+    assert _the(page) == 50
+    page.click("#so-moi-trang [data-so='20']")
+    assert _the(page) == 20
+    assert _so_da_chon(page) == "50 đã chọn"
+    assert _chon(page) == 20
+    assert page.inner_text("#selection-ngoai") == "· 30 không hiện ở trang này"
     page.evaluate("localStorage.removeItem('videodl-per-page')")
 
 
@@ -159,9 +165,9 @@ def test_xoa_khi_co_video_o_trang_khac_hoi_kem_so(page):
     cau = []
     page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
     page.click("#selection-bar [data-action='loai']")
-    assert cau and cau[0].startswith("Bỏ 41 video")
-    assert "40 video không hiện ở trang này" in cau[0]
-    assert _so_da_chon(page) == "41 đã chọn", "bấm Huỷ thì không đụng lựa chọn"
+    assert cau and cau[0].startswith("Bỏ 21 video")
+    assert "20 video không hiện ở trang này" in cau[0]
+    assert _so_da_chon(page) == "21 đã chọn", "bấm Huỷ thì không đụng lựa chọn"
 
 
 def test_dua_vao_cum_khi_co_video_o_trang_khac_hoi_truoc(page):
@@ -170,7 +176,7 @@ def test_dua_vao_cum_khi_co_video_o_trang_khac_hoi_truoc(page):
     cau = []
     page.once("dialog", lambda d: (cau.append(d.message), d.dismiss()))
     page.click("#selection-bar [data-action='cum']")
-    assert cau and "40 video không hiện ở trang này" in cau[0]
+    assert cau and "20 video không hiện ở trang này" in cau[0]
     assert page.is_hidden("#cum-popover"), "Huỷ ⇒ không mở hộp gán cụm"
 
 
@@ -182,11 +188,11 @@ def test_100_moi_trang_ra_1_trang_va_an_nut(page):
 
 
 def test_doi_so_moi_trang_nho_qua_lan_tai_lai(page):
-    page.click("#so-moi-trang [data-so='20']")
-    assert _the(page) == 20
+    page.click("#so-moi-trang [data-so='50']")
+    assert _the(page) == 50
     page.reload()
     page.wait_for_function("document.querySelectorAll('#card-grid .card').length > 0")
-    assert _the(page) == 20, "số/trang phải nhớ qua localStorage"
+    assert _the(page) == 50, "số/trang phải nhớ qua localStorage"
     page.evaluate("localStorage.removeItem('videodl-per-page')")
 
 
@@ -201,7 +207,7 @@ def test_doi_bo_loc_ve_trang_1_va_giu_lua_chon(page):
     # `click`, không `check`: `renderFilterBar` DỰNG LẠI thanh lọc ngay trong sự kiện
     # change (có từ trước), nên `check` chờ mãi trạng thái của một phần tử đã thay.
     page.click('#filter-bar input[data-group="thi_truong"][value="VN"]')
-    assert "Hiện 1–40 / 60 video" in page.inner_text("#lib-pager-dem"), "phải về trang 1"
+    assert "Hiện 1–20 / 60 video" in page.inner_text("#lib-pager-dem"), "phải về trang 1"
     assert _so_da_chon(page) == "1 đã chọn", "đổi bộ lọc không được xoá lựa chọn"
 
 
@@ -209,8 +215,8 @@ def test_bam_them_the_o_trang_2_giu_so_khong_hien(page):
     page.click("#chon-trang")
     _bam_trang(page, 2)
     page.locator("#card-grid .card").first.click()
-    assert _so_da_chon(page) == "41 đã chọn"
-    assert page.inner_text("#selection-ngoai") == "· 40 không hiện ở trang này"
+    assert _so_da_chon(page) == "21 đã chọn"
+    assert page.inner_text("#selection-ngoai") == "· 20 không hiện ở trang này"
 
 
 def test_video_bi_bo_loc_an_cung_tinh_la_khong_hien(page):
