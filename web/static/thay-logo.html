@@ -87,7 +87,10 @@
   <!-- Vùng 2: Lượt của bạn -->
   <section class="tl-bo-strip" aria-labelledby="tl-bo-h">
     <h2 id="tl-bo-h">Lượt của bạn <span class="muted">Mỗi lượt một hàng · nhìn là biết đang ở bước nào và video sẽ đi đâu · bấm tên lượt để chỉ xem video của lượt đó</span></h2>
-    <div id="tl-bo-list" class="tl-bo-list"></div>
+    <div class="tl-bo-bang" role="table" aria-labelledby="tl-bo-h">
+      <div class="tl-bo-thead" role="row"><span role="columnheader">Lượt</span><span role="columnheader">Bước</span><span role="columnheader">Video</span><span role="columnheader">Nơi nhận</span><span role="columnheader">Cập nhật</span><span role="columnheader"><span class="sr-only">Hành động</span></span></div>
+      <div id="tl-bo-list" class="tl-bo-list" role="rowgroup"></div>
+    </div>
   </section>
 
   <!-- Vùng 3: Bộ lọc -->

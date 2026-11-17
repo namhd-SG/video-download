@@ -34,13 +34,44 @@
   const coNutTraNgay = (b) => b.nguon_kieu === "vao_bo" && !(b.da_tra_bo > 0) && !!b.tu_ap_luc;
   const conApVaoBo = (b) => { const ap = apCua[b.job_id]; return !!(ap && ap.trang_thai !== "xong" && ap.la_chu && ap.so_du_dieu_kien); };
 
+  // Dòng "Lượt 16/11 · Từ máy → Bộ tự tìm mới" dùng cho thẻ duyệt (thay-logo-hop-duyet.js): nguồn → nơi nhận NGẮN của lượt.
+  const dichNgan = (b) => (b.nguon_kieu === "vao_bo" ? "Trả về bộ gốc" : b.dich_khac === "tao_bo" ? "Bộ tự tìm mới"
+    : b.dich_khac === "drive" || b.nguon_kieu !== "nhieu" ? "Thư mục Drive riêng" : "");
+  T.dongLuot = (b) => {
+    if (!b) return "";
+    const d = new Date(b.tao_luc * 1000), z = (n) => String(n).padStart(2, "0"), dich = dichNgan(b);
+    return `Lượt ${z(d.getDate())}/${z(d.getMonth() + 1)} · ${NGUON[b.nguon_kieu] || "Nguồn khác"}` + (dich ? ` → ${dich}` : "");
+  };
+  // "Cập nhật": lần đổi gần nhất của video trong lượt (đang có trên trang); không có ⇒ lúc tạo lượt.
+  function tuongDoi(giay) {
+    const d = Date.now() / 1000 - giay;
+    if (!Number.isFinite(d)) return "";
+    if (d < 60) return "vừa xong";
+    if (d < 3600) return `${Math.floor(d / 60)} phút trước`;
+    if (d < 86400) return `${Math.floor(d / 3600)} giờ trước`;
+    if (d < 172800) return "hôm qua";
+    const n = new Date(giay * 1000), z = (x) => String(x).padStart(2, "0");
+    return `${z(n.getDate())}/${z(n.getMonth() + 1)}`;
+  }
+  function capNhatCua(b) {
+    let m = 0;
+    for (const v of T.videos) if (v.job_id === b.job_id && Number(v.cap_nhat_luc) > m) m = Number(v.cap_nhat_luc);
+    return tuongDoi(m || b.tao_luc);
+  }
+  const o = (cls, ...con) => { const d = el("div", "tl-bo-o " + cls); d.append(...con); return d; };
+
+  // Một lượt = MỘT HÀNG của bảng (div role=row, cột chia bằng CSS grid để các hàng thẳng cột; ≤720px xếp dọc gọn).
   function theBo(b) {
     const [chu, cls] = trangThaiBo(b);
-    const the = el("div", "tl-bo-the " + cls + (T.loc.job === b.job_id ? " on" : ""));
+    const the = el("div", "tl-bo-the " + cls + (T.loc.job === b.job_id ? " on" : "")); the.setAttribute("role", "row");
     const nut = el("button", "tl-bo-chon"); nut.type = "button"; nut.dataset.job = String(b.job_id);
     nut.setAttribute("aria-pressed", String(T.loc.job === b.job_id));
-    const h = el("div", "tl-bo-h"); h.append(el("b", "tl-bo-ten", b.ten_bo), el("span", "tl-bo-tt", chu));
     const nguon = el("div", "tl-bo-nguon", `${NGUON[b.nguon_kieu] || "Nguồn khác"} · ${b.tong} video · ${T.ngayGio(b.tao_luc)}`);
+    nut.append(el("b", "tl-bo-ten", b.ten_bo), nguon);
+    const ap = apCua[b.job_id];
+    if (cls === "xong" && ap && ap.trang_thai === "xong") nut.append(el("span", "tl-bo-tiep ok", `✓ Đã áp vào bộ ${gio(ap.xong_luc)}`));
+    else if (cls === "xong" && conApVaoBo(b)) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
+    nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
     const bar = el("div", "tl-bo-bar"); const i = el("i"); i.style.width = (b.tong ? Math.round(100 * b.xong / b.tong) : 0) + "%"; bar.append(i);
     const tien = el("div", "tl-bo-tien"); tien.append(el("b", "", `${b.xong}/${b.tong} đã thay`));  // "xong" ở đây từng đứng cạnh chip "Máy xong y/y" ⇒ hai nghĩa
     const phu = [];
@@ -49,12 +80,15 @@
     if (b.bo_qua) phu.push(`${b.bo_qua} đã bỏ qua`);
     if (b.loi) phu.push(`${b.loi} lỗi`);
     if (phu.length) tien.append(" · " + phu.join(" · "));
-    nut.append(h, nguon, bar, tien);
-    const ap = apCua[b.job_id];
-    if (cls === "xong" && ap && ap.trang_thai === "xong") nut.append(el("span", "tl-bo-tiep ok", `✓ Đã áp vào bộ ${gio(ap.xong_luc)}`));
-    else if (cls === "xong" && conApVaoBo(b)) nut.append(el("span", "tl-bo-tiep", "Việc còn lại: áp vào bộ →"));
-    nut.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
-    the.append(nut, dongTienDo(b), dongNoiNhan(b));
+    const noi = o("tl-o-noi", dongNoiNhan(b));
+    if (b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id)) {
+      const a = el("a", "tl-bo-thumuc", "Mở thư mục đầu ra →");
+      a.href = `https://drive.google.com/drive/folders/${encodeURIComponent(b.thu_muc_ra_id)}`; a.target = "_blank"; a.rel = "noopener";
+      noi.append(a);
+    }
+    const act = o("tl-o-act", ...nutHanhDong(b));
+    the.append(o("tl-o-luot", nut), o("tl-o-buoc", el("span", "tl-bo-tt", chu), dongTienDo(b)), o("tl-o-video", bar, tien), noi,
+               o("tl-o-cap", el("span", "tl-bo-cap", capNhatCua(b))), act);
     // Lượt nguồn khác chọn "Tạo bộ tự tìm mới": có video Đạt ⇒ MỘT cú bấm bàn giao sang Creative Desk (như trang Tải video).
     if (coNutTaoBo(b)) {
       const dang = banGiaoDang.has(b.job_id);
@@ -66,15 +100,27 @@
         finally { banGiaoDang.delete(b.job_id); }
         veBo();
       });
-      the.append(tao);
-      if (banGiaoTB[b.job_id]) { const p = el("p", "tl-bo-tb", banGiaoTB[b.job_id]); p.setAttribute("role", "status"); the.append(p); }
-    }
-    if (b.thu_muc_ra_id && T.IDRE.test(b.thu_muc_ra_id)) {
-      const a = el("a", "tl-bo-thumuc", "Mở thư mục đầu ra →");
-      a.href = `https://drive.google.com/drive/folders/${encodeURIComponent(b.thu_muc_ra_id)}`; a.target = "_blank"; a.rel = "noopener";
-      the.append(a);
+      act.append(tao);
+      if (banGiaoTB[b.job_id]) { const p = el("p", "tl-bo-tb", banGiaoTB[b.job_id]); p.setAttribute("role", "status"); act.append(p); }
     }
     return the;
+  }
+
+  // Cột hành động (mock): còn video chờ duyệt ⇒ "Duyệt N →" (cuộn tới hộp duyệt); máy không chắc ⇒ "Xem N video máy không chắc" (tới khối
+  // đó); còn lại ⇒ "Xem" (lọc trang theo lượt, bấm lại bỏ lọc — như bấm tên lượt).
+  function nutHanhDong(b) {
+    const dang = b.tong - (b.xong + b.cho_nguoi + (b.bo_qua || 0) + b.loi);
+    const dan = (chu, cls, dich) => {
+      const n = el("button", "btn sm " + cls, chu); n.type = "button";
+      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $(dich); if (h) h.scrollIntoView({ block: "start" }); });
+      return n;
+    };
+    if (b.cho_duyet > 0) return [dan(`Duyệt ${b.cho_duyet} →`, "primary tl-bo-duyet", "tl-duyet")];
+    if (dang === 0 && b.cho_nguoi > 0) return [dan(`Xem ${b.cho_nguoi} video máy không chắc`, "tl-bo-khong-chac", "tl-khong-chac")];
+    const n = el("button", "btn sm ghost tl-bo-xem", "Xem"); n.type = "button";
+    n.setAttribute("aria-pressed", String(T.loc.job === b.job_id));
+    n.addEventListener("click", () => T.datLoc("job", T.loc.job === b.job_id ? null : b.job_id));
+    return [n];
   }
 
   // Dải tiến độ của lượt: Nhận → Máy làm → Chờ duyệt. Nhìn là biết lượt đang ở bước nào; chờ máy định vị quá ngưỡng thì nói thẳng.
@@ -88,15 +134,10 @@
       d.append(chip(`Máy định vị logo chưa phản hồi ${T.phut(b.cho_dinh_vi_giay)} phút — máy vẫn chờ, không cần tạo lại lượt`, "do"));
     }
     d.append(mui());
-    if (b.cho_duyet > 0) {
-      const n = el("button", "tl-pipe-o can", `Chờ bạn duyệt ${b.cho_duyet} ▸`); n.type = "button";
-      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-duyet"); if (h) h.scrollIntoView({ block: "start" }); });
-      d.append(n);
-    } else if (dang === 0 && b.cho_nguoi > 0) {  // TRƯỚC nhánh "Đã duyệt": lượt trộn (có Đạt) vẫn phải dẫn tới ca máy không chắc
-      // Không có video để duyệt vì máy không chắc ⇒ chỉ thẳng tới khối "Máy không chắc" (xem lý do + video gốc), không ghi "Chờ duyệt".
-      const n = el("button", "tl-pipe-o can", `Xem ${b.cho_nguoi} video máy không chắc ▸`); n.type = "button";
-      n.addEventListener("click", () => { if (T.loc.job !== b.job_id) T.datLoc("job", b.job_id); const h = $("tl-khong-chac"); if (h) h.scrollIntoView({ block: "start" }); });
-      d.append(n);
+    if (b.cho_duyet > 0) d.append(chip(`Chờ bạn duyệt ${b.cho_duyet}`, "can"));
+    else if (dang === 0 && b.cho_nguoi > 0) {  // TRƯỚC nhánh "Đã duyệt": lượt trộn (có Đạt) vẫn phải dẫn tới ca máy không chắc
+      // Không có video để duyệt vì máy không chắc ⇒ nút "Xem N video máy không chắc" ở cột hành động; ở đây chỉ ghi bước, không ghi "Chờ duyệt".
+      d.append(chip(`Máy không chắc ${b.cho_nguoi}`, "dang"));
     } else if (b.dat + b.hong) d.append(chip(`Đã duyệt ${b.dat} Đạt · ${b.hong} Hỏng` + (b.bo_qua ? ` · ${b.bo_qua} bỏ qua` : ""), "xong"));
     else if (dang === 0 && b.bo_qua) d.append(chip(`Đã bỏ qua ${b.bo_qua} · giữ bản gốc`, "xong"));
     else d.append(chip(dang === 0 ? "Không có video để duyệt" : "Chờ duyệt"));
