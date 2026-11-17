@@ -17,12 +17,15 @@
   <header class="topbar">
     <div class="brand"><span class="dot"></span>Video Desk</div>
     <nav class="topbar-nav">
-      <a href="/" class="here" aria-current="page">⬇ Tải video</a>
-      <a href="/thay-logo.html" id="link-thay-logo" hidden>◐ Thay logo</a>
-      <a href="/settings.html">⚙ Cài đặt</a>
-      <a href="/huong-dan.html">ⓘ Hướng dẫn</a>
-      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối">🌓 Giao diện</button>
+      <a href="/" class="here" aria-current="page">Tải video</a>
+      <a href="/thay-logo.html" id="link-thay-logo" hidden>Thay logo</a>
+      <a href="/settings.html">Cài đặt</a>
+      <a href="/huong-dan.html">Hướng dẫn</a>
     </nav>
+    <div class="topbar-user">
+      <span id="topbar-email" class="topbar-email" hidden></span>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">◐</button>
+    </div>
   </header>
 
   <!-- Phiên Access hết hạn. Hiện ở đầu trang và KHÔNG tự tắt: mọi lời gọi từ
@@ -37,7 +40,7 @@
   <!-- ================= HERO: ô dán link + tuỳ chọn (trên) ================= -->
   <section class="hero" aria-label="Tạo lượt tải mới">
     <div>
-      <h1>Tạo lượt tải mới</h1>
+      <h1>Kéo video về kho creative</h1>
       <!-- Lịch sử đo nguồn /search (16/09: 5 lượt ra 0 video, HTTP 200 body RỖNG; hashtag 3 video, music 10 video
            cùng lúc, cùng cookie; 18/09: 1 lượt ra 1 video). Một lần được sau năm lần trượt không đủ để nói "đã khỏi"
            cũng không đủ để nói "chết" — câu trong ⓘ nói ĐÚNG hai con số đó và để người dùng tự quyết. -->
@@ -60,10 +63,10 @@
         <input type="text" id="usecase" placeholder="+ usecase (tuỳ chọn)" maxlength="80" />
         <label for="insight-goc" class="lb sr-only">Insight gốc</label>
         <input type="text" id="insight-goc" placeholder="+ insight gốc (tuỳ chọn)" maxlength="120" />
-        <span class="muted" id="goi-y-o-nhap">Mỗi dòng một link · Ctrl/⌘+Enter để tạo</span>
-        <p id="cookie-banner" class="banner-an-danh hero-ck" hidden>Chưa có cookie — lượt tải của bạn
-          chạy <strong>ẩn danh</strong> và chia chung hạn mức với mọi người chưa dán.
-          <a href="/settings.html">Dán cookie của bạn →</a></p>
+        <span class="goi-y-phim" id="goi-y-o-nhap" title="Mỗi dòng một link · Ctrl/⌘+Enter để tạo">⌘↵</span>
+        <span class="grow"></span>
+        <!-- Chip cookie (JS `veTrangThaiCookie` vẽ nội dung): ẩn danh / không dùng được / dùng được. -->
+        <span id="cookie-banner" class="hero-ck" hidden></span>
       </div>
     </form>
     <p id="error" class="error-text" role="alert"></p>
@@ -133,7 +136,7 @@
     <!-- Phân trang (user 23/09). Nút chuyển trang hiện CẢ TRÊN lẫn dưới lưới: 40 thẻ
          mà chỉ có nút ở đáy thì vẫn "kéo mỏi tay". -->
     <div class="lib-toolbar" id="lib-toolbar" hidden>
-      <button type="button" class="chon-trang" id="chon-trang"></button>
+      <button type="button" class="chon-trang" id="chon-trang" role="checkbox" aria-checked="false"></button>
       <div class="lib-toolbar-phai">
         <nav class="trang" data-pager aria-label="Chuyển trang"></nav>
         <div class="per-page">Mỗi trang <span class="seg" id="so-moi-trang"></span></div>

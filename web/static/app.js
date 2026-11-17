@@ -26,7 +26,7 @@
   const PM_HAN_MS = 30000;
 
   const STATUS_LABEL = {
-    pending: "Đang chờ", running: "Đang chạy", done: "Xong",
+    pending: "Chờ lượt", running: "Đang tải", done: "Xong",
     failed: "Lỗi", interrupted: "Bị ngắt", cancelled: "Đã rút",
     // Bốn bước giải xác minh trong popup (`giai-captcha-the-job.js::NHAN`; chỉ xuất hiện khi
     // máy chủ bật `VIDEODL_PROFILE_CAPTCHA`).
@@ -82,6 +82,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // ========================================================================
   const state = {
     jobs: [],
+    menuMo: null,             // id lượt đang mở menu ⋯ (null = đóng hết) — sống ở state để vẽ lại không làm menu đóng
     videos: [],
     selected: new Set(),      // video_id đang được chọn trong thư viện
     dangBanGiao: false,       // đang chờ Creative Desk ack — khoá nút "Tạo bộ tự tìm"
@@ -363,11 +364,38 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // ========================================================================
   // RENDER — hàng đợi
   // ========================================================================
+  // "N lượt · X cần bạn · Y đang chạy" (mock B) — tính từ `state.jobs` đã nạp, không gọi thêm API.
+  // "Cần bạn" = đang chờ người giải xác minh; "đang chạy" = worker đang tải. Con số 0 thì bỏ cả cụm cho đỡ ồn.
+  function tomTatHangDoi(jobs) {
+    if (!jobs.length) return "";
+    const canBan = jobs.filter((j) => j.trang_thai === "cho_xac_minh").length;
+    const dangChay = jobs.filter((j) => j.trang_thai === "running").length;
+    return [`${jobs.length} lượt`,
+      canBan ? `<b class="can-ban">${canBan} cần bạn</b>` : "",
+      dangChay ? `${dangChay} đang chạy` : ""].filter(Boolean).join(" · ");
+  }
+
+  // Menu ⋯ của thẻ lượt tải (mock B). Chỉ gom thao tác ĐÃ CÓ: chép link, chia cụm, mở thư mục Drive.
+  // "Chạy lại kiếm thêm" và "Rút lượt" giữ
+  // nguyên nút hiện trên thẻ (một thao tác một chỗ — nhân đôi `data-chay-lai`/`data-huy` làm nhiễu uỷ quyền sự kiện).
+  function menuLuot(job) {
+    const id = Number(job.id) || 0;
+    const mo = state.menuMo === id;
+    // "Chia cụm" luôn bật như trước (nút cũ không hề khoá theo trạng thái): màn chia tự nói "chưa có nháp" khi lượt chưa xong.
+    const muc = [`<button type="button" role="menuitem" data-chep-link="${id}">Chép link nguồn</button>`,
+      `<button type="button" role="menuitem" data-chia="${id}">Chia cụm</button>`];
+    if (job.drive_folder_link) {
+      muc.push(`<a role="menuitem" href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`);
+    }
+    return `<span class="menu-wrap"><button type="button" class="btn sm icon ghost" data-menu="${id}" aria-haspopup="menu" ` +
+      `aria-expanded="${mo}" aria-label="Thêm thao tác">⋯</button>` +
+      `<div class="menu" role="menu"${mo ? "" : " hidden"}>${muc.join("")}</div></span>`;
+  }
+
   function renderQueue() {
     const list = document.getElementById("queue-list");
     const emptyHint = document.getElementById("queue-empty");
-    document.getElementById("queue-count").textContent =
-      state.jobs.length ? `${state.jobs.length} lượt` : "";
+    document.getElementById("queue-count").innerHTML = tomTatHangDoi(state.jobs);
     const xemHet = document.getElementById("queue-xem-het");
     if (xemHet) {
       xemHet.hidden = state.jobs.length < 2;
@@ -437,32 +465,44 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     const skipText = boQua > 0 && !nguonText
       ? `Bỏ qua ${boQua} video đã có trong kho.`
       : "";
-    const driveLink = job.drive_folder_link
-      ? `<a href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`
+    // Chữ giải thích của thẻ "cần bạn" dời vào ⓘ (user 17/11: bỏ chữ hướng dẫn rải). Nội dung giữ nguyên.
+    const gioiThichXn = job.trang_thai === "cho_xac_minh"
+      ? [GT.cauDung(job), "Chưa ai giải thì job tự kết thúc sau 24 giờ. Không giải được? Rút lượt để trả hạn mức."]
+        .filter(Boolean).join(" ")
+      : "";
+    const hienUrl = BT.nhanUrl(job.url).replace(/^https?:\/\/(www\.)?/, "");
+    // Chân thẻ (mock B): lượt xong = "+N mới" + nút Chia cụm; còn lại để các khối riêng của thẻ nói.
+    const chan = job.trang_thai === "done" && !nguonText
+      ? `<div class="foot"><span class="xs faint grow">+${Number(job.xong) || 0} mới</span>` +
+        `<button type="button" class="btn sm" data-chia="${job.id}">Chia cụm</button></div>`
       : "";
     return `
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
         <div class="queue-item-top">
           <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
+          ${gioiThichXn ? `<span class="ti" tabindex="0" role="note" title="${escapeHtml(gioiThichXn)}" aria-label="${escapeHtml(gioiThichXn)}">ⓘ</span>` : ""}
+          <span class="grow"></span>
+          ${menuLuot(job)}
         </div>
         <div class="qi-big">${Number(job.xong) || 0}<small>/${BT.mauSo(job)}</small></div>
-        <div class="qi-src">
-          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(BT.nhanUrl(job.url))}</span>
-        </div>
         <div class="progress-row">
           <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
           <span>${BT.chuTienDo(job)}</span>
         </div>
+        <div class="qi-src">
+          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(hienUrl)}</span>
+          <button type="button" class="btn sm ghost" data-chep-link="${job.id}" title="Chép link nguồn">Chép link</button>
+        </div>
         ${nguonText ? `<div class="nguon">${nguonText}</div>` : ""}
         ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
         ${BT.khungLoi(job)}
-        ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
+        ${stopText && !gioiThichXn ? `<div class="stop-reason">${stopText}</div>` : ""}
         ${buocGiai ? GT.khungHanhDong(job)
           : BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
             state.dangGuiChayLai.has(job.id))}
+        ${chan}
         ${buocGiai ? GT.dongCuoi(job, escapeHtml) : queueLine(job)}
-        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}${driveLink ? " · " + driveLink : ""}
-          · <button type="button" class="chia-link" data-chia="${job.id}">Chia cụm</button></div>
+        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}</div>
       </li>`;
   }
 
@@ -588,7 +628,9 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     if (!nut) return;
     const ids = state.idTrang;
     const du = ids.length > 0 && ids.every((id) => state.selected.has(id));
-    nut.textContent = du ? "☑ Bỏ chọn trang này" : `☐ Chọn tất cả trang này (${ids.length})`;
+    // Hộp tick thật (role=checkbox): nhãn cố định "Chọn cả trang (N)", trạng thái nằm ở aria-checked.
+    nut.innerHTML = `<span class="hop-tick" aria-hidden="true"></span><span>Chọn cả trang (${ids.length})</span>`;
+    nut.setAttribute("aria-checked", String(du));
     nut.classList.toggle("on", du);
   }
 
@@ -598,11 +640,11 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     toolbar.hidden = pager.hidden = tongLoc === 0;
     if (tongLoc === 0) return;
     const nav = ct.soTrang === 1 ? "" :
-      `<button type="button" data-trang="${ct.trang - 1}" ${ct.trang === 1 ? "disabled" : ""}>‹ Trước</button>` +
+      `<button type="button" data-trang="${ct.trang - 1}" aria-label="Trang trước" ${ct.trang === 1 ? "disabled" : ""}>‹</button>` +
       dayTrang(ct.trang, ct.soTrang).map((n) => n === "…" ? `<span class="gian">…</span>` :
         `<button type="button" data-trang="${n}" class="${n === ct.trang ? "on" : ""}"` +
         `${n === ct.trang ? ' aria-current="page"' : ""}>${n}</button>`).join("") +
-      `<button type="button" data-trang="${ct.trang + 1}" ${ct.trang === ct.soTrang ? "disabled" : ""}>Sau ›</button>`;
+      `<button type="button" data-trang="${ct.trang + 1}" aria-label="Trang sau" ${ct.trang === ct.soTrang ? "disabled" : ""}>›</button>`;
     document.querySelectorAll("[data-pager]").forEach((el) => { el.innerHTML = nav; });
     document.getElementById("so-moi-trang").innerHTML = SO_MOI_TRANG.map((n) =>
       `<button type="button" data-so="${n}" class="${n === state.soMoiTrang ? "on" : ""}" aria-pressed="${n === state.soMoiTrang}">${n}</button>`).join("");
@@ -833,6 +875,23 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     l.classList.toggle("xem-het");
     xemHetNut.textContent = l.classList.contains("xem-het") ? "Thu gọn" : `Xem tất cả ${state.jobs.length} →`;
   });
+  // Menu ⋯ trên thẻ lượt tải: mở/đóng bằng `state.menuMo`; bấm ra ngoài, Esc, hoặc chọn một mục thì đóng.
+  // Đóng bằng setTimeout để các tay nghe khác của CÙNG cú bấm (chép link, chia cụm) còn thấy nút trong DOM.
+  const dongMenuLuot = () => { if (state.menuMo !== null) { state.menuMo = null; renderQueue(); } };
+  document.getElementById("queue-list").addEventListener("click", (ev) => {
+    const nutMenu = ev.target.closest("[data-menu]");
+    if (nutMenu) {
+      const id = Number(nutMenu.dataset.menu);
+      state.menuMo = state.menuMo === id ? null : id;
+      renderQueue();
+      const m = document.querySelector("#queue-list .menu:not([hidden]) [role=menuitem]:not(:disabled)");
+      if (state.menuMo !== null && m) m.focus();
+      return;
+    }
+    if (ev.target.closest(".menu [role=menuitem]")) setTimeout(dongMenuLuot, 0);
+  });
+  document.addEventListener("click", (ev) => { if (!ev.target.closest(".menu-wrap")) dongMenuLuot(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") dongMenuLuot(); });
   document.querySelectorAll("[data-cuon]").forEach((b) => b.addEventListener("click", () => {
     const l = document.getElementById("queue-list");
     l.scrollBy({ left: Number(b.dataset.cuon) * 272, behavior: "smooth" });
@@ -1477,11 +1536,6 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
       `${nhan}<span class="n">${n}</span></button>`;
     let h = `<h3>Cụm của tôi</h3>` + hang("tat_ca", "Tất cả", nen.length) +
       hang("chua", "Chưa vào cụm", chua, "chua") + `<hr class="rail-sep">`;
-    if (!state.cums.length) {
-      h += `<div class="rail-empty">Chưa có cụm nào. Chọn vài video cùng một kiểu (vd. cartoon) → bấm ` +
-        `<b>Đưa vào cụm</b> ở thanh dưới → chọn <b>insight gốc</b> và gõ <b>kiểu</b>. ` +
-        `Tên cụm = tên insight con bên Creative Desk.</div>`;
-    }
     const nhom = new Map();
     for (const c of state.cums) {
       const k = `${c.usecase}\u0000${c.insight_goc}`;
@@ -1497,7 +1551,11 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
           `<span class="cum-ten">${escapeHtml(c.insight)}</span>`, dem.get(c.id) || 0, "cum-sub");
       }
     }
-    h += `<button type="button" class="rail-add" data-cum-moi>＋ Cụm mới</button>` +
+    // Cách dùng cụm (trước đây là khối chữ "Chưa có cụm nào…") dời vào ⓘ của nút "Cụm mới".
+    const huongDanCum = "Chọn vài video cùng một kiểu (vd. cartoon) → bấm Đưa vào cụm ở thanh dưới → chọn insight gốc và gõ kiểu. " +
+      "Tên cụm = tên insight con bên Creative Desk. Xoá một cụm không xoá video — chúng về Chưa vào cụm.";
+    h += `<button type="button" class="rail-add" data-cum-moi>+ Cụm mới` +
+      `<span class="ti" tabindex="0" role="note" title="${escapeHtml(huongDanCum)}" aria-label="${escapeHtml(huongDanCum)}">ⓘ</span></button>` +
       `<div id="cum-moi-form" hidden>${formCum("rail", 0)}</div>`;
     rail.innerHTML = h;
   }
@@ -2424,24 +2482,23 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // báo cho tin tốt là tiếng ồn.
   function veTrangThaiCookie(banner, tt) {
     banner.hidden = false;
+    const ghiChu = (chu) => `<span class="ti" tabindex="0" role="note" title="${escapeHtml(chu)}" aria-label="${escapeHtml(chu)}">ⓘ</span>`;
     if (!tt.co_jar) {
-      banner.className = "banner-an-danh";
-      banner.innerHTML = 'Chưa có cookie — lượt tải của bạn chạy <strong>ẩn danh</strong> ' +
-        'và chia chung hạn mức với mọi người chưa dán. ' +
-        '<a href="/settings.html">Dán cookie của bạn →</a>';
+      banner.className = "hero-ck chip warn";
+      banner.innerHTML = '<a href="/settings.html">Đang ẩn danh · dán cookie</a>' +
+        ghiChu("Chưa có cookie — lượt tải của bạn chạy ẩn danh và chia chung hạn mức với mọi người chưa dán. Dán ở Cài đặt để có hạn mức riêng.");
       return;
     }
     if (tt.trang_thai !== "dung_duoc") {
       // Câu chữ lấy từ bảng dùng chung với trang Cài đặt — hai trang nói cùng
       // một câu về cùng một tệp, nếu không người dùng phải tự ghép hai cách nói.
       const cach_chua = (window.MA_COOKIE_TRANG_THAI || {})[tt.trang_thai];
-      banner.className = "banner-an-danh";
-      banner.innerHTML = "Cookie của bạn <strong>không dùng được</strong> — lượt tải sẽ chạy " +
-        "ẩn danh. " + (cach_chua ? escapeHtml(cach_chua) + " " : "") +
-        '<a href="/settings.html">Dán lại cookie →</a>';
+      banner.className = "hero-ck chip bad";
+      banner.innerHTML = '<a href="/settings.html">Cookie không dùng được · dán lại</a>' +
+        ghiChu("Cookie của bạn không dùng được — lượt tải sẽ chạy ẩn danh. " + (cach_chua || ""));
       return;
     }
-    banner.className = "chip chip-ok";
+    banner.className = "hero-ck chip ok";
     banner.textContent = "Cookie đang dùng được";
   }
 

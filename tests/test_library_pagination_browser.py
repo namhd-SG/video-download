@@ -123,9 +123,12 @@ def test_chon_tat_ca_chi_lay_trang_dang_xem(page):
     page.click("#chon-trang")
     assert _chon(page) == 20
     assert _so_da_chon(page) == "20 đã chọn", "chỉ 20 id của trang 1, không phải 86"
-    assert "Bỏ chọn trang này" in page.inner_text("#chon-trang")
+    # Hộp tick thật (role=checkbox): nhãn cố định "Chọn cả trang (N)", đã chọn đủ trang ⇒ aria-checked=true.
+    assert page.get_attribute("#chon-trang", "aria-checked") == "true"
+    assert "Chọn cả trang (20)" in page.inner_text("#chon-trang")
     page.click("#chon-trang")
     assert _chon(page) == 0 and page.is_hidden("#selection-bar")
+    assert page.get_attribute("#chon-trang", "aria-checked") == "false"
 
 
 def test_doi_trang_giu_lua_chon_va_dem_ngoai_trang(page):
