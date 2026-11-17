@@ -954,6 +954,12 @@ body.gc-lock-scroll { overflow: hidden; }
 .topbar-nav a { padding: 2px var(--s-3); border-radius: var(--r-pill); font-weight: 500; }
 .topbar-nav a:hover, .topbar-nav a.here, .topbar-nav a[aria-current="page"] { background: var(--surface-alt); color: var(--text); }
 #theme-toggle { font-family: inherit; }
+/* 390 px: 4 link + nút giao diện nằm MỘT hàng dưới brand, thừa thì cuộn ngang (như mock B) thay vì gãy 2 hàng */
+@media (max-width: 480px) {
+  .topbar { height: auto; }
+  .topbar-nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; gap: var(--s-1); }
+  .topbar-nav #theme-toggle { margin-left: 0; flex: none; }
+}
 h1, h2, h3 { font-weight: 600; }
 .panel { border-radius: var(--r-3); padding: var(--s-5); }
 .library-head { align-items: baseline; margin-bottom: var(--s-4); }
