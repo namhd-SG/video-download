@@ -1231,3 +1231,12 @@ h1, h2, h3 { font-weight: 600; }
 .cc-mini-luoi .cc-t { width: 56px; }
 @media (max-width: 760px) { .cc-h1 { font-size: 32px; } #chia-view .cc-luot { padding: var(--s-4); }
   .cc-dock { border-radius: var(--r-3); width: auto; margin-inline: var(--s-3); } }
+@media (max-width: 760px) {
+  #chia-view .cc-fields { flex-direction: column; gap: var(--s-3); }
+  #chia-view .cc-fields label { width: 100%; }
+  #chia-view .cc-fields input, #chia-view .cc-fields select { width: 100%; box-sizing: border-box; min-width: 0; }
+  #chia-view .cc-nut { align-items: stretch; }
+  #chia-view .cc-nut .btn { width: 100%; justify-content: center; }
+  #chia-view .cc-why { max-width: none; text-align: left; }
+  .cc-dock { margin: 0; max-width: none; width: auto; border-radius: 0; border-inline: 0; justify-content: flex-start; bottom: 0; }
+}

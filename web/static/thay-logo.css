@@ -415,3 +415,24 @@ body:not(.tl-co-may) .tl-tab[data-tab="may"] { display: none; }
   .tl-head h1 { font-size: 30px; }
   .tl-buoc li { padding: var(--s-3); border-bottom: 1px solid var(--border); }
 }
+
+/* ===== M4 vòng 2: khớp mock B ===== */
+.tl-head { flex-wrap: nowrap; align-items: flex-end; }
+.tl-head > div:first-child { flex: 1 1 auto; min-width: 0; }
+.tl-head h1 { font: 600 44px/1.05 var(--display); letter-spacing: -.02em; }
+.tl-tom-tat { font-size: .9rem; max-width: 70ch; }
+.tl-logo { flex: none; white-space: nowrap; }
+.tl-logo img { height: 28px; padding: 5px 10px; border-radius: var(--r-pill); background: var(--spot); }
+.tl-nhap-head h2, .tl-gio h2 { font: 600 1.5rem/1.15 var(--display); }
+.tl-duyet-head h2 { font: 600 1.3rem/1.15 var(--display); }
+.tl-bo-strip h2 { font: 600 1.6rem/1.15 var(--display); }
+.tl-cot h2 { font-size: 1.1rem; }
+.tl-duyet-head h2 { white-space: nowrap; }
+.tl-bo-strip h2 .muted { font: 400 .82rem/1.3 var(--body); }
+.tl-bo-the { border-radius: var(--r-3); box-shadow: var(--shadow); }
+.tl-nhap, .tl-duyet { border-radius: var(--r-3); }
+.tl-tab[aria-selected="true"] { color: var(--accent); }
+@media (max-width: 760px) {
+  .tl-head { flex-wrap: wrap; }
+  .tl-head h1 { font-size: 34px; }
+}
