@@ -333,6 +333,77 @@ def test_khung_dau_khong_ve_ve_cho_xac_minh(monkeypatch, db):
     assert models.get_job(db, h.jid)["ly_do_dung"] == gc.LD_KHONG_CO_KHUNG
 
 
+def _b64_byte(so_byte: int, ky_tu: bytes = b"a") -> str:
+    import base64
+    return base64.b64encode(ky_tu * so_byte).decode()
+
+
+def _gan_lich_khung(h: Hien, lich_khung: list[tuple[float, int]]) -> dict:
+    """`lich_khung` = [(giay_tu_1000, so_byte_jpeg)]. Phát khung theo giờ giả khi screencast đang bật."""
+    from giai_captcha_gia import KHUNG_META
+    con = list(lich_khung)
+    ghi = {"tt_khi_khung_nho": [], "vao": None}
+
+    def moi_tick():
+        if not h.trang.cdp.dang_chieu:
+            return
+        if h.phien.lay_khung() is not None and h.tt() == "dang_mo":
+            ghi["tt_khi_khung_nho"].append((round(h.dong.t - 1000.0, 2), h.phien.lay_khung()["seq"]))
+        while con and h.dong.t - 1000.0 >= con[0][0] - 1e-9:
+            _, sb = con.pop(0)
+            h.trang.cdp.phat("Page.screencastFrame", {
+                "data": _b64_byte(sb), "sessionId": 1, "metadata": dict(KHUNG_META),
+            })
+
+    def khi_vao():
+        kh = h.phien.lay_khung()
+        ghi["vao"] = {
+            "t": h.dong.t - 1000.0,
+            "seq": kh["seq"],
+            "byte": worker._so_byte_jpeg(kh["jpeg"]),
+            "tt": h.tt(),
+        }
+
+    h.trang.moi_tick = moi_tick
+    h.trang.kich_ban = [(0.0, khi_vao), (0.1, h.lenh("dung"))]
+    return ghi
+
+
+def test_cho_khung_co_noi_dung_vao_o_khung_8400_byte_trong_3_giay(monkeypatch, db, caplog):
+    """Khung 3300 B, 2983 B rồi 8400 B trong 3 s ⇒ chưa sang `dang_giai` ở 2 khung đầu, vào ngay ở khung 8400 B."""
+    h = Hien(monkeypatch, db, phat_khung=False)
+    ghi = _gan_lich_khung(h, [(0.20, 3300), (0.95, 2983), (1.75, 8400)])
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        h.chay()
+    assert [seq for _, seq in ghi["tt_khi_khung_nho"]] and set(seq for _, seq in ghi["tt_khi_khung_nho"]) == {1, 2}
+    assert ghi["vao"] is not None
+    assert ghi["vao"]["tt"] == "dang_giai"
+    assert ghi["vao"]["seq"] == 3 and ghi["vao"]["byte"] == 8400
+    assert ghi["vao"]["t"] == pytest.approx(1.75, abs=0.06), "vào ngay khi có khung ≥ 7000 B, không chờ hết 3 s"
+    dong = _dong_giai(caplog)
+    kv = [d for d in dong if "khung_vao" in d]
+    assert len(kv) == 1 and "seq=3 byte=8400" in kv[0] and "het_tran=False" in kv[0], kv
+    _khong_lo(caplog)
+
+
+def test_chi_co_khung_nho_sau_3_giay_vao_bang_khung_moi_nhat_khong_loi(monkeypatch, db, caplog):
+    """Chỉ có khung nhỏ (3300 B, 2983 B, 4358 B) ⇒ sau trần 3 s tính từ khung đầu, vào `dang_giai` bằng khung
+    mới nhất (không bao giờ thành `LD_KHONG_CO_KHUNG`)."""
+    h = Hien(monkeypatch, db, phat_khung=False)
+    ghi = _gan_lich_khung(h, [(0.20, 3300), (1.10, 2983), (2.00, 4358)])
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        kq = h.chay()
+    assert ghi["vao"] is not None
+    assert ghi["vao"]["tt"] == "dang_giai"
+    assert ghi["vao"]["seq"] == 3 and ghi["vao"]["byte"] == 4358
+    assert ghi["vao"]["t"] == pytest.approx(0.20 + gc.CHO_KHUNG_NOI_DUNG_GIAY, abs=0.06)
+    assert kq.loai == "failed" and models.get_job(db, h.jid)["ly_do_dung"] == gc.LD_DUNG_KHONG_CAPTCHA
+    dong = _dong_giai(caplog)
+    kv = [d for d in dong if "khung_vao" in d]
+    assert len(kv) == 1 and "seq=3 byte=4358" in kv[0] and "het_tran=True" in kv[0], kv
+    _khong_lo(caplog)
+
+
 # ---------------------------------------------------------------------------
 # dang_giai → cho_xac_minh (hết giờ, lỗi, rời miền, gesture dở)
 # ---------------------------------------------------------------------------

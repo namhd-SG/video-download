@@ -127,6 +127,8 @@ KHUNG_JPEG_QUALITY = 60
 # Hai số dưới CHƯA ĐO (ĐP-704 b): chọn để popup kịp nối SSE sau khi worker nhặt job; đo ở job thật đầu tiên.
 CHO_NGUOI_XEM_GIAY = 15.0          # `dang_mo`: chờ người giữ khoá (popup mở SSE sau khi bấm nút)
 CHO_KHUNG_DAU_GIAY = 20.0          # `dang_mo`: chờ khung đầu hợp lệ
+KHUNG_NOI_DUNG_TOI_THIEU_BYTE = 7000  # byte JPEG giải mã tối thiểu để coi là khung đã có nội dung
+CHO_KHUNG_NOI_DUNG_GIAY = 3.0      # trần chờ khung có nội dung tính từ lúc nhận khung đầu tiên
 CHO_SSE_DONG_GIAY = 2.0            # sau `da_giai`: chờ SSE khung đóng hẳn trước khi quét
 XA_LENH_TOI_DA_GIAY = 2.0          # trước lệnh: phát nốt hàng đợi tối đa chừng này
 TICK_VONG_GIAY = 0.010             # nhịp tối đa của vòng worker (chỉ ngủ bằng page.wait_for_timeout)
@@ -380,6 +382,7 @@ class ThongKePhat:
     def __init__(self, tran: int = TRAN_MAU_TRE, seed: int = 0):
         self.tran = tran
         self.so_phat = 0
+        self.so_gop = 0
         self.gesture_nop = 0
         self.tre_max = 0.0
         self.mau: list[float] = []
@@ -424,7 +427,8 @@ class BoPhatLai:
     đợt (đồng hồ popup → đồng hồ máy chủ), nên cả đợt DỜI PHA ĐỀU và mọi khoảng thời gian giữ
     nguyên đúng như người tạo ra. Sự kiện tới trễ hơn lịch ⇒ nâng `D_hieu_luc` lên đúng độ
     trễ đó (không bao giờ giảm trong một đợt) và đếm `tre_qua_D`: ĐÚNG MỘT khoảng dài ra tại chỗ
-    trễ, mọi khoảng sau đó bằng khoảng gốc (ĐP-609 câu 1). CẤM nén (phát ngay), nội suy, làm tròn.
+    trễ, mọi khoảng sau đó bằng khoảng gốc (ĐP-609 câu 1). CẤM nội suy, làm tròn; move quá hạn
+    liên tiếp cùng buttons được gộp về điểm cuối; down/up/wheel và nhịp giữa chúng giữ nguyên.
 
     "Đợt" = từ lúc hàng đợi rỗng và không có nút đang nhấn, tới lúc nó lại rỗng.
     """
@@ -485,14 +489,19 @@ class BoPhatLai:
                 self.nut_giu_nguon = False
 
     def den_han(self, bay_gio: float) -> list[SuKien]:
-        """Các sự kiện tới hạn tại `bay_gio`, ĐÚNG thứ tự đã nhận."""
+        """Các sự kiện tới hạn tại `bay_gio`, ĐÚNG thứ tự đã nhận; chuỗi `move` liên tiếp cùng
+        `buttons` trong cùng một lần gọi được gộp về điểm cuối."""
         ra: list[SuKien] = []
         while self._hang and self._hang[0][0] <= bay_gio:
             lich, ev = self._hang.popleft()
             if bay_gio - lich > TRE_PHAT_NGUONG_GIAY:
                 self.tre_phat_worker += 1
             self.thong_ke.ghi(max(0.0, bay_gio - lich), ev.k == "up")
-            ra.append(ev)
+            if ra and ra[-1].k == "move" and ev.k == "move" and ra[-1].buttons == ev.buttons:
+                ra[-1] = ev
+                self.thong_ke.so_gop += 1
+            else:
+                ra.append(ev)
         return ra
 
     def diem_ke_tiep(self) -> float | None:
@@ -775,6 +784,7 @@ class PhienGiai:
             tt = tom_tat_tre(tk.mau)
             return {
                 "so_phat": tk.so_phat,
+                "so_gop": tk.so_gop,
                 "gesture_nop": tk.gesture_nop,
                 "tre_phat_p50_ms": tt[0] if tt else None,
                 "tre_phat_p95_ms": tt[1] if tt else None,

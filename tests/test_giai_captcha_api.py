@@ -383,7 +383,9 @@ def test_chuot_seq_trung_la_ok_trung_true_va_lo_toi_lech_duoc_sap_lai(api):
     assert goi(port, "POST", p, body=lo(0, [move(1, 1, 10.0)]))[1] == {"ok": True, "trung": False}
     assert phien.expected_seq == 2
     assert goi(port, "POST", p, body=lo(0, [move(1, 1, 10.0)]))[1] == {"ok": True, "trung": True}
-    xs = [e.x for e in phien.den_han(gc.dong_ho() + 100)]
+    xs = []
+    while phien.con_hang():
+        xs.extend(e.x for e in phien.den_han(phien.diem_ke_tiep()))
     assert xs == [1 * 1.6, 2 * 1.6], "phát đúng thứ tự seq dù lô tới lệch"
     s.dong_ket_noi()
 
