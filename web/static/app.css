@@ -1200,3 +1200,34 @@ h1, h2, h3 { font-weight: 600; }
 .queue-list:not(.xem-het) { padding-inline-end: 48px;
   -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
   mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent); }
+
+/* ===== Màn chia cụm + hộp "Kiểu mới" theo mock B ===== */
+.cc-h1 { margin: 6px 0 4px; font: 600 40px/1.05 var(--display); letter-spacing: -.02em; }
+#chia-view .cc-luot { padding: var(--s-6); }
+#chia-view .cc-luot h2 { font: 500 .9rem/1.4 var(--body); color: var(--text-muted); margin: 0 0 var(--s-2); }
+#chia-view .cc-fields { margin-top: var(--s-4); gap: var(--s-4); }
+#chia-view .cc-fields input, #chia-view .cc-fields select { border-radius: var(--r-1); padding: .55rem .75rem; min-width: 180px; }
+#chia-view .cc-rail { padding: var(--s-4); }
+#chia-view .cc-rail h3 { color: var(--text-faint); }
+/* tên nhóm / kiểu: ô sửa được nhưng nhìn như tiêu đề (gạch chấm dưới) — mock B */
+#chia-view .cc-nhom-h .cc-ten, #chia-view .cc-kieu-h .cc-ten { background: transparent; border: 0; border-bottom: 1px dashed var(--border);
+  border-radius: 0; padding: 2px 0; }
+#chia-view .cc-nhom-h .cc-ten { font: 600 1.35rem/1.2 var(--display); }
+#chia-view .cc-kieu-h .cc-ten { font: 600 .98rem/1.3 var(--body); }
+#chia-view .cc-nhom-h b.cc-ten, #chia-view .cc-kieu-h b.cc-ten { border-bottom: 0; }
+#chia-view .cc-luoi { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: var(--s-2); }
+#chia-view .cc-t { border-radius: var(--r-1); }
+/* thanh hành động dưới: viên thuốc nổi giữa đáy, không phải dải full-width */
+.cc-dock { width: max-content; max-width: calc(100% - 24px); margin: 0 auto var(--s-4); bottom: var(--s-4);
+  border: 1px solid var(--border); border-radius: var(--r-pill); box-shadow: var(--shadow); padding: var(--s-2) var(--s-4); }
+/* hộp thoại (Kiểu mới từ N video / Hủy lượt) */
+.cc-modal { width: min(520px, calc(100vw - 32px)); padding: var(--s-6); border-radius: var(--r-3); overflow: hidden; }
+.cc-modal h3 { font: 600 1.55rem/1.15 var(--display); margin: 0 0 var(--s-4); }
+.cc-modal select, .cc-modal input { border-radius: var(--r-2); padding: .65rem .8rem; }
+.cc-modal label { font-size: .8rem; margin-top: var(--s-4); font-weight: 600; }
+.cc-modal .cc-row { margin: var(--s-6) calc(-1 * var(--s-6)) calc(-1 * var(--s-6)); padding: var(--s-4) var(--s-6);
+  background: var(--surface-alt); }
+.cc-mini-luoi { gap: var(--s-2); margin-top: 0; }
+.cc-mini-luoi .cc-t { width: 56px; }
+@media (max-width: 760px) { .cc-h1 { font-size: 32px; } #chia-view .cc-luot { padding: var(--s-4); }
+  .cc-dock { border-radius: var(--r-3); width: auto; margin-inline: var(--s-3); } }
