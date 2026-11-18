@@ -123,9 +123,12 @@ def page(dulieu):
 
 
 def _bam_chia(p, job_id: int) -> None:
-    """"Chia cụm" nay nằm trong menu ⋯ của thẻ lượt tải (mock B): mở menu rồi bấm mục — cùng một thao tác của người dùng."""
-    p.click(f'#job-{job_id} [data-menu]')
-    p.click(f'#job-{job_id} .menu [data-chia="{job_id}"]')
+    """"Chia cụm" nằm trên thẻ lượt đã xong (mock R-07 v2); lượt chưa xong thì ở chân popup chi tiết — bấm đúng nút người dùng thấy."""
+    if p.locator(f'#job-{job_id} [data-chia="{job_id}"]').count():
+        p.click(f'#job-{job_id} [data-chia="{job_id}"]')
+        return
+    p.click(f'#job-{job_id} .chi-tiet')
+    p.click(f'#hn-pop [data-chia="{job_id}"]')
 
 
 def _mo_chia(p, job_id: int) -> None:

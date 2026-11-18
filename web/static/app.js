@@ -82,7 +82,8 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   // ========================================================================
   const state = {
     jobs: [],
-    menuMo: null,             // id lượt đang mở menu ⋯ (null = đóng hết) — sống ở state để vẽ lại không làm menu đóng
+    popupId: null,            // id lượt đang mở popup chi tiết (null = đóng)
+    popupHtml: "",            // HTML popup đang hiện — so để nhịp poll không vẽ lại khi không đổi
     videos: [],
     selected: new Set(),      // video_id đang được chọn trong thư viện
     dangBanGiao: false,       // đang chờ Creative Desk ack — khoá nút "Tạo bộ tự tìm"
@@ -101,6 +102,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     phiaDaVe: undefined,      // phía chip mà lưới ĐANG thật sự vẽ (0/1; undefined = chưa vẽ lần nào)
     openStreams: new Map(),   // job_id -> EventSource đang theo dõi
     dangGuiChayLai: new Set(), // job_id đang chờ POST /jobs của nút "Chạy lại" — chặn bấm đôi qua các lần vẽ lại
+    dangGuiTaiLai: new Set(), // job_id đang chờ POST /jobs của nút "Tải lại" — chặn bấm đôi
     chayLai: new Map(),       // job_id -> số đang gõ trong ô "chạy lại kiếm thêm" (ô đang mở)
   };
   for (const g of FILTER_GROUPS) state.filters[g.id] = new Map();
@@ -377,23 +379,6 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
       dangChay ? `${dangChay} đang chạy` : ""].filter(Boolean).join(" · ");
   }
 
-  // Menu ⋯ của thẻ lượt tải (mock B). Chỉ gom thao tác ĐÃ CÓ: chép link, chia cụm, mở thư mục Drive.
-  // "Chạy lại kiếm thêm" và "Rút lượt" giữ
-  // nguyên nút hiện trên thẻ (một thao tác một chỗ — nhân đôi `data-chay-lai`/`data-huy` làm nhiễu uỷ quyền sự kiện).
-  function menuLuot(job) {
-    const id = Number(job.id) || 0;
-    const mo = state.menuMo === id;
-    // "Chia cụm" luôn bật như trước (nút cũ không hề khoá theo trạng thái): màn chia tự nói "chưa có nháp" khi lượt chưa xong.
-    const muc = [`<button type="button" role="menuitem" data-chep-link="${id}">Chép link nguồn</button>`,
-      `<button type="button" role="menuitem" data-chia="${id}">Chia cụm</button>`];
-    if (job.drive_folder_link) {
-      muc.push(`<a role="menuitem" href="${escapeHtml(job.drive_folder_link)}" target="_blank" rel="noopener">Mở thư mục Drive</a>`);
-    }
-    return `<span class="menu-wrap"><button type="button" class="btn sm icon ghost" data-menu="${id}" aria-haspopup="menu" ` +
-      `aria-expanded="${mo}" aria-label="Thêm thao tác">⋯</button>` +
-      `<div class="menu" role="menu"${mo ? "" : " hidden"}>${muc.join("")}</div></span>`;
-  }
-
   function renderQueue() {
     const list = document.getElementById("queue-list");
     const emptyHint = document.getElementById("queue-empty");
@@ -412,6 +397,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     const dangGo = document.activeElement;
     if (dangGo && dangGo.classList && dangGo.classList.contains("chay-lai-n") && list.contains(dangGo)) return;
     list.innerHTML = state.jobs.map(renderQueueItem).join("");
+    capNhatPopup();
   }
 
   // "Xong" cho một job hụt mục tiêu đọc thành thành công.
@@ -435,91 +421,65 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     return { chu: STATUS_LABEL[job.trang_thai] || job.trang_thai, lop: job.trang_thai };
   }
 
-  function renderQueueItem(job) {
-    // Mẫu số là số DÒ ĐƯỢC, không phải số xin: xong 87/88 là đã tải hết nguồn,
-    // không phải mới tải 62% (`bao-thieu.js::mauSo`).
-    const BT = window.BaoThieu;
-    const pct = BT.phanTram(job);
-    // Đỏ CHỈ cho lỗi hệ thống; lỗi phía TikTok có khung xám riêng.
-    const hasErrors = BT.coLoiHeThong(job);
-    // Có cờ sự cố hàng loạt thì câu "chạy lại có thể ra thêm" (chỉ ba mã chạy lại
-    // được) mâu thuẫn với khung đỏ nên bị ẩn; câu của mã khác giữ nguyên.
+  // Ngữ cảnh vẽ thẻ gọn/popup (`the-luot-gon.js`): câu dừng + trạng thái ô "tải thêm" của lượt này.
+  // Câu dài KHÔNG lên thẻ — chỉ popup dùng `stopText`.
+  function ctxThe(job) {
     // Bốn bước giải xác minh: câu dừng riêng / ẩn câu cũ (`giai-captcha-the-job.js`).
     const GT = window.GiaiCaptchaThe;
-    const buocGiai = GT.laBuocGiai(job.trang_thai);
     const stopText = GT.anCauDungCu(job) ? ""
       : GT.cauDung(job) || (job.ly_do_dung && !window.BaoThieu.anCauDung(job)
         ? (cauDungTranIp(job, STOP_REASON_TEXT[job.ly_do_dung]) ||
            `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
         : "");
-    // Vì sao con số này phải hiện: lọc trùng chạy trên TOÀN kho, nên người tìm
-    // sau nhận ít video hơn người tìm trước — và những video bị bỏ KHÔNG hiện ở
-    // đâu trong thư viện của họ. Không nói ra thì một lượt chạy đúng bị đọc
-    // thành "nguồn đã cạn", và họ đổi nguồn mà không cần.
-    // (`CHECKLIST-VAN-HANH.md`: "phải báo thẳng trên lượt tải".)
-    //
-    // Khác `already_owned` ở chỗ mã đó chỉ bắn khi bỏ qua HẾT. Ca hay gặp là bỏ
-    // qua MỘT PHẦN, và đó chính là ca không có gì giải thích cho tới bản vá này.
-    const boQua = Number(job.bo_qua) || 0;
-    // Đã có dòng nguồn (`dongNguon`) thì con số này nằm ở đó; chỉ còn cần khi
-    // lượt đang chạy và dòng nguồn chưa hiện.
-    const nguonText = BT.dongNguon(job);
-    const skipText = boQua > 0 && !nguonText
-      ? `Bỏ qua ${boQua} video đã có trong kho.`
-      : "";
-    const hienUrl = BT.nhanUrl(job.url).replace(/^https?:\/\/(www\.)?/, "");
-    // Chân thẻ (mock B): lượt xong = "+N mới" + nút Chia cụm; còn lại để các khối riêng của thẻ nói.
-    const chan = job.trang_thai === "done" && !nguonText
-      ? `<div class="foot"><span class="xs faint grow">+${Number(job.xong) || 0} mới</span>` +
-        `<button type="button" class="btn sm" data-chia="${job.id}">Chia cụm</button></div>`
-      : "";
-    return `
-      <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${job.id}" data-status="${escapeHtml(job.trang_thai)}">
-        <div class="queue-item-top">
-          <span class="status-badge status-${escapeHtml(nhanTrangThai(job).lop)}">${escapeHtml(nhanTrangThai(job).chu)}</span>
-          <span class="grow"></span>
-          ${menuLuot(job)}
-        </div>
-        <div class="qi-big">${Number(job.xong) || 0}<small>/${BT.mauSo(job)}</small></div>
-        <div class="progress-row">
-          <div class="progress-track"><div class="progress-fill${hasErrors ? " has-errors" : ""}" style="width:${pct}%"></div></div>
-          <span>${BT.chuTienDo(job)}</span>
-        </div>
-        <div class="qi-src">
-          <span class="queue-url" title="${escapeHtml(job.url)}">${escapeHtml(hienUrl)}</span>
-          <button type="button" class="btn sm ghost" data-chep-link="${job.id}" title="Chép link nguồn">Chép link</button>
-        </div>
-        ${nguonText ? `<div class="nguon">${nguonText}</div>` : ""}
-        ${skipText ? `<div class="skip-note">${skipText}</div>` : ""}
-        ${BT.khungLoi(job)}
-        ${stopText ? `<div class="stop-reason">${stopText}</div>` : ""}
-        ${buocGiai ? GT.khungHanhDong(job)
-          : BT.khungHanhDong(job, state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
-            state.dangGuiChayLai.has(job.id))}
-        ${chan}
-        ${buocGiai ? GT.dongCuoi(job, escapeHtml) : queueLine(job)}
-        <div class="job-meta">${escapeHtml(job.nguoi_tao)} · ${fmtDateTime(job.tao_luc)}</div>
-      </li>`;
+    return {
+      esc: escapeHtml, chip: nhanTrangThai(job), stopText, taoLuc: fmtDateTime(job.tao_luc),
+      mo: state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
+      dangGuiChayLai: state.dangGuiChayLai.has(job.id), dangGuiTaiLai: state.dangGuiTaiLai.has(job.id),
+    };
   }
 
-  // Dòng "thứ N trong hàng" + nút rút. CHỈ cho job đang chờ: job đang tải
-  // không rút được (worker đã nhặt), và một nút bấm vào là báo lỗi thì thà
-  // đừng vẽ ra.
-  //
-  // KHÔNG hứa thời gian. Số đo duy nhất đang có là 6,6 giây/video từ đúng
-  // một lượt; "còn khoảng N phút" dựng trên n=1 là một lời hứa bịa, và
-  // người dùng sẽ đo nó bằng đồng hồ thật.
-  function queueLine(job) {
-    if (job.trang_thai !== "pending") return "";
-    const thu = job.vi_tri
-      ? (job.vi_tri === 1 ? "Tiếp theo trong hàng"
-                          : `Thứ ${job.vi_tri} trong hàng`)
-      : "Đang chờ tới lượt";
-    return `
-      <div class="queue-line">
-        <span class="queue-pos">${escapeHtml(thu)}</span>
-        <button type="button" class="queue-cancel" data-huy="${job.id}">Rút lượt</button>
-      </div>`;
+  const renderQueueItem = (job) => window.TheLuotGon.theGon(job, ctxThe(job));
+
+  // Popup chi tiết của một lượt (`the-luot-gon.js::popup`). Chỉ vẽ lại khi HTML đổi để nhịp poll không
+  // làm mất vị trí cuộn/focus; đang gõ trong ô "tải thêm" của popup thì để yên.
+  function capNhatPopup() {
+    const scrim = document.getElementById("hn-scrim");
+    if (state.popupId === null) return;
+    const job = state.jobs.find((j) => j.id === state.popupId);
+    if (!job) { dongPopup(false); return; }
+    const dangGo = document.activeElement;
+    if (dangGo && dangGo.classList && dangGo.classList.contains("chay-lai-n") && scrim.contains(dangGo)) return;
+    const html = window.TheLuotGon.popup(job, ctxThe(job));
+    if (html === state.popupHtml) return;
+    const pop = document.getElementById("hn-pop");
+    const giuFocus = pop.contains(dangGo);
+    pop.innerHTML = html;
+    state.popupHtml = html;
+    if (giuFocus && !pop.contains(document.activeElement)) pop.querySelector("[data-hn-dong]").focus();
+  }
+
+  function moPopup(id) {
+    const job = state.jobs.find((j) => j.id === id);
+    if (!job) return;
+    state.popupId = id;
+    state.popupHtml = "";
+    document.getElementById("hn-scrim").hidden = false;
+    capNhatPopup();
+    document.querySelector("#hn-pop [data-hn-dong]").focus();
+  }
+
+  // `traFocus`: trả focus về thẻ (đóng bằng ✕/Esc/nền); false khi đóng để mở việc khác (cửa sổ giải, chia cụm).
+  function dongPopup(traFocus) {
+    if (state.popupId === null) return;
+    const id = state.popupId;
+    state.popupId = null;
+    state.popupHtml = "";
+    document.getElementById("hn-scrim").hidden = true;
+    document.getElementById("hn-pop").innerHTML = "";
+    if (traFocus !== false) {
+      const the = document.getElementById(`job-${id}`);
+      if (the) the.focus();
+    }
   }
 
   // ========================================================================
@@ -871,28 +831,46 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     l.classList.toggle("xem-het");
     xemHetNut.textContent = l.classList.contains("xem-het") ? "Thu gọn" : `Xem tất cả ${state.jobs.length} →`;
   });
-  // Menu ⋯ trên thẻ lượt tải: mở/đóng bằng `state.menuMo`; bấm ra ngoài, Esc, hoặc chọn một mục thì đóng.
-  // Đóng bằng setTimeout để các tay nghe khác của CÙNG cú bấm (chép link, chia cụm) còn thấy nút trong DOM.
-  const dongMenuLuot = () => { if (state.menuMo !== null) { state.menuMo = null; renderQueue(); } };
-  document.getElementById("queue-list").addEventListener("click", (ev) => {
-    const nutMenu = ev.target.closest("[data-menu]");
-    if (nutMenu) {
-      const id = Number(nutMenu.dataset.menu);
-      state.menuMo = state.menuMo === id ? null : id;
-      renderQueue();
-      const m = document.querySelector("#queue-list .menu:not([hidden]) [role=menuitem]:not(:disabled)");
-      if (state.menuMo !== null && m) m.focus();
-      return;
-    }
-    if (ev.target.closest(".menu [role=menuitem]")) setTimeout(dongMenuLuot, 0);
+  // Popup chi tiết (mock R-07 v2): bấm thân thẻ / "Chi tiết", hoặc Enter/Space khi thẻ đang focus. Bấm NÚT/LIÊN KẾT/Ô NHẬP
+  // trên thẻ chỉ chạy việc của nút — KHÔNG mở popup (bỏ cái guard này thì mọi nút đều bật popup).
+  const hnScrim = document.getElementById("hn-scrim");
+  const hnPop = document.getElementById("hn-pop");
+  const queueList = document.getElementById("queue-list");
+  // Hàng đợi vẽ lại mỗi nhịp poll và popup có cùng bộ nút ⇒ uỷ quyền gắn cho CẢ HAI chỗ.
+  const tren = (loai, fn) => { queueList.addEventListener(loai, fn); hnPop.addEventListener(loai, fn); };
+  queueList.addEventListener("click", (ev) => {
+    if (ev.target.closest("button, a, input, label")) return;
+    const the = ev.target.closest(".queue-item");
+    if (the) moPopup(Number(the.id.replace("job-", "")));
   });
-  document.addEventListener("click", (ev) => { if (!ev.target.closest(".menu-wrap")) dongMenuLuot(); });
-  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") dongMenuLuot(); });
+  queueList.addEventListener("keydown", (ev) => {
+    if (ev.target.classList && ev.target.classList.contains("queue-item") && (ev.key === "Enter" || ev.key === " ")) {
+      ev.preventDefault();
+      moPopup(Number(ev.target.id.replace("job-", "")));
+    }
+  });
+  hnScrim.addEventListener("click", (ev) => {
+    if (ev.target === hnScrim || ev.target.closest("[data-hn-dong]")) dongPopup(true);
+    // Chia cụm mở màn riêng ở lớp trên: đóng popup sau khi tay nghe `data-chia` (chia-cum.js) đã đọc nút.
+    else if (ev.target.closest("[data-chia]")) setTimeout(() => dongPopup(false), 0);
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (state.popupId === null) return;
+    if (ev.key === "Escape") { ev.preventDefault(); dongPopup(true); return; }
+    if (ev.key !== "Tab") return;
+    // Giữ Tab trong popup (aria-modal).
+    const f = [...hnPop.querySelectorAll("button:not(:disabled), a[href], input")];
+    if (!f.length) return;
+    const dau = f[0], cuoi = f[f.length - 1];
+    if (!hnPop.contains(document.activeElement)) { ev.preventDefault(); dau.focus(); }
+    else if (ev.shiftKey && document.activeElement === dau) { ev.preventDefault(); cuoi.focus(); }
+    else if (!ev.shiftKey && document.activeElement === cuoi) { ev.preventDefault(); dau.focus(); }
+  });
   document.querySelectorAll("[data-cuon]").forEach((b) => b.addEventListener("click", () => {
     const l = document.getElementById("queue-list");
     l.scrollBy({ left: Number(b.dataset.cuon) * 272, behavior: "smooth" });
   }));
-  document.getElementById("queue-list").addEventListener("click", async (ev) => {
+  tren("click", async (ev) => {
     const btn = ev.target.closest("[data-huy]");
     if (!btn) return;
     const jobId = Number(btn.dataset.huy);
@@ -918,26 +896,26 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
   });
 
   // Chạy lại để kiếm thêm + chép link. Cùng lý do uỷ quyền như "Rút lượt".
-  const queueList = document.getElementById("queue-list");
-  // "Tôi giải ngay" / "Mở cửa sổ giải" (giải xác minh trong popup — `giai-captcha-popup.js`).
+  // "Xác minh" (= "Tôi giải ngay") / "Mở cửa sổ giải" (giải xác minh trong popup — `giai-captcha-popup.js`).
   // Uỷ quyền như "Rút lượt": thẻ job vẽ lại mỗi nhịp poll/SSE.
-  queueList.addEventListener("click", (ev) => {
+  tren("click", (ev) => {
     const nut = ev.target.closest("[data-giai-ngay],[data-mo-giai]");
     if (!nut) return;
     const id = Number(nut.dataset.giaiNgay ?? nut.dataset.moGiai);
     const job = state.jobs.find((j) => j.id === id);
     if (!job) return;
+    if (hnPop.contains(nut)) dongPopup(false);   // cửa sổ giải mở ở lớp trên: không để hai hộp thoại chồng nhau
     if (nut.dataset.giaiNgay !== undefined) window.GiaiCaptcha.giaiNgay(job, nut);
     else window.GiaiCaptcha.mo(job);
   });
-  queueList.addEventListener("input", (ev) => {
+  tren("input", (ev) => {
     const o = ev.target.closest("[data-chay-lai-n]");
     if (o) state.chayLai.set(Number(o.dataset.chayLaiN), o.value);
   });
-  queueList.addEventListener("click", async (ev) => {
-    const nut = ev.target.closest("[data-chay-lai],[data-chay-lai-ok],[data-chay-lai-huy],[data-chep-link]");
+  tren("click", async (ev) => {
+    const nut = ev.target.closest("[data-chay-lai],[data-chay-lai-ok],[data-chay-lai-huy],[data-chep-link],[data-tai-lai]");
     if (!nut) return;
-    const id = Number(nut.dataset.chayLai ?? nut.dataset.chayLaiOk ?? nut.dataset.chayLaiHuy ?? nut.dataset.chepLink);
+    const id = Number(nut.dataset.chayLai ?? nut.dataset.chayLaiOk ?? nut.dataset.chayLaiHuy ?? nut.dataset.chepLink ?? nut.dataset.taiLai);
     const job = state.jobs.find((j) => j.id === id);
     if (!job) return;
     if (nut.dataset.chepLink !== undefined) {
@@ -947,10 +925,27 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
       } catch (e) {
         showToast("Không chép được — chọn và copy tay.");
       }
+    } else if (nut.dataset.taiLai !== undefined) {
+      // "Tải lại": cùng link, cùng số xin (`tong`), cùng usecase/insight — một POST /jobs như form và "Tải thêm".
+      if (state.dangGuiTaiLai.has(id)) return;
+      state.dangGuiTaiLai.add(id);
+      renderQueue();
+      try {
+        const kq = await guiTaoJob(taoJobBody(job.url, job.tong, job.usecase, job.insight_goc));
+        if (kq.ok) {
+          showToast(`Đã tạo lượt mới tải lại ${job.tong} video.`);
+          if (state.popupId === id) dongPopup(false);
+        } else {
+          showToast(kq.loi);
+        }
+      } finally {
+        state.dangGuiTaiLai.delete(id);
+        renderQueue();
+      }
     } else if (nut.dataset.chayLai !== undefined) {
       state.chayLai.set(id, window.BaoThieu.soChayLai(job));
       renderQueue();
-      const o = queueList.querySelector(`[data-chay-lai-n="${id}"]`);
+      const o = (state.popupId === id ? hnPop : queueList).querySelector(`[data-chay-lai-n="${id}"]`);
       if (o) o.focus();
     } else if (nut.dataset.chayLaiHuy !== undefined) {
       state.chayLai.delete(id);
