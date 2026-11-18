@@ -466,10 +466,15 @@ def _open_context(
     )
     stealth = True
     launch_kwargs: dict = {}
-    if trinh_duyet_patchright.patchright_dang_bat():
+    dung_patchright = trinh_duyet_patchright.patchright_dang_bat()
+    if dung_patchright:
         common_kwargs = trinh_duyet_patchright.kwargs_context_patchright(common_kwargs)
         launch_kwargs["channel"] = common_kwargs.pop("channel")
         stealth = False
+    # Tín hiệu DƯƠNG cho biết đường nào đang chạy (trước đây chỉ có cảnh báo khi lùi). Không ghi URL/handle/cookie.
+    log.info("[trinh-duyet] duong=%s headless=%s profile=%s",
+             trinh_duyet_patchright.ten_duong(dung_patchright, headless), headless,
+             "co" if profile_dir is not None else "khong")
     proxy_cfg = {"server": proxy} if proxy else None
 
     if profile_dir is not None:
