@@ -705,6 +705,10 @@ class YoutubeKenh:
     def loai_log(self, url: str) -> str:
         return "youtube:kenh"
 
+    def _link_liet_ke(self, url: str, max_videos: int) -> str:
+        """Địa chỉ thật đưa cho yt-dlp (lớp con đổi cách dịch URL người dùng nhập)."""
+        return _ep_tab_videos((tach_link(url) or [""])[0])
+
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
                 already_have: Callable[[list[str]], set[str]],
                 on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
@@ -712,7 +716,7 @@ class YoutubeKenh:
                 nghi: Callable[[], None] | None = None, **_chua_dung) -> list[VideoRef]:
         """`cong`, `ghi_loi_video`, `nghi`: như `LinkLe.liet_ke`. Mọi lời gọi tới YouTube (mở danh sách, mỗi bước theo
         `url`, mỗi `SO_MUC_MOI_LUOT_PACER` mục kéo tiếp, đường lui `duration` của từng mục) đi qua `cong.truoc_goi()`."""
-        link = _ep_tab_videos((tach_link(url) or [""])[0])
+        link = self._link_liet_ke(url, max_videos)
         la_short = _la_tab_shorts(link)
         loi, so_loi = _bo_dem_loi_video(ghi_loi_video)
         opts = downloader.opts_chung_nen_tang_khac(proxy)
@@ -813,22 +817,101 @@ class YoutubeKenh:
             if da_bo_vi_da_co and so_loi[0] == 0:
                 on_stop(STOP_ALREADY_OWNED)
             else:
-                log.warning("nguồn youtube_kenh: không lấy được video mới nào (link sai, không công khai, hoặc đổi cấu trúc)")
+                log.warning("nguồn %s: không lấy được video mới nào (link sai, không công khai, hoặc đổi cấu trúc)", self.ten)
                 on_stop(STOP_SOURCE_EMPTY)
         if dung:
             on_stop(dung)
         return moi
 
 
+# Tìm kiếm / hashtag YouTube (`/results?search_query=`, `/hashtag/<tag>`). Mặc định TẮT: đặt cờ này = 1/true/yes/on
+# thì mới nhận; tắt ⇒ `nhan` trả False nên các URL đó vẫn 400 như trước. Đọc MỖI lần gọi (như `nen_tang_bat`).
+# ĐIỀU KIỆN BẬT TRÊN PROD (cả hai): (1) máy prod (ca-n) đã có Deno — `web/queue.py` dừng MỌI job YouTube bằng
+# `thieu_deno` khi `find_deno()` trả None, mà ca-n hiện không có deno (chỉ có node trong micromamba); (2) đã có ÍT
+# NHẤT 1 job YouTube thật trên ca-n tải ra được tệp. Đo trên ca-n (yt-dlp 2026.08.19): tải tay video YouTube không
+# ra tệp (>3 phút, không dòng lỗi rõ; từng gặp "Requested format is not available"), nguyên nhân CHƯA KẾT LUẬN.
+# Cờ này không đổi đường tải/định dạng; bật khi đường tải chưa chạy được chỉ nhân thêm job hỏng.
+ENV_YT_TIM_KIEM_BAT = "VIDEODL_YT_TIM_KIEM_BAT"
+_GIA_TRI_BAT_TIM_KIEM = frozenset({"1", "true", "yes", "on"})
+# Trần số video một lượt tìm kiếm (cùng giá trị `web/app.py::MAX_VIDEO_KENH_YOUTUBE`, lý do ở đó): nằm cả ở đây để
+# chuỗi `ytsearchN:` dựng ra không bao giờ mang N vượt trần dù nơi gọi quên kiểm.
+TRAN_SO_VIDEO_TIM_KIEM = 30
+TRAN_DO_DAI_TU_KHOA = 200
+_MAU_DUONG_HASHTAG = re.compile(r"/hashtag/[^/\s]+/?", re.I)
+_MAU_KY_TU_DIEU_KHIEN = re.compile(r"[\x00-\x1f\x7f]+")
+
+
+def yt_tim_kiem_dang_bat() -> bool:
+    return os.environ.get(ENV_YT_TIM_KIEM_BAT, "").strip().lower() in _GIA_TRI_BAT_TIM_KIEM
+
+
+def _tu_khoa_tim_kiem_youtube(url: str) -> str | None:
+    """Từ khoá của URL `https://[www.|m.]youtube.com/results?search_query=<kw>` (đã giải mã `+`/`%xx`), hoặc None
+    khi URL không phải trang kết quả tìm kiếm hoặc từ khoá rỗng. Chỉ đọc URL, KHÔNG gọi mạng."""
+    from urllib.parse import parse_qs
+    if not _MAU_URL_HTTP.match(url):
+        return None
+    try:
+        t = urlsplit(url)
+    except ValueError:
+        return None
+    if (t.hostname or "").lower() not in _HOST_KENH_YOUTUBE or (t.path or "").rstrip("/") != "/results":
+        return None
+    kw = parse_qs(t.query).get("search_query", [""])[0]
+    kw = " ".join(_MAU_KY_TU_DIEU_KHIEN.sub(" ", kw).split())[:TRAN_DO_DAI_TU_KHOA]
+    return kw or None
+
+
+def _la_url_hashtag_youtube(url: str) -> bool:
+    if not _MAU_URL_HTTP.match(url):
+        return False
+    try:
+        t = urlsplit(url)
+    except ValueError:
+        return False
+    return ((t.hostname or "").lower() in _HOST_KENH_YOUTUBE
+            and _MAU_DUONG_HASHTAG.fullmatch(t.path or "") is not None and YoutubeTabIE.suitable(url))
+
+
+class YoutubeTimKiem(YoutubeKenh):
+    """Trang tìm kiếm (`/results?search_query=`) và hashtag (`/hashtag/<tag>`) YouTube: cùng đường liệt kê/lọc
+    trùng/pacer/tải như `YoutubeKenh`. Chỉ khác cách nhận và cách dịch URL: tìm kiếm ⇒ `ytsearch{N}:<kw>` với N bị
+    kẹp ≤ `TRAN_SO_VIDEO_TIM_KIEM` (người dùng KHÔNG nhập được chuỗi `ytsearchN:` trần — không nhận dạng được).
+    Ra 0 video ⇒ `source_empty` như kênh rỗng (không im lặng "xong 0/0")."""
+
+    ten = "youtube_tim_kiem"
+    mo_ta_url = "tìm kiếm / hashtag YouTube"
+
+    def nhan(self, url: str) -> bool:
+        if not yt_tim_kiem_dang_bat():
+            return False
+        url = url.strip()
+        return _tu_khoa_tim_kiem_youtube(url) is not None or _la_url_hashtag_youtube(url)
+
+    def loai_log(self, url: str) -> str:
+        return "youtube:tim_kiem"
+
+    def liet_ke(self, url: str, *, max_videos: int, **kw) -> list[VideoRef]:
+        # Kẹp cả vòng duyệt (hashtag không có N trong URL): không phụ thuộc việc nơi gọi đã kiểm trần.
+        return super().liet_ke(url, max_videos=max(1, min(int(max_videos), TRAN_SO_VIDEO_TIM_KIEM)), **kw)
+
+    def _link_liet_ke(self, url: str, max_videos: int) -> str:
+        link = (tach_link(url) or [""])[0]
+        kw = _tu_khoa_tim_kiem_youtube(link)
+        if kw is None:
+            return link         # hashtag: yt-dlp mở thẳng URL
+        return f"ytsearch{max(1, min(int(max_videos), TRAN_SO_VIDEO_TIM_KIEM))}:{kw}"
+
+
 # Hai nguồn liệt kê/tải qua yt-dlp trên lane nền tảng khác: cùng cổng IP (`cong`), cùng cổng bật/tắt nền tảng
 # (`nen_tang_bat`), cùng đường báo lỗi riêng từng video. Chỗ nào cần "nguồn này đi qua pacer" thì hỏi tập này,
 # đừng liệt kê từng lớp (thêm nguồn yt-dlp mới = thêm vào đây).
-NGUON_YT_DLP_NEN_TANG_KHAC: tuple[type, ...] = (LinkLe, YoutubeKenh)
+NGUON_YT_DLP_NEN_TANG_KHAC: tuple[type, ...] = (LinkLe, YoutubeKenh, YoutubeTimKiem)
 
 # Thứ tự = thứ tự thử `nhan`; nguồn đầu tiên nhận thì thắng. Các tập URL không giao nhau (FB Ads Library nằm
 # trước `LinkLe` vì extractor `Facebook*` của yt-dlp không được cướp link thư viện quảng cáo; `YoutubeKenh` đứng
 # trước `LinkLe` cho cùng lý do: URL tab của kênh/playlist không phải video lẻ).
-NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), YoutubeKenh(), LinkLe())
+NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), YoutubeKenh(), YoutubeTimKiem(), LinkLe())
 
 
 # Nguồn dùng khi một URL cũ không nguồn nào nhận (xem `web/queue.py::_fetch_refs`).
@@ -845,4 +928,5 @@ def chon_nguon(url: str) -> Nguon | None:
 
 def mo_ta_cac_nguon() -> str:
     """Câu liệt kê các loại link đang nhận, cho thông báo 400 (sinh từ bảng, thêm nguồn tự có mặt)."""
-    return ", ".join(n.mo_ta_url for n in NGUON)
+    # Nguồn tìm kiếm/hashtag chỉ có mặt khi cờ bật: cờ tắt ⇒ thông báo 400 giữ nguyên chữ như trước.
+    return ", ".join(n.mo_ta_url for n in NGUON if not (isinstance(n, YoutubeTimKiem) and not yt_tim_kiem_dang_bat()))
