@@ -236,3 +236,28 @@ def test_ma_dung_khong_co_trong_bang_thi_hien_cau_tieng_viet_khong_in_ma_tho(tra
     assert ma not in q.inner_text()
     assert "chưa có câu giải thích riêng" in q.locator(".stop-reason").inner_text()
     assert f"#{job}" in q.inner_text()   # câu bảo "kèm mã lượt" ⇒ mã lượt phải có ngay trong popup
+
+
+# ---------------------------------------------------------------- 8. Dòng nguồn theo trạng thái thật (sau #113)
+
+@pytest.mark.parametrize("trang_thai, xong, mong, khong", [
+    ("failed", 11, "đủ số bạn xin, nhưng lượt dừng giữa chừng khi mới tải 11/60.", None),
+    ("interrupted", 11, "đủ số bạn xin, nhưng lượt bị ngắt khi mới tải 11/60.", None),
+    ("cancelled", 0, "đủ số bạn xin, nhưng lượt đã bị rút khi mới tải 0/60.", None),
+    ("done", 59, "đủ số bạn xin, nhưng chỉ tải được 59/60.", None),
+    ("done", 60, "Nguồn lần này có 60 video — đủ số bạn xin.", "nhưng"),
+])
+def test_dong_nguon_du_so_xin_noi_ro_da_tai_bao_nhieu_theo_trang_thai(trang, db, trang_thai, xong, mong, khong):
+    """Nguồn dò đủ 60/60 mà lượt kết thúc khi mới tải một phần ⇒ dòng nguồn không được chỉ nói "đủ số bạn xin"
+    (ảnh popup lượt Lỗi 11/60 ở #113). Đột biến ĐỎ: bỏ nhánh `KET_THUC_THIEU` trong `bao-thieu.js::dongNguon` ⇒
+    bốn ca đầu chỉ còn "— đủ số bạn xin." (`mong in nguon` lệch)."""
+    job = _job(db, tong=60, tim=60, bo_qua=0, xong=xong,
+               trang_thai=trang_thai if trang_thai in ("done", "failed") else "done")
+    if trang_thai in ("interrupted", "cancelled"):
+        with models._connect(db) as conn:
+            conn.execute("UPDATE jobs SET trang_thai = ? WHERE id = ?", (trang_thai, job))
+    p, _ = trang()
+    nguon = _popup(p, job).locator(".nguon").inner_text()
+    assert mong in nguon, nguon
+    if khong:
+        assert khong not in nguon, nguon
