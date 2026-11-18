@@ -99,7 +99,7 @@
 .tl-duyet-head h2 { margin: 0; font-size: 1.05rem; }
 .tl-dem-chan { font-size: .84rem; }
 .topbar-nav a.here { color: var(--text); font-weight: 600; }
-.tl-duyet-head .tl-dem { font-family: var(--mono); font-size: .78rem; background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 999px; }
+.tl-duyet-head .tl-dem { white-space: nowrap; font-family: var(--mono); font-size: .78rem; background: var(--accent-soft); color: var(--accent); padding: 2px 8px; border-radius: 999px; }
 .tl-nav { width: 36px; height: 36px; padding: 0; border-radius: 50%; }
 .tl-duyet-body { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 22px; }
 .tl-so-sanh img { width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); display: block; }

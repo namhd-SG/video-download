@@ -124,10 +124,26 @@ def test_khung_bo_tu_tim_1440_the_cuoi_nam_tron_trong_khung(may_chu, trinh_duyet
 
 def test_nut_truoc_sau_chi_hien_khi_luoi_the_duyet_tran(may_chu, trinh_duyet, monkeypatch):
     from test_thay_logo_trang_browser import _danh_sach, _dong_mo, _tra_json, _trang_gia
-    for so, hien in ((3, False), (8, True)):  # 3 thẻ vừa một hàng ở 1440 ⇒ ẩn; 8 thẻ (nhiều hàng + "Xem thêm") ⇒ hiện
+    # Lưới thẻ: hiện hết ⇒ ẩn ‹ › (3 thẻ: 1 hàng ở 1440, 2+1 ở 390); còn thẻ giấu sau "Xem thêm" (8 thẻ) ⇒ hiện
+    for so, rong, hien in ((3, 1440, False), (3, 390, False), (8, 1440, True), (8, 390, True)):
         ds = [_dong_mo(60 + i) for i in range(so)]
         p = _trang_gia(trinh_duyet, may_chu, monkeypatch, (lambda d: lambda r: _tra_json(r, _danh_sach(d)))(ds))
-        p.set_viewport_size({"width": 1440, "height": 900})
+        p.set_viewport_size({"width": rong, "height": 900})
         p.goto(f"{may_chu}/thay-logo.html")
         p.wait_for_selector("#tl-duyet .tl-the-duyet")
-        assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, so
+        assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, (so, rong)
+
+
+def test_nut_sau_luot_qua_8_the_khong_mat_giua_chung(may_chu, trinh_duyet, monkeypatch):
+    """8 thẻ ở 390: bấm › lướt qua hết (thẻ 7, 8 nằm ngoài 6 thẻ đầu ⇒ lưới tự mở hết) — ‹ › phải còn ở mọi bước, cuối vòng về thẻ 1."""
+    from test_thay_logo_trang_browser import _danh_sach, _dong_mo, _tra_json, _trang_gia
+    ds = [_dong_mo(60 + i) for i in range(8)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
+    p.set_viewport_size({"width": 390, "height": 900})
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector("#tl-duyet .tl-the-duyet")
+    sau = p.locator('#tl-duyet .tl-nav[aria-label="Video sau"]')
+    for buoc in range(1, 10):  # lần 1 mở thẻ 1, lần 8 tới thẻ 8, lần 9 quay về thẻ 1
+        assert sau.is_visible() and p.locator('#tl-duyet .tl-nav[aria-label="Video trước"]').is_visible(), buoc
+        sau.click()
+        assert p.locator("#tl-duyet .tl-dem").inner_text() == f"{(buoc - 1) % 8 + 1} / 8", buoc

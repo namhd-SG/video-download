@@ -110,7 +110,7 @@
       the.append(anh, ten, el("span", "tl-the-dong", dong || `Lượt #${v.job_id}`), nut);
       luoi.append(the);
     });
-    if (ds.length > SO_THE_GON && !(daMo && vi >= SO_THE_GON)) {
+    if (coTheAn(ds)) {
       const m = el("button", "btn ghost tl-luoi-them", hienHetThe ? "Thu gọn ▴" : `Xem thêm ${ds.length - SO_THE_GON} video ▾`); m.type = "button";
       m.setAttribute("aria-expanded", String(hienHetThe));
       m.addEventListener("click", () => { hienHetThe = !hienHetThe; veDuyet(); });
@@ -119,14 +119,8 @@
     return wrap;
   }
 
-  // ‹ › chỉ có ích khi lưới thẻ tràn (nhiều hàng hoặc còn "Xem thêm"); mọi thẻ đã nằm trọn một hàng (vd 3 thẻ ở 1440) ⇒ ẩn. Đo sau khi thẻ đã vào DOM.
-  function capNutNav() {
-    const navs = document.querySelectorAll("#tl-duyet .tl-nav"), the = document.querySelectorAll("#tl-duyet .tl-the-duyet");
-    if (!navs.length) return;
-    const mot = new Set([...the].map((t) => t.offsetTop)).size <= 1 && !document.querySelector("#tl-duyet .tl-luoi-them");
-    for (const n of navs) n.hidden = mot;
-  }
-  window.addEventListener("resize", capNutNav);
+  // Nút "Xem thêm"/"Thu gọn": còn thẻ ngoài 6 thẻ đầu và thẻ đang chọn không nằm ngoài đó (nằm ngoài ⇒ lưới đã mở hết).
+  function coTheAn(ds) { return ds.length > SO_THE_GON && !(daMo && vi >= SO_THE_GON); }
 
   function veDuyet() {
     const hop = $("tl-duyet"); hop.replaceChildren();
@@ -139,10 +133,12 @@
     truoc.disabled = sau.disabled = ds.length < 2;
     truoc.addEventListener("click", () => { vi = daMo ? (vi - 1 + ds.length) % ds.length : ds.length - 1; moHong = false; daMo = true; veDuyet(); });
     sau.addEventListener("click", () => { vi = daMo ? (vi + 1) % ds.length : 0; moHong = false; daMo = true; veDuyet(); });
+    // Khối duyệt là LƯỚI thẻ (mock không có ‹ ›): ≤ 6 thẻ thì luôn hiện hết (dù 1 hay nhiều hàng, vd 3 thẻ = 2+1 ở 390) ⇒ ẩn ‹ ›.
+    // > 6 thẻ ⇒ luôn hiện, kể cả khi lưới đã mở hết vì đang lướt tới thẻ 7+ (không được biến mất giữa lúc lướt).
+    truoc.hidden = sau.hidden = ds.length <= SO_THE_GON;
     head.append(truoc, sau); hop.append(head);
     if (!ds.length) { if (!T.dangTaiLoc) daMo = false; hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
     hop.append(veLuoi(ds));
-    capNutNav();
     if (!daMo) return;  // chưa chọn thẻ nào: dừng ở lưới thẻ
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
