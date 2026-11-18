@@ -819,6 +819,15 @@ def sum_videos_since_by_creator(db_path: Path, since: str) -> dict[str, int]:
     return {row["nguoi_tao"]: row["n"] for row in rows}
 
 
+def job_gan_nhat_cua_nguoi(db_path: Path, nguoi_tao: str, nen_tang: str) -> dict | None:
+    """Job MỚI NHẤT của người này trên nền tảng này (`tao_luc`, `ly_do_dung`), hoặc None. Cho thẻ cookie IG."""
+    with _connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT tao_luc, ly_do_dung FROM jobs WHERE nguoi_tao = ? AND nen_tang = ? "
+            "ORDER BY id DESC LIMIT 1", (nguoi_tao, nen_tang)).fetchone()
+    return dict(row) if row is not None else None
+
+
 def get_job(db_path: Path, job_id: int) -> dict | None:
     with _connect(db_path) as conn:
         row = conn.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()

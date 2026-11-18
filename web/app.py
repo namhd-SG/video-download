@@ -43,6 +43,7 @@ from web import thay_logo_routes, thay_logo_worker
 from web.auth import admin_tu_env, is_admin, require_user
 from web.cookies import (cookie_identity, cookie_jar_path, cookies_path_for_user,
                          han_dung_nhat, ly_do_jar_khong_dung_duoc)
+from tiktok_music_downloader.utils import STOP_IG_MAT_PHIEN
 from tiktok_music_downloader.gdrive_upload import UploadOutcome
 from web.lifecycle import (MAX_INDEX_PAGES_PER_COOKIE_PER_DAY,
                            MAX_JOBS_PER_COOKIE_PER_DAY,
@@ -644,7 +645,7 @@ class CookieBody(BaseModel):
                              description="Chuỗi JSON xuất từ Cookie-Editor")
 
 
-def _trang_thai_cookie(nguoi_tao: str) -> dict:
+def _trang_thai_cookie(nguoi_tao: str, nen_tang: str = "tiktok") -> dict:
     """What this person's jar looks like, said in codes and timestamps only.
 
     Not one byte of the jar leaves through here. `ly_do_jar_khong_dung_duoc`
@@ -662,19 +663,34 @@ def _trang_thai_cookie(nguoi_tao: str) -> dict:
     is let them tell one jar from another: paste a new cookie, watch these 8
     characters change, and know the replacement landed.
     """
-    duong_dan = cookies_path_for_user(COOKIES_DIR, nguoi_tao)
+    duong_dan = cookies_path_for_user(COOKIES_DIR, nguoi_tao, nen_tang)
     if duong_dan is None:
         return {"co_jar": False, "trang_thai": None,
                 "het_han": None, "cap_nhat_luc": None, "van_tay": None}
-    ma = ly_do_jar_khong_dung_duoc(duong_dan)
-    return {
+    ma = ly_do_jar_khong_dung_duoc(duong_dan, nen_tang=nen_tang)
+    mtime = Path(duong_dan).stat().st_mtime
+    ra = {
         "co_jar": True,
         "trang_thai": ma or "dung_duoc",
-        "het_han": han_dung_nhat(duong_dan),
-        "cap_nhat_luc": datetime.fromtimestamp(
-            Path(duong_dan).stat().st_mtime, tz=timezone.utc).isoformat(),
+        "het_han": han_dung_nhat(duong_dan, nen_tang),
+        "cap_nhat_luc": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
         "van_tay": _van_tay_jar(duong_dan),
     }
+    if nen_tang == "instagram" and ma is None and _ig_gan_nhat_mat_phien(nguoi_tao, mtime):
+        # Thẻ ĐỎ: jar còn hạn nhưng job IG gần nhất đã dừng vì mất phiên / bị IG chặn SAU lần dán gần nhất.
+        ra["trang_thai"] = STOP_IG_MAT_PHIEN
+    return ra
+
+
+def _ig_gan_nhat_mat_phien(nguoi_tao: str, mtime_jar: float) -> bool:
+    """Job IG gần nhất của người này dừng `ig_mat_phien` và được tạo SAU lần dán jar gần nhất (dán lại jar ⇒ hết đỏ)."""
+    job = models.job_gan_nhat_cua_nguoi(DB_PATH, nguoi_tao, "instagram")
+    if job is None or job["ly_do_dung"] != STOP_IG_MAT_PHIEN:
+        return False
+    try:
+        return datetime.fromisoformat(job["tao_luc"]).timestamp() > mtime_jar
+    except ValueError:
+        return False
 
 
 def _van_tay_jar(duong_dan: str) -> str | None:
@@ -796,9 +812,17 @@ def put_my_cookie(body: CookieBody,
     converts to a temp Netscape jar when it starts, so it is not reading this
     file mid-flight.
     """
+    _nhan_jar(body, nguoi_tao, "tiktok")
+    log.info("me/cookie: đã nhận jar mới")
+    return _trang_thai_cookie(nguoi_tao)
+
+
+def _nhan_jar(body: "CookieBody", nguoi_tao: str, nen_tang: str) -> None:
+    """Kiểm jar ở tệp tạm rồi `os.replace` vào đúng jar CỦA NỀN TẢNG NÀY (xem `put_my_cookie`). Jar nền tảng khác
+    của cùng người không bao giờ bị đọc hay ghi ở đây (TikTok giữ nguyên từng byte khi nạp/xoá cookie IG)."""
     cookies_dir = COOKIES_DIR
     _make_private_dir(cookies_dir)
-    dich = cookie_jar_path(cookies_dir, nguoi_tao)
+    dich = cookie_jar_path(cookies_dir, nguoi_tao, nen_tang)
     tmp_dir = Path(downloader.COOKIE_TMP_DIR)
     tmp_dir.mkdir(parents=True, exist_ok=True)
     tam = tmp_dir / f"{downloader.COOKIE_TMP_PREFIX}me-{dich.stem}.json"
@@ -809,7 +833,7 @@ def put_my_cookie(body: CookieBody,
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as fh:
             fh.write(body.json_cookie)
-        ma = ly_do_jar_khong_dung_duoc(str(tam))
+        ma = ly_do_jar_khong_dung_duoc(str(tam), nen_tang=nen_tang)
         if ma is not None:
             # Chỉ MÃ ra ngoài. `detail` đi thẳng vào JSON trả về và vào log,
             # nên bất cứ thứ gì lấy từ nội dung tệp đặt vào đây là rò.
@@ -820,8 +844,25 @@ def put_my_cookie(body: CookieBody,
         # Trượt ở đâu cũng không để lại cookie đọc được trên đĩa. `os.replace`
         # thành công thì `tam` đã biến mất, nên `missing_ok`.
         tam.unlink(missing_ok=True)
-    log.info("me/cookie: đã nhận jar mới")
-    return _trang_thai_cookie(nguoi_tao)
+
+
+@app.get("/me/cookie/instagram")
+def get_my_cookie_instagram(nguoi_tao: str = Depends(require_user)) -> dict:
+    return _trang_thai_cookie(nguoi_tao, "instagram")
+
+
+@app.put("/me/cookie/instagram")
+def put_my_cookie_instagram(body: CookieBody, nguoi_tao: str = Depends(require_user)) -> dict:
+    """Nạp jar Instagram (tài khoản PHỤ) theo đúng khuôn `PUT /me/cookie`: kiểm ở tệp tạm, không có cookie
+    instagram.com ⇒ 400 và jar IG cũ giữ nguyên. Chỉ ghi `<sha256>.instagram.json`; jar TikTok không bị đụng."""
+    _nhan_jar(body, nguoi_tao, "instagram")
+    log.info("me/cookie/instagram: đã nhận jar mới")
+    return _trang_thai_cookie(nguoi_tao, "instagram")
+
+
+@app.delete("/me/cookie/instagram", status_code=204, response_model=None)
+def delete_my_cookie_instagram(nguoi_tao: str = Depends(require_user)) -> None:
+    cookie_jar_path(COOKIES_DIR, nguoi_tao, "instagram").unlink(missing_ok=True)
 
 
 @app.delete("/me/cookie", status_code=204, response_model=None)
