@@ -375,3 +375,8 @@ STOP_TRAN_NGAY = "tran_ngay"
 STOP_BI_CHAN = "bi_chan"
 # Job YouTube mà máy không có Deno: dừng trước khi gọi yt-dlp lần nào (cấu hình máy hỏng, không phải lỗi video).
 STOP_THIEU_DENO = "thieu_deno"
+# Job Instagram hàng loạt (R-08): không có cookie IG dùng được (chưa dán / hỏng) ⇒ dừng TRƯỚC khi mở trang, không chạy
+# ẩn danh. `ig_mat_phien`: phiên IG mất giữa chừng hoặc cookie hết hạn / bị IG chặn (đăng nhập lại, challenge, 429,
+# XHR báo lỗi…) ⇒ job `failed` nhãn "Cookie IG hết hạn / bị IG chặn", KHÔNG BAO GIỜ "xong" rỗng.
+STOP_IG_CHUA_CO_COOKIE = "ig_chua_co_cookie"
+STOP_IG_MAT_PHIEN = "ig_mat_phien"
