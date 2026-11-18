@@ -141,3 +141,21 @@ def test_move_khac_buttons_lien_tiep_khong_gop_chung():
     ra = bp.den_han(50.0)
     assert ra == [m_hover, m_keo_2]
     assert bp.thong_ke.so_gop == 1
+
+
+def test_move_dung_han_tung_cai_khong_bi_gop():
+    """Mỗi `move` được gọi `den_han` đúng lúc nó tới hạn (worker không trễ) ⇒ phát RIÊNG từng điểm, không gộp.
+    ĐỘT BIẾN: gộp cả move đúng hạn (vd giữ move lại chờ move sau / gộp qua nhiều lần gọi) ⇒ ĐỎ."""
+    bp = BoPhatLai(120.0)
+    bp.nut_giu_nguon = True
+    chuoi = [_ev("down", 1.0, 1.0, 0.0, buttons=1)] + [
+        _ev("move", 1.0 + i * 2.5, 1.0 + i * 0.5, i * 16.0, buttons=1) for i in range(1, 9)]
+    bp.nhan_lo(chuoi, t_toi=10.0)
+    ra: list[SuKien] = []
+    while bp.con_hang():
+        ke = bp.diem_ke_tiep()
+        lan = bp.den_han(ke)
+        assert len(lan) == 1, "đúng hạn ⇒ mỗi lần gọi đúng một sự kiện"
+        ra.extend(lan)
+    assert ra == chuoi
+    assert bp.thong_ke.so_gop == 0
