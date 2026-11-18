@@ -730,7 +730,7 @@
         p.panel = { loai: "het-gio", con };
       } else {
         p.panel = { loai: "khac", con, tieuDe: "Lượt giải đã đóng — job quay lại “Cần xác minh”",
-          noiDung: cau.cauLyDo(lyDo) || (lyDo ? `Mã: ${lyDo}` : "") };
+          noiDung: cau.cauLyDo(lyDo) };   // mã lạ ⇒ câu chung tiếng Việt (app.js `cauMaDung`), không in mã thô
       }
       ve();
       return;

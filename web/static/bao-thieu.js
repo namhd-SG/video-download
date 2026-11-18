@@ -162,25 +162,6 @@
     return Math.min(s.tong - s.xong, MAX_SO_LUONG);
   }
 
-  // `mo` = số đang gõ trong ô xác nhận (hoặc `null` khi ô đóng); `dangGui` = đang
-  // chờ POST của lượt chạy lại này ⇒ nút xác nhận khoá.
-  function khungHanhDong(job, mo, dangGui) {
-    const id = so(job.id);
-    const n = soChayLai(job);
-    let nut = "";
-    if (n !== null) {
-      nut += mo === null || mo === undefined
-        ? `<button type="button" class="btn primary" data-chay-lai="${id}">Chạy lại để kiếm thêm ${n} video…</button>`
-        : `<span class="chay-lai-xn">Kiếm thêm <input type="number" class="chay-lai-n" ` +
-          `data-chay-lai-n="${id}" min="1" max="${MAX_SO_LUONG}" value="${so(mo)}" ` +
-          `aria-label="Số video kiếm thêm"> video ` +
-          `<button type="button" class="btn primary" data-chay-lai-ok="${id}"${dangGui ? " disabled" : ""}>Chạy lại</button> ` +
-          `<button type="button" class="btn ghost" data-chay-lai-huy="${id}">Thôi</button></span>`;
-    }
-    nut += `<button type="button" class="btn" data-chep-link="${id}">Chép link</button>`;
-    return `<div class="actions">${nut}</div>`;
-  }
-
   // Dòng hiển thị cho `job.url`: job nhiều link (mỗi dòng một link) hiện link đầu kèm số link còn lại, không
   // dồn cả khối vào một dòng. Job một link: trả nguyên chuỗi (y hệt trước).
   function nhanUrl(url) {
@@ -197,6 +178,6 @@
 
   window.BaoThieu = Object.freeze({
     MAX_SO_LUONG, mauSo, phanTram, coLoiHeThong, coSuCoHangLoat, anCauDung, chuTienDo, nhanThieu, dongNguon, khungLoi,
-    soChayLai, khungHanhDong, chuanHoaSoChayLai, nhanUrl,
+    soChayLai, chuanHoaSoChayLai, nhanUrl,
   });
 })();

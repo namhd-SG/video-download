@@ -184,3 +184,55 @@ def test_the_cho_xac_minh_co_dung_mot_nut_giai_ngay_va_bam_van_goi_giai_captcha(
     p.locator("#hn-pop [data-giai-ngay]").click()
     p.wait_for_function("document.getElementById('hn-scrim').hidden")
     assert len(goi) == 2
+
+
+# ---------------------------------------------------------------- 7. Nợ sau #112: một nguồn nút giải + không in mã thô
+
+def test_nut_xac_minh_tren_the_va_popup_ve_tu_mot_nguon_gt_khung_hanh_dong(trang, db):
+    """Nút "Xác minh" của thẻ gọn VÀ popup phải lấy từ `GiaiCaptchaThe.khungHanhDong` (giai-captcha-the-job.js),
+    đứng CHUNG hàng nút với "Rút lượt". Đổi chữ nút ngay trong tệp nguồn đó (route) ⇒ cả thẻ lẫn popup đổi theo.
+    Đột biến ĐỎ: cho `the-luot-gon.js::hanhDong` tự vẽ lại nút như trước ⇒ chữ vẫn "Xác minh" ≠ "Xác minh·GT"."""
+    job = _cho_xac_minh(db)
+    p, _ = trang()
+
+    def sua(route):
+        r = route.fetch()
+        route.fulfill(response=r, body=r.text().replace(">Xác minh</button>", ">Xác minh·GT</button>"))
+
+    p.route("**/giai-captcha-the-job.js?*", sua)   # máy chủ gắn `?v=<băm>` vào src script
+    p.reload()
+    p.wait_for_selector(f"#job-{job}")
+    hang = _hang(p, job).locator(".hn-nut")
+    assert hang.locator("[data-giai-ngay]").inner_text() == "Xác minh·GT"
+    assert hang.locator("[data-huy]").inner_text() == "Rút lượt"   # cùng một hàng nút của thẻ
+    assert p.locator("[data-giai-ngay]").count() == 1
+    q = _popup(p, job)
+    assert q.locator("[data-giai-ngay]").inner_text() == "Xác minh·GT"
+    assert "chỉ chủ job hoặc admin" in q.locator(".giai-luot").inner_text()
+
+
+def test_chi_mot_ham_khung_hanh_dong_va_khong_con_in_ma_tho_trong_ma_nguon():
+    """Chốt "đừng nhân bản": đúng MỘT `function khungHanhDong` trong web/static, và chuỗi `data-giai-ngay="`
+    chỉ ở giai-captcha-the-job.js. Cửa sổ giải không còn in `Mã: <mã>` thô.
+    Đột biến ĐỎ: trả lại `BaoThieu.khungHanhDong` (bao-thieu.js) ⇒ đếm được 2 hàm; trả lại
+    `(lyDo ? \\`Mã: ${lyDo}\\` : "")` ở giai-captcha-popup.js ⇒ chuỗi `Mã: ${` xuất hiện lại."""
+    from pathlib import Path
+    tep = {f.name: f.read_text(encoding="utf-8") for f in Path("web/static").glob("*.js")}
+    assert sum(s.count("function khungHanhDong") for s in tep.values()) == 1
+    assert [n for n, s in tep.items() if 'data-giai-ngay="' in s] == ["giai-captcha-the-job.js"]
+    assert "Mã: ${" not in tep["giai-captcha-popup.js"]
+    assert "(mã chưa dịch:" not in tep["app.js"]
+
+
+@pytest.mark.parametrize("ma", ["het_trang", "ma_cu_khong_con_dung"])
+def test_ma_dung_khong_co_trong_bang_thi_hien_cau_tieng_viet_khong_in_ma_tho(trang, db, ma):
+    """Mã dừng ngoài `STOP_REASON_TEXT` (vd `het_trang` của dữ liệu cũ) ⇒ thẻ + popup chỉ có tiếng Việt.
+    Đột biến ĐỎ: trả lại `Dừng sớm (mã chưa dịch: ${...})` ở app.js `ctxThe` ⇒ `ma not in ...` lệch."""
+    job = _job(db, tong=60, tim=60, bo_qua=0, xong=11, ly_do=ma, trang_thai="failed")
+    p, _ = trang()
+    the = _hang(p, job)
+    assert ma not in the.inner_text()
+    q = _popup(p, job)
+    assert ma not in q.inner_text()
+    assert "chưa có câu giải thích riêng" in q.locator(".stop-reason").inner_text()
+    assert f"#{job}" in q.inner_text()   # câu bảo "kèm mã lượt" ⇒ mã lượt phải có ngay trong popup

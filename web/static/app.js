@@ -50,8 +50,17 @@ function cauDungTranIp(job, cau) {
 
 // Bảng câu mã dừng ở `stop-reason-text.js` (nạp trước tệp này). `|| {}`: sau một chuyến deploy, trình
 // duyệt có thể còn `index.html` CŨ trong cache (không có thẻ nạp tệp đó) mà tải `app.js` MỚI — thiếu bảng thì
-// thẻ dừng chỉ mất câu (hiện mã chưa dịch), còn ném TypeError thì mất cả hàng đợi.
+// thẻ dừng chỉ mất câu riêng (hiện câu chung `CAU_MA_CHUA_DICH`), còn ném TypeError thì mất cả hàng đợi.
 const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
+
+// Câu cho mã dừng KHÔNG có trong bảng (mã cũ còn trong DB, hoặc bảng thiếu vì index.html cũ trong cache):
+// người dùng chỉ đọc tiếng Việt — KHÔNG in mã thô (vd `het_trang`) ra thẻ/popup. Mã lượt (#id) đã có ở popup.
+const CAU_MA_CHUA_DICH = "Tool dừng vì một lý do chưa có câu giải thích riêng. Thử lại một lần; " +
+  "lặp lại thì báo người phát triển kèm mã lượt.";
+// Một chỗ dịch mã dừng cho cả popup chi tiết lượt tải (`ctxThe`) và cửa sổ giải (`GiaiCaptcha.cauLyDo`).
+function cauMaDung(ma) {
+  return ma ? (STOP_REASON_TEXT[ma] || CAU_MA_CHUA_DICH) : "";
+}
 
   // Các hộp lọc theo mock. `getBuckets(video)` luôn trả một MẢNG bucket
   // {key,label} — mảng vì "Nguồn" có thể có nhiều giá trị trên một video
@@ -428,8 +437,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     const GT = window.GiaiCaptchaThe;
     const stopText = GT.anCauDungCu(job) ? ""
       : GT.cauDung(job) || (job.ly_do_dung && !window.BaoThieu.anCauDung(job)
-        ? (cauDungTranIp(job, STOP_REASON_TEXT[job.ly_do_dung]) ||
-           `Dừng sớm (mã chưa dịch: ${escapeHtml(job.ly_do_dung)}) — báo cho người phát triển.`)
+        ? (cauDungTranIp(job, STOP_REASON_TEXT[job.ly_do_dung]) || escapeHtml(cauMaDung(job.ly_do_dung)))
         : "");
     return {
       esc: escapeHtml, chip: nhanTrangThai(job), stopText, taoLuc: fmtDateTime(job.tao_luc),
@@ -2502,7 +2510,7 @@ const STOP_REASON_TEXT = window.STOP_REASON_TEXT || {};
     lamMoiJob: loadJobs,
     layJob: (id) => state.jobs.find((j) => j.id === id) || null,
     baoPhienHetHan,
-    cauLyDo: (ma) => STOP_REASON_TEXT[ma] || "",
+    cauLyDo: cauMaDung,
   });
   // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
   Promise.all([loadJobs(), napLaiThuVien(), loadBannerCookie()]).catch((err) => {

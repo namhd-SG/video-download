@@ -48,53 +48,31 @@
     return Number.isFinite(n) ? Math.max(0, n) : null;
   };
 
-  // Khối nút + chú thích dưới dòng tiến độ. "" cho job không ở bước giải. Chỉ nhúng số (id,
-  // số lượt) vào HTML — không có chuỗi do người dùng nhập.
-  function khungHanhDong(job) {
-    if (!laBuocGiai(job.trang_thai)) return "";
+  // NGUỒN DUY NHẤT của nút giải trên thẻ gọn VÀ popup chi tiết (`the-luot-gon.js` gọi, không tự vẽ):
+  // `{ nut, ghi }` — `nut` = MỘT nút ("Xác minh" mang `data-giai-ngay` ở `cho_xac_minh`, "Mở cửa sổ giải"
+  // mang `data-mo-giai` ở 3 bước sau) để đứng chung hàng nút của thẻ; `ghi` = chú thích số lượt cho popup.
+  // `sm` = nút cỡ nhỏ (thẻ). Job không ở bước giải ⇒ `{ nut: "", ghi: "" }`. Chỉ nhúng số (id, số lượt).
+  function khungHanhDong(job, sm) {
+    if (!laBuocGiai(job.trang_thai)) return { nut: "", ghi: "" };
     const id = Number(job.id) || 0;
+    const z = sm ? " sm" : "";
     if (job.trang_thai === "cho_xac_minh") {
       const con = soLuot(job);
       const het = con === 0;
-      return `
-        <div class="actions">
-          <button type="button" class="btn primary nut-giai-ngay" data-giai-ngay="${id}"${het ? " disabled" : ""}>Tôi giải ngay</button>
-          <span class="muted giai-luot">${het
-            ? `đã dùng đủ ${TRAN_GIAI_NGAY} lần`
-            : (con === null ? "" : `còn ${con} lần · `) + "chỉ chủ job hoặc admin"}</span>
-        </div>
-        <div class="xn-note">Chưa ai giải thì job tự kết thúc sau 24 giờ. Không giải được? Rút lượt để trả hạn mức.</div>`;
+      return {
+        nut: `<button type="button" class="btn${z} primary nut-giai-ngay" data-giai-ngay="${id}"${het ? " disabled" : ""}>Xác minh</button>`,
+        ghi: `<span class="muted giai-luot">${het
+          ? `đã dùng đủ ${TRAN_GIAI_NGAY} lần`
+          : (con === null ? "" : `còn ${con} lần · `) + "chỉ chủ job hoặc admin"}</span>`,
+      };
     }
-    return `
-      <div class="actions">
-        <button type="button" class="btn primary" data-mo-giai="${id}">Mở cửa sổ giải</button>
-        <span class="muted giai-luot">chỉ chủ job hoặc admin</span>
-      </div>`;
-  }
-
-  // Dòng cuối thẻ (`escapeHtml` do app.js đưa vào). Rút được ở `cho_xac_minh`/`cho_giai` (máy chủ xoá luôn thư mục profile);
-  // `dang_mo`/`dang_giai` thì trình duyệt đang mở nên KHÔNG vẽ nút — bấm vào chỉ ra 409.
-  function dongCuoi(job, escapeHtml) {
-    if (!laBuocGiai(job.trang_thai)) return "";
-    let chu;
-    let rut = true;
-    if (job.trang_thai === "cho_xac_minh") chu = "Đang chờ người giải";
-    else if (job.trang_thai === "cho_giai") {
-      chu = job.vi_tri
-        ? (job.vi_tri === 1 ? "Tiếp theo: máy chủ mở trang giải" : `Thứ ${job.vi_tri}: chờ máy chủ mở trang giải`)
-        : "Chờ máy chủ mở trang giải";
-    } else {
-      rut = false;
-      chu = job.trang_thai === "dang_mo" ? "Máy chủ đang mở trang để giải" : "Đang giải xác minh";
-    }
-    return `
-      <div class="queue-line">
-        <span class="queue-pos">${escapeHtml(chu)}</span>
-        ${rut ? `<button type="button" class="queue-cancel" data-huy="${Number(job.id) || 0}">Rút lượt</button>` : ""}
-      </div>`;
+    return {
+      nut: `<button type="button" class="btn${z} primary" data-mo-giai="${id}">Mở cửa sổ giải</button>`,
+      ghi: `<span class="muted giai-luot">chỉ chủ job hoặc admin</span>`,
+    };
   }
 
   window.GiaiCaptchaThe = Object.freeze({
-    NHAN, TRAN_GIAI_NGAY, laBuocGiai, cauDung, anCauDungCu, khungHanhDong, dongCuoi,
+    NHAN, TRAN_GIAI_NGAY, laBuocGiai, cauDung, anCauDungCu, khungHanhDong,
   });
 })();

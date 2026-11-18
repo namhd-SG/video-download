@@ -82,13 +82,9 @@
     const id = so(job.id), tt = job.trang_thai, ma = job.ly_do_dung || "";
     const z = sm ? " sm" : "";
     const ds = [];
-    if (tt === "cho_xac_minh") {
-      const c = Number(job.giai_con_luot);
-      const het = Number.isFinite(c) && Math.max(0, c) === 0;   // cùng nghĩa `giai-captcha-the-job.js::soLuot`
-      ds.push({ k: "xm", html: `<button type="button" class="btn${z} primary nut-giai-ngay" data-giai-ngay="${id}"${het ? " disabled" : ""}>Xác minh</button>` });
-    } else if (GT.laBuocGiai(tt)) {
-      ds.push({ k: "mo", html: `<button type="button" class="btn${z} primary" data-mo-giai="${id}">Mở cửa sổ giải</button>` });
-    }
+    // Nút giải (Xác minh / Mở cửa sổ giải) lấy từ MỘT nguồn `GT.khungHanhDong` — đứng chung hàng nút của thẻ.
+    const giai = GT.khungHanhDong(job, sm).nut;
+    if (giai) ds.push({ k: tt === "cho_xac_minh" ? "xm" : "mo", html: giai });
     const n = BT.soChayLai(job);
     if (n !== null) {
       const mo = ctx.mo;
@@ -213,12 +209,7 @@
     const acts = hanhDong(job, ctx, false);
     const steps = buoc(job);
     const vitri = dongViTri(job);
-    const ghi = job.trang_thai === "cho_xac_minh" ? (() => {
-      const c = Number(job.giai_con_luot);
-      const het = Number.isFinite(c) && Math.max(0, c) === 0;
-      return `<span class="muted giai-luot">${het ? `đã dùng đủ ${GT.TRAN_GIAI_NGAY} lần`
-        : (Number.isFinite(c) ? `còn ${Math.max(0, c)} lần · ` : "") + "chỉ chủ job hoặc admin"}</span>`;
-    })() : (GT.laBuocGiai(job.trang_thai) ? `<span class="muted giai-luot">chỉ chủ job hoặc admin</span>` : "");
+    const ghi = GT.khungHanhDong(job, false).ghi;
     const xuLy = steps.length || acts.length
       ? `<div class="khoi xu-ly"><h4>Cách xử lý</h4>
           ${steps.length ? `<ol>${steps.map((b) => typeof b === "string" ? `<li>${esc(b)}</li>` : `<li class="xn-note">${esc(b.xn)}</li>`).join("")}</ol>` : ""}
