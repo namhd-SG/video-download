@@ -10,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from fastapi import HTTPException
 
 from tiktok_music_downloader import nguon as nguon_mod
@@ -246,7 +247,7 @@ STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 def test_o_nhap_la_textarea_nhieu_dong_va_van_dung_id_url():
     html = (STATIC / "index.html").read_text(encoding="utf-8")
     assert '<textarea id="url"' in html and 'type="url"' not in html
-    assert 'document.getElementById("url").value.trim()' in (STATIC / "app.js").read_text(encoding="utf-8")
+    assert 'document.getElementById("url").value.trim()' in nguon_app()
 
 
 def test_nhan_url_job_nhieu_link_chay_that_qua_node():

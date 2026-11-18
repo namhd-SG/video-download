@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 
 from web import models, models_chia, models_cum
 
@@ -112,7 +113,7 @@ def _chay_node() -> dict:
     node = shutil.which("node")
     if node is None:
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này KHÔNG chạy")
-    r = subprocess.run([node, str(HARNESS / "lo-on-dinh-sau-don.js"), str(STATIC / "app.js")],
+    r = subprocess.run([node, str(HARNESS / "lo-on-dinh-sau-don.js"), str(tep_app_gop())],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)

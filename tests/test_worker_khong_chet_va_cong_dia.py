@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 
 from web import models
 from web import queue as queue_mod
@@ -176,7 +177,7 @@ def test_chu_badge_worker_js():
     if node is None:
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này KHÔNG chạy")
     r = subprocess.run([node, str(Path(__file__).parent / "js" / "badge-worker.js"),
-                        str(STATIC / "app.js")], capture_output=True, text=True, timeout=30)
+                        str(tep_app_gop())], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     do = json.loads(r.stdout)
     assert do["null"] == "" and do["ok"] == ""

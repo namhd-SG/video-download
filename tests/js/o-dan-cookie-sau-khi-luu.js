@@ -6,7 +6,9 @@
 // đúng thứ trình duyệt chạy.
 const fs = require("fs");
 const vm = require("vm");
-const src = fs.readFileSync(process.argv[2], "utf8");
+// Các tệp nạp theo thứ tự thẻ <script> của settings.html (chung-tien-ich.js rồi settings.js),
+// cùng một ngữ cảnh — settings.js đọc helper từ window.VDChung.
+const nguon = process.argv.slice(2).map((p) => fs.readFileSync(p, "utf8"));
 
 function phanTu() {
   const nghe = {};
@@ -48,7 +50,8 @@ async function chay({ status, detail }) {
     confirm: () => true,
   };
   const localStorage = { getItem: () => null, setItem() {} };
-  vm.runInNewContext(src, { window, document, fetch, localStorage, console, Promise, Error });
+  const ngCanh = vm.createContext({ window, document, fetch, localStorage, console, Promise, Error });
+  for (const src of nguon) vm.runInContext(src, ngCanh);
   await new Promise((r) => setTimeout(r, 0));
 
   const o = els["cookie-json"];
