@@ -151,12 +151,25 @@ def _mo(br, goc, rong=1280, truoc=None):
     loi_js: list[str] = []
     p.on("pageerror", lambda e: loi_js.append(str(e)))
     mo_trang(p, f"{goc}/thay-logo.html", dem_mang_ngoai(ctx))
+    # R-02b: khung xem kỹ chỉ hiện sau khi bấm một thẻ ở lưới "Chờ bạn duyệt" ⇒ chờ lưới 2 thẻ, bấm thẻ đầu rồi mới chờ khung + hàng duyệt
+    p.wait_for_function("document.querySelectorAll('#tl-duyet .tl-the-duyet').length === 2")
+    p.locator("#tl-duyet .tl-the-anh").first.click()
     p.wait_for_function("document.querySelector('#tl-duyet .tl-chi-tiet') && document.querySelectorAll('#tl-duyet .tl-phim-o').length === 2")
+    _mo_cot(p)
     return p, loi_js
 
 
+def _mo_cot(p):
+    """R-02b: bốn nhóm cột dưới (Máy đang làm / không chắc / không làm được / đã chấm) gập mặc định ⇒ mở hết để đọc nội dung."""
+    p.wait_for_selector(".tl-khoi-tog")
+    p.evaluate("document.querySelectorAll('.tl-khoi-tog[aria-expanded=false]').forEach(b => b.click())")
+
+
 def _chup(p, ten):
+    # Ảnh nhỏ cột phải là loading=lazy: trang 390 nay dài hơn (lưới thẻ duyệt) nên chúng nằm xa khung nhìn ⇒ cuộn xuống đáy rồi về đầu để chúng tải.
+    p.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
     p.wait_for_function("[...document.images].every(i => i.complete)")
+    p.evaluate("window.scrollTo(0, 0)")
     d = os.environ.get("VIDEODL_ANH_THAY_LOGO")
     if d:
         Path(d).mkdir(parents=True, exist_ok=True)
@@ -211,7 +224,7 @@ def test_hai_o_phong_to_cat_dung_vung_logo(may_chu, trinh_duyet):
 
 def test_khong_co_cap_anh_thi_roi_ve_anh_soi(may_chu, trinh_duyet):
     p, _ = _mo(trinh_duyet, may_chu)
-    p.locator(".tl-duyet-head .tl-nav").nth(1).click()  # › sang video chỉ có ảnh soi
+    p.locator("#tl-duyet .tl-phim-o").nth(1).click()  # sang video chỉ có ảnh soi (nút › ẩn khi mọi thẻ vừa một hàng ⇒ dùng hàng duyệt 1–N)
     p.wait_for_function("!document.querySelector('#tl-cmp')")
     assert p.locator("#tl-duyet .tl-so-sanh img").get_attribute("src").endswith("/sheet.jpg") and p.locator(".tl-zoom-o").count() == 0
     assert "sắp có" not in p.locator("#tl-duyet").inner_text().lower()
@@ -563,13 +576,13 @@ def test_tab_khong_hien_so_0_va_so_la_video_da_chon(may_chu, trinh_duyet):
 
 
 def test_gio_trong_van_hien_noi_nhan_mo_kem_cau_chon_video_truoc(may_chu, trinh_duyet):
-    """Giỏ trống ⇒ mục "Thành phẩm đi đâu?" VẪN hiện (mờ) với câu "Chọn video trước", không giấu bước kế; chọn video ⇒ hết mờ, hiện
+    """Giỏ trống ⇒ mục "Nơi nhận" (trước là "Thành phẩm đi đâu?", nay ở ⓘ) VẪN hiện (mờ) với câu "Chọn video trước", không giấu bước kế; chọn video ⇒ hết mờ, hiện
     lựa chọn nơi nhận. ĐỘT BIẾN: trả lại `hidden = true` khi giỏ trống ⇒ ĐỎ."""
     p, loi = _mo(trinh_duyet, may_chu)
     d = p.locator("#tl-dich")
     assert d.is_visible() and "rong" in (d.get_attribute("class") or "")
     chu = d.inner_text()
-    assert "Thành phẩm đi đâu?" in chu and "Chọn video trước" in chu and d.locator("input[type=radio]").count() == 0
+    assert "Nơi nhận" in chu and "Chọn video trước" in chu and d.locator("input[type=radio]").count() == 0
     assert float(p.evaluate("getComputedStyle(document.getElementById('tl-dich')).opacity")) < 1
     _chup(p, "ux-gio-trong-noi-nhan-1280.png")
     p.locator('#tl-tabs [data-tab="thu-vien"]').click()

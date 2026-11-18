@@ -4,11 +4,14 @@
   const T = window.TL, { $, el } = T;
   const LOAI_LOI = [["sot_watermark", "Sót watermark"], ["sai_cho", "Đè sai chỗ"], ["che_phu_de", "Che phụ đề"], ["pha_noi_dung", "Phá nội dung"], ["khac", "Khác"]];
   let vi = 0, moHong = false;
+  // Khung xem trước (so trước/sau, Đạt/Hỏng lớn, hàng duyệt 1–N) chỉ hiện sau khi người dùng chọn một thẻ; mặc định chỉ có lưới thẻ
+  // (mock B: "Chờ bạn duyệt" = lưới thẻ có Đạt / Hỏng…). Phím ← → D H và nút ‹ › chỉ chạy khi khung đang mở, để D không chấm mù video đầu hàng.
+  let daMo = false;
 
   // Chip tên bộ + ảnh bìa nhỏ; ảnh không tải được thì tự gỡ (không để ô vỡ).
   const chipBo = (v) => el("span", "tl-chip-bo", v.ten_bo || `Lượt #${v.job_id}`);
-  function anhBia(v, cls) {
-    const img = el("img", cls); img.alt = ""; img.loading = "lazy"; img.src = v.anh_bia;
+  function anhBia(v, cls, ngay) {
+    const img = el("img", cls); img.alt = ""; img.loading = ngay ? "eager" : "lazy"; img.src = v.anh_bia;
     img.addEventListener("error", () => img.remove(), { once: true });
     return img;
   }
@@ -79,19 +82,68 @@
     } finally { dangDanhGia = false; }
   }
 
+  // Lưới thẻ lớn (mock B): mỗi video chờ duyệt một thẻ — ảnh, tên, dòng "Lượt · nguồn → nơi nhận", nhãn "Cần soi kỹ", Đạt / Hỏng….
+  // Bấm ảnh/tên ⇒ chọn thẻ đó vào khung "Soi kỹ" bên dưới (so trước/sau, phóng to, link, lý do hỏng). "Hỏng…" mở sẵn ô lý do ở khung đó
+  // (cần chọn loại lỗi + ghi chú nên không gửi thẳng). Đạt gửi cùng API với nút Đạt ở khung soi.
+  const SO_THE_GON = 6;  // lưới gọn hiện 6 thẻ đầu; "Xem thêm" mở hết (thẻ đang chọn nằm ngoài ⇒ mở hết để không giấu nó)
+  let hienHetThe = false;
+  function veLuoi(ds) {
+    const wrap = el("div", "tl-luoi-hop"), luoi = el("div", "tl-luoi"); wrap.append(luoi);
+    const gioiHan = hienHetThe || (daMo && vi >= SO_THE_GON) ? ds.length : SO_THE_GON;
+    ds.forEach((v, i) => {
+      if (i >= gioiHan) return;
+      const the = el("article", "tl-the-duyet" + (T.soiKy(v) ? " soi" : "") + (daMo && i === vi ? " chon" : ""));
+      const chon = () => { vi = i; moHong = false; daMo = true; veDuyet(); };
+      const anh = el("button", "tl-the-anh"); anh.type = "button"; anh.setAttribute("aria-label", `Soi kỹ: ${T.tenVideo(v)}`);
+      if (v.anh_bia) anh.append(anhBia(v, "", true))  // thẻ lớn ở giữa trang: tải ngay, không để ô trống chờ cuộn tới;
+      anh.addEventListener("click", chon);
+      const ten = el("div", "tl-the-ten"); ten.append(el("b", "", T.tenVideo(v)));
+      if (T.soiKy(v)) ten.append(el("span", "chip warn", "⚠ Cần soi kỹ"));
+      const b = T.bo.find((x) => x.job_id === v.job_id);
+      const dong = T.dongLuot ? T.dongLuot(b) : "";
+      const nut = el("div", "tl-the-nut");
+      const dat = el("button", "btn sm primary tl-the-dat", "Đạt"); dat.type = "button"; dat.disabled = T.tat;
+      const hong = el("button", "btn sm danger-line tl-the-hong", "Hỏng…"); hong.type = "button";
+      dat.addEventListener("click", () => { if (!T.tat) danhGia(v, { ket_qua: "dat" }); });
+      hong.addEventListener("click", () => { vi = i; moHong = true; daMo = true; veDuyet(); const s = $("tl-duyet").querySelector(".tl-ly-do select"); if (s) s.focus(); });
+      nut.append(dat, hong);
+      the.append(anh, ten, el("span", "tl-the-dong", dong || `Lượt #${v.job_id}`), nut);
+      luoi.append(the);
+    });
+    if (ds.length > SO_THE_GON && !(daMo && vi >= SO_THE_GON)) {
+      const m = el("button", "btn ghost tl-luoi-them", hienHetThe ? "Thu gọn ▴" : `Xem thêm ${ds.length - SO_THE_GON} video ▾`); m.type = "button";
+      m.setAttribute("aria-expanded", String(hienHetThe));
+      m.addEventListener("click", () => { hienHetThe = !hienHetThe; veDuyet(); });
+      wrap.append(m);
+    }
+    return wrap;
+  }
+
+  // ‹ › chỉ có ích khi lưới thẻ tràn (nhiều hàng hoặc còn "Xem thêm"); mọi thẻ đã nằm trọn một hàng (vd 3 thẻ ở 1440) ⇒ ẩn. Đo sau khi thẻ đã vào DOM.
+  function capNutNav() {
+    const navs = document.querySelectorAll("#tl-duyet .tl-nav"), the = document.querySelectorAll("#tl-duyet .tl-the-duyet");
+    if (!navs.length) return;
+    const mot = new Set([...the].map((t) => t.offsetTop)).size <= 1 && !document.querySelector("#tl-duyet .tl-luoi-them");
+    for (const n of navs) n.hidden = mot;
+  }
+  window.addEventListener("resize", capNutNav);
+
   function veDuyet() {
     const hop = $("tl-duyet"); hop.replaceChildren();
     const ds = hangDuyet();
     if (vi >= ds.length) vi = Math.max(0, ds.length - 1);
-    const head = el("div", "tl-duyet-head"); head.append(el("h2", "", "Chờ bạn duyệt"), el("span", "tl-dem", ds.length ? `${vi + 1} / ${ds.length}` : "0"));
+    const head = el("div", "tl-duyet-head"); head.append(el("h2", "", "Chờ bạn duyệt"), el("span", "tl-dem", !ds.length ? "0" : daMo ? `${vi + 1} / ${ds.length}` : `${ds.length} video`));
     head.append(el("span", "grow"));
     const truoc = el("button", "btn tl-nav", "‹"), sau = el("button", "btn tl-nav", "›");
     truoc.type = sau.type = "button"; truoc.setAttribute("aria-label", "Video trước"); sau.setAttribute("aria-label", "Video sau");
     truoc.disabled = sau.disabled = ds.length < 2;
-    truoc.addEventListener("click", () => { vi = (vi - 1 + ds.length) % ds.length; moHong = false; veDuyet(); });
-    sau.addEventListener("click", () => { vi = (vi + 1) % ds.length; moHong = false; veDuyet(); });
+    truoc.addEventListener("click", () => { vi = daMo ? (vi - 1 + ds.length) % ds.length : ds.length - 1; moHong = false; daMo = true; veDuyet(); });
+    sau.addEventListener("click", () => { vi = daMo ? (vi + 1) % ds.length : 0; moHong = false; daMo = true; veDuyet(); });
     head.append(truoc, sau); hop.append(head);
-    if (!ds.length) { hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
+    if (!ds.length) { if (!T.dangTaiLoc) daMo = false; hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
+    hop.append(veLuoi(ds));
+    capNutNav();
+    if (!daMo) return;  // chưa chọn thẻ nào: dừng ở lưới thẻ
     const v = ds[vi];
     const body = el("div", "tl-duyet-body");
     const trai = el("div", "tl-so-sanh");
@@ -104,7 +156,9 @@
     const tieu = el("div", "tl-duyet-tieu"), chu = el("div", "tl-duyet-tieu-chu");
     chu.append(chipBo(v), el("h3", "", T.tenVideo(v)));
     if (v.anh_bia) tieu.append(anhBia(v, "tl-bia-nho"));
-    tieu.append(chu); ct.append(tieu);
+    const dong = el("button", "btn sm ghost tl-dong-soi", "Đóng ✕"); dong.type = "button"; dong.setAttribute("aria-label", "Đóng phần xem kỹ");
+    dong.addEventListener("click", () => { daMo = false; moHong = false; veDuyet(); });
+    tieu.append(chu, dong); ct.append(tieu);
     const meta = el("div", "tl-meta");
     if (v.giay_xu_ly != null) meta.append(el("span", "", `máy làm ${T.phut(v.giay_xu_ly)} phút`));
     ct.append(meta);
@@ -165,13 +219,31 @@
     return n;
   }
 
+  // Nhóm cột phải gập mặc định (chỉ tiêu đề + số); bấm tiêu đề để mở/gập. Trạng thái nhớ theo id để poll vẽ lại không gập lại.
+  const moCot = new Map();
+  const datMoCot = (k, bat) => {
+    moCot.set(k.id, bat);
+    const nut = k.querySelector(".tl-khoi-tog"), than = k.querySelector(".tl-khoi-than");
+    if (nut) nut.setAttribute("aria-expanded", String(bat));
+    if (than) {
+      than.hidden = !bat;
+      if (bat) for (const i of than.querySelectorAll("img[data-src]")) { i.src = i.dataset.src; i.removeAttribute("data-src"); }  // ảnh chỉ tải khi mở nhóm
+    }
+    k.classList.toggle("mo", bat);
+  };
+  T.moNhomCot = (id) => { const k = $(id); if (k) datMoCot(k, true); };  // nút "Xem N video máy không chắc" ở bảng lượt mở nhóm đích
   function khoiPhai(id, tieuDe, giai, nhom, dong, cls) {
-    const k = $(id); k.replaceChildren(); k.className = "panel tl-khoi " + (cls || "");
+    const k = $(id); k.replaceChildren(); k.className = "panel tl-khoi " + (cls || "") + (moCot.get(id) ? " mo" : "");
     const nhoms = Array.isArray(nhom) ? nhom : [nhom];  // khối "Đã chấm" gom ba nhóm (Đạt + Hỏng + Đã bỏ qua)
     const ds = T.locDuoc().filter((v) => nhoms.includes(T.nhomCua(v)));
-    const h = el("h2", "", tieuDe + " "); h.append(el("span", "so", String(ds.length)));
-    k.append(h, el("p", "giai", giai));
-    if (!ds.length) { k.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào.")); return; }
+    const h = el("h2"), tog = el("button", "tl-khoi-tog"); tog.type = "button";
+    tog.setAttribute("aria-expanded", String(!!moCot.get(id)));
+    tog.append(tieuDe + " ", el("span", "so", String(ds.length)), el("span", "tl-khoi-mui", "▾"));
+    tog.addEventListener("click", () => datMoCot(k, !moCot.get(id)));
+    h.append(tog); k.append(h);
+    const than0 = el("div", "tl-khoi-than"); than0.hidden = !moCot.get(id); k.append(than0);
+    than0.append(el("p", "giai", giai));
+    if (!ds.length) { than0.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào.")); return; }
     for (const v of ds) {
       const m = el("div", "tl-muc");
       if (v.anh_bia) m.append(anhBia(v, "tl-bia-nho"));
@@ -203,8 +275,10 @@
         if (lk.childElementCount) than.append(lk);
         than.append(nutBoQua(v, false));
       }
-      k.append(m);
+      than0.append(m);
     }
+    // Nhóm đang gập: không tải ảnh nhỏ (ô ảnh lazy trong vùng ẩn không bao giờ "xong"); gán lại src khi mở.
+    if (!moCot.get(id)) for (const i of than0.querySelectorAll("img")) { i.dataset.src = i.getAttribute("src"); i.removeAttribute("src"); }
   }
 
   T.ve.duyet = () => {
@@ -239,7 +313,7 @@
 
   document.addEventListener("keydown", (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) return;
-    const ds = hangDuyet(); if (!ds.length) return;
+    const ds = hangDuyet(); if (!ds.length || !daMo) return;
     if (e.key === "ArrowRight") { vi = (vi + 1) % ds.length; moHong = false; veDuyet(); }
     else if (e.key === "ArrowLeft") { vi = (vi - 1 + ds.length) % ds.length; moHong = false; veDuyet(); }
     else if (e.key.toLowerCase() === "d" && !T.tat) danhGia(ds[vi], { ket_qua: "dat" });

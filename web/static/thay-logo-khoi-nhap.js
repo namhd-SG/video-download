@@ -17,6 +17,7 @@
 
   function datTab(k) {
     tab = k;
+    $("tl-vung").scrollTop = 0;  // mở/chuyển về tab nào cũng bắt đầu từ đầu danh sách (khung có thể đang cuộn dở từ lần xem trước)
     for (const b of document.querySelectorAll("#tl-tabs [role=tab]")) b.setAttribute("aria-selected", String(b.dataset.tab === k));
     veVung();
   }
@@ -84,7 +85,28 @@
     return `${z(hn.getDate())}/${z(hn.getMonth() + 1)}-${n}`;
   }
 
-  // Giỏ: mỗi nguồn một nhóm. Video từ bộ liệt theo mã bộ (module "bo" khai `gio()`).
+  // Từng video trong giỏ (mock B: mỗi video một hàng có ×). Chỉ nguồn có dữ liệu từng video ở trang này: tab Bộ tự tìm (module khai `dsGio()`)
+  // và Thư viện. "Tải từ máy" / "Dán link" chỉ có số lượng + id ở module riêng ⇒ chỉ nằm ở dòng tóm tắt nhóm (bỏ ở chính tab đó).
+  function itemsGio() {
+    const m = moduleCua("bo"), ds = [];
+    if (m && typeof m.dsGio === "function") for (const x of m.dsGio()) ds.push({ ten: x.ten, tag: x.ma, anh: x.anh, bo: x.bo });
+    if (thuVien) for (const x of thuVien) {
+      if (!chon.has(x.drive_file_id)) continue;
+      ds.push({ ten: x.title || x.video_id || "Video", tag: "Thư viện", anh: x.video_id ? `/thumbs/${encodeURIComponent(x.video_id)}` : "",
+                bo() { chon.delete(x.drive_file_id); veVung(); veChan(); } });
+    }
+    return ds;
+  }
+  function veHangGio(x) {
+    const li = el("li", "tl-gio-hang"), bia = el("span", "tl-gio-bia");
+    if (x.anh) { const i = el("img"); i.alt = ""; i.loading = "lazy"; i.src = x.anh; i.addEventListener("error", () => i.remove(), { once: true }); bia.append(i); }
+    const bo = el("button", "tl-gio-bo", "✕"); bo.type = "button"; bo.setAttribute("aria-label", `Bỏ ${x.ten} khỏi giỏ`); bo.disabled = T.tat;
+    bo.addEventListener("click", x.bo);
+    li.append(bia, el("span", "tl-gio-ten", x.ten), el("span", "tl-gio-tag", x.tag), bo);
+    return li;
+  }
+
+  // Giỏ: tóm tắt theo nguồn (video từ bộ liệt theo mã bộ — module "bo" khai `gio()`) + danh sách từng video có ×.
   function veGioDs(g) {
     const hop = $("tl-gio-ds"); hop.replaceChildren();
     const nhom = (ten, so, dong) => {
@@ -94,7 +116,9 @@
     if (g.bo) { const m = moduleCua("bo"); hop.append(nhom("Từ bộ tự tìm", g.bo, (m && m.gio ? m.gio() : []).map((x) => `${x.ma} · ${x.so} video`))); }
     const khac = g.tv + g.may + g.link;
     if (khac) hop.append(nhom("Nguồn khác", khac, [g.tv && `Thư viện · ${g.tv} video`, g.may && `Tải từ máy · ${g.may} video`, g.link && `Link Drive · ${g.link} video`].filter(Boolean)));
-    if (!g.bo && !khac) hop.append(el("p", "tl-gio-rong", "Giỏ trống — chọn video ở bên trái."));
+    if (!g.bo && !khac) { hop.append(el("p", "tl-gio-rong", "Giỏ trống — chọn video ở bên trái.")); return; }
+    const ds = itemsGio();
+    if (ds.length) { const ul = el("ul", "tl-gio-vid"); for (const x of ds) ul.append(veHangGio(x)); hop.append(ul); }
   }
 
   // "Thành phẩm đi đâu?": video từ bộ ⇒ cố định trả về bộ gốc sau Đạt; nguồn khác ⇒ chọn bộ tự tìm mới / thư mục Drive.
@@ -103,7 +127,9 @@
     const khac = g.tv + g.may + g.link;
     hop.hidden = false;
     hop.classList.toggle("rong", !g.bo && !khac);
-    hop.append(el("h3", "", "Thành phẩm đi đâu?"));
+    const h3 = el("h3", "", "Nơi nhận "), ti = el("span", "ti", "ⓘ");
+    ti.tabIndex = 0; ti.setAttribute("role", "note"); ti.title = "Thành phẩm đi đâu? Video chỉ rời máy khi bạn bấm Đạt.";
+    h3.append(ti); hop.append(h3);
     if (!g.bo && !khac) {  // giỏ trống: vẫn cho thấy bước kế (mờ), không giấu cả mục
       hop.append(el("p", "tl-dich-hoi", "Chọn video trước — rồi chọn nơi nhận thành phẩm ở đây."));
       return;
@@ -137,7 +163,8 @@
     const g = nhomGio();
     veGioDs(g); veDich(g);
     $("tl-dem").textContent = n ? `Đã chọn ${n} video` : "Chưa chọn video nào";
-    $("tl-tao").textContent = n ? `Thay logo ${n} video` : "Thay logo";
+    const luot = (g.bo > 0 ? 1 : 0) + (g.tv + g.may + g.link > 0 ? 1 : 0);  // máy chủ tách giỏ trộn thành hai lượt
+    $("tl-tao").textContent = n ? `Thay logo ${n} video` + (luot > 1 ? ` · ${luot} lượt` : "") : "Thay logo";
     $("tl-tao").disabled = T.tat || n === 0;
     veTabs();  // số đã chọn trên nhãn tab của module đổi theo lựa chọn
   }

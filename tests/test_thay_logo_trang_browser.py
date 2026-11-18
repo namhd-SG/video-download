@@ -114,6 +114,20 @@ def trinh_duyet():
     pw.stop()
 
 
+def _soi(p):
+    """R-02b: khung xem kỹ (so trước/sau, Đạt/Hỏng lớn, hàng duyệt) chỉ hiện sau khi bấm một thẻ ở lưới "Chờ bạn duyệt"."""
+    p.wait_for_selector("#tl-duyet .tl-the-anh")
+    if p.locator("#tl-duyet .tl-chi-tiet").count() == 0:
+        p.locator("#tl-duyet .tl-the-anh").first.click()
+    p.wait_for_selector("#tl-duyet .tl-chi-tiet")
+
+
+def _mo_cot(p):
+    """R-02b: bốn nhóm cột dưới (Máy đang làm / không chắc / không làm được / đã chấm) gập mặc định ⇒ mở hết để đọc nội dung."""
+    p.wait_for_selector(".tl-khoi-tog")
+    p.evaluate("document.querySelectorAll('.tl-khoi-tog[aria-expanded=false]').forEach(b => b.click())")
+
+
 def _mo(br, goc, rong, theme="light"):
     ctx = br.new_context(viewport={"width": rong, "height": 900}, color_scheme=theme)
     chan = dem_mang_ngoai(ctx)
@@ -122,7 +136,10 @@ def _mo(br, goc, rong, theme="light"):
     p.on("pageerror", lambda e: loi_js.append(str(e)))
     mo_trang(p, f"{goc}/thay-logo.html", chan)
     # bộ A: 2 video xong chưa đánh giá ⇒ hộp duyệt; 1 máy đang làm; 1 không chắc; 1 lỗi. Bộ B: 2 video xếp hàng (+2 máy đang làm)
-    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 3 && document.querySelector('#tl-duyet .tl-chi-tiet') && document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    p.wait_for_function("document.querySelectorAll('#tl-dang-lam .tl-muc').length === 3 && document.querySelector('#tl-duyet .tl-the-duyet') && document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2")
+    # R-02b: khung xem kỹ chỉ hiện sau khi bấm một thẻ ở lưới "Chờ bạn duyệt"
+    _soi(p)
+    _mo_cot(p)
     return p, loi_js
 
 
@@ -156,7 +173,7 @@ def test_trang_dung_du_bon_vung(may_chu, trinh_duyet):
     chu = p.locator("aside.tl-cot").inner_text()
     assert "Máy đang làm" in chu and "Máy không chắc" in chu and "Không làm được" in chu and "Hết chỗ đĩa" in chu
     # 5 video: 2 xong chờ duyệt (1 cờ soi kỹ), 1 chờ agy, 1 không chắc, 1 lỗi
-    assert "2 video chờ duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần bạn xem kỹ" in p.locator("#tl-tom-tat").inner_text()
+    assert "2 video chờ bạn duyệt" in p.locator("#tl-tom-tat").inner_text() and "1 cần soi kỹ" in p.locator("#tl-tom-tat").inner_text()
     assert "Máy đang tìm chỗ logo cũ · đã 14 phút" in p.locator("#tl-dang-lam").inner_text()
     _anh(p, "khung-1280.png")
     p.locator("#tl-tabs [role=tab]").nth(3).click()  # tab "Dán link" có module nhưng chưa dán gì ⇒ không dữ liệu giả
@@ -192,7 +209,9 @@ def test_loc_trang_thai_thu_hep_cot_phai(may_chu, trinh_duyet):
 @pytest.mark.parametrize("rong", [1280, 390])
 def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet, rong):
     p, _ = _mo(trinh_duyet, may_chu, rong)
+    p.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")  # ảnh nhỏ cột phải lazy: cuộn tới đáy để tải, rồi về đầu
     p.wait_for_function("[...document.images].every(i => i.complete)")
+    p.evaluate("window.scrollTo(0, 0)")
     dat, hong = p.locator(".tl-dat"), p.locator(".tl-hong-nut")
     bd, bh = dat.bounding_box(), hong.bounding_box()
     if rong > 600:
@@ -204,6 +223,7 @@ def test_dat_hong_sat_nhau_ly_do_chi_hien_sau_khi_bam_hong(may_chu, trinh_duyet,
 
 def test_bam_dat_ghi_danh_gia(may_chu, trinh_duyet, monkeypatch):
     p = _mo_bat(trinh_duyet, may_chu, monkeypatch)  # tính năng tắt thì nút Đạt bị khoá như phím D
+    _soi(p)
     p.wait_for_selector("#tl-duyet .tl-dat:enabled")
     p.locator(".tl-dat").click()
     p.wait_for_function("document.querySelector('#tl-loc [data-tt=da_dat]').innerText.includes('1')")
@@ -300,6 +320,7 @@ def test_thu_vien_loi_bao_mot_dong_va_an_ten(may_chu, trinh_duyet):
     p.route("**/api/thay-logo/videos*", lambda r: r.fulfill(status=200, content_type="application/json", body=body))
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
+    _mo_cot(p)
     assert "Không đọc được thư viện — tên video tạm ẩn." in p.locator("#tl-loc").inner_text()
     chu = p.locator("#tl-khong-chac").inner_text()
     assert "Tên video tạm ẩn" in chu and "Video không còn trong thư viện" not in chu  # đừng nói dối "đã mất" khi chỉ là không đọc được
@@ -416,6 +437,7 @@ def test_danh_gia_khong_gui_trung_khi_dang_gui_phim_va_nut(may_chu, trinh_duyet,
         giu.append((vid, r))  # giữ phản hồi: đang "gửi"
     p.route("**/api/thay-logo/videos/*/danh-gia", danh_gia)
     p.goto(f"{may_chu}/thay-logo.html")
+    _soi(p)
     p.wait_for_function("document.querySelector('#tl-duyet .tl-dem') && document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 3' && !document.querySelector('.tl-dat').disabled")
     p.keyboard.press("d")
     p.keyboard.press("d")
@@ -461,6 +483,7 @@ def test_video_da_cham_roi_hang_cho_ngay_va_phan_hoi_tai_cu_khong_dua_no_ve(may_
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos)
     p.route("**/api/thay-logo/videos/*/danh-gia", lambda r: r.fulfill(status=204))
     p.goto(f"{may_chu}/thay-logo.html")
+    _soi(p)
     p.wait_for_function("document.querySelector('#tl-duyet .tl-dem') && document.querySelector('#tl-duyet .tl-dem').textContent === '1 / 2' && !document.querySelector('.tl-dat').disabled")
     che_do["giu"] = True
     p.locator(".tl-dat").click()
@@ -487,6 +510,7 @@ def test_danh_gia_loi_noi_cau_thuong_va_gui_lai_duoc(may_chu, trinh_duyet, monke
             _tra_json(r, {"detail": "raw detail"}, cach)
     p.route("**/api/thay-logo/videos/*/danh-gia", danh_gia)
     p.goto(f"{may_chu}/thay-logo.html")
+    _soi(p)
     p.wait_for_function("document.querySelector('.tl-dat') && !document.querySelector('.tl-dat').disabled")
     p.locator(".tl-dat").click()
     p.wait_for_function("document.getElementById('tl-loi').textContent.length > 0")
@@ -507,6 +531,7 @@ def test_hang_cu_co_loi_text_ky_su_hien_cau_thuong(may_chu, trinh_duyet, monkeyp
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_function("document.querySelectorAll('#tl-khong-lam .tl-muc').length === 6")
+    _mo_cot(p)
     chu = p.locator("#tl-khong-lam").inner_text()
     assert chu.count("Máy gặp lỗi khi xử lý video này.") == 4
     for cam in ("khung", "HttpError", "120s", "KeyError"):
@@ -520,10 +545,10 @@ def test_hop_duyet_canh_bao_nen_xem_ky_chi_hien_cho_video_can_soi(may_chu, trinh
     ds = [_dong_mo(51, can_soi_ky=1, ten_video="Video cần soi"), _dong_mo(52, ten_video="Video thường")]
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
     p.goto(f"{may_chu}/thay-logo.html")
-    p.wait_for_function("document.querySelector('#tl-duyet h3')")
+    _soi(p)
     assert "Video cần soi" in p.locator("#tl-duyet h3").inner_text()
     assert p.locator(".tl-canh-bao").is_visible() and "Nên xem kỹ" in p.locator(".tl-canh-bao").inner_text()
-    p.locator(".tl-nav").nth(1).click()  # › video kế
+    p.locator("#tl-duyet .tl-phim-o").nth(1).click()  # video kế (nút › ẩn khi mọi thẻ vừa một hàng ⇒ dùng hàng duyệt 1–N)
     assert "Video thường" in p.locator("#tl-duyet h3").inner_text()
     assert p.locator(".tl-canh-bao").count() == 0
 
@@ -621,7 +646,8 @@ def test_doi_loc_giua_luc_dang_tai_khong_hien_video_cua_loc_cu(may_chu, trinh_du
             _tra_json(r, _danh_sach(dong[None]))
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos, bo=[_bo_mo(1, "Bộ một"), _bo_mo(2, "Bộ hai")])
     p.goto(f"{may_chu}/thay-logo.html")
-    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 2 && document.querySelector('#tl-duyet h3')")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 2")
+    _soi(p)
     p.locator("button.tl-bo-chon[data-job='1']").click()  # lượt tải cho bộ 1: đang bay
     while not giu:
         p.wait_for_timeout(50)
@@ -655,6 +681,7 @@ def test_xem_them_bam_giua_luc_dang_tai_khong_bi_mat(may_chu, trinh_duyet, monke
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, videos)
     p.goto(f"{may_chu}/thay-logo.html")
     p.wait_for_selector(".tl-xem-them")
+    _mo_cot(p)
     p.evaluate("void window.TL_taiLai()")
     while not giu:
         p.wait_for_timeout(50)
@@ -689,7 +716,9 @@ def test_ten_bo_la_html_hien_nguyen_van_khong_chay(may_chu, trinh_duyet, monkeyp
     hop = []
     p.on("dialog", lambda d: (hop.append(d.message), d.dismiss()))
     p.goto(f"{may_chu}/thay-logo.html")
-    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 1 && document.querySelector('#tl-duyet h3')")
+    p.wait_for_function("document.querySelectorAll('.tl-bo-the').length === 1")
+    _soi(p)
+    _mo_cot(p)
     p.wait_for_timeout(500)
     assert p.locator(".tl-bo-ten").inner_text() == xau and p.locator("#tl-duyet h3").inner_text() == xau
     assert xau in p.locator("#tl-dang-lam").inner_text()
@@ -823,7 +852,7 @@ def test_luot_cua_ban_dai_tien_do_va_hen_gio_tra_ve_bo(may_chu, trinh_duyet, mon
     assert "Nhận 3" in t1 and "Máy xong 3/3" in t1 and "Sẽ tự trả vào bộ lúc" in t1
     assert "✓ Đã trả 2 video vào bộ" in t2 and "Trả ngay" not in t2
     assert "Máy đang làm 1/4" in t3 and "Máy định vị logo chưa phản hồi 25 phút" in t3 and "Chờ bạn duyệt 1" in t3 and "Thư mục Drive riêng" in t3
-    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ duyệt')")  # đầu trang cùng số với dòng lượt
+    p.wait_for_function("document.getElementById('tl-tom-tat').innerText.includes('1 video chờ bạn duyệt')")  # đầu trang cùng số với dòng lượt
     _anh(p, "ux-luot-cua-ban-1280.png")
     the.nth(0).get_by_role("button", name="Trả ngay").click()
     p.wait_for_function("1")

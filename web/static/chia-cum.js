@@ -656,6 +656,8 @@
     const dock = document.getElementById("cc-dock");
     const n = CC.selected.size;
     dock.hidden = chuaCoNhap() || daDuyet();
+    // ≤480px: dock cao 3 hàng che cột Nhóm·Kiểu ⇒ chỉ hiện khi đã chọn video (CSS `.cc-dock-rong`); màn rộng giữ "luôn hiện, nút xám".
+    dock.classList.toggle("cc-dock-rong", CC.selected.size === 0);
     document.getElementById("cc-dachon").textContent = `${n} video đã chọn`;
     // Chưa chọn gì thì 4 nút không làm gì (mọi nhánh `dock-*` thoát ngay khi
     // tập chọn rỗng) — làm xám cho thấy rõ, thay vì nút bấm không ăn.
@@ -720,7 +722,8 @@
       const mv = [...CC.selected].slice(0, 3);
       const tenXem = tachTenXem();
       host.innerHTML = `<div class="cc-modal-bg"><div class="card cc-modal">
-        <h3>Kiểu mới từ ${CC.selected.size} video đã chọn</h3>
+        <div class="cc-modal-h"><h3>Kiểu mới từ ${CC.selected.size} video đã chọn</h3>
+          <button type="button" class="cc-modal-x" data-cc-action="modal-close" aria-label="Huỷ">×</button></div>
         <div class="cc-mini-luoi">${mv.map((vid) =>
           `<div class="cc-t"><img src="/thumbs/${escapeHtml(vid)}" alt=""></div>`).join("")}</div>
         <label>Nhóm<select data-cc-tach-nhom>

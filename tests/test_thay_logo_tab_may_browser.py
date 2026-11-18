@@ -286,6 +286,8 @@ def test_hop_duyet_dong_da_don_khong_co_link_ban_goc(may_chu, trinh_duyet, monke
         return json.dumps({"kieu": "may", "file_id": fid, "token": "t", "ten": "x.mp4"})
     vs = [_dong_mo(1, nguon=ng("DONFILE" + "a" * 12), da_don=True), _dong_mo(2, nguon=ng("CONFILE" + "b" * 12), da_don=False)]
     p = _trang(trinh_duyet, may_chu, monkeypatch, videos=vs)
+    p.wait_for_selector("#tl-duyet .tl-the-anh")
+    p.locator("#tl-duyet .tl-the-anh").first.click()  # R-02b: khung xem kỹ + hàng duyệt chỉ hiện sau khi bấm một thẻ
     p.wait_for_function("document.querySelectorAll('#tl-duyet .tl-phim-o').length === 2")
     co = {}
     for i in range(2):

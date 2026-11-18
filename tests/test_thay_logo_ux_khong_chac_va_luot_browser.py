@@ -37,6 +37,12 @@ LY_DO_LOI = [
 ]
 
 
+def _mo_cot(p):
+    """R-02b: bốn nhóm cột dưới (Máy đang làm / không chắc / không làm được / đã chấm) gập mặc định ⇒ mở hết để đọc nội dung."""
+    p.wait_for_selector(".tl-khoi-tog")
+    p.evaluate("document.querySelectorAll('.tl-khoi-tog[aria-expanded=false]').forEach(b => b.click())")
+
+
 def _anh_jpg(r):
     from io import BytesIO
 
@@ -53,6 +59,7 @@ def test_bang_ly_do_khop_ma_loi_va_moi_ly_do_co_loi_thuong(may_chu, trinh_duyet,
         assert mau.split(" (")[0].split(" 1 ")[0] in GOC, f"lõi không còn chuỗi {mau!r}: sửa LY_DO_MAY"
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])))
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("window.TL && typeof window.TL.lyDoDeHieu === 'function'")
     for mau in LY_DO_LOI:
         cau = p.evaluate("(c) => window.TL.lyDoDeHieu(c)", f"1/1 watermark không tự thay được: [cụm 0, 2 box] {mau}")
@@ -69,6 +76,7 @@ def test_the_khong_chac_co_ly_do_thuong_link_goc_va_anh_lon(may_chu, trinh_duyet
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([v])), bo=[_luot(1, "Bộ thử", tong=1, cho_nguoi=1)])
     p.route("**/api/thay-logo/videos/41/khung/*", _anh_jpg)
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1 && document.querySelector('#tl-khong-chac img.tl-truoc-nho')")
     k = p.locator("#tl-khong-chac")
     chu = k.inner_text()
@@ -90,6 +98,7 @@ def test_khong_chac_video_da_don_khong_co_link_goc(may_chu, trinh_duyet, monkeyp
     v = _dong_mo(42, trang_thai="cho_nguoi", so_box=0, da_don=1, ly_do_may="không có box mồi nào dùng được")
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([v])))
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
     k = p.locator("#tl-khong-chac")
     assert "không tìm thấy logo cũ đủ rõ" in k.inner_text() and k.get_by_role("link", name="▶ Xem video gốc").count() == 0
@@ -98,6 +107,7 @@ def test_khong_chac_video_da_don_khong_co_link_goc(may_chu, trinh_duyet, monkeyp
 def _mo_luot(br, goc, monkeypatch, bo, videos=()):
     p = _trang_gia(br, goc, monkeypatch, lambda r: _tra_json(r, _danh_sach(list(videos))), bo=bo)
     p.goto(f"{goc}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function(f"document.querySelectorAll('#tl-bo-list .tl-bo-the').length === {min(len(bo), 2)}")
     return p, p.locator("#tl-bo-list .tl-bo-the")
 
@@ -144,6 +154,7 @@ def test_luot_khong_lam_duoc_va_da_bo_qua_khong_bi_ghim_con_khong_chac_thi_ghim(
           _luot(3, "Đã bỏ qua cũ", tong=1, bo_qua=1), _luot(2, "Toàn lỗi cũ", tong=2, loi=2), _luot(1, "Không chắc cũ", tong=1, cho_nguoi=1)]
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([])), bo=bo)
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 3")
     chu = p.locator("#tl-bo-list").inner_text()
     assert "Không chắc cũ" in chu and "Toàn lỗi cũ" not in chu and "Đã bỏ qua cũ" not in chu
@@ -166,6 +177,7 @@ def test_khoi_da_cham_hien_dat_hong_va_chip_loc_dan_toi_khoi(may_chu, trinh_duye
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([dat, hong])),
                    bo=[_luot(1, "Bộ thử", tong=2, xong=2, dat=1, hong=1, thu_muc_ra_id="THUMUC" + "z" * 14)])
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")
     k = p.locator("#tl-da-cham")
     chu = k.inner_text()
@@ -203,6 +215,7 @@ def test_bo_qua_mot_cham_chuyen_the_sang_da_cham_va_hoan_tac_tra_lai(may_chu, tr
     goi = []
     p.route("**/api/thay-logo/videos/81/bo-qua**", lambda r: (goi.append(r.request.url.split("/videos/81/")[1]), r.fulfill(status=204)))
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-khong-chac .tl-muc').length === 1")
     p.locator("#tl-khong-chac").get_by_role("button", name="Bỏ qua video này (giữ bản gốc)").click()
     p.wait_for_function("document.querySelectorAll('#tl-da-cham .tl-muc').length === 1 && document.querySelectorAll('#tl-khong-chac .tl-muc').length === 0")
@@ -228,6 +241,7 @@ def test_chip_da_bo_qua_va_trang_thai_luot_tron(may_chu, trinh_duyet, monkeypatc
     bo = [_luot(2, "Đã bỏ hết", tong=1, bo_qua=1), _luot(1, "Trộn", tong=2, xong=1, dat=1, cho_nguoi=1)]
     p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach([da_bo, dat, kc])), bo=bo)
     p.goto(f"{may_chu}/thay-logo.html")
+    _mo_cot(p)
     p.wait_for_function("document.querySelectorAll('#tl-bo-list .tl-bo-the').length === 2 && document.querySelectorAll('#tl-da-cham .tl-muc').length === 2")
     the = p.locator("#tl-bo-list .tl-bo-the")
     assert the.nth(0).locator(".tl-bo-tt").inner_text() == "Đã bỏ qua" and "Đang xử lý" not in the.nth(0).inner_text()
