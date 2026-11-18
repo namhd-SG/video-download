@@ -1204,6 +1204,22 @@ def test_shell_and_its_assets_must_be_revalidated():
     assert _header_for("/giai-captcha-popup.js") == "no-cache"
 
 
+def test_every_js_css_loaded_by_pages_is_revalidated():
+    """Mọi .js/.css mà index/settings nạp — gồm các file app-*.js, chung-tien-ich.js, chia-cum-ve.js — đều nhận
+    no-cache, nếu không JS cũ ở edge đứng cạnh HTML mới.
+    ĐỘT BIẾN: bỏ dòng `REVALIDATE_PATHS = REVALIDATE_PATHS | ...` ở web/app.py ⇒ ĐỎ."""
+    import re
+
+    tai_nguyen = set()
+    for trang in ("index.html", "settings.html"):
+        html = (app_mod.STATIC_DIR / trang).read_text(encoding="utf-8")
+        for u in re.findall(r'\b(?:src|href)="(/?[A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:css|js))"', html):
+            tai_nguyen.add("/" + u.lstrip("/"))
+    assert {"/app-hang-so.js", "/app-nap-du-lieu.js", "/chung-tien-ich.js", "/chia-cum-ve.js"} <= tai_nguyen
+    for path in sorted(tai_nguyen):
+        assert _header_for(path) == "no-cache", path
+
+
 def test_thay_logo_page_and_every_file_under_its_prefix_are_revalidated():
     """JS cũ cache 2 giờ ở edge đứng cạnh HTML mới ⇒ hỏng âm thầm (không thấy id, gửi trùng job). Tiền tố phủ cả file đợt sau thêm.
     ĐỘT BIẾN: bỏ `startswith("/thay-logo")` ⇒ ĐỎ."""
