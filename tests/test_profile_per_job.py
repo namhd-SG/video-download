@@ -578,3 +578,59 @@ def test_bo_quet_bo_qua_khi_profiles_la_lien_ket(db, tmp_path):
     assert dem["bo_qua"] == 1 and dem["da_xoa"] == 0
     assert (ngoai / "5").is_dir()
 
+
+
+# ---------------------------------------------------------------------------
+# Log đo "[profile-giai]": tách profile MỚI / DÙNG LẠI, lỗi liệt kê ném tiếp NGUYÊN
+# ---------------------------------------------------------------------------
+
+class _LoiGotoGia(Exception):
+    """Giả lỗi goto HTTP của Playwright (vd. net::ERR_HTTP_RESPONSE_CODE_FAILURE)."""
+
+
+def _dong_profile_giai(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if "[profile-giai]" in r.getMessage()]
+
+
+def test_log_profile_moi_roi_dung_lai(monkeypatch, db, caplog):
+    _bat_co(monkeypatch)
+    def fake(url, **kw):
+        # Trình duyệt thật để lại dữ liệu trong profile sau lượt đầu.
+        (db.parent / "profiles" / str(jid) / "Default").mkdir(exist_ok=True)
+        return []
+    gia_lap_scraper(monkeypatch, fake)
+    jid = _job(db)
+    caplog.set_level("INFO", logger=queue_mod.log.name)
+    queue_mod._fetch_refs(URL_PROFILE, max_videos=10, cookies_path=None, db_path=db, job_id=jid)
+    queue_mod._fetch_refs(URL_PROFILE, max_videos=10, cookies_path=None, db_path=db, job_id=jid)
+    assert _dong_profile_giai(caplog) == [f"[profile-giai] job={jid} profile=moi",
+                                          f"[profile-giai] job={jid} profile=dung_lai"]
+
+
+def test_chi_khoa_worker_van_la_profile_moi(db):
+    jid = _job(db)
+    profile_theo_job.chuan_bi_profile_job(db, jid)  # chỉ có `.videodl-worker`
+    assert profile_theo_job.profile_da_dung(db, jid) is False
+    assert profile_theo_job.profile_da_dung(db, jid + 999) is False  # chưa có thư mục
+
+
+@pytest.mark.parametrize("bat", [True, False])
+def test_loi_liet_ke_nem_tiep_nguyen_loi_chi_log_ten_lop(monkeypatch, db, caplog, bat):
+    if bat:
+        _bat_co(monkeypatch)
+    goc = _LoiGotoGia("net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://www.tiktok.com/@nguoi.dung")
+    def fake(url, **kw):
+        raise goc
+    gia_lap_scraper(monkeypatch, fake)
+    jid = _job(db)
+    caplog.set_level("INFO", logger=queue_mod.log.name)
+    with pytest.raises(_LoiGotoGia) as ei:
+        queue_mod._fetch_refs(URL_PROFILE, max_videos=10, cookies_path=None, db_path=db, job_id=jid)
+    assert ei.value is goc  # cùng đối tượng lỗi: hành vi không đổi
+    dong = _dong_profile_giai(caplog)
+    if bat:
+        assert dong == [f"[profile-giai] job={jid} profile=moi",
+                        f"[profile-giai] job={jid} profile=moi loi=_LoiGotoGia"]
+        assert "nguoi.dung" not in "".join(dong)
+    else:
+        assert dong == []

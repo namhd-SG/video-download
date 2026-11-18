@@ -380,24 +380,58 @@ def _thuc_te(su_kien_trang):
     return [(e.loai, e.cx, e.cy, e.buttons) for e in su_kien_trang]
 
 
+def _khop_cho_phep_gop(ky_vong, thuc_te):
+    """So `thuc_te` (trang) với `ky_vong` (người tạo). Chỉ được THIẾU một `move` khi sự kiện người tạo
+    NGAY SAU nó cũng là `move` cùng `buttons` (luật gộp move quá hạn của `BoPhatLai.den_han`). Trả chỉ số
+    các sự kiện người tạo đã tới trang, hoặc None nếu lệch theo bất kỳ cách nào khác (thừa, đổi thứ tự,
+    sai toạ độ/buttons, mất down/up)."""
+    giu: list[int] = []
+    j = 0
+    for i, e in enumerate(ky_vong):
+        if j < len(thuc_te) and thuc_te[j] == e:
+            giu.append(i)
+            j += 1
+            continue
+        sau = ky_vong[i + 1] if i + 1 < len(ky_vong) else None
+        if not (e[0] == "mousemove" and sau is not None and sau[0] == "mousemove" and sau[3] == e[3]):
+            return None
+    return giu if j == len(thuc_te) else None
+
+
+def _cho_phat_het(luot, so, giay=8.0) -> dict:
+    """Chờ worker đã đưa đủ `so` sự kiện người tạo qua bộ phát (phát thật + gộp) rồi trả số đo lượt."""
+    assert cho(lambda: gc.lay_phien(luot.jid).so_do_luot()["so_phat"] >= so, giay), \
+        f"worker mới phát {gc.lay_phien(luot.jid).so_do_luot()['so_phat']}/{so}"
+    return gc.lay_phien(luot.jid).so_do_luot()
+
+
 def test_phat_lai_dung_thu_tu_toa_do_va_thoi_luong_khong_qua_3_phan_tram(luot, trang):
     """Phía TRANG: cùng thứ tự, `floor(x_người × 1,6) == clientX`, tổng thời lượng lệch ≤ 3 %.
-    ĐỘT BIẾN: làm tròn toạ độ / nội suy thêm điểm / nén-giãn nhịp / bỏ sắp lại theo seq ⇒ ĐỎ."""
+    Tất định dưới tải: worker trễ thì `move` quá hạn liên tiếp cùng buttons được GỘP (M1 R1b K1,
+    `DECISIONS.md:4560`) — test chấp nhận ĐÚNG số điểm thiếu bằng `so_gop` của bộ phát và chỉ ở vị trí
+    luật gộp cho phép; `so_gop == 0` ⇒ đúng y hệt, không thừa/thiếu điểm.
+    ĐỘT BIẾN: làm tròn toạ độ / nội suy thêm điểm / nén-giãn nhịp / bỏ sắp lại theo seq ⇒ ĐỎ.
+    Gộp khi quá hạn và KHÔNG gộp khi đúng hạn: `tests/test_giai_captcha_gop_move.py` (đồng hồ giả)."""
     luot.keo_thoi_gian_thuc(KE_HOACH)
-    _doi_trang(trang, len(KE_HOACH))
+    sd = _cho_phat_het(luot, len(KE_HOACH))
+    _doi_trang(trang, len(KE_HOACH) - sd["so_gop"])
     time.sleep(0.6)  # chờ xem có sự kiện THỪA nào lọt tới trang không
     tren_trang = trang.su_kien(("mousedown", "mousemove", "mouseup"))
-    assert _thuc_te(tren_trang) == _ky_vong(luot.da_tao), \
-        "đúng thứ tự, đúng toạ độ (floor), đúng `buttons`, KHÔNG thừa/thiếu điểm"
+    ky_vong = _ky_vong(luot.da_tao)
+    giu = _khop_cho_phep_gop(ky_vong, _thuc_te(tren_trang))
+    assert giu is not None, ("đúng thứ tự, đúng toạ độ (floor), đúng `buttons`, không thừa điểm; chỉ "
+                             f"thiếu move bị gộp: {_thuc_te(tren_trang)}")
+    assert len(ky_vong) - len(giu) == sd["so_gop"], "số điểm thiếu == số move bộ phát đã gộp"
     assert all(e.tin for e in tren_trang), "isTrusted"
-    # Tổng thời lượng: từ sự kiện đầu tới sự kiện cuối, đo ở trang (performance.now cùng một lần tải).
-    goc = luot.da_tao[-1][4] - luot.da_tao[0][4]
+    # Tổng thời lượng: từ sự kiện đầu tới sự kiện cuối TỚI TRANG, đo ở trang (performance.now cùng một lần tải).
+    goc = luot.da_tao[giu[-1]][4] - luot.da_tao[giu[0]][4]
     that = tren_trang[-1].t - tren_trang[0].t
     assert goc > 1500, f"chuỗi phải đủ dài để 3% có nghĩa (gốc {goc:.0f} ms)"
     assert abs(that - goc) / goc <= 0.03, f"gốc {goc:.1f} ms vs trang {that:.1f} ms"
     assert luot.phien_tre_qua_d() == 0
-    # Hover phát với `buttons:0` (đột biến gán buttons:1 cho mọi move ⇒ ĐỎ): hai move đầu.
-    assert [e.buttons for e in tren_trang[:2]] == [0, 0]
+    # Hover phát với `buttons:0` (đột biến gán buttons:1 cho mọi move ⇒ ĐỎ): mọi move trước mousedown.
+    hover = [e.buttons for e in tren_trang[:[e.loai for e in tren_trang].index("mousedown")]]
+    assert hover and all(b == 0 for b in hover)
 
 
 def test_cuon_cua_nguoi_lan_dung_delta_va_khong_cong_scroll_offset(luot, trang):

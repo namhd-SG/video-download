@@ -16,8 +16,10 @@ from playwright.sync_api import (
     Page,
     Response,
     TimeoutError as PWTimeout,
-    sync_playwright,
+    sync_playwright as _sync_playwright_goc,
 )
+
+from tiktok_music_downloader import captcha_xoay, trinh_duyet_patchright
 
 from tiktok_music_downloader.utils import (
     che_url,
@@ -454,12 +456,20 @@ def _open_context(
     profile_dir: Path | None,
     user_agent: str,
 ) -> tuple[Browser | None, BrowserContext]:
-    """Open a persistent or ephemeral Chromium context with stealth + UA."""
+    """Open a persistent or ephemeral Chromium context with stealth + UA.
+
+    Bật `VIDEODL_PATCHRIGHT` ⇒ Chrome thật, bỏ UA giả và STEALTH_INIT_JS (xem `trinh_duyet_patchright`)."""
     common_kwargs = dict(
         user_agent=user_agent,
         viewport={"width": 1280, "height": 900},
         locale="en-US",
     )
+    stealth = True
+    launch_kwargs: dict = {}
+    if trinh_duyet_patchright.patchright_dang_bat():
+        common_kwargs = trinh_duyet_patchright.kwargs_context_patchright(common_kwargs)
+        launch_kwargs["channel"] = common_kwargs.pop("channel")
+        stealth = False
     proxy_cfg = {"server": proxy} if proxy else None
 
     if profile_dir is not None:
@@ -470,19 +480,31 @@ def _open_context(
                 user_data_dir=str(profile_dir),
                 headless=headless,
                 proxy=proxy_cfg,
+                **launch_kwargs,
                 **common_kwargs,
             )
-            ctx.add_init_script(STEALTH_INIT_JS)
+            if stealth:
+                ctx.add_init_script(STEALTH_INIT_JS)
         except BaseException:
             # Mở trượt thì không có context nào để đóng ⇒ không ai nhả khoá sau này.
             _nha_profile_dir(profile_dir)
             raise
         return None, ctx
 
-    browser = pw.chromium.launch(headless=headless, proxy=proxy_cfg)
+    browser = pw.chromium.launch(headless=headless, proxy=proxy_cfg, **launch_kwargs)
     ctx = browser.new_context(**common_kwargs)
-    ctx.add_init_script(STEALTH_INIT_JS)
+    if stealth:
+        ctx.add_init_script(STEALTH_INIT_JS)
     return browser, ctx
+
+
+def sync_playwright():
+    """`sync_playwright()` của patchright khi bật `VIDEODL_PATCHRIGHT`, ngược lại của Playwright.
+
+    Giữ tên `sync_playwright` trong module: worker captcha và test gọi/thay đúng tên đó."""
+    if trinh_duyet_patchright.patchright_dang_bat():
+        return trinh_duyet_patchright.sync_playwright_patchright()
+    return _sync_playwright_goc()
 
 
 def _loai_feed_can_ham(url: str) -> str | None:
@@ -559,6 +581,19 @@ def _mo_trang_co_ham_phien(page: Page, url: str, feed_luot: dict[str, int]) -> N
     )
 
 
+def _tu_giai_neu_bi_chan(page: Page, feed_luot: dict[str, int]) -> None:
+    """Cờ `VIDEODL_TU_GIAI_CAPTCHA` bật VÀ lượt mở chưa có feed dữ liệu ⇒ tool thử tự giải captcha xoay
+    (`captcha_xoay`); qua thì tải lại trang MỘT lần để feed về trong cùng bộ đếm. Trượt/lỗi/không có captcha
+    xoay ⇒ không làm gì thêm, đường cũ (dừng sớm ⇒ người giải qua popup) chạy như trước."""
+    if not captcha_xoay.tu_giai_dang_bat() or feed_luot.get("co_du_lieu", 0) > 0:
+        return
+    kq = captcha_xoay.thu_tu_giai(page)
+    log.info("[tu-giai] quet ket_qua=%s", kq)
+    if kq == captcha_xoay.DA_QUA:
+        page.reload(wait_until="domcontentloaded", timeout=30_000)
+        _cho_link(page)
+
+
 def quet_tren_trang(
     page: Page,
     url: str,
@@ -603,6 +638,7 @@ def quet_tren_trang(
             _cho_link(page)
         else:
             _mo_trang_co_ham_phien(page, url, feed_luot)
+            _tu_giai_neu_bi_chan(page, feed_luot)
         if kiem_truoc_khi_cuon is not None and not kiem_truoc_khi_cuon(feed_luot):
             refs = set()
         else:

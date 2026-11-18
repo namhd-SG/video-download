@@ -267,7 +267,9 @@ def test_lo_toi_lech_thu_tu_duoc_phat_dung_thu_tu_seq(dh):
     assert p.expected_seq == 0
     p.nhan_lo("token-aaaaaaaa", "chu@x.vn", 0, lo[0])
     assert p.expected_seq == 3
-    thu_tu = [e.x for e in p.den_han(dh.t + 5)]
+    thu_tu = []
+    while p.con_hang():
+        thu_tu.extend(e.x for e in p.den_han(p.diem_ke_tiep()))
     assert thu_tu == [1.0, 2.0, 3.0]
 
 
@@ -348,7 +350,10 @@ def test_lo_trung_seq_phat_dung_mot_lan_ca_khi_da_xa_va_dang_cho(dh):
     assert p.nhan_lo(tk, chu, 2, lo2) == "ok"                                  # tới sớm, đang chờ lô 1
     assert p.nhan_lo(tk, chu, 2, lo2) == "trung"                               # trùng lô ĐANG chờ
     assert p.nhan_lo(tk, chu, 1, [_ev("move", 3, 3, 32.0, 1)]) == "ok"
-    assert [(e.k, e.x) for e in p.den_han(dh.t + 5)] == [("down", 1.0), ("move", 2.0), ("move", 3.0), ("up", 4.0)]
+    phat = []
+    while p.con_hang():
+        phat.extend((e.k, e.x) for e in p.den_han(p.diem_ke_tiep()))
+    assert phat == [("down", 1.0), ("move", 2.0), ("move", 3.0), ("up", 4.0)]
 
 
 def test_huy_sang_ky_moi_lo_ky_cu_toi_muon_khong_phat(dh):
@@ -775,13 +780,17 @@ def test_lo_xa_toi_truoc_cac_lo_lien_truoc_phat_du_dung_thu_tu(dh):
     p = _phien()
     for s in range(5):
         p.nhan_lo(A_, CHU_, s, [_ev("move", s, 1, s * 16.0)], ky=0)
-    p.den_han(dh.t + 999)
+    dh.t += 0.2
+    p.den_han(dh.t)
     assert p.nhan_lo(A_, CHU_, 70, [_ev("move", 70, 1, 70 * 16.0)], ky=0) == "ok"
     for s in range(5, 70):
         dh.t += 0.003
         assert p.nhan_lo(A_, CHU_, s, [_ev("move", s, 1, s * 16.0)], ky=0) == "ok"
     assert p.expected_seq == 71 and p.lay_huy() is None and p.ky == 0
-    assert [e.x for e in p.den_han(dh.t + 999)] == [float(s) for s in range(5, 71)]
+    phat = []
+    while p.con_hang():
+        phat.extend(e.x for e in p.den_han(p.diem_ke_tiep()))
+    assert phat == [float(s) for s in range(5, 71)]
 
 
 def test_huy_lap_lai_khong_phinh_bo_nho(dh):
@@ -821,8 +830,9 @@ def test_bo_phat_ghi_moi_su_kien_da_phat_vao_thong_ke():
     b = BoPhatLai(100.0, tk)
     evs = chuoi_nguoi()
     b.nhan_lo(evs, t_toi=1000.0)
-    ra = b.den_han(10_000.0)                          # muộn xa ⇒ phát hết
-    assert len(ra) == len(evs) == tk.so_phat
+    ra = b.den_han(10_000.0)                          # muộn xa ⇒ phát hết, chuỗi move giữa down..up gộp về điểm cuối
+    assert tk.so_phat == len(evs)
+    assert ra == [evs[0], evs[-2], evs[-1]] and tk.so_gop == len(evs) - len(ra)
     assert tk.gesture_nop == 1, "đúng một `up` đã phát"
     assert len(tk.mau) == tk.so_phat and min(tk.mau) > 0
 

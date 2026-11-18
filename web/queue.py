@@ -334,7 +334,12 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     la_profile_giai = (profile_theo_job.profile_captcha_dang_bat() and is_profile_page(url)
                        and db_path is not None and job_id is not None)
     tk_feed: dict[str, int] = {}
+    nguon_ra: dict[str, str] = {}
+    profile_nhan = ""
     if la_profile_giai:
+        # Log đo: tách lượt profile MỚI với lượt DÙNG LẠI profile (lượt 2+ / lượt giải) — grep "[profile-giai]".
+        profile_nhan = "dung_lai" if profile_theo_job.profile_da_dung(db_path, job_id) else "moi"
+        log.info("[profile-giai] job=%s profile=%s", job_id, profile_nhan)
         kw_profile = {
             "profile_dir": str(profile_theo_job.chuan_bi_profile_job(db_path, job_id)),
             "headless": not profile_theo_job.profile_headful_dang_bat(),
@@ -345,6 +350,9 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             "dung_som_khi_feed_rong": True,
             # Bộ đếm feed cộng dồn mọi lượt: 0/0 (không đo được feed nào) khác "feed rỗng".
             "thong_ke_feed_ra": tk_feed,
+            # Ghi nhận nhánh thực sự chạy ("yt_dlp" | "browser"); `TikTokCollection.liet_ke`
+            # bóc khoá này ra trước khi `**` vào `scrape_music_page_multi`.
+            "nguon_ra": nguon_ra,
         }
     # Lỗi RIÊNG một link của job link lẻ (video riêng tư, quá dài, lỗi mạng…): đếm vào `loi` và đi tiếp. Lỗi do
     # phía nguồn (riêng tư/giới hạn tuổi/quá dài/quá nặng/playlist/trực tiếp) xếp vào `loi_tiktok` — cột này
@@ -380,21 +388,28 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                 if nen_tang in pacer.TRAN and db_path is not None and job_id is not None else None)
         kw_link_le = {"cong": cong, "ghi_loi_video": _ghi_loi_link,
                       "nghi": pacer.nghi_giua_luot if cong is not None else None}
-    refs = nguon_url.liet_ke(
-        url,
-        max_videos=max_videos,
-        proxy=proxy,
-        cookies_path=cookies_path,
-        already_have=_already_have,
-        on_skip=_note_skip,
-        on_stop=_note_stop,
-        on_pages=_note_pages,
-        dem_trang=_dem_mot_trang,
-        passes=SO_VONG_DAO_SAU,
-        max_seconds=TRAN_GIAY_MOT_LUOT,
-        kw_profile=kw_profile,
-        **kw_link_le,
-    )
+    try:
+        refs = nguon_url.liet_ke(
+            url,
+            max_videos=max_videos,
+            proxy=proxy,
+            cookies_path=cookies_path,
+            already_have=_already_have,
+            on_skip=_note_skip,
+            on_stop=_note_stop,
+            on_pages=_note_pages,
+            dem_trang=_dem_mot_trang,
+            passes=SO_VONG_DAO_SAU,
+            max_seconds=TRAN_GIAY_MOT_LUOT,
+            kw_profile=kw_profile,
+            **kw_link_le,
+        )
+    except Exception as exc:
+        # Chỉ ghi log rồi ném tiếp NGUYÊN lỗi (lỗi goto HTTP của Playwright…): hành vi không đổi.
+        # Chỉ tên lớp — thông điệp Playwright kèm URL hồ sơ (handle khách).
+        if la_profile_giai:
+            log.warning("[profile-giai] job=%s profile=%s loi=%s", job_id, profile_nhan, type(exc).__name__)
+        raise
     # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
     # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
     # hay dừng. Lọc một lần ở ngoài, sau khi quét xong, chính là cái không bù
@@ -409,7 +424,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # Ba nhóm đó bảo người dùng ba việc khác nhau; gộp lại là quay về "một dòng
     # chữ lặng lẽ" — thứ đã khiến người dùng hỏi "có lỗi không, sao hai link
     # khác nhau lại ra giống nhau".
-    if la_profile_giai and xac_minh_ra is not None:
+    if la_profile_giai and xac_minh_ra is not None and nguon_ra.get("nguon") == "browser":
         ly_do_xm = giai_captcha.ly_do_can_xac_minh(tk_feed, _ly_do_cuoi["v"], len(refs), max_videos)
         if ly_do_xm is not None:
             xac_minh_ra["ly_do"] = ly_do_xm

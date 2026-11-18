@@ -333,6 +333,77 @@ def test_khung_dau_khong_ve_ve_cho_xac_minh(monkeypatch, db):
     assert models.get_job(db, h.jid)["ly_do_dung"] == gc.LD_KHONG_CO_KHUNG
 
 
+def _b64_byte(so_byte: int, ky_tu: bytes = b"a") -> str:
+    import base64
+    return base64.b64encode(ky_tu * so_byte).decode()
+
+
+def _gan_lich_khung(h: Hien, lich_khung: list[tuple[float, int]]) -> dict:
+    """`lich_khung` = [(giay_tu_1000, so_byte_jpeg)]. Phát khung theo giờ giả khi screencast đang bật."""
+    from giai_captcha_gia import KHUNG_META
+    con = list(lich_khung)
+    ghi = {"tt_khi_khung_nho": [], "vao": None}
+
+    def moi_tick():
+        if not h.trang.cdp.dang_chieu:
+            return
+        if h.phien.lay_khung() is not None and h.tt() == "dang_mo":
+            ghi["tt_khi_khung_nho"].append((round(h.dong.t - 1000.0, 2), h.phien.lay_khung()["seq"]))
+        while con and h.dong.t - 1000.0 >= con[0][0] - 1e-9:
+            _, sb = con.pop(0)
+            h.trang.cdp.phat("Page.screencastFrame", {
+                "data": _b64_byte(sb), "sessionId": 1, "metadata": dict(KHUNG_META),
+            })
+
+    def khi_vao():
+        kh = h.phien.lay_khung()
+        ghi["vao"] = {
+            "t": h.dong.t - 1000.0,
+            "seq": kh["seq"],
+            "byte": worker._so_byte_jpeg(kh["jpeg"]),
+            "tt": h.tt(),
+        }
+
+    h.trang.moi_tick = moi_tick
+    h.trang.kich_ban = [(0.0, khi_vao), (0.1, h.lenh("dung"))]
+    return ghi
+
+
+def test_cho_khung_co_noi_dung_vao_o_khung_8400_byte_trong_3_giay(monkeypatch, db, caplog):
+    """Khung 3300 B, 2983 B rồi 8400 B trong 3 s ⇒ chưa sang `dang_giai` ở 2 khung đầu, vào ngay ở khung 8400 B."""
+    h = Hien(monkeypatch, db, phat_khung=False)
+    ghi = _gan_lich_khung(h, [(0.20, 3300), (0.95, 2983), (1.75, 8400)])
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        h.chay()
+    assert [seq for _, seq in ghi["tt_khi_khung_nho"]] and set(seq for _, seq in ghi["tt_khi_khung_nho"]) == {1, 2}
+    assert ghi["vao"] is not None
+    assert ghi["vao"]["tt"] == "dang_giai"
+    assert ghi["vao"]["seq"] == 3 and ghi["vao"]["byte"] == 8400
+    assert ghi["vao"]["t"] == pytest.approx(1.75, abs=0.06), "vào ngay khi có khung ≥ 7000 B, không chờ hết 3 s"
+    dong = _dong_giai(caplog)
+    kv = [d for d in dong if "khung_vao" in d]
+    assert len(kv) == 1 and "seq=3 byte=8400" in kv[0] and "het_tran=False" in kv[0], kv
+    _khong_lo(caplog)
+
+
+def test_chi_co_khung_nho_sau_3_giay_vao_bang_khung_moi_nhat_khong_loi(monkeypatch, db, caplog):
+    """Chỉ có khung nhỏ (3300 B, 2983 B, 4358 B) ⇒ sau trần 3 s tính từ khung đầu, vào `dang_giai` bằng khung
+    mới nhất (không bao giờ thành `LD_KHONG_CO_KHUNG`)."""
+    h = Hien(monkeypatch, db, phat_khung=False)
+    ghi = _gan_lich_khung(h, [(0.20, 3300), (1.10, 2983), (2.00, 4358)])
+    with caplog.at_level(logging.INFO, logger="videodl.web"):
+        kq = h.chay()
+    assert ghi["vao"] is not None
+    assert ghi["vao"]["tt"] == "dang_giai"
+    assert ghi["vao"]["seq"] == 3 and ghi["vao"]["byte"] == 4358
+    assert ghi["vao"]["t"] == pytest.approx(0.20 + gc.CHO_KHUNG_NOI_DUNG_GIAY, abs=0.06)
+    assert kq.loai == "failed" and models.get_job(db, h.jid)["ly_do_dung"] == gc.LD_DUNG_KHONG_CAPTCHA
+    dong = _dong_giai(caplog)
+    kv = [d for d in dong if "khung_vao" in d]
+    assert len(kv) == 1 and "seq=3 byte=4358" in kv[0] and "het_tran=True" in kv[0], kv
+    _khong_lo(caplog)
+
+
 # ---------------------------------------------------------------------------
 # dang_giai → cho_xac_minh (hết giờ, lỗi, rời miền, gesture dở)
 # ---------------------------------------------------------------------------
@@ -1249,3 +1320,59 @@ def test_log_duong_dan_chi_ghi_loai_khong_ghi_path(monkeypatch, db, caplog):
     dong = _dong_giai(caplog)
     assert any("đóng trang mới host=www.tiktok.com loai=video" in d for d in dong), dong
     assert not any("khach.hang" in d or "7692740350766517525" in d for d in dong)
+
+
+# ---------------------------------------------------------------------------
+# M5: tool tự giải captcha xoay TRƯỚC (cờ VIDEODL_TU_GIAI_CAPTCHA, mặc định TẮT), người là dự phòng
+# ---------------------------------------------------------------------------
+
+def _tu_giai_harness(monkeypatch, db, ket_qua_tu_giai, co_bat=True, nguoi_da_giai=False):
+    from tiktok_music_downloader import captcha_xoay as cx
+    if co_bat:
+        monkeypatch.setenv(cx.ENV_TU_GIAI, "1")
+    else:
+        monkeypatch.delenv(cx.ENV_TU_GIAI, raising=False)
+    goi = {"thu": 0, "vong": 0}
+
+    def thu(page):
+        goi["thu"] += 1
+        return ket_qua_tu_giai
+
+    monkeypatch.setattr(cx, "thu_tu_giai", thu)
+    that = worker._vong_giai
+
+    def vong(*a, **k):
+        goi["vong"] += 1
+        return that(*a, **k)
+
+    monkeypatch.setattr(worker, "_vong_giai", vong)
+    h, rec = _da_giai_harness(monkeypatch, db, [RespFeed(rong=False)], ra=[_ref("201")])
+    if not nguoi_da_giai:
+        h.trang.kich_ban = [(30.0, h.lenh("dung"))]  # người không làm gì; chỉ chặn treo nếu tool trượt
+    return h, rec, goi
+
+
+def test_tu_giai_qua_thi_bo_vong_nguoi_va_quet_luon(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.DA_QUA)
+    kq = h.chay()
+    assert goi == {"thu": 1, "vong": 0}
+    assert kq.loai == "refs" and [r.video_id for r in kq.refs] == ["201"]
+    assert len(rec.goi) == 1 and rec.goi[0]["db"] == "running"
+    assert h.input_da_phat() == [], "không phát sự kiện nào của người"
+
+
+def test_tu_giai_truot_thi_nguoi_giai_nhu_cu(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.TRUOT, nguoi_da_giai=True)
+    kq = h.chay()
+    assert goi == {"thu": 1, "vong": 1}
+    assert kq.loai == "refs" and len(h.input_da_phat()) == 1
+
+
+def test_co_tu_giai_tat_thi_khong_goi_tu_giai(monkeypatch, db):
+    from tiktok_music_downloader import captcha_xoay as cx
+    h, rec, goi = _tu_giai_harness(monkeypatch, db, cx.DA_QUA, co_bat=False, nguoi_da_giai=True)
+    kq = h.chay()
+    assert goi == {"thu": 0, "vong": 1}
+    assert kq.loai == "refs"
