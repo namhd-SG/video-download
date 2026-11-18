@@ -27,6 +27,23 @@ DO_DAI_BAM = 10
 _MAU_TAI_NGUYEN = re.compile(r'\b(href|src)="(/?[A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:css|js))"')
 
 
+def duong_dan_tai_nguyen_cua_cac_trang(thu_muc_tinh: Path) -> frozenset[str]:
+    """Đường dẫn URL (`/x.js`) của mọi `.css`/`.js` nội bộ mà các trang trong `TRANG_GAN_PHIEN_BAN` nạp.
+
+    Cùng nguồn với `gan_phien_ban` (cùng danh sách trang, cùng mẫu thẻ) nên một file JS mới thêm vào thẻ `<script>`
+    được `?v=` VÀ `Cache-Control: no-cache` cùng lúc, không phải liệt kê thêm ở nơi thứ hai.
+    """
+    goc = Path(thu_muc_tinh)
+    ket_qua: set[str] = set()
+    for trang in TRANG_GAN_PHIEN_BAN:
+        tep = goc / trang
+        if not tep.is_file():
+            continue
+        for m in _MAU_TAI_NGUYEN.finditer(tep.read_text(encoding="utf-8")):
+            ket_qua.add("/" + m.group(2).lstrip("/"))
+    return frozenset(ket_qua)
+
+
 def bam_tep(duong_dan: Path) -> str | None:
     """sha256 rút gọn của nội dung file; không đọc được ⇒ None."""
     try:
