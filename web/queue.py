@@ -24,11 +24,12 @@ from tiktok_music_downloader.phan_loai_loi import (
 from tiktok_music_downloader.nguon import (
     NGUON_MAC_DINH, NGUON_YT_DLP_NEN_TANG_KHAC, TRAN_DUNG_LUONG_BYTE, TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh,
     chon_nguon, tach_link)
+from tiktok_music_downloader.nguon_instagram import InstagramHangLoat
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED, STOP_BI_CHAN, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
-    STOP_THIEU_DENO, STOP_TRAN_GIO, STOP_TRAN_NGAY,
+    STOP_THIEU_DENO, STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_IG_CHUA_CO_COOKIE, STOP_IG_MAT_PHIEN,
     STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
@@ -38,7 +39,7 @@ from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, 
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
 from web.cookies import cookies_path_for_user  # noqa: F401
-from web.cookies import ly_do_jar_khong_dung_duoc
+from web.cookies import COOKIE_HET_HAN, ly_do_jar_khong_dung_duoc
 from web.lifecycle import _do_thoi_luong_quietly, check_disk_guard, on_video_verified
 
 log = logging.getLogger("videodl.web")
@@ -58,6 +59,8 @@ _LY_DO_RONG_LA_LOI = frozenset({
     STOP_INDEX_FAILED, STOP_HASHTAG_KHONG_TRA_DUOC,
     # Lane nền tảng khác: dừng vì trần IP / tín hiệu chặn / thiếu Deno mà chưa lấy được video nào cũng là "Lỗi".
     STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_BI_CHAN, STOP_THIEU_DENO,
+    # Instagram hàng loạt: mất phiên / chưa có cookie ⇒ "Lỗi" nhãn riêng, không bao giờ "Xong" rỗng.
+    STOP_IG_MAT_PHIEN, STOP_IG_CHUA_CO_COOKIE,
 })
 # Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
 # Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
@@ -178,6 +181,23 @@ def la_link_le(url: str) -> bool:
 def la_kenh_youtube(url: str) -> bool:
     """Job này là kênh / tab / playlist YouTube (một URL, số video theo ô số lượng)."""
     return isinstance(chon_nguon((tach_link(url) or [url])[0]), YoutubeKenh)
+
+
+def la_instagram_hang_loat(url: str) -> bool:
+    """Job này là Instagram HÀNG LOẠT (profile / từ khoá / hashtag / audio): cần cookie IG của người tạo job."""
+    return isinstance(chon_nguon((tach_link(url) or [url])[0]), InstagramHangLoat)
+
+
+def _kiem_jar_instagram(cookies_dir: Path, nguoi_tao: str) -> tuple[str | None, str | None]:
+    """`(đường jar, mã dừng)`: jar IG dùng được ⇒ `(path, None)`; không có / hỏng ⇒ `(None, mã)`. Không bao giờ chạy
+    ẩn danh. Hết hạn ⇒ `ig_mat_phien` (nhãn "Cookie IG hết hạn / bị IG chặn"); còn lại ⇒ `ig_chua_co_cookie`."""
+    path = cookies_path_for_user(cookies_dir, nguoi_tao, "instagram")
+    if path is None:
+        return None, STOP_IG_CHUA_CO_COOKIE
+    ly_do = ly_do_jar_khong_dung_duoc(path, nen_tang="instagram")
+    if ly_do is None:
+        return path, None
+    return None, STOP_IG_MAT_PHIEN if ly_do == COOKIE_HET_HAN else STOP_IG_CHUA_CO_COOKIE
 
 
 def nguon_cua_ref(nguon_job: str, ref: VideoRef, link_le: bool) -> str:
@@ -833,12 +853,21 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
             models.finish_job(db_path, job_id, "failed")
             return
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"]) if la_tiktok else None
+        # Instagram HÀNG LOẠT: cookie IG của người tạo job là BẮT BUỘC (không có phiên thì IG không trả danh sách).
+        # Không jar / jar hỏng / hết hạn ⇒ dừng nhãn rõ TRƯỚC khi mở trình duyệt, không chạy ẩn danh.
+        if job.get("nen_tang") == "instagram" and la_instagram_hang_loat(job["url"]):
+            cookies_path, ma_dung = _kiem_jar_instagram(cookies_dir, job["nguoi_tao"])
+            if ma_dung is not None:
+                log.warning("job %s: cookie IG không dùng được [%s]", job_id, ma_dung)
+                models.set_job_stop_reason(db_path, job_id, ma_dung)
+                models.finish_job(db_path, job_id, "failed")
+                return
         # TIỀN-KIỂM: jar có mà hỏng/hết hạn thì DỪNG, không chạy tiếp không
         # cookie. `download_all` nuốt lỗi cookie thành một dòng log rồi chạy
         # ẩn danh — với dòng lệnh đó là tiện, với lớp web dùng chung thì job
         # vẫn báo "xong" mà ra ít video hơn hẳn và không ai biết vì sao.
         # Không có jar thì KHÔNG phải lỗi: đó là chạy ẩn danh có chủ đích.
-        if cookies_path is not None:
+        if cookies_path is not None and la_tiktok:   # jar IG đã kiểm riêng ở trên (luật khác)
             ly_do = ly_do_jar_khong_dung_duoc(cookies_path)
             if ly_do is not None:
                 models.set_job_stop_reason(db_path, job_id, ly_do)

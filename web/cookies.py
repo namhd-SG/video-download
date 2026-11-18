@@ -24,7 +24,18 @@ log = logging.getLogger(__name__)
 ANONYMOUS_COOKIE = "khong-cookie"
 
 
-def cookies_path_for_user(cookies_dir: Path, nguoi_tao: str) -> str | None:
+# Jar theo nền tảng: TikTok giữ NGUYÊN đường `<sha256>.json` (không đổi một byte, không đổi tên); nền tảng khác là
+# `<sha256>.<nền tảng>.json`. Tập ĐÓNG để tên nền tảng không bao giờ là đường dẫn do người ngoài đặt.
+NEN_TANG_CO_JAR = ("tiktok", "instagram")
+
+
+def _ten_tep_jar(digest: str, nen_tang: str) -> str:
+    if nen_tang not in NEN_TANG_CO_JAR:
+        raise ValueError(f"nền tảng không có jar cookie: {nen_tang!r}")
+    return f"{digest}.json" if nen_tang == "tiktok" else f"{digest}.{nen_tang}.json"
+
+
+def cookies_path_for_user(cookies_dir: Path, nguoi_tao: str, nen_tang: str = "tiktok") -> str | None:
     """Resolve which cookie jar belongs to this job's creator.
 
     Phase 05 wires real per-user auth + upload; until then this only
@@ -46,7 +57,7 @@ def cookies_path_for_user(cookies_dir: Path, nguoi_tao: str) -> str | None:
     """
     digest = hashlib.sha256(nguoi_tao.encode("utf-8")).hexdigest()
     cookies_dir_resolved = cookies_dir.resolve()
-    candidate = (cookies_dir_resolved / f"{digest}.json").resolve()
+    candidate = (cookies_dir_resolved / _ten_tep_jar(digest, nen_tang)).resolve()
     if candidate.parent != cookies_dir_resolved:
         # Lưới thứ hai: cấu tạo digest ở trên đã chặn traversal rồi (không
         # có "/" hay ".."), đây chỉ là double-check phòng khi logic hash
@@ -57,7 +68,7 @@ def cookies_path_for_user(cookies_dir: Path, nguoi_tao: str) -> str | None:
     return str(candidate) if candidate.is_file() else None
 
 
-def cookie_jar_path(cookies_dir: Path, nguoi_tao: str) -> Path:
+def cookie_jar_path(cookies_dir: Path, nguoi_tao: str, nen_tang: str = "tiktok") -> Path:
     """Where this person's jar BELONGS, whether or not it exists yet.
 
     `cookies_path_for_user` answers "is there one?" and returns None when
@@ -68,7 +79,7 @@ def cookie_jar_path(cookies_dir: Path, nguoi_tao: str) -> Path:
     """
     digest = hashlib.sha256(nguoi_tao.encode("utf-8")).hexdigest()
     cookies_dir_resolved = cookies_dir.resolve()
-    candidate = (cookies_dir_resolved / f"{digest}.json").resolve()
+    candidate = (cookies_dir_resolved / _ten_tep_jar(digest, nen_tang)).resolve()
     if candidate.parent != cookies_dir_resolved:
         raise ValueError("cookie jar path escaped cookies_dir")
     return candidate
@@ -102,8 +113,11 @@ COOKIE_RONG = "cookie_rong"
 COOKIE_CHUA_DANG_NHAP = "cookie_chua_dang_nhap"
 COOKIE_HET_HAN = "cookie_het_han"
 COOKIE_KHONG_PHAI_TIKTOK = "cookie_khong_phai_tiktok"
+COOKIE_KHONG_PHAI_INSTAGRAM = "cookie_khong_phai_instagram"
 MA_LOI_COOKIE = (COOKIE_KHONG_DOC_DUOC, COOKIE_RONG, COOKIE_KHONG_PHAI_TIKTOK,
-                 COOKIE_CHUA_DANG_NHAP, COOKIE_HET_HAN)
+                 COOKIE_KHONG_PHAI_INSTAGRAM, COOKIE_CHUA_DANG_NHAP, COOKIE_HET_HAN)
+# Cookie đăng nhập của Instagram: chỉ `sessionid` (không có phiên thì IG hiện trang đăng nhập).
+COOKIE_DANG_NHAP_INSTAGRAM = ("sessionid",)
 
 
 def _la_cookie_tiktok(c: dict) -> bool:
@@ -117,6 +131,20 @@ def _la_cookie_tiktok(c: dict) -> bool:
     host = str(c.get("domain") or urlsplit(str(c.get("url") or "")).hostname or "")
     host = host.lstrip(".").lower()
     return host == "tiktok.com" or host.endswith(".tiktok.com")
+
+
+def _la_cookie_instagram(c: dict) -> bool:
+    """Cookie thuộc instagram.com (hoặc tên miền con). Cùng luật so ĐÚNG tên miền như `_la_cookie_tiktok`."""
+    host = str(c.get("domain") or urlsplit(str(c.get("url") or "")).hostname or "")
+    host = host.lstrip(".").lower()
+    return host == "instagram.com" or host.endswith(".instagram.com")
+
+
+# Mỗi nền tảng: (tên cookie đăng nhập, hàm nhận cookie của nền tảng, mã "không phải nền tảng này").
+_NEN_TANG_JAR = {
+    "tiktok": (COOKIE_DANG_NHAP, _la_cookie_tiktok, COOKIE_KHONG_PHAI_TIKTOK),
+    "instagram": (COOKIE_DANG_NHAP_INSTAGRAM, _la_cookie_instagram, COOKIE_KHONG_PHAI_INSTAGRAM),
+}
 
 
 def _hinh_dang_hong(path: Path) -> str:
@@ -134,7 +162,7 @@ def _hinh_dang_hong(path: Path) -> str:
         return "không phải JSON — có thể là bản xuất Header String hoặc Netscape"
     return "JSON hỏng"
 
-def han_dung_nhat(path: str) -> str | None:
+def han_dung_nhat(path: str, nen_tang: str = "tiktok") -> str | None:
     """Khi nào jar này hết hạn, dạng ISO. `None` = không có hạn đọc được.
 
     Chỉ trả một MỐC THỜI GIAN — cùng kỷ luật với `ly_do_jar_khong_dung_duoc`:
@@ -149,6 +177,7 @@ def han_dung_nhat(path: str) -> str | None:
     """
     from tiktok_music_downloader.scraper import _load_cookies
 
+    ten_dang_nhap, la_cua_nen_tang, _ = _NEN_TANG_JAR[nen_tang]
     try:
         cookies = _load_cookies(Path(path))
     except Exception:  # noqa: BLE001 — không đọc được thì không có hạn để nói
@@ -158,7 +187,7 @@ def han_dung_nhat(path: str) -> str | None:
     for c in cookies:
         # Cùng bộ lọc với `ly_do_jar_khong_dung_duoc`: `sessionid` của nền tảng
         # khác không nói gì về hạn của phiên TikTok.
-        if str(c.get("name") or "") not in COOKIE_DANG_NHAP or not _la_cookie_tiktok(c):
+        if str(c.get("name") or "") not in ten_dang_nhap or not la_cua_nen_tang(c):
             continue
         try:
             h = int(c.get("expires") or 0)
@@ -171,7 +200,7 @@ def han_dung_nhat(path: str) -> str | None:
     return datetime.fromtimestamp(min(han), tz=timezone.utc).isoformat()
 
 
-def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | None:
+def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None, nen_tang: str = "tiktok") -> str | None:
     """`None` -> jar dùng được. Ngược lại là một MÃ trong `MA_LOI_COOKIE`.
 
     Trả MÃ chứ không trả câu chữ, vì hai lý do độc lập:
@@ -190,6 +219,7 @@ def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | 
     """
     from tiktok_music_downloader.scraper import _load_cookies
 
+    ten_dang_nhap, la_cua_nen_tang, ma_khong_phai = _NEN_TANG_JAR[nen_tang]
     try:
         cookies = _load_cookies(Path(path))
     except Exception:  # noqa: BLE001 — mọi lỗi đọc đều là "jar không dùng được"
@@ -203,12 +233,12 @@ def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | 
     # và tên cookie đăng nhập không riêng của TikTok: jar Instagram cũng có
     # `sessionid`. Xét tên trên cả jar thì jar IG qua cửa, ghi đè jar TikTok
     # đang chạy được, và job chạy với phiên của nền tảng khác.
-    cookies = [c for c in cookies if _la_cookie_tiktok(c)]
+    cookies = [c for c in cookies if la_cua_nen_tang(c)]
     if not cookies:
-        return COOKIE_KHONG_PHAI_TIKTOK
+        return ma_khong_phai
 
     ten = {str(c.get("name") or "") for c in cookies}
-    if not (ten & set(COOKIE_DANG_NHAP)):
+    if not (ten & set(ten_dang_nhap)):
         return COOKIE_CHUA_DANG_NHAP
 
     # `expires == 0` là cookie phiên: không có hạn, vẫn dùng được. Chỉ coi là
@@ -223,7 +253,7 @@ def ly_do_jar_khong_dung_duoc(path: str, bay_gio: float | None = None) -> str | 
     moc = bay_gio if bay_gio is not None else time.time()
     han = []
     for c in cookies:
-        if str(c.get("name") or "") not in COOKIE_DANG_NHAP:
+        if str(c.get("name") or "") not in ten_dang_nhap:
             continue
         try:
             han.append(int(c.get("expires") or 0))

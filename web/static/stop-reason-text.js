@@ -56,6 +56,14 @@ const STOP_REASON_TEXT = {
                "còn — chạy lại vào ngày mai để tải phần còn lại.",
     bi_chan: "Dừng: nền tảng báo nghi ngờ truy cập tự động (bot-check / captcha / giới hạn tần suất). Nền tảng " +
              "này tạm tắt cho tới khi quản trị viên bật lại — đừng chạy lại ngay, việc đó chỉ làm đậm dấu vết.",
+    // Instagram hàng loạt (R-08): KHÔNG BAO GIỜ "Xong" rỗng khi mất phiên.
+    ig_mat_phien: "Dừng: Cookie IG hết hạn / bị IG chặn (Instagram bắt đăng nhập lại, đòi xác minh hoặc giới hạn " +
+                  "tần suất). Vào Cài đặt, dán lại cookie của tài khoản PHỤ rồi chạy lại — đừng chạy lại ngay " +
+                  "khi chưa đổi cookie, việc đó chỉ làm đậm dấu vết.",
+    ig_chua_co_cookie: "Dừng: chưa có cookie Instagram dùng được. Vào Cài đặt, dán cookie của tài khoản PHỤ " +
+                       "(xuất từ instagram.com khi đã đăng nhập) rồi chạy lại.",
+    cookie_khong_phai_instagram: "Dừng: cookie bạn đã dán không phải cookie Instagram (không có cookie nào của " +
+                                 "instagram.com). Dán lại cookie xuất khi đang mở instagram.com.",
     thieu_deno: "Dừng: máy chạy chưa có Deno nên không tải được YouTube — đây là lỗi cấu hình máy, không phải " +
                 "lỗi video. Báo người quản trị.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
