@@ -124,10 +124,11 @@ def test_khung_bo_tu_tim_1440_the_cuoi_nam_tron_trong_khung(may_chu, trinh_duyet
 
 def test_nut_truoc_sau_chi_hien_khi_luoi_the_duyet_tran(may_chu, trinh_duyet, monkeypatch):
     from test_thay_logo_trang_browser import _danh_sach, _dong_mo, _tra_json, _trang_gia
-    for so, hien in ((3, False), (8, True)):  # 3 thẻ vừa một hàng ở 1440 ⇒ ẩn; 8 thẻ (nhiều hàng + "Xem thêm") ⇒ hiện
+    # Lưới thẻ: hiện hết ⇒ ẩn ‹ › (3 thẻ: 1 hàng ở 1440, 2+1 ở 390); còn thẻ giấu sau "Xem thêm" (8 thẻ) ⇒ hiện
+    for so, rong, hien in ((3, 1440, False), (3, 390, False), (8, 1440, True), (8, 390, True)):
         ds = [_dong_mo(60 + i) for i in range(so)]
         p = _trang_gia(trinh_duyet, may_chu, monkeypatch, (lambda d: lambda r: _tra_json(r, _danh_sach(d)))(ds))
-        p.set_viewport_size({"width": 1440, "height": 900})
+        p.set_viewport_size({"width": rong, "height": 900})
         p.goto(f"{may_chu}/thay-logo.html")
         p.wait_for_selector("#tl-duyet .tl-the-duyet")
-        assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, so
+        assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, (so, rong)
