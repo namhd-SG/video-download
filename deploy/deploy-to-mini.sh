@@ -377,6 +377,13 @@ if [ -z "$code" ]; then
   echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
   exit "$RC_DO_HONG"
 fi
+# 503 = web lên nhưng LỖI CẤU HÌNH (vd VIDEODL_PATCHRIGHT bật mà thiếu gói patchright/Chrome, web/app.py:healthz).
+# In thân phản hồi (chỉ mã, không bí mật) để người deploy thấy lý do thay vì "không lên".
+if [ "$code" = "503" ]; then
+  ssh "$HOST" "curl -s --max-time 5 http://127.0.0.1:$PORT/healthz" >&2 || true
+  echo "" >&2
+  echo "   503 = lỗi cấu hình trình duyệt: grep '\[trinh-duyet\]' ~/Library/Logs/videodl.log trên máy đích" >&2
+fi
 [ "$code" = "200" ] || { echo "DỪNG: healthz không lên. Lui bằng deploy/rollback-on-mini.sh $BACKUP_DIR" >&2; exit "$RC_NGHIEM_THU"; }
 
 # MỌI tệp rsync vừa gửi, không phải một danh sách tên cứng: deploy 23/09 chỉ

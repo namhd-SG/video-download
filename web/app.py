@@ -19,12 +19,12 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
-from tiktok_music_downloader import downloader
+from tiktok_music_downloader import downloader, trinh_duyet_patchright
 from tiktok_music_downloader.nguon import (
     NEN_TANG_LINK_LE, NGUON, NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, TRAN_DUNG_LUONG_BYTE,
     TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
@@ -273,6 +273,7 @@ async def _lifespan(app: FastAPI):
     # `init_db` là idempotent (`CREATE TABLE IF NOT EXISTS` + ALTER dung thứ),
     # nên gọi hai lần không tốn gì.
     models.init_db(DB_PATH)
+    _bao_cau_hinh_trinh_duyet()
     # Mồi admin từ env — CHỈ khi bảng chưa có admin nào (xem docstring của hàm).
     da_moi = models.moi_admin_tu_env(DB_PATH, admin_tu_env())
     if da_moi:
@@ -452,18 +453,41 @@ def require_admin(nguoi_tao: str = Depends(require_user)) -> str:
     return nguoi_tao
 
 
-@app.get("/healthz")
-def healthz() -> dict:
+@app.get("/healthz", response_model=None)
+def healthz() -> dict | JSONResponse:
     """The one unauthenticated route. `launchctl`/KeepAlive and the local
     probe in the handover checklist reach it over loopback with no Access
     JWT, and it discloses nothing but liveness — the worker part is a CODE
     only (no error text, no paths): "ok" · "chet" (thread gone) · "loi_lap"
     (current loop failing, or a job stuck unmarked) · "cho_dia" (waiting: disk below the
-    new-job threshold). HTTP stays 200: the web side is up either way, and
-    deploy scripts gate on the status code."""
+    new-job threshold). HTTP stays 200 for worker states: the web side is up either way, and
+    deploy scripts gate on the status code.
+
+    NGOẠI LỆ duy nhất — lỗi CẤU HÌNH trình duyệt: `VIDEODL_PATCHRIGHT` bật mà thiếu gói patchright
+    (job TikTok lặng lẽ lùi về chromium-headless-shell) hoặc thiếu Chrome thật (launch vỡ) ⇒ HTTP 503,
+    `status="loi_cau_hinh"`, `trinh_duyet=<mã>`. Cổng `healthz==200` của deploy (sau bước cài phụ thuộc #111)
+    nhờ đó DỪNG thay vì báo xong. Cờ tắt hoặc đủ gói ⇒ phản hồi y hệt trước (không thêm khoá)."""
     ma_tiktok = _ma_worker(worker.trang_thai())
-    return {"status": "ok", "worker": ma_tiktok,
-            "lanes": {"tiktok": ma_tiktok, "khac": _ma_worker(worker_khac.trang_thai())}}
+    ra = {"status": "ok", "worker": ma_tiktok,
+          "lanes": {"tiktok": ma_tiktok, "khac": _ma_worker(worker_khac.trang_thai())}}
+    ma_td = trinh_duyet_patchright.kiem_cau_hinh()
+    if ma_td in trinh_duyet_patchright.MA_LOI:
+        return JSONResponse(status_code=503, content={**ra, "status": "loi_cau_hinh", "trinh_duyet": ma_td})
+    return ra
+
+
+def _bao_cau_hinh_trinh_duyet() -> str:
+    """Log lúc khởi động: cờ bật mà thiếu gói/Chrome ⇒ ERROR (một lần, dễ grep); đủ ⇒ INFO; tắt ⇒ im.
+    Không chặn khởi động: web và lane khác vẫn phục vụ; /healthz báo 503 cho deploy và người vận hành."""
+    ma = trinh_duyet_patchright.kiem_cau_hinh()
+    if ma in trinh_duyet_patchright.MA_LOI:
+        log.error("[trinh-duyet] %s bật nhưng %s — job TikTok sẽ %s; /healthz trả 503",
+                  trinh_duyet_patchright.ENV_PATCHRIGHT, ma,
+                  "lùi về Playwright (headless-shell)" if ma == trinh_duyet_patchright.MA_THIEU_GOI
+                  else "vỡ lúc mở Chrome")
+    elif ma == trinh_duyet_patchright.MA_OK:
+        log.info("[trinh-duyet] cau-hinh=ok (patchright + Chrome thật)")
+    return ma
 
 
 def _ma_worker(tt: dict) -> str:
