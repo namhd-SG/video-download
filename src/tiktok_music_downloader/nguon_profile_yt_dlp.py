@@ -179,6 +179,14 @@ def _mot_luot(
             except StopIteration:
                 ly_do_ket_thuc = "het_danh_sach"
                 break
+            except pl.DungTrangRong as dung:
+                # Phanh vòng trang (ĐK-V530-3): chạm trần mà vẫn đang có mục ⇒ như chạm `tran_keo`; còn lại = chặn mềm.
+                if dung.ly_do == pl.DUNG_TRAN_TRANG and so_hop_le > 0:
+                    ly_do_ket_thuc, loi = "tran_keo", pl.LOI_KHONG
+                else:
+                    ly_do_ket_thuc = "loi_giua_chung" if so_hop_le > 0 else "loi_trang_dau"
+                    loi = pl.LOI_RONG_ITEM_LIST
+                break
             except Exception as exc:  # noqa: BLE001 — giữ những mục hợp lệ đã kéo được
                 # Chưa có mục hợp lệ ⇒ lỗi trang ĐẦU `item_list` (ĐK-R09-2 ii), không phải "giữa chừng".
                 ly_do_ket_thuc = "loi_giua_chung" if so_hop_le > 0 else "loi_trang_dau"
@@ -194,6 +202,7 @@ def _mot_luot(
                 continue
             thay.add(ref.video_id)
             so_hop_le += 1
+            co.ghi_nhan_muc_hop_le()
             if already_have is not None and ref.video_id in already_have([ref.video_id]):
                 da_bo_vi_da_co += 1
                 if on_skip is not None:
