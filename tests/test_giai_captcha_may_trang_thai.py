@@ -1376,3 +1376,108 @@ def test_co_tu_giai_tat_thi_khong_goi_tu_giai(monkeypatch, db):
     kq = h.chay()
     assert goi == {"thu": 0, "vong": 1}
     assert kq.loai == "refs"
+
+
+# ---------------------------------------------------------------------------
+# ĐK-403-1: lượt giải = lượt DÙNG LẠI profile trên prod ⇒ log `[profile-giai]` + cờ lùi 403 (mặc định TẮT)
+# ---------------------------------------------------------------------------
+
+LOI_403_GOTO = ("Page.goto: net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://www.tiktok.com/@nguoi.dung\n"
+                "Call log: ...")
+
+
+def _dong_pg(caplog):
+    return [r.getMessage() for r in caplog.records if "[profile-giai]" in r.getMessage()]
+
+
+def _goto_403_lan_dau(trang, so_lan=1):
+    """`goto` ném 403 ở `so_lan` lần đầu, sau đó chạy như thường."""
+    goc = trang.goto
+    dem = {"n": 0}
+
+    def goto(url, **kw):
+        dem["n"] += 1
+        if dem["n"] <= so_lan:
+            trang.so_goto += 1
+            raise RuntimeError(LOI_403_GOTO)
+        return goc(url, **kw)
+    trang.goto = goto
+
+
+def _co_du_lieu_cu(db, jid):
+    d = profile_theo_job.chuan_bi_profile_job(db, jid)
+    (d / "Default").mkdir()
+    (d / "Default" / "Cookies").write_text("cu")
+    return d
+
+
+def test_luot_giai_403_co_tat_ve_cho_xac_minh_log_nhan_tinh(monkeypatch, db, caplog):
+    h = Hien(monkeypatch, db)
+    _co_du_lieu_cu(db, h.jid)
+    _goto_403_lan_dau(h.trang, so_lan=9)
+    caplog.set_level("INFO")
+    kq = h.chay()
+    assert kq.loai == "cho_xac_minh" and h.tt() == "cho_xac_minh" and h.pw.so_lan_mo == 1
+    assert _dong_pg(caplog) == [f"[profile-giai] job={h.jid} profile=dung_lai nguon=giai",
+                                f"[profile-giai] job={h.jid} profile=dung_lai nguon=giai loi=Error:403_goto"]
+    assert "nguoi.dung" not in "".join(r.getMessage() for r in caplog.records)
+    assert not list(profile_theo_job.thu_muc_profiles(db).glob(f"{h.jid}.cu403-*"))
+
+
+def test_luot_giai_403_co_bat_lui_profile_moi_mot_lan(monkeypatch, db, caplog):
+    h = Hien(monkeypatch, db, cua_so_giay=1)
+    monkeypatch.setenv(profile_theo_job.ENV_PROFILE_LUI_KHI_403, "1")
+    cu = _co_du_lieu_cu(db, h.jid)
+    _goto_403_lan_dau(h.trang, so_lan=1)
+    caplog.set_level("INFO")
+    h.chay()
+    assert h.pw.so_lan_mo == 2, "mở lại đúng MỘT lần"
+    assert h.pw.kwargs[0]["user_data_dir"] == h.pw.kwargs[1]["user_data_dir"] == str(cu)
+    ben = sorted(profile_theo_job.thu_muc_profiles(db).glob(f"{h.jid}.cu403-*"))
+    assert len(ben) == 1 and (ben[0] / "Default" / "Cookies").read_text() == "cu", "profile cũ dời sang bên, KHÔNG xoá"
+    dong = _dong_pg(caplog)
+    assert dong[:3] == [f"[profile-giai] job={h.jid} profile=dung_lai nguon=giai",
+                        f"[profile-giai] job={h.jid} profile=dung_lai nguon=giai loi=Error:403_goto",
+                        f"[profile-giai] job={h.jid} 403 ⇒ profile moi"]
+    assert dong[3].startswith(f"[profile-giai] job={h.jid} profile=moi nguon=giai ket_qua=") and \
+        dong[3].endswith(" sau_lui")
+    assert "nguoi.dung" not in "".join(dong)
+
+
+def test_luot_giai_403_lan_hai_khong_lui_tiep(monkeypatch, db, caplog):
+    h = Hien(monkeypatch, db)
+    monkeypatch.setenv(profile_theo_job.ENV_PROFILE_LUI_KHI_403, "1")
+    _co_du_lieu_cu(db, h.jid)
+    _goto_403_lan_dau(h.trang, so_lan=9)
+    caplog.set_level("INFO")
+    kq = h.chay()
+    assert kq.loai == "cho_xac_minh" and h.pw.so_lan_mo == 2
+    assert _dong_pg(caplog)[-1] == f"[profile-giai] job={h.jid} profile=moi nguon=giai loi=Error:403_goto sau_lui"
+    assert len(list(profile_theo_job.thu_muc_profiles(db).glob(f"{h.jid}.cu403-*"))) == 1
+
+
+def test_luot_giai_loi_khac_403_khong_lui(monkeypatch, db, caplog):
+    h = Hien(monkeypatch, db)
+    monkeypatch.setenv(profile_theo_job.ENV_PROFILE_LUI_KHI_403, "1")
+    h.trang.goto_loi = RuntimeError("Page.goto: net::ERR_CONNECTION_RESET")
+    caplog.set_level("INFO")
+    h.chay()
+    assert h.pw.so_lan_mo == 1 and h.tt() == "cho_xac_minh"
+    assert _dong_pg(caplog)[-1] == f"[profile-giai] job={h.jid} profile=moi nguon=giai loi=RuntimeError"
+
+
+def test_403_o_goto_sau_khi_giai_khong_thanh_loi_lui():
+    """`_ve_trang_profile` (sau khi đã giải) ném NGUYÊN lỗi, không đổi thành `Loi403LucMoTrang` ⇒ không lùi."""
+    class P:
+        url = "https://www.tiktok.com/khac"
+
+        def goto(self, *_a, **_k):
+            raise RuntimeError(LOI_403_GOTO)
+    with pytest.raises(RuntimeError) as ei:
+        worker._ve_trang_profile(P(), URL_PROFILE, "/@nguoi.dung")
+    assert not isinstance(ei.value, worker.Loi403LucMoTrang)
+
+
+def test_loi_403_luc_mo_trang_khong_mang_url():
+    e = worker.Loi403LucMoTrang(profile_theo_job.NHAN_LOI_403_GOTO)
+    assert str(e) == "Error:403_goto"

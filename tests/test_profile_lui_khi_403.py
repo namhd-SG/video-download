@@ -157,9 +157,9 @@ def test_loi_khac_403_khong_lui(monkeypatch, db):
 
 
 def test_la_loi_http_luc_goto():
-    assert queue_mod._la_loi_http_luc_goto(Exception(LOI_403))
-    assert not queue_mod._la_loi_http_luc_goto(Exception("net::ERR_HTTP_RESPONSE_CODE_FAILURE"))  # không phải goto
-    assert not queue_mod._la_loi_http_luc_goto(Exception("Page.goto: net::ERR_CONNECTION_RESET"))
+    assert profile_theo_job.la_loi_http_luc_goto(Exception(LOI_403))
+    assert not profile_theo_job.la_loi_http_luc_goto(Exception("net::ERR_HTTP_RESPONSE_CODE_FAILURE"))  # không phải goto
+    assert not profile_theo_job.la_loi_http_luc_goto(Exception("Page.goto: net::ERR_CONNECTION_RESET"))
 
 
 # ---- dọn theo lối hiện có ----
@@ -191,3 +191,47 @@ def test_bo_quet_giu_profile_cu_cua_job_dang_chay(db):
     ben = profile_theo_job.doi_profile_cu_sang_ben(db, jid)
     dem = profile_theo_job.quet_profile_mo_coi(db)
     assert ben.exists() and dem["giu"] >= 1
+
+
+# ---- ĐK-403-2: dòng kết có `nguon=`, `loi=` là nhãn tĩnh (0 URL/handle) ----
+
+def test_co_lui_tat_log_nhan_tinh_403_va_nguon_browser(monkeypatch, db, caplog):
+    _bat(monkeypatch, lui=False)
+    jid = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
+    _scraper(monkeypatch, [_LoiGotoGia(LOI_403)])
+    caplog.set_level("INFO", logger=queue_mod.log.name)
+    with pytest.raises(_LoiGotoGia):
+        _fetch(db, jid)
+    assert _dong(caplog) == [f"[profile-giai] job={jid} profile=moi",
+                             f"[profile-giai] job={jid} profile=moi nguon=browser loi=Error:403_goto"]
+    assert "nguoi.dung" not in "".join(_dong(caplog))
+
+
+def test_lui_roi_ok_va_lui_roi_hong_deu_co_dong_sau_lui(monkeypatch, db, caplog):
+    _bat(monkeypatch)
+    jid = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
+    _du_lieu_cu(db, jid)
+    _scraper(monkeypatch, [_LoiGotoGia(LOI_403), 3])
+    caplog.set_level("INFO", logger=queue_mod.log.name)
+    _fetch(db, jid)
+    assert _dong(caplog)[-1] == f"[profile-giai] job={jid} profile=moi nguon=browser ket_qua=ok sau_lui"
+
+    jid2 = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
+    _du_lieu_cu(db, jid2)
+    _scraper(monkeypatch, [_LoiGotoGia(LOI_403), _LoiGotoGia(LOI_403)])
+    with pytest.raises(_LoiGotoGia):
+        _fetch(db, jid2)
+    assert _dong(caplog)[-1] == f"[profile-giai] job={jid2} profile=moi nguon=browser loi=Error:403_goto sau_lui"
+
+
+def test_yt_dlp_lay_xong_thi_dong_ket_ghi_nguon_yt_dlp(monkeypatch, db, caplog):
+    """Lượt lấy xong qua yt-dlp KHÔNG mở trình duyệt ⇒ không được đếm vào mẫu `moi nguon=browser`."""
+    from tiktok_music_downloader import nguon as nguon_mod
+    _bat(monkeypatch, lui=False)
+    monkeypatch.setattr(nguon_mod, "liet_ke_profile_yt_dlp",
+                        lambda *a, **k: [VideoRef("7000000000000000001", "https://www.tiktok.com/@a/video/7000000000000000001")])
+    monkeypatch.setattr(scraper_mod, "scrape_music_page", lambda *a, **k: pytest.fail("không được mở trình duyệt"))
+    jid = models.create_job(db, URL_PROFILE, 10, "a@x.vn")
+    caplog.set_level("INFO", logger=queue_mod.log.name)
+    _fetch(db, jid)
+    assert _dong(caplog)[-1] == f"[profile-giai] job={jid} profile=moi nguon=yt_dlp ket_qua=ok"

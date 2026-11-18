@@ -604,7 +604,9 @@ def test_log_profile_moi_roi_dung_lai(monkeypatch, db, caplog):
     queue_mod._fetch_refs(URL_PROFILE, max_videos=10, cookies_path=None, db_path=db, job_id=jid)
     queue_mod._fetch_refs(URL_PROFILE, max_videos=10, cookies_path=None, db_path=db, job_id=jid)
     assert _dong_profile_giai(caplog) == [f"[profile-giai] job={jid} profile=moi",
-                                          f"[profile-giai] job={jid} profile=dung_lai"]
+                                          f"[profile-giai] job={jid} profile=moi nguon=browser ket_qua=ok",
+                                          f"[profile-giai] job={jid} profile=dung_lai",
+                                          f"[profile-giai] job={jid} profile=dung_lai nguon=browser ket_qua=ok"]
 
 
 def test_chi_khoa_worker_van_la_profile_moi(db):
@@ -630,7 +632,7 @@ def test_loi_liet_ke_nem_tiep_nguyen_loi_chi_log_ten_lop(monkeypatch, db, caplog
     dong = _dong_profile_giai(caplog)
     if bat:
         assert dong == [f"[profile-giai] job={jid} profile=moi",
-                        f"[profile-giai] job={jid} profile=moi loi=_LoiGotoGia"]
+                        f"[profile-giai] job={jid} profile=moi nguon=browser loi=_LoiGotoGia"]
         assert "nguoi.dung" not in "".join(dong)
     else:
         assert dong == []

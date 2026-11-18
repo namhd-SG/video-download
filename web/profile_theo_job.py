@@ -59,6 +59,23 @@ def lui_khi_403_dang_bat() -> bool:
     return _doc_co(ENV_PROFILE_LUI_KHI_403)
 
 
+# Lỗi Playwright/patchright khi trang trả mã HTTP lỗi (đo 18/11: 403 `server: TLB`, thân rỗng) ở `page.goto`.
+# So theo CHUỖI vì patchright và Playwright có lớp `Error` riêng; chỉ đọc, không ghi thông điệp (có URL hồ sơ).
+_DAU_LOI_HTTP_GOTO = "ERR_HTTP_RESPONSE_CODE_FAILURE"
+# Nhãn TĨNH cho log `[profile-giai] … loi=`: đếm 403 lúc goto bằng 1 grep, không cần traceback (traceback có URL khách).
+NHAN_LOI_403_GOTO = "Error:403_goto"
+
+
+def la_loi_http_luc_goto(exc: BaseException) -> bool:
+    msg = str(exc)
+    return _DAU_LOI_HTTP_GOTO in msg and "goto" in msg
+
+
+def nhan_loi(exc: BaseException) -> str:
+    """Nhãn lỗi cho log `[profile-giai]`: `Error:403_goto` hoặc tên lớp. Không bao giờ chứa thông điệp."""
+    return NHAN_LOI_403_GOTO if la_loi_http_luc_goto(exc) else type(exc).__name__
+
+
 def thu_muc_profiles(db_path: Path) -> Path:
     return db_path.parent / "profiles"
 
