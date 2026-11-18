@@ -595,6 +595,8 @@ def _tu_giai_neu_bi_chan(page: Page, feed_luot: dict[str, int]) -> None:
     kq = captcha_xoay.thu_tu_giai(page)
     log.info("[tu-giai] quet ket_qua=%s", kq)
     if kq == captcha_xoay.DA_QUA:
+        # Đánh dấu "lượt này đã giải": lớp web KHÔNG lùi về profile mới khi đã giải (giữ trạng thái vừa giải).
+        feed_luot["da_giai"] = feed_luot.get("da_giai", 0) + 1
         page.reload(wait_until="domcontentloaded", timeout=30_000)
         _cho_link(page)
 
@@ -652,6 +654,8 @@ def quet_tren_trang(
         if thong_ke_feed is not None:
             for o in ("rong", "co_du_lieu"):
                 thong_ke_feed[o] = thong_ke_feed.get(o, 0) + feed_luot.get(o, 0)
+            if feed_luot.get("da_giai"):  # chỉ khi có giải: không thêm khoá vào bộ đếm của đường cũ
+                thong_ke_feed["da_giai"] = thong_ke_feed.get("da_giai", 0) + feed_luot["da_giai"]
     return sorted(refs, key=lambda r: r.video_id, reverse=True)[:max_videos]
 
 

@@ -918,8 +918,10 @@ def test_moi_ma_dung_deu_duoc_phan_loai_o_bang_bao_thieu():
     ma = {v for k, v in vars(utils_mod).items() if k.startswith("STOP_") and v}
     ma |= set(cookies_mod.MA_LOI_COOKIE)
     # `bi_chan` (nền tảng nghi bot, đã tắt tới khi admin bật lại) và `thieu_deno` (cấu hình máy hỏng): chạy lại
-    # ngay vô ích hoặc có hại ⇒ cố ý không nút.
-    da_can_nhac_khong_nut = ({"index_failed", "feed_rong", "hashtag_khong_tra_duoc", "bi_chan", "thieu_deno"}
+    # ngay vô ích hoặc có hại ⇒ cố ý không nút. `ig_mat_phien` / `ig_chua_co_cookie` (Instagram hàng loạt): phải dán
+    # lại cookie tài khoản phụ trước, chạy lại ngay chỉ làm đậm dấu vết ⇒ không nút.
+    da_can_nhac_khong_nut = ({"index_failed", "feed_rong", "hashtag_khong_tra_duoc", "bi_chan", "thieu_deno",
+                              "ig_mat_phien", "ig_chua_co_cookie"}
                              | set(cookies_mod.MA_LOI_COOKIE))
     assert chay_lai >= {"het_vong", "het_thoi_gian", "page_cap", "het_dia", "tran_gio", "tran_ngay"}, chay_lai
     assert ma - chay_lai - nhan - da_can_nhac_khong_nut == set()

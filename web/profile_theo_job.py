@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import socket
+import time
 from pathlib import Path
 
 from tiktok_music_downloader.scraper import profile_dir_dang_mo
@@ -24,6 +25,9 @@ log = logging.getLogger("videodl.web")
 
 ENV_PROFILE_CAPTCHA = "VIDEODL_PROFILE_CAPTCHA"
 ENV_PROFILE_HEADFUL = "VIDEODL_PROFILE_HEADFUL"
+# Gặp 403 lúc goto (chưa giải captcha ở lượt này) ⇒ lùi về profile MỚI, chạy lại MỘT lần. Mặc định TẮT.
+# Đo 18/11 (máy dev): dùng lại profile sau 60 s ⇒ 9/22 lượt 403; profile mới 0/26; profile đã 403 hồi sau 10 phút 2/2.
+ENV_PROFILE_LUI_KHI_403 = "VIDEODL_PROFILE_LUI_KHI_403"
 _GIA_TRI_BAT = ("1", "true", "yes", "on")
 
 # Job ở các trạng thái này sẽ không bao giờ mở lại profile_dir của nó. Trạng thái
@@ -31,7 +35,9 @@ _GIA_TRI_BAT = ("1", "true", "yes", "on")
 # một thư mục cho bộ quét lượt sau còn hơn xoá phiên của job đang sống.
 TRANG_THAI_KET_THUC = frozenset({"done", "failed", "interrupted", "cancelled"})
 
-_TEN_JOB_RE = re.compile(r"[0-9]+")
+# `<job_id>` (profile đang dùng) hoặc `<job_id>.cu403-<n>` (profile cũ đã dời sang bên khi lùi về profile mới).
+_TEN_JOB_RE = re.compile(r"([0-9]+)(?:\.cu403-[0-9]+)?")
+_HAU_TO_CU_403 = ".cu403-"
 
 
 def _doc_co(ten: str) -> bool:
@@ -46,6 +52,11 @@ def profile_captcha_dang_bat() -> bool:
 def profile_headful_dang_bat() -> bool:
     """Chỉ có nghĩa khi `profile_captcha_dang_bat()`; cờ chính tắt thì không ai hỏi."""
     return _doc_co(ENV_PROFILE_HEADFUL)
+
+
+def lui_khi_403_dang_bat() -> bool:
+    """Chỉ có nghĩa khi `profile_captcha_dang_bat()`."""
+    return _doc_co(ENV_PROFILE_LUI_KHI_403)
 
 
 def thu_muc_profiles(db_path: Path) -> Path:
@@ -118,10 +129,16 @@ def _xoa_cay(duong_dan: Path) -> bool:
     return True
 
 
-def xoa_profile_job(db_path: Path, job_id: int) -> bool:
-    """Xoá `profiles/<job_id>` nếu có. Không bao giờ ném: xoá trượt chỉ log, để bộ
-    quét dọn sau — không được làm hỏng việc ghi trạng thái job. True = không còn gì."""
-    thu_muc = thu_muc_profile_job(db_path, job_id)
+def doi_profile_cu_sang_ben(db_path: Path, job_id: int) -> Path:
+    """Dời `profiles/<job_id>` sang `profiles/<job_id>.cu403-<ns>` (KHÔNG xoá — `xoa_profile_job` lúc job
+    kết thúc và bộ quét mồ côi dọn), trả đường dẫn mới. Gọi sau khi context đã đóng."""
+    cu = thu_muc_profile_job(db_path, job_id)
+    moi = cu.with_name(f"{job_id}{_HAU_TO_CU_403}{time.time_ns()}")
+    os.replace(cu, moi)
+    return moi
+
+
+def _xoa_mot(db_path: Path, job_id: int, thu_muc: Path) -> bool:
     try:
         if not (thu_muc.exists() or thu_muc.is_symlink()):
             return True
@@ -129,6 +146,20 @@ def xoa_profile_job(db_path: Path, job_id: int) -> bool:
         log.warning("job %s: không kiểm được %s (%s)", job_id, thu_muc, type(exc).__name__)
         return False
     return _xoa_cay(thu_muc)
+
+
+def xoa_profile_job(db_path: Path, job_id: int) -> bool:
+    """Xoá `profiles/<job_id>` và các profile cũ đã dời sang bên `profiles/<job_id>.cu403-*` nếu có.
+    Không bao giờ ném: xoá trượt chỉ log, để bộ quét dọn sau — không được làm hỏng việc ghi trạng
+    thái job. True = không còn gì."""
+    ok = _xoa_mot(db_path, job_id, thu_muc_profile_job(db_path, job_id))
+    try:
+        cu = sorted(thu_muc_profiles(db_path).glob(f"{job_id}{_HAU_TO_CU_403}*"))
+    except OSError:
+        cu = []
+    for m in cu:
+        ok = _xoa_mot(db_path, job_id, m) and ok
+    return ok
 
 
 # Kết quả đọc `SingletonLock` của một thư mục profile.
@@ -262,12 +293,13 @@ def quet_profile_mo_coi(db_path: Path) -> dict[str, int]:
         dem["bo_qua"] += 1
         return dem
     for m in muc:
-        if not _TEN_JOB_RE.fullmatch(m.name):
+        khop = _TEN_JOB_RE.fullmatch(m.name)
+        if not khop:
             log.info("bộ quét profile: bỏ qua %r (tên không phải số job)", m.name)
             dem["bo_qua"] += 1
             continue
         try:
-            job = models.get_job(db_path, int(m.name))
+            job = models.get_job(db_path, int(khop.group(1)))
         except Exception as exc:  # noqa: BLE001 — không biết job sống hay chết ⇒ KHÔNG xoá
             log.warning("bộ quét profile: không đọc được job %s (%s) — giữ nguyên",
                         m.name, type(exc).__name__)

@@ -196,3 +196,12 @@ def test_thong_bao_400_chi_nhac_tim_kiem_hashtag_khi_co_bat(monkeypatch):
     assert YoutubeTimKiem.mo_ta_url not in nguon_mod.mo_ta_cac_nguon()
     monkeypatch.setenv(CO, "1")
     assert YoutubeTimKiem.mo_ta_url in nguon_mod.mo_ta_cac_nguon()
+
+
+@pytest.mark.parametrize("url", [TIM, HASHTAG])
+def test_instagram_khong_cuop_url_tim_kiem_hashtag_youtube_va_nguoc_lai(monkeypatch, url):
+    from tiktok_music_downloader.nguon import InstagramHangLoat
+    monkeypatch.setenv(CO, "1")
+    assert not InstagramHangLoat().nhan(url)
+    for ig in ("https://www.instagram.com/explore/tags/cat/", "https://www.instagram.com/nasa/reels/"):
+        assert not YoutubeTimKiem().nhan(ig)

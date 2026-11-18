@@ -42,8 +42,9 @@ KENH_PLAYLIST = [
     "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
     "https://www.youtube.com/playlist?list=PLxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
 ]
+# Profile IG (`/<user>/`) KHÔNG còn là "không nguồn nào nhận": `nguon_instagram.InstagramHangLoat` nhận nó (R-08);
+# vẫn không phải link lẻ — `LinkLe` không nhận (xem `test_profile_instagram_khong_phai_link_le`).
 KHONG_NHAN = [
-    "https://www.instagram.com/mot.nguoi/",
     "https://vm.tiktok.com/ZMabcdef/",
     "https://www.tiktok.com/@nguoi.dung/photo/7123456789012345678",
     "https://example.com/mot-trang",
@@ -265,3 +266,10 @@ def test_nhan_url_job_nhieu_link_chay_that_qua_node():
     assert ra.returncode == 0, ra.stderr
     import json
     assert json.loads(ra.stdout) == ["https://a/1", "https://a/1 (+2 link)", "", ""]
+
+
+def test_profile_instagram_khong_phai_link_le_ma_la_nguon_hang_loat(khong_mang):
+    from tiktok_music_downloader.nguon import InstagramHangLoat
+    url = "https://www.instagram.com/mot.nguoi/"
+    assert LinkLe().phan_loai(url) is None
+    assert isinstance(chon_nguon(url), InstagramHangLoat)

@@ -85,6 +85,32 @@
       <div id="cookie-error" class="ph" role="alert" hidden></div>
     </div>
 
+    <!-- Thẻ Instagram: cùng khuôn thẻ TikTok, logic ở settings-instagram.js (id tiền tố `ig-`). Nền tảng
+         `instagram` mặc định TẮT (VIDEODL_NEN_TANG_BAT) — thẻ vẫn hiện để dán cookie trước khi bật. -->
+    <div class="panel nt-the" data-nen-tang="instagram">
+      <div class="nt-dau"><h2>Cookie Instagram — dùng tài khoản PHỤ</h2><span class="grow"></span>
+        <span class="ti" tabindex="0" role="note" title="Dùng tài khoản Instagram PHỤ, không dùng tài khoản chính. 1. Cài tiện ích Cookie-Editor. 2. Mở instagram.com khi đã đăng nhập. 3. Cookie-Editor → Export → Export as JSON. 4. Dán vào đây → Lưu cookie. Máy chủ kiểm trước khi nhận; bị từ chối thì cookie cũ vẫn giữ." aria-label="Cách lấy cookie Instagram: dùng tài khoản phụ, Cookie-Editor, mở instagram.com khi đã đăng nhập, Export as JSON, dán vào đây rồi Lưu cookie.">ⓘ</span></div>
+      <div id="ig-tt" class="tt tt-trong" role="status">
+        <span id="ig-tt-icon" class="tt-icon" aria-hidden="true">…</span>
+        <div><h3 id="ig-tt-tieu-de">Đang kiểm…</h3><p id="ig-tt-cau"></p></div>
+      </div>
+      <dl class="o4">
+        <div class="o"><dt>Hạn đến</dt><dd id="ig-han">—</dd></div>
+        <div class="o"><dt>Dán lúc</dt><dd id="ig-luc">—</dd></div>
+        <div class="o"><dt>Vân tay</dt><dd id="ig-van-tay" class="mono">—</dd></div>
+      </dl>
+      <div class="dan">
+        <label for="ig-cookie-json" class="dan-nhan">Dán cookie Instagram mới</label>
+        <textarea id="ig-cookie-json" rows="4" placeholder="Dán chuỗi JSON xuất từ Cookie-Editor khi đang mở instagram.com…"></textarea>
+        <div class="dan-nut cookie-actions">
+          <button type="button" id="ig-cookie-luu" class="btn primary">Lưu cookie</button>
+          <span class="grow"></span>
+          <button type="button" id="ig-cookie-xoa" class="btn danger-line">Xoá</button>
+        </div>
+      </div>
+      <div id="ig-cookie-error" class="ph" role="alert" hidden></div>
+    </div>
+
     <div class="panel">
       <div class="panel-head">
         <h2>Hạn mức của tôi — hôm nay</h2>
@@ -123,6 +149,7 @@
 <script src="/cookie-status-text.js"></script>
 <script src="/chung-tien-ich.js"></script>
 <script src="/settings.js"></script>
+<script src="/settings-instagram.js"></script>
 <script src="/women-day-greeting.js"></script>
 <script src="/women-day-greeting-boot.js"></script>
 <script src="thay-logo-link.js"></script>
