@@ -135,20 +135,28 @@ def _hang(p, job_id: int):
     return p.locator(f"#job-{job_id}")
 
 
+def _popup(p, job_id: int):
+    """Câu dài / khung lỗi / dòng nguồn nay nằm trong popup (mock R-07 v2): mở nó bằng "Chi tiết" của thẻ."""
+    p.locator(f"#job-{job_id} .chi-tiet").click()
+    p.wait_for_selector("#hn-pop .hn-pop-h")
+    return p.locator("#hn-pop")
+
+
 def test_job_140_xin_88_do_duoc_hien_87_tren_88_va_dong_nguon(trang, db):
     job = _job(db, tong=140, tim=88, bo_qua=1, xong=87, loi=1, loi_tiktok=1, ly_do="het_vong")
     p, _ = trang()
     h = _hang(p, job)
-    assert "Tải 87/88" in h.locator(".progress-row").inner_text()
+    q = _popup(p, job)
+    assert "Tải 87/88" in q.locator(".nho").first.inner_text()
     assert "140" not in h.locator(".progress-row").inner_text().split("/")[0]
     assert h.locator(".status-badge").inner_text() == "Nguồn hụt"
-    nguon = h.locator(".nguon").inner_text()
+    nguon = q.locator(".nguon").inner_text()
     assert "Nguồn lần này có 89 video" in nguon and "bạn xin 140" in nguon
     assert "88 mới · 1 đã có trong kho" in nguon
-    assert h.locator(".lo-tt").count() == 1 and "1 video nguồn không cho tải" in h.locator(".lo-tt").inner_text()
-    assert h.locator(".lo-ht").count() == 0, "lỗi TikTok không được tô đỏ"
+    assert q.locator(".lo-tt").count() == 1 and "1 video nguồn không cho tải" in q.locator(".lo-tt").inner_text()
+    assert q.locator(".lo-ht").count() == 0, "lỗi TikTok không được tô đỏ"
     assert h.locator(".progress-fill.has-errors").count() == 0
-    assert h.get_by_role("button", name="Chạy lại để kiếm thêm 53 video…").count() == 1
+    assert h.get_by_role("button", name="Tải thêm 53 cho đủ").count() == 1
     assert h.get_by_role("button", name="Chép link").count() == 1
 
 
@@ -156,10 +164,11 @@ def test_nghi_bi_chan_khong_co_nut_chay_lai_nhung_van_chep_link(trang, db):
     job = _job(db, tong=100, tim=30, bo_qua=0, xong=30, ly_do="nghi_bi_chan")
     p, _ = trang()
     h = _hang(p, job)
+    q = _popup(p, job)
     assert h.locator("[data-chay-lai]").count() == 0
     assert h.locator(".status-badge").inner_text() == "Nghi bị chặn"
     assert h.get_by_role("button", name="Chép link").count() == 1
-    assert "Nguồn lần này có 30 video" in h.locator(".nguon").inner_text()
+    assert "Nguồn lần này có 30 video" in q.locator(".nguon").inner_text()
 
 
 @pytest.mark.parametrize("ma, co_nut", [
@@ -184,25 +193,27 @@ def test_loi_he_thong_khung_do_nhan_thieu_va_thanh_do(trang, db):
     job = _job(db, tong=20, tim=20, bo_qua=0, xong=19, loi=1, loi_tiktok=0)
     p, _ = trang()
     h = _hang(p, job)
+    q = _popup(p, job)
     assert h.locator(".status-badge").inner_text() == "Thiếu"
-    assert "1 video lỗi hệ thống" in h.locator(".lo-ht").inner_text()
-    assert h.locator(".lo-tt").count() == 0
+    assert "1 video lỗi hệ thống" in q.locator(".lo-ht").inner_text()
+    assert q.locator(".lo-tt").count() == 0
     assert h.locator(".progress-fill.has-errors").count() == 1
-    assert "đủ số bạn xin" in h.locator(".nguon").inner_text()
+    assert "đủ số bạn xin" in q.locator(".nguon").inner_text()
 
 
 def test_dang_tai_mau_so_la_so_do_duoc(trang, db):
     job = _job(db, tong=140, tim=88, bo_qua=0, xong=26, trang_thai="running")
     p, _ = trang()
     h = _hang(p, job)
-    assert "Tải 26/88 · nguồn có 88 (xin 140)" in h.locator(".progress-row").inner_text()
-    assert h.locator(".nguon").count() == 0
+    q = _popup(p, job)
+    assert "Tải 26/88 · nguồn có 88 (xin 140)" in q.locator(".nho").first.inner_text()
+    assert q.locator(".nguon").count() == 0
 
 
 def test_chua_do_xong_mau_so_van_la_so_xin(trang, db):
     job = _job(db, tong=140, tim=0, bo_qua=0, xong=0, trang_thai="running")
     p, _ = trang()
-    assert "Tải 0/140" in _hang(p, job).locator(".progress-row").inner_text()
+    assert "Tải 0/140" in _popup(p, job).locator(".nho").first.inner_text()
 
 
 def test_bam_chay_lai_gui_dung_mot_post_voi_phan_thieu(trang, db):
@@ -338,9 +349,10 @@ def test_job_truoc_ban_cap_nhat_loi_chua_phan_loai_khung_xam_khong_do_khong_thie
         conn.execute("UPDATE jobs SET loi_tiktok = NULL, ly_do_dung = NULL WHERE id = ?", (job,))
     p, _ = trang()
     h = _hang(p, job)
-    assert h.locator(".lo-ht").count() == 0
+    q = _popup(p, job)
+    assert q.locator(".lo-ht").count() == 0
     assert h.locator(".progress-fill.has-errors").count() == 0
-    assert "1 lỗi (chưa phân loại — lượt trước bản cập nhật)" in h.locator(".lo-tt").inner_text()
+    assert "1 lỗi (chưa phân loại — lượt trước bản cập nhật)" in q.locator(".lo-tt").inner_text()
     assert h.locator(".status-badge").inner_text() != "Thiếu"
 
 
@@ -368,9 +380,10 @@ def test_co_hang_loat_giu_cau_dung_cua_ma_khong_khuyen_chay_lai(trang, db):
         conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
     p, _ = trang()
     h = _hang(p, job)
-    assert "NGHỈ" in h.locator(".stop-reason").inner_text()
+    q = _popup(p, job)
+    assert "NGHỈ" in q.locator(".stop-reason").inner_text()
     assert h.locator("[data-chay-lai]").count() == 0
-    assert h.locator(".lo-ht").count() == 1
+    assert q.locator(".lo-ht").count() == 1
 
 
 
@@ -381,8 +394,9 @@ def test_co_nghi_su_co_hang_loat_khung_do_de_khung_xam_va_nhan_thieu(trang, db):
         conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
     p, _ = trang()
     h = _hang(p, job)
-    assert "Có thể là sự cố hàng loạt" in h.locator(".lo-ht").inner_text()
-    assert h.locator(".lo-tt").count() == 0, "khung đỏ ghi đè khung xám TikTok"
+    q = _popup(p, job)
+    assert "Có thể là sự cố hàng loạt" in q.locator(".lo-ht").inner_text()
+    assert q.locator(".lo-tt").count() == 0, "khung đỏ ghi đè khung xám TikTok"
     assert h.locator(".status-badge").inner_text() == "Thiếu"
     assert h.locator(".progress-fill.has-errors").count() == 1
 
@@ -391,8 +405,9 @@ def test_job_cu_khong_co_co_hang_loat_thi_khong_do(trang, db):
     job = _job(db, tong=50, tim=20, bo_qua=0, xong=15, loi=5, loi_tiktok=5, ly_do="het_vong")
     p, _ = trang()
     h = _hang(p, job)
-    assert h.locator(".lo-ht").count() == 0
-    assert h.locator(".lo-tt").count() == 1
+    q = _popup(p, job)
+    assert q.locator(".lo-ht").count() == 0
+    assert q.locator(".lo-tt").count() == 1
 
 
 def test_co_hang_loat_an_nut_chay_lai_va_cau_ra_them_chi_con_khung_do(trang, db):
@@ -402,11 +417,12 @@ def test_co_hang_loat_an_nut_chay_lai_va_cau_ra_them_chi_con_khung_do(trang, db)
         conn.execute("UPDATE jobs SET nghi_su_co_hang_loat = 1 WHERE id = ?", (job,))
     p, _ = trang()
     h = _hang(p, job)
+    q = _popup(p, job)
     assert h.locator("[data-chay-lai]").count() == 0
-    assert "kiếm thêm" not in h.inner_text()
-    assert h.locator(".stop-reason").count() == 0
-    assert "ra thêm" not in h.inner_text()
-    assert h.locator(".lo-ht").count() == 1
+    assert "kiếm thêm" not in h.inner_text() + q.inner_text()
+    assert q.locator(".stop-reason").count() == 0
+    assert "ra thêm" not in h.inner_text() + q.inner_text()
+    assert q.locator(".lo-ht").count() == 1
     assert h.get_by_role("button", name="Chép link").count() == 1
     assert h.locator(".status-badge").inner_text() == "Thiếu"
 
@@ -421,12 +437,13 @@ def test_the_feed_rong_hien_cau_xac_minh_khong_khuyen_dan_cookie(trang, db, tmp_
                url="https://www.tiktok.com/@vidu.profile")
     p, _ = trang()
     h = _hang(p, job)
-    cau = h.locator(".stop-reason").inner_text()
-    assert "xác minh" in cau and "không chữa được" in cau, cau
-    assert "dán lại cookie TikTok mới" not in cau, cau
     thu_muc = Path(os.environ.get("VIDEODL_SHOT_DIR", tmp_path))
     thu_muc.mkdir(parents=True, exist_ok=True)
     h.screenshot(path=str(thu_muc / "the-feed-rong.png"))
+    q = _popup(p, job)   # câu dừng nằm trong popup
+    cau = q.locator(".stop-reason").inner_text()
+    assert "xác minh" in cau and "không chữa được" in cau, cau
+    assert "dán lại cookie TikTok mới" not in cau, cau
 
 
 @pytest.mark.parametrize("ma", ["source_empty", "feed_rong", "nghi_bi_chan"])
@@ -437,7 +454,8 @@ def test_luot_rong_bi_loi_hien_loi_va_cau_khong_noi_xong(trang, db, ma):
     job = _job(db, tong=20, tim=0, bo_qua=0, xong=0, ly_do=ma, trang_thai="failed")
     p, _ = trang()
     h = _hang(p, job)
+    q = _popup(p, job)
     assert h.locator(".status-badge").inner_text() == "Lỗi", ma
-    cau = h.locator(".stop-reason").inner_text()
+    cau = q.locator(".stop-reason").inner_text()
     assert cau and not cau.startswith("Xong"), (ma, cau)
 

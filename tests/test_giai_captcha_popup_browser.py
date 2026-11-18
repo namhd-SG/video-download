@@ -259,33 +259,45 @@ def test_the_job_bon_buoc_giai_co_nhan_nut_va_cau_dung(mo_trang, db):
     def the(jid):
         return page.locator(f"#job-{jid}")
 
+    def popup(jid):
+        """Câu dài / ghi chú nay nằm trong popup chi tiết (mock R-07 v2): mở bằng "Chi tiết", đóng bằng Esc khi đã đọc."""
+        the(jid).locator(".chi-tiet").click()
+        page.wait_for_selector("#hn-pop .hn-pop-h")
+        return page.locator("#hn-pop")
+
     # cho_xac_minh: nhãn, nút "Tôi giải ngay" kèm số lượt, câu riêng trỏ tới nút, Rút lượt.
     assert the(a).locator(".status-badge").inner_text() == "Cần xác minh"
     assert the(a).locator(".nut-giai-ngay").count() == 1
-    assert "còn 2 lần" in the(a).locator(".giai-luot").inner_text()
-    assert "không tự giải" in the(a).locator(".stop-reason").inner_text()
     assert the(a).locator("[data-huy]").count() == 1
-    assert "24 giờ" in the(a).locator(".xn-note").inner_text()
+    q = popup(a)
+    assert "còn 2 lần" in q.locator(".giai-luot").inner_text()
+    assert "không tự giải" in q.locator(".stop-reason").inner_text()
+    assert "24 giờ" in q.locator(".xn-note").inner_text()
+    page.keyboard.press("Escape")
     # cho_giai: nhãn, mở lại cửa sổ, rút được; KHÔNG câu dừng cũ (lý do cũ còn nguyên trong DB).
     assert the(b).locator(".status-badge").inner_text() == "Chờ mở trang giải"
     assert the(b).locator("[data-mo-giai]").count() == 1 and the(b).locator("[data-huy]").count() == 1
-    assert the(b).locator(".stop-reason").count() == 0
+    assert popup(b).locator(".stop-reason").count() == 0
+    page.keyboard.press("Escape")
     # dang_mo / dang_giai: có nút mở lại cửa sổ, KHÔNG có Rút lượt (máy chủ trả 409), không "Tôi giải ngay".
     for jid, nhan in ((c, "Đang mở trang giải"), (d, "Đang giải")):
         assert the(jid).locator(".status-badge").inner_text() == nhan
         assert the(jid).locator("[data-mo-giai]").count() == 1
         assert the(jid).locator("[data-huy]").count() == 0
         assert the(jid).locator(".nut-giai-ngay").count() == 0
-        assert the(jid).locator(".stop-reason").count() == 0
+        assert popup(jid).locator(".stop-reason").count() == 0
+        page.keyboard.press("Escape")
     # Job đã rút giữ mã cũ trong DB nhưng thẻ không nhắc lại chuyện đã qua.
-    assert the(e).locator(".stop-reason").count() == 0
+    assert popup(e).locator(".stop-reason").count() == 0
+    page.keyboard.press("Escape")
     # Hết lượt ⇒ nút khoá, nói đúng lý do.
     with models._connect(db) as conn:
         conn.execute("UPDATE jobs SET so_lan_giai_ngay = ? WHERE id = ?", (gc.TRAN_GIAI_NGAY, a))
     page.reload()
     page.wait_for_selector(f"#job-{a} .nut-giai-ngay")
     assert page.locator(f"#job-{a} .nut-giai-ngay").is_disabled()
-    assert "đã dùng đủ" in page.locator(f"#job-{a} .giai-luot").inner_text()
+    page.locator(f"#job-{a} .chi-tiet").click()
+    assert "đã dùng đủ" in page.locator("#hn-pop .giai-luot").inner_text()
 
 
 def test_rut_luot_o_cho_xac_minh_thanh_da_rut(mo_trang, db):
@@ -306,7 +318,9 @@ def test_co_tat_the_job_nhu_cu_khong_co_nut_giai(mo_trang, db, monkeypatch):
     page, _ = mo_trang()
     the = page.locator(f"#job-{jid}")
     assert the.locator(".status-badge").inner_text() == "Lỗi"
-    assert "RỖNG" in the.locator(".stop-reason").inner_text()
+    the.locator(".chi-tiet").click()
+    assert "RỖNG" in page.locator("#hn-pop .stop-reason").inner_text()
+    page.keyboard.press("Escape")
     assert page.locator(".nut-giai-ngay, [data-mo-giai], .can-xn, .xn-note, .giai-luot").count() == 0
     assert page.locator(f"#job-{xong}[data-status=done]").count() == 1
     assert page.locator("#gc-bg").count() == 0
