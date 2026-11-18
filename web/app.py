@@ -326,6 +326,9 @@ REVALIDATE_PATHS = frozenset({"/", "/index.html", "/app.js", "/app.css",
                               # Danh sách người nhận thiệp 20/10 đặt/sửa ngay trước ngày: bản cache
                               # 2 giờ ở edge sẽ chào nhầm hoặc bỏ sót người. Phải tái kiểm.
                               "/women-day-greeting.js", "/women-day-greetings.js"})
+# Mọi .js/.css mà các trang nạp (kể cả các file app-*.js tách từ app.js) cũng phải tái kiểm: tập sinh từ chính các
+# thẻ <script>/<link>, cùng nguồn với `?v=`, nên thêm file mới vào HTML là đủ.
+REVALIDATE_PATHS = REVALIDATE_PATHS | gan_phien_ban_tai_nguyen.duong_dan_tai_nguyen_cua_cac_trang(STATIC_DIR)
 
 
 # Nén phản hồi khi trình duyệt xin (`Accept-Encoding: gzip`). `/videos` của một thư viện

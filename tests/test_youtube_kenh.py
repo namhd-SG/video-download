@@ -18,6 +18,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from fastapi import HTTPException
 from yt_dlp.extractor.common import InfoExtractor
 from yt_dlp.extractor.youtube import YoutubeIE, YoutubeTabIE
@@ -587,7 +588,7 @@ def test_nhan_nguon_giao_dien_cho_kenh_va_playlist_khong_gop_vao_hop_youtube_chu
                 "console.log(JSON.stringify(process.argv.slice(3).map(shortenSourceUrl)));")
     urls = [KENH_SHORTS, KENH_VIDEOS, "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx", PLAYLIST,
             "https://www.youtube.com/watch?v=aAa1aAa1aAa"]
-    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / "app.js"), "x", *urls],
+    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(tep_app_gop()), "x", *urls],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) == ["@kenh.rieng.tu/shorts", "@kenh.rieng.tu/videos",
@@ -694,7 +695,7 @@ def _node(kich_ban: str, tep: str):
     node = shutil.which("node")
     if node is None:
         pytest.skip("không có node")
-    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / tep)], capture_output=True, text=True, timeout=30)
+    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(tep_app_gop() if tep == "app.js" else STATIC / tep)], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)
 
@@ -703,8 +704,8 @@ def test_cau_dung_tran_gio_noi_da_tai_bao_nhieu_va_chay_lai_tai_tiep():
     """Chạm trần giờ GIỮA job ⇒ job dừng (không chờ). Câu trên thẻ phải nói đã tải bao nhiêu, chạm giới hạn giờ, chạy
     lại sau sẽ tải tiếp phần còn lại — không phải lỗi chung chung. Mã khác giữ nguyên câu."""
     ra = _node(
-        "const ham=lay('function cauDungTranIp','const STOP_REASON_TEXT');"
-        "const s2=fs.readFileSync(process.argv[1].replace('app.js','stop-reason-text.js'),'utf8');"
+        "const ham=lay('function cauDungTranIp','const BANG_CAU_DUNG');"
+        "const s2=fs.readFileSync(" + json.dumps(str(STATIC / "stop-reason-text.js")) + ",'utf8');"
         "const i2=s2.indexOf('const STOP_REASON_TEXT');const bang=s2.slice(i2,s2.indexOf('};',i2))+'};';"
         "eval(ham+bang.replace('const STOP_REASON_TEXT','globalThis.STOP_REASON_TEXT'));"
         "const j=(ma,xong,tong)=>({ly_do_dung:ma,xong:xong,tong:tong});"

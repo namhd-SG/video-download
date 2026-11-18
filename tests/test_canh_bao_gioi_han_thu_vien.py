@@ -18,13 +18,14 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 pw_api = pytest.importorskip("playwright.sync_api")
 
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 HARNESS = Path(__file__).parent / "js"
-_SRC = (STATIC / "app.js").read_text(encoding="utf-8")
+_SRC = nguon_app()
 TRAN = int(re.search(r"const LIBRARY_MAX = (\d+);", _SRC).group(1))
 TRANG = int(re.search(r"const LIBRARY_PAGE = (\d+);", _SRC).group(1))
 SOM = -(-TRAN * 8 // 10)   # Math.ceil(TRAN * 0.8) — chép lại có chủ đích để test bắt lệch
@@ -151,7 +152,7 @@ def test_ham_thuan_canh_bao_gioi_han_o_bien():
     node = shutil.which("node")
     if node is None:
         pytest.skip("cần node")
-    src = (STATIC / "app.js").read_text()
+    src = nguon_app()
 
     def trich(ten):
         i = src.index(f"function {ten}(")

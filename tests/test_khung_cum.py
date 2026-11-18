@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 
 from web import models, models_chia, models_cum
 
@@ -25,9 +26,9 @@ SEP = "sep@astronex.ai"
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
 HARNESS = Path(__file__).parent / "js" / "khung-cum.js"
 LIBRARY_MAX = int(re.search(r"const LIBRARY_MAX = (\d+);",
-                            (STATIC / "app.js").read_text(encoding="utf-8")).group(1))
+                            nguon_app()).group(1))
 LIBRARY_PAGE = int(re.search(r"const LIBRARY_PAGE = (\d+);",
-                             (STATIC / "app.js").read_text(encoding="utf-8")).group(1))
+                             nguon_app()).group(1))
 
 
 def _luc(i: int) -> str:
@@ -86,13 +87,13 @@ def kho(app_mod):
     return db
 
 
-def _node(vao: dict, tmp_path: Path, app_js: Path = STATIC / "app.js") -> dict:
+def _node(vao: dict, tmp_path: Path, app_js: Path | None = None) -> dict:
     node = shutil.which("node")
     if node is None:
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này KHÔNG chạy")
     f = tmp_path / "vao.json"
     f.write_text(json.dumps(vao), encoding="utf-8")
-    r = subprocess.run([node, str(HARNESS), str(app_js), str(f)],
+    r = subprocess.run([node, str(HARNESS), str(app_js or tep_app_gop()), str(f)],
                        capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)

@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from trinh_duyet_khong_mang import ARGS_CHAN_MANG, dem_mang_ngoai, mo_trang
 
 if os.environ.get("VIDEODL_DO_HIEU_NANG") != "1":
@@ -29,7 +30,7 @@ if os.environ.get("VIDEODL_DO_HIEU_NANG") != "1":
 pw_api = pytest.importorskip("playwright.sync_api")
 
 STATIC = Path(__file__).resolve().parent.parent / "web" / "static"
-TRAN = int(re.search(r"const LIBRARY_MAX = (\d+);", (STATIC / "app.js").read_text()).group(1))
+TRAN = int(re.search(r"const LIBRARY_MAX = (\d+);", nguon_app()).group(1))
 CO_DICH_BYTE = 1450   # trung bình đo trên prod (1,2–1,7 KB/video)
 NGUON = [f"https://www.tiktok.com/tag/chu-de-{k}" for k in range(12)]
 

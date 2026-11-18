@@ -12,6 +12,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from fastapi import HTTPException
 from yt_dlp.utils import DownloadError, ExtractorError
 
@@ -41,7 +42,7 @@ def _node(kich_ban: str, tep: str):
     node = shutil.which("node")
     if node is None:
         pytest.skip("không có node")
-    ra = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / tep)], capture_output=True, text=True, timeout=30)
+    ra = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(tep_app_gop() if tep == "app.js" else STATIC / tep)], capture_output=True, text=True, timeout=30)
     assert ra.returncode == 0, ra.stderr
     return json.loads(ra.stdout)
 
@@ -172,7 +173,7 @@ def test_o_nhap_co_goi_y_va_phim_tat_gui_form():
                "console.log(JSON.stringify([laPhimGuiForm({key:'Enter',ctrlKey:true}),laPhimGuiForm({key:'Enter',metaKey:true}),"
                "laPhimGuiForm({key:'Enter'}),laPhimGuiForm({key:'a',ctrlKey:true}),laPhimGuiForm(null)]));", "app.js")
     assert ra == [True, True, False, False, False]
-    assert "requestSubmit()" in (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "requestSubmit()" in nguon_app()
 
 
 # ------------------------------------------------------------------ 1. không đốt lượt cho link đã có
@@ -234,7 +235,7 @@ def test_nhan_nguon_giao_dien_theo_nen_tang_cho_link_le_va_giu_nhan_cu_cho_trang
     urls = [_yt(A), "https://youtu.be/dQw4w9WgXcQ", "https://www.instagram.com/reel/Cabc123/",
             TT, "https://www.tiktok.com/tag/ai", "https://www.tiktok.com/@nguoi.dung", "https://www.tiktok.com/music/x-1",
             "https://x.com/u/status/12345"]
-    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / "app.js"), "x", *urls],
+    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(tep_app_gop()), "x", *urls],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     nhan = json.loads(r.stdout)
@@ -466,7 +467,7 @@ def test_bo_loc_nguon_khoa_theo_nen_tang_cho_link_le_va_giu_bucket_cu_cho_trang(
     node = shutil.which("node")
     if node is None:
         pytest.skip("không có node")
-    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(STATIC / "app.js")], capture_output=True, text=True, timeout=30)
+    r = subprocess.run([node, "-e", GOC_NODE + kich_ban, str(tep_app_gop())], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     theo_khoa = {b["key"]: b for b in json.loads(r.stdout)}
     yt = theo_khoa["nen-tang:YouTube"]

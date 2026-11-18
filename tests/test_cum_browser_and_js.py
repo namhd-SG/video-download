@@ -25,6 +25,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 
 from web import app as app_mod
 from web import models, models_cum
@@ -40,7 +41,7 @@ def _node(harness: str) -> dict:
     node = shutil.which("node")
     if node is None:
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này KHÔNG chạy")
-    r = subprocess.run([node, str(HARNESS / harness), str(STATIC / "app.js")],
+    r = subprocess.run([node, str(HARNESS / harness), str(tep_app_gop())],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     return json.loads(r.stdout)

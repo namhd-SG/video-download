@@ -16,12 +16,8 @@
   // người ta mở ra để CHỮA cookie. Mất câu hướng dẫn còn hơn mất cả trang.
   const MA_COOKIE = window.MA_COOKIE_TRANG_THAI || {};
 
-  class PhienHetHan extends Error {}
-
-  function baoPhienHetHan() {
-    const el = document.getElementById("session-expired");
-    if (el) el.hidden = false;
-  }
+  // Helper dùng chung (`chung-tien-ich.js`, nạp TRƯỚC tệp này).
+  const { PhienHetHan, baoPhienHetHan, apiSend, THEME_KEY, applyTheme } = window.VDChung;
 
   async function apiGet(path) {
     // `redirect: "manual"` — xem ghi chú dài trong app.js: phiên Access hết hạn
@@ -30,24 +26,6 @@
     if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
     if (!res.ok) throw new Error(`GET ${path} -> ${res.status}`);
     return res.json();
-  }
-
-  async function apiSend(method, path, body) {
-    const res = await fetch(path, {
-      method,
-      redirect: "manual",
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (res.type === "opaqueredirect" || res.status === 0) throw new PhienHetHan();
-    if (!res.ok) {
-      let ma = null;
-      try { ma = (await res.json()).detail; } catch (e) { ma = null; }
-      const err = new Error(`${method} ${path} -> ${res.status}`);
-      err.ma = ma;
-      throw err;
-    }
-    return res.status === 204 ? null : res.json();
   }
 
   // ---------------------------------------------------------------- cookie
@@ -252,11 +230,8 @@
   }
 
   // -------------------------------------------------------------- quản trị
-  function escapeHtml(x) {
-    return String(x ?? "").replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-    }[c]));
-  }
+  // Trang này vẽ cả trường có thể null (vd tên người dùng) ⇒ null/undefined thành chuỗi rỗng, không phải "null".
+  const escapeHtml = (x) => window.VDChung.escapeHtml(x ?? "");
 
   function veNguoiDung(data) {
     const tbody = document.querySelector("#bang-nguoi-dung tbody");
@@ -345,11 +320,6 @@
   }
 
   // ----------------------------------------------------------------- theme
-  const THEME_KEY = "videodl-theme";
-  function applyTheme(theme) {
-    if (theme === "light" || theme === "dark") document.documentElement.setAttribute("data-theme", theme);
-    else document.documentElement.removeAttribute("data-theme");
-  }
   try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (e) { /* private mode */ }
   document.getElementById("theme-toggle").addEventListener("click", () => {
     const current = document.documentElement.getAttribute("data-theme") ||

@@ -221,7 +221,7 @@ def test_chi_mot_ham_khung_hanh_dong_va_khong_con_in_ma_tho_trong_ma_nguon():
     assert sum(s.count("function khungHanhDong") for s in tep.values()) == 1
     assert [n for n, s in tep.items() if 'data-giai-ngay="' in s] == ["giai-captcha-the-job.js"]
     assert "Mã: ${" not in tep["giai-captcha-popup.js"]
-    assert "(mã chưa dịch:" not in tep["app.js"]
+    assert all("(mã chưa dịch:" not in s for n, s in tep.items() if n == "app.js" or n.startswith("app-"))
 
 
 @pytest.mark.parametrize("ma", ["het_trang", "ma_cu_khong_con_dung"])

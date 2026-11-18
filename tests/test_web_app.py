@@ -15,6 +15,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from nguon_app_js import nguon_app, tep_app_gop
 from fastapi import HTTPException
 
 from web import app as app_mod
@@ -226,7 +227,7 @@ def test_job_body_only_sends_usecase_and_insight_when_non_empty():
     if node is None:
         pytest.skip("cần `node` để chạy hàm JS thật")
     r = subprocess.run(
-        [node, str(JS_HARNESS / "tao-job-body.js"), str(STATIC / "app.js")],
+        [node, str(JS_HARNESS / "tao-job-body.js"), str(tep_app_gop())],
         capture_output=True, text=True, timeout=30,
     )
     assert r.returncode == 0, r.stderr
@@ -1203,6 +1204,22 @@ def test_shell_and_its_assets_must_be_revalidated():
     assert _header_for("/giai-captcha-popup.js") == "no-cache"
 
 
+def test_every_js_css_loaded_by_pages_is_revalidated():
+    """Mọi .js/.css mà index/settings nạp — gồm các file app-*.js, chung-tien-ich.js, chia-cum-ve.js — đều nhận
+    no-cache, nếu không JS cũ ở edge đứng cạnh HTML mới.
+    ĐỘT BIẾN: bỏ dòng `REVALIDATE_PATHS = REVALIDATE_PATHS | ...` ở web/app.py ⇒ ĐỎ."""
+    import re
+
+    tai_nguyen = set()
+    for trang in ("index.html", "settings.html"):
+        html = (app_mod.STATIC_DIR / trang).read_text(encoding="utf-8")
+        for u in re.findall(r'\b(?:src|href)="(/?[A-Za-z0-9_][A-Za-z0-9_./-]*\.(?:css|js))"', html):
+            tai_nguyen.add("/" + u.lstrip("/"))
+    assert {"/app-hang-so.js", "/app-nap-du-lieu.js", "/chung-tien-ich.js", "/chia-cum-ve.js"} <= tai_nguyen
+    for path in sorted(tai_nguyen):
+        assert _header_for(path) == "no-cache", path
+
+
 def test_thay_logo_page_and_every_file_under_its_prefix_are_revalidated():
     """JS cũ cache 2 giờ ở edge đứng cạnh HTML mới ⇒ hỏng âm thầm (không thấy id, gửi trùng job). Tiền tố phủ cả file đợt sau thêm.
     ĐỘT BIẾN: bỏ `startswith("/thay-logo")` ⇒ ĐỎ."""
@@ -1970,7 +1987,7 @@ def test_video_desk_khong_goi_api_creative_desk():
     Gọi API chéo origin sẽ buộc Video Desk cầm token của người dùng hoặc một
     service token — dựng một bề mặt mạo danh cho việc vốn chỉ là copy file.
     """
-    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    js = nguon_app()
 
     assert "CREATIVE_DESK_URL" in js, "chưa có hằng số đích — test này thành vô nghĩa"
     assert "window.open(" in js, "bàn giao phải qua thanh địa chỉ"
@@ -2125,7 +2142,7 @@ def test_ban_giao_bo_tu_tim_bo_chon_sau_khi_mo_tab():
                     "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
 
     harness = Path(__file__).parent / "js" / "chon-sau-ban-giao.js"
-    ket_qua = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+    ket_qua = subprocess.run([node, str(harness), str(tep_app_gop())],
                              capture_output=True, text=True, timeout=30)
     assert ket_qua.returncode == 0, ket_qua.stderr
     do = json.loads(ket_qua.stdout)
@@ -2190,7 +2207,8 @@ def test_o_dan_cookie_duoc_xoa_ca_khi_bi_tu_choi():
                     "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
 
     harness = Path(__file__).parent / "js" / "o-dan-cookie-sau-khi-luu.js"
-    ket_qua = subprocess.run([node, str(harness), str(STATIC / "settings.js")],
+    ket_qua = subprocess.run([node, str(harness), str(STATIC / "chung-tien-ich.js"),
+                              str(STATIC / "settings.js")],
                              capture_output=True, text=True, timeout=30)
     assert ket_qua.returncode == 0, ket_qua.stderr
     do = json.loads(ket_qua.stdout)
@@ -2224,7 +2242,7 @@ def test_bo_video_chia_lo_theo_tran_backend():
                     "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
 
     harness = Path(__file__).parent / "js" / "loai-theo-lo.js"
-    ket_qua = subprocess.run([node, str(harness), str(STATIC / "app.js"),
+    ket_qua = subprocess.run([node, str(harness), str(tep_app_gop()),
                               str(app_mod.MAX_VIDEO_LOAI)],
                              capture_output=True, text=True, timeout=30)
     assert ket_qua.returncode == 0, ket_qua.stderr
@@ -2249,7 +2267,7 @@ def test_tran_lo_loai_khop_backend():
     (FE lớn hơn) hoặc thừa lượt gọi (FE nhỏ hơn) mà không test hành vi nào kêu."""
     import re
 
-    src = (STATIC / "app.js").read_text(encoding="utf-8")
+    src = nguon_app()
     m = re.search(r"const LOAI_TOI_DA_MOI_LUOT = (\d+);", src)
     assert m, "không tìm thấy hằng lô trong app.js"
     assert int(m.group(1)) == app_mod.MAX_VIDEO_LOAI
@@ -2271,7 +2289,7 @@ def test_cat_trang_va_day_nut_trang():
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
                     "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
     harness = Path(__file__).parent / "js" / "cat-trang.js"
-    r = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+    r = subprocess.run([node, str(harness), str(tep_app_gop())],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     do = json.loads(r.stdout)
@@ -2300,7 +2318,7 @@ def test_giu_chon_xuyen_trang_ham_thuan():
         pytest.skip("cần `node` để chạy hàm JS thật — không có thì test này "
                     "KHÔNG chạy, đừng đọc suite xanh thành 'đã kiểm'")
     harness = Path(__file__).parent / "js" / "giu-chon-xuyen-trang.js"
-    r = subprocess.run([node, str(harness), str(STATIC / "app.js")],
+    r = subprocess.run([node, str(harness), str(tep_app_gop())],
                        capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     do = json.loads(r.stdout)
