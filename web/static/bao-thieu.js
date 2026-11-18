@@ -35,6 +35,14 @@
   });
 
   const DANG_CHAY = new Set(["pending", "running"]);
+  // Lượt đã KẾT THÚC mà tải chưa đủ số xin: vế sau của dòng nguồn theo trạng thái thật (`dongNguon`).
+  // Bốn bước giải xác minh chưa kết thúc (đang chờ người giải) ⇒ không có ở đây, giữ câu cũ.
+  const KET_THUC_THIEU = Object.freeze({
+    failed: "lượt dừng giữa chừng khi mới tải",
+    interrupted: "lượt bị ngắt khi mới tải",
+    cancelled: "lượt đã bị rút khi mới tải",
+    done: "chỉ tải được",
+  });
 
   const so = (x) => Number(x) || 0;
 
@@ -106,6 +114,13 @@
     const tong = s.tim + s.boQua;
     const chiTiet = s.boQua > 0 ? ` ${s.tim} mới · ${s.boQua} đã có trong kho.` : "";
     if (s.tim >= s.tong) {
+      // "Đủ số bạn xin" là nói về NGUỒN (dò đủ), không phải số đã tải: lượt kết thúc mà tải chưa đủ thì nói
+      // luôn đã tải bao nhiêu và vì sao — không để câu "đủ" một mình làm người đọc tưởng lượt đã xong đủ.
+      const daTai = Math.min(s.xong, s.tong);
+      if (daTai < s.tong && KET_THUC_THIEU[job.trang_thai]) {
+        return `<b>Nguồn lần này có ${tong} video</b> — đủ số bạn xin, nhưng ` +
+          `${KET_THUC_THIEU[job.trang_thai]} ${daTai}/${s.tong}.${chiTiet}`;
+      }
       return `<b>Nguồn lần này có ${tong} video</b> — đủ số bạn xin.${chiTiet}`;
     }
     return `<b>Nguồn lần này có ${tong} video</b> (bạn xin ${s.tong})` +
