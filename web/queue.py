@@ -199,6 +199,16 @@ def source_label(url: str) -> str:
 _LOI_LINK_PHIA_NGUON = frozenset({LOI_CAN_DANG_NHAP, LOI_QUA_DAI, LOI_QUA_NANG, LOI_LA_PLAYLIST, LOI_TRUC_TIEP})
 
 
+# Lỗi Playwright/patchright khi trang trả mã HTTP lỗi (đo 18/11: 403 `server: TLB`, thân rỗng) ở `page.goto`.
+# So theo CHUỖI vì patchright và Playwright có lớp `Error` riêng; chỉ đọc, không ghi thông điệp (có URL hồ sơ).
+_DAU_LOI_HTTP_GOTO = "ERR_HTTP_RESPONSE_CODE_FAILURE"
+
+
+def _la_loi_http_luc_goto(exc: BaseException) -> bool:
+    msg = str(exc)
+    return _DAU_LOI_HTTP_GOTO in msg and "goto" in msg
+
+
 def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                  proxy: str | None = None, db_path: Path | None = None,
                  job_id: int | None = None,
@@ -388,8 +398,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                 if nen_tang in pacer.TRAN and db_path is not None and job_id is not None else None)
         kw_link_le = {"cong": cong, "ghi_loi_video": _ghi_loi_link,
                       "nghi": pacer.nghi_giua_luot if cong is not None else None}
-    try:
-        refs = nguon_url.liet_ke(
+    def _liet_ke() -> list:
+        return nguon_url.liet_ke(
             url,
             max_videos=max_videos,
             proxy=proxy,
@@ -404,12 +414,26 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             kw_profile=kw_profile,
             **kw_link_le,
         )
+
+    try:
+        refs = _liet_ke()
     except Exception as exc:
         # Chỉ ghi log rồi ném tiếp NGUYÊN lỗi (lỗi goto HTTP của Playwright…): hành vi không đổi.
         # Chỉ tên lớp — thông điệp Playwright kèm URL hồ sơ (handle khách).
         if la_profile_giai:
             log.warning("[profile-giai] job=%s profile=%s loi=%s", job_id, profile_nhan, type(exc).__name__)
-        raise
+        if not (la_profile_giai and profile_theo_job.lui_khi_403_dang_bat() and _la_loi_http_luc_goto(exc)):
+            raise
+        if tk_feed.get("da_giai"):
+            # Đã giải captcha trong lượt này: giữ profile (và trạng thái vừa giải), chỉ ghi nhận.
+            log.info("[profile-giai] job=%s 403 sau khi giai ⇒ giu profile", job_id)
+            raise
+        # Cờ `VIDEODL_PROFILE_LUI_KHI_403` (mặc định TẮT): 403 lúc goto, chưa giải ⇒ dời profile cũ sang bên
+        # (không xoá; dọn lúc job kết thúc / bộ quét) và chạy lại MỘT lần trên profile MỚI. Không URL/handle.
+        log.info("[profile-giai] job=%s 403 ⇒ profile moi", job_id)
+        profile_theo_job.doi_profile_cu_sang_ben(db_path, job_id)
+        kw_profile["profile_dir"] = str(profile_theo_job.chuan_bi_profile_job(db_path, job_id))
+        refs = _liet_ke()
     # Lọc trùng và lý do dừng giờ nằm TRONG `scrape_music_page_multi`: nó phải
     # biết "video này thư viện đã có" ngay giữa các lượt để quyết định đào tiếp
     # hay dừng. Lọc một lần ở ngoài, sau khi quét xong, chính là cái không bù

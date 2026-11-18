@@ -165,3 +165,32 @@ def test_scraper_qua_thi_tai_lai_mot_lan_con_lai_thi_khong(monkeypatch, kq, relo
     page, goi = _dung_scraper(monkeypatch, kq)
     scraper_mod._tu_giai_neu_bi_chan(page, {"rong": 1})
     assert goi == {"thu": 1, "reload": reload}
+
+
+@pytest.mark.parametrize("kq,da_giai", [(cx.DA_QUA, 1), (cx.TRUOT, 0), (cx.LOI, 0), (cx.KHONG_CO, 0)])
+def test_scraper_qua_thi_danh_dau_da_giai_cho_lop_web(monkeypatch, kq, da_giai):
+    """`da_giai` là tín hiệu lớp web dùng để KHÔNG lùi về profile mới khi 403 sau khi đã giải (ĐP-bc 18/11)."""
+    monkeypatch.setenv(cx.ENV_TU_GIAI, "1")
+    page, _goi = _dung_scraper(monkeypatch, kq)
+    feed_luot = {"rong": 1}
+    scraper_mod._tu_giai_neu_bi_chan(page, feed_luot)
+    assert feed_luot.get("da_giai", 0) == da_giai
+
+
+@pytest.mark.parametrize("da_giai", [True, False])
+def test_quet_tren_trang_chi_cong_da_giai_khi_co(monkeypatch, da_giai):
+    """Không giải ⇒ bộ đếm của người gọi y hệt trước (không có khoá `da_giai`)."""
+    def mo(page, url, feed_luot):
+        feed_luot["co_du_lieu"] = 1
+
+    def giai(page, feed_luot):
+        if da_giai:
+            feed_luot["da_giai"] = 1
+
+    monkeypatch.setattr(scraper_mod, "_watch_feed_api", lambda *a: None)
+    monkeypatch.setattr(scraper_mod, "_mo_trang_co_ham_phien", mo)
+    monkeypatch.setattr(scraper_mod, "_tu_giai_neu_bi_chan", giai)
+    monkeypatch.setattr(scraper_mod, "_auto_scroll", lambda *a: set())
+    tk: dict = {}
+    scraper_mod.quet_tren_trang(SimpleNamespace(), "https://www.tiktok.com/@a", thong_ke_feed=tk)
+    assert tk == ({"rong": 0, "co_du_lieu": 1, "da_giai": 1} if da_giai else {"rong": 0, "co_du_lieu": 1})
