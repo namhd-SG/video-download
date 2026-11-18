@@ -119,8 +119,7 @@
     return wrap;
   }
 
-  // Khối duyệt là LƯỚI thẻ (mock không có ‹ ›): mọi thẻ đã hiện (dù 1 hay nhiều hàng, vd 3 thẻ = 2+1 ở 390) ⇒ ẩn ‹ ›.
-  // Chỉ hiện khi lưới còn giấu thẻ sau nút "Xem thêm"/"Thu gọn" — cùng điều kiện với nút đó, không đo bố cục.
+  // Nút "Xem thêm"/"Thu gọn": còn thẻ ngoài 6 thẻ đầu và thẻ đang chọn không nằm ngoài đó (nằm ngoài ⇒ lưới đã mở hết).
   function coTheAn(ds) { return ds.length > SO_THE_GON && !(daMo && vi >= SO_THE_GON); }
 
   function veDuyet() {
@@ -134,7 +133,9 @@
     truoc.disabled = sau.disabled = ds.length < 2;
     truoc.addEventListener("click", () => { vi = daMo ? (vi - 1 + ds.length) % ds.length : ds.length - 1; moHong = false; daMo = true; veDuyet(); });
     sau.addEventListener("click", () => { vi = daMo ? (vi + 1) % ds.length : 0; moHong = false; daMo = true; veDuyet(); });
-    truoc.hidden = sau.hidden = !coTheAn(ds);
+    // Khối duyệt là LƯỚI thẻ (mock không có ‹ ›): ≤ 6 thẻ thì luôn hiện hết (dù 1 hay nhiều hàng, vd 3 thẻ = 2+1 ở 390) ⇒ ẩn ‹ ›.
+    // > 6 thẻ ⇒ luôn hiện, kể cả khi lưới đã mở hết vì đang lướt tới thẻ 7+ (không được biến mất giữa lúc lướt).
+    truoc.hidden = sau.hidden = ds.length <= SO_THE_GON;
     head.append(truoc, sau); hop.append(head);
     if (!ds.length) { if (!T.dangTaiLoc) daMo = false; hop.append(el("p", "tl-rong", T.dangTaiLoc ? "Đang tải…" : "Không có video nào chờ bạn duyệt.")); return; }
     hop.append(veLuoi(ds));

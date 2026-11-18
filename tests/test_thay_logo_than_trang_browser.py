@@ -132,3 +132,18 @@ def test_nut_truoc_sau_chi_hien_khi_luoi_the_duyet_tran(may_chu, trinh_duyet, mo
         p.goto(f"{may_chu}/thay-logo.html")
         p.wait_for_selector("#tl-duyet .tl-the-duyet")
         assert p.locator("#tl-duyet .tl-nav").first.is_visible() is hien, (so, rong)
+
+
+def test_nut_sau_luot_qua_8_the_khong_mat_giua_chung(may_chu, trinh_duyet, monkeypatch):
+    """8 thẻ ở 390: bấm › lướt qua hết (thẻ 7, 8 nằm ngoài 6 thẻ đầu ⇒ lưới tự mở hết) — ‹ › phải còn ở mọi bước, cuối vòng về thẻ 1."""
+    from test_thay_logo_trang_browser import _danh_sach, _dong_mo, _tra_json, _trang_gia
+    ds = [_dong_mo(60 + i) for i in range(8)]
+    p = _trang_gia(trinh_duyet, may_chu, monkeypatch, lambda r: _tra_json(r, _danh_sach(ds)))
+    p.set_viewport_size({"width": 390, "height": 900})
+    p.goto(f"{may_chu}/thay-logo.html")
+    p.wait_for_selector("#tl-duyet .tl-the-duyet")
+    sau = p.locator('#tl-duyet .tl-nav[aria-label="Video sau"]')
+    for buoc in range(1, 10):  # lần 1 mở thẻ 1, lần 8 tới thẻ 8, lần 9 quay về thẻ 1
+        assert sau.is_visible() and p.locator('#tl-duyet .tl-nav[aria-label="Video trước"]').is_visible(), buoc
+        sau.click()
+        assert p.locator("#tl-duyet .tl-dem").inner_text() == f"{(buoc - 1) % 8 + 1} / 8", buoc
