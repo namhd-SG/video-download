@@ -56,6 +56,17 @@ def thu_muc_profile_job(db_path: Path, job_id: int) -> Path:
     return thu_muc_profiles(db_path) / str(job_id)
 
 
+def profile_da_dung(db_path: Path, job_id: int) -> bool:
+    """True khi thư mục profile của job đã có dữ liệu trình duyệt từ lượt trước
+    (mọi mục trừ khoá worker). Gọi TRƯỚC `chuan_bi_profile_job`. Chỉ phục vụ log
+    tách "profile mới" vs "dùng lại"; lỗi đọc ⇒ False, không bao giờ ném."""
+    try:
+        return any(not m.name.startswith(TEN_KHOA_WORKER)
+                   for m in thu_muc_profile_job(db_path, job_id).iterdir())
+    except OSError:
+        return False
+
+
 def tao_thu_muc_rieng(path: Path) -> None:
     """Tạo `path` chỉ chủ đọc được. `mkdir(mode=)` không đủ (umask che, và bị bỏ qua
     khi thư mục đã có) ⇒ `chmod` tường minh — cùng lý do `web.app._make_private_dir`."""
