@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import socket
 
-from yt_dlp.networking.exceptions import HTTPError, TransportError
+from yt_dlp.networking.exceptions import HTTPError
 
 from tiktok_music_downloader import downloader
 
@@ -114,7 +114,9 @@ def phan_loai(exc: BaseException, co: LogBatCo | None = None) -> str:
         return LOI_TK_KHONG_VIDEO
     if _MAU_LAP_TRANG in van_ban:
         return LOI_LAP_TRANG
-    if any(isinstance(e, (TransportError, TimeoutError, socket.timeout)) for e in chuoi):
+    # Chỉ timeout THẬT (lớp timeout trong chuỗi hoặc mẫu chữ timeout). `TransportError` còn gồm lỗi kết nối/SSL/
+    # reset ⇒ không được thổi phồng `timeout` (nhãn này là ngưỡng bật cờ + điều kiện thử lại) ⇒ rơi xuống `khac`.
+    if any(isinstance(e, (TimeoutError, socket.timeout)) for e in chuoi):
         return LOI_TIMEOUT
     if _co_mau(van_ban, _MAU_TIMEOUT):
         return LOI_TIMEOUT

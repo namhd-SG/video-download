@@ -160,6 +160,35 @@ def test_tang_i_timeout_qua_transport_error(monkeypatch, caplog):
     assert _tach(dong[0])["loi"] == "timeout"
 
 
+def test_tang_i_transport_error_khong_phai_timeout_la_khac(monkeypatch, caplog):
+    # Lỗi kết nối/SSL/reset KHÔNG được thổi phồng thành `timeout` (ngưỡng bật cờ + điều kiện thử lại).
+    loi = _boc_nhu_extract_info(_ee("Unable to download webpage", cause=TransportError("connection reset by peer")))
+    _ra, dong = _chay(monkeypatch, caplog, Gia({"loi_extract": loi}))
+    assert _tach(dong[0])["loi"] == "khac"
+
+
+def test_tang_i_transport_error_co_cause_timeout_error_la_timeout(monkeypatch, caplog):
+    # Chữ không có mẫu timeout; chỉ lớp `TimeoutError` ở `__cause__` cho biết đây là timeout thật.
+    try:
+        try:
+            raise TimeoutError()
+        except TimeoutError as goc:
+            raise TransportError("lỗi mạng") from goc
+    except TransportError as te:
+        tang_mang = te
+    loi = _boc_nhu_extract_info(_ee("Unable to download webpage", cause=tang_mang))
+    _ra, dong = _chay(monkeypatch, caplog, Gia({"loi_extract": loi}))
+    assert _tach(dong[0])["loi"] == "timeout"
+
+
+def test_co_bat_transport_error_khong_timeout_khong_thu_lai(monkeypatch, caplog):
+    monkeypatch.setenv(prof_yt.ENV_PROFILE_YT_DLP_THU_LAI, "1")
+    loi = _boc_nhu_extract_info(_ee("x", cause=TransportError("SSL: certificate verify failed")))
+    gia = Gia({"loi_extract": loi}, {"muc": [_muc(1)]})
+    ra, _d = _chay(monkeypatch, caplog, gia)
+    assert ra is None and len(gia.opts) == 1
+
+
 @pytest.mark.parametrize("msg,nhan", [
     ("This user's account is private", "tk_rieng_tu"),
     ("This account does not have any videos posted", "tk_khong_video"),
