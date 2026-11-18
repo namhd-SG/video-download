@@ -25,6 +25,7 @@ RC_DO_HONG=5        # không đọc được số job — phép đo hỏng, KHÁ
 RC_MOC=6            # mã mới đã chạy + nghiệm thu qua, nhưng KHÔNG ghi được mốc .deployed-sha
 RC_BANG_MAY=7       # bảng máy đích (deploy/may-dich.sh): tên máy lạ — đặt trong chính bảng
 RC_GIAI_SE_MAT=8    # có job "Cần xác minh" mà cờ giải trên máy đích TẮT — khởi động lại sẽ kết thúc chúng
+RC_PHU_THUOC=9      # pyproject.toml đổi nhưng cài phụ thuộc trên mini trượt — chưa kickstart
 
 # HOST + EXPECT_HOST (tên máy đích sau khi chuẩn hoá: `hostname` thật trả về dạng
 # "Autos-Mac-mini.local" — hoa đầu, có đuôi .local — nên so khớp đúng chữ sẽ chặn
@@ -87,6 +88,8 @@ cd "$(git rev-parse --show-toplevel)"
 . deploy/verify-synced-files.sh
 # shellcheck source=deploy/prune-git-deleted-files.sh
 . deploy/prune-git-deleted-files.sh
+# shellcheck source=deploy/install-deps-when-pyproject-changed.sh
+. deploy/install-deps-when-pyproject-changed.sh
 say() { printf '\n== %s\n' "$*"; }
 
 # Đọc mốc lần deploy trước và gỡ tệp đã xoá khỏi git. Dùng CHUNG cho thử khô
@@ -105,6 +108,14 @@ don_tep_xoa() {
   esac
   don_tep_xoa_theo_git "$moc" "$SHA" "$HOST:~/$REMOTE_REPO/" "$HOST" "$REMOTE_REPO" \
                        "$BACKUP_DIR" "$THAT" "${EXCLUDES[@]}"
+}
+
+# Cài lại phụ thuộc khi pyproject.toml đổi từ mốc lần trước (hoặc chưa có mốc). Dùng CHUNG cho thử khô
+# (chỉ in lệnh sẽ chạy) và lần thật. Trả mã của `cai_phu_thuoc_neu_pyproject_doi`.
+cai_phu_thuoc() {
+  local moc="" r=0
+  moc="$(doc_moc_da_deploy "$HOST" "$REMOTE_REPO")" || r=$?
+  cai_phu_thuoc_neu_pyproject_doi "$r" "$moc" "$SHA" "$HOST" "$REMOTE_REPO" "$THAT"
 }
 
 # --- 0. CỔNG: máy bên kia có đúng là mini công ty không? ---------------------
@@ -271,6 +282,8 @@ if [ "$THAT" -eq 0 ]; then
         "${EXCLUDES[@]}" ./ "$HOST:~/$REMOTE_REPO/"
   echo "   ⚠ rsync kèm --backup-dir KHÔNG xoá tệp ở đích — bước 3b lần thật gỡ tệp đã xoá khỏi git:"
   don_tep_xoa || true
+  echo "   bước 3c lần thật — phụ thuộc Python:"
+  cai_phu_thuoc || true
   exit 0
 fi
 
@@ -321,6 +334,22 @@ esac
 # Cảnh báo, không chặn: mồ côi còn lại là thứ git CHƯA TỪNG biết (hoặc xoá
 # trước khi có mốc) — không phải việc của máy. Lượt này nói đích còn gì thừa.
 liet_mo_coi "$HOST:~/$REMOTE_REPO/" "${EXCLUDES[@]}" || true
+
+# --- 3c. Cài phụ thuộc khi pyproject.toml đổi --------------------------------
+# rsync chỉ đẩy mã; gói mới trong pyproject (vd patchright, 18/11) không tự vào venv prod. Cài TRƯỚC
+# kickstart để tiến trình mới dậy trên venv đủ gói. Trượt ⇒ DỪNG, tiến trình cũ vẫn phục vụ.
+say "3c. Phụ thuộc Python (pyproject.toml)"
+pt_rc=0
+cai_phu_thuoc || pt_rc=$?
+case "$pt_rc" in
+  0) ;;
+  5) echo "DỪNG: không đọc được mốc để so pyproject.toml — PHÉP ĐO HỎNG, chưa kickstart." >&2
+     echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+     exit "$RC_DO_HONG" ;;
+  *) echo "DỪNG: cài phụ thuộc trên mini trượt (rc=$pt_rc) — chưa kickstart, tiến trình cũ vẫn chạy." >&2
+     echo "      Lui bằng: bash deploy/rollback-on-mini.sh $BACKUP_DIR" >&2
+     exit "$RC_PHU_THUOC" ;;
+esac
 
 # --- 4. Khởi động lại ĐÚNG label của mình ------------------------------------
 say "4. kickstart -k $LABEL"

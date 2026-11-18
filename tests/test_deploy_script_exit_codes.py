@@ -20,7 +20,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = ("deploy/deploy-to-mini.sh", "deploy/verify-synced-files.sh",
-           "deploy/prune-git-deleted-files.sh", "deploy/may-dich.sh")
+           "deploy/prune-git-deleted-files.sh", "deploy/may-dich.sh",
+           "deploy/install-deps-when-pyproject-changed.sh")
 
 # ssh giả: đối số cuối là lệnh xa. `KICH_BAN` chọn cách nó hỏng.
 SSH_GIA = r'''#!/usr/bin/env bash
@@ -56,6 +57,7 @@ case "$cmd" in
     [ "$KICH_BAN" = moc_ghi_hong ] && case "$cmd" in *".tmp"*) exit 1 ;; esac
     [ "$KICH_BAN" = moc_la ] && case "$cmd" in *"then cat"*) echo 1111111111111111111111111111111111111111; exit 0 ;; esac
     h="${MOC_HOME:-$HOME}"; mkdir -p "$h/Projects/video-download"; HOME="$h" bash -c "$cmd" ;;
+  *"pip install"*) [ "$KICH_BAN" = pip_loi ] && { echo "ERROR: No matching distribution" >&2; exit 1; }; exit 0 ;;
   *"/healthz"*) echo "${HEALTHZ_GIA:-200}" ;;
   *"curl -s -D -"*) [ "$KICH_BAN" = cc_chet ] && exit 255; echo "cache-control: no-cache" ;;
   *lsof*) [ "$KICH_BAN" = cc_chet ] && exit 255; echo 1 ;;
@@ -352,3 +354,68 @@ def test_moc_ghi_sau_moi_cong_nghiem_thu(clone, tmp_path):
     r, _ = _yes(clone, tmp_path, HEALTHZ_GIA="000")
     assert r.returncode == 4
     assert not (tmp_path / "home-mini" / "Projects/video-download/.deployed-sha").exists()
+
+
+# ---- Bước 3c: cài phụ thuộc khi pyproject.toml đổi (deploy b2984a7 18/11: venv prod thiếu patchright).
+
+def _dat_moc(tmp_path, clone, rev: str) -> str:
+    """Ghi sẵn mốc `.deployed-sha` = `rev` (giải trong bản clone) vào home giả của mini."""
+    sha = subprocess.run(["git", "-C", str(clone[0]), "rev-parse", rev],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    d = tmp_path / "home-mini" / "Projects/video-download"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / ".deployed-sha").write_text(sha + "\n", encoding="utf-8")
+    return sha
+
+
+def _vi_tri(log: str, chuoi: str) -> int:
+    i = log.find(chuoi)
+    assert i >= 0, f"không thấy {chuoi!r} trong log ssh"
+    return i
+
+
+def test_pyproject_doi_tu_moc_thi_cai_truoc_kickstart(clone, tmp_path):
+    """Mốc = cha của commit thêm patchright vào pyproject ⇒ pyproject ĐỔI ⇒ pip install chạy, TRƯỚC kickstart.
+    ĐỘT BIẾN: bỏ lời gọi bước 3c ⇒ ĐỎ."""
+    goc = subprocess.run(["git", "-C", str(clone[0]), "log", "--format=%H", "-S", '"patchright', "--",
+                          "pyproject.toml"], capture_output=True, text=True, check=True).stdout.split()[-1]
+    _dat_moc(tmp_path, clone, goc + "^")
+    r, log = _yes(clone, tmp_path)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    assert "pyproject.toml ĐỔI" in r.stdout
+    assert _vi_tri(log, "pip install -q -e '.[web,thay-logo]'") < _vi_tri(log, "launchctl kickstart")
+
+
+def test_pyproject_khong_doi_thi_khong_cai(clone, tmp_path):
+    """Mốc = commit cha của HEAD bản clone (cùng pyproject) ⇒ KHÔNG gọi pip.
+    ĐỘT BIẾN: luôn cài bất kể diff ⇒ ĐỎ."""
+    _dat_moc(tmp_path, clone, "HEAD^")
+    r, log = _yes(clone, tmp_path)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    assert "pyproject.toml không đổi" in r.stdout
+    assert "pip install" not in log
+
+
+def test_chua_co_moc_thi_cai(clone, tmp_path):
+    """Không có mốc ⇒ CHƯA PHÂN ĐỊNH ⇒ cài (không kết luận 'không đổi')."""
+    r, log = _yes(clone, tmp_path)
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    assert _vi_tri(log, "pip install") < _vi_tri(log, "launchctl kickstart")
+
+
+def test_cai_truot_la_9_khong_kickstart_va_in_duong_lui(clone, tmp_path):
+    """pip trượt ⇒ DỪNG mã 9 trước kickstart (tiến trình cũ vẫn phục vụ), không ghi mốc.
+    ĐỘT BIẾN: bỏ qua mã trả của ssh pip ⇒ ĐỎ."""
+    r, log = _yes(clone, tmp_path, "pip_loi")
+    assert r.returncode == 9, (r.returncode, r.stderr)
+    assert "cài phụ thuộc trên mini trượt" in r.stderr and "rollback-on-mini.sh" in r.stderr
+    assert "launchctl kickstart" not in log
+    assert not (tmp_path / "home-mini" / "Projects/video-download/.deployed-sha").exists()
+
+
+def test_thu_kho_chi_in_lenh_cai_khong_chay(clone, tmp_path):
+    log = tmp_path / "ssh.log"
+    r = _chay(clone, "lanh", ssh_log=log, MOC_HOME=str(tmp_path / "home-mini"))
+    assert r.returncode == 0, (r.returncode, r.stderr)
+    assert "(thử khô) lần thật sẽ chạy" in r.stdout
+    assert "pip install" not in log.read_text(encoding="utf-8")
