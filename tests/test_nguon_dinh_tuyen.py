@@ -10,7 +10,8 @@ from fastapi import HTTPException
 
 from tiktok_music_downloader import nguon as nguon_mod
 from tiktok_music_downloader.nguon import (
-    NGUON, DriveFolder, InstagramHangLoat, FbAdsLibrary, LinkLe, TikTokCollection, YoutubeKenh, chon_nguon, mo_ta_cac_nguon)
+    NGUON, DriveFolder, FbAdsLibrary, InstagramHangLoat, LinkLe, TikTokCollection, YoutubeKenh, YoutubeTimKiem,
+    chon_nguon, mo_ta_cac_nguon)
 from web import app as app_mod
 from web import models
 from web import queue as queue_mod
@@ -33,8 +34,10 @@ THONG_BAO_400 = ("url không được nhận. Link hỗ trợ: trang TikTok musi
                  "link video lẻ (YouTube, TikTok, Instagram, Facebook, X, Pinterest, Douyin, Bilibili, Snapchat)")
 
 
-def test_bang_nguon_gom_tiktok_fb_ads_drive_kenh_youtube_va_link_le():
-    assert [type(n) for n in NGUON] == [TikTokCollection, FbAdsLibrary, DriveFolder, YoutubeKenh, InstagramHangLoat, LinkLe]
+def test_bang_nguon_gom_tiktok_fb_ads_drive_kenh_youtube_tim_kiem_instagram_va_link_le(monkeypatch):
+    monkeypatch.delenv("VIDEODL_YT_TIM_KIEM_BAT", raising=False)
+    assert [type(n) for n in NGUON] == [TikTokCollection, FbAdsLibrary, DriveFolder, YoutubeKenh, YoutubeTimKiem,
+                                        InstagramHangLoat, LinkLe]
     assert mo_ta_cac_nguon() == THONG_BAO_400.split("Link hỗ trợ: ")[1]
 
 
