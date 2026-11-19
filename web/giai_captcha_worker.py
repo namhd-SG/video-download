@@ -364,6 +364,12 @@ def _phien_tren_ctx(ctx, db_path: Path, job: dict, phien: gc.PhienGiai, cookies_
     except scraper.PWTimeout:
         log.warning("[giai] job %s: mở trang quá giờ", job_id)
         return _cho_xac_minh(gc.LD_MO_TRANG_TRUOT)
+    except Exception as exc:
+        # 403 ở lần mở ĐẦU (chưa thao tác/giải gì trong lượt) ⇒ báo riêng cho `_chay` quyết lùi profile.
+        # `goto` khác SAU khi đã giải (`_ve_trang_profile`) KHÔNG đi qua đây ⇒ không bao giờ lùi.
+        if profile_theo_job.la_loi_http_luc_goto(exc):
+            raise Loi403LucMoTrang(profile_theo_job.NHAN_LOI_403_GOTO) from None
+        raise
     # Đường dẫn tham chiếu = `page.url` SAU goto (redirect tiktok.com → www.).
     ref_url = page.url
     cdp = ctx.new_cdp_session(page)
@@ -450,8 +456,48 @@ def _dong_ctx(ctx, browser, profile_path: Path, dang_loi: bool) -> None:
         scraper._nha_profile_dir(profile_path)
 
 
+class Loi403LucMoTrang(Exception):
+    """`page.goto` lần ĐẦU của lượt giải bị 403 (`ERR_HTTP_RESPONSE_CODE_FAILURE`). Thông điệp chỉ là nhãn tĩnh
+    (`from None`: không mang lỗi gốc có URL hồ sơ khách)."""
+
+
+def _nhan_loi(exc: BaseException) -> str:
+    if isinstance(exc, Loi403LucMoTrang):
+        return profile_theo_job.NHAN_LOI_403_GOTO
+    return profile_theo_job.nhan_loi(exc)
+
+
 def _chay(db_path: Path, job: dict, phien: gc.PhienGiai, cookies_path: str | None,
           headless: bool, user_agent: str, che_do: str) -> KetQuaGiai:
+    """Lượt giải = lượt DÙNG LẠI `profiles/<job_id>` trên prod (`_fetch_refs` chỉ chạy lượt 1). Log đo
+    `[profile-giai]` (ĐK-403-1) + cờ `VIDEODL_PROFILE_LUI_KHI_403` (mặc định TẮT): 403 lúc mở trang ⇒ dời
+    profile cũ sang bên, mở lại MỘT lần trên profile MỚI. Lỗi khác / cờ tắt ⇒ ném như trước."""
+    job_id = job["id"]
+    profile_nhan = "dung_lai" if profile_theo_job.profile_da_dung(db_path, job_id) else "moi"
+    log.info("[profile-giai] job=%s profile=%s nguon=giai", job_id, profile_nhan)
+    try:
+        kq = _chay_tren_profile(db_path, job, phien, cookies_path, headless, user_agent, che_do)
+    except Exception as exc:
+        log.warning("[profile-giai] job=%s profile=%s nguon=giai loi=%s", job_id, profile_nhan,
+                    _nhan_loi(exc))
+        if not (isinstance(exc, Loi403LucMoTrang) and profile_theo_job.lui_khi_403_dang_bat()):
+            raise
+        log.info("[profile-giai] job=%s 403 ⇒ profile moi", job_id)
+        profile_theo_job.doi_profile_cu_sang_ben(db_path, job_id)
+        try:
+            kq = _chay_tren_profile(db_path, job, phien, cookies_path, headless, user_agent, che_do)
+        except Exception as exc2:
+            log.warning("[profile-giai] job=%s profile=moi nguon=giai loi=%s sau_lui", job_id,
+                        _nhan_loi(exc2))
+            raise
+        log.info("[profile-giai] job=%s profile=moi nguon=giai ket_qua=%s sau_lui", job_id, kq.loai)
+        return kq
+    log.info("[profile-giai] job=%s profile=%s nguon=giai ket_qua=%s", job_id, profile_nhan, kq.loai)
+    return kq
+
+
+def _chay_tren_profile(db_path: Path, job: dict, phien: gc.PhienGiai, cookies_path: str | None,
+                       headless: bool, user_agent: str, che_do: str) -> KetQuaGiai:
     job_id = job["id"]
     profile_path = profile_theo_job.chuan_bi_profile_job(db_path, job_id)
     # Chỉ mở trình duyệt khi có người giữ khoá (popup mở SSE ngay sau khi bấm nút; chờ ngắn để
