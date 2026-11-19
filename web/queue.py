@@ -24,13 +24,14 @@ from tiktok_music_downloader.phan_loai_loi import (
 from tiktok_music_downloader.nguon import (
     NGUON_MAC_DINH, NGUON_YT_DLP_NEN_TANG_KHAC, TRAN_DUNG_LUONG_BYTE, TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh,
     chon_nguon, tach_link)
+from tiktok_music_downloader.nguon_facebook_trang import FacebookTrang
 from tiktok_music_downloader.nguon_instagram import InstagramHangLoat
 from dataclasses import replace
 
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED, STOP_BI_CHAN, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
     STOP_THIEU_DENO, STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_IG_CHUA_CO_COOKIE, STOP_IG_MAT_PHIEN,
-    STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
+    STOP_FB_CHAN_DANG_NHAP, STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
 from tiktok_music_downloader.watermark import find_deno, find_ffmpeg
@@ -61,6 +62,8 @@ _LY_DO_RONG_LA_LOI = frozenset({
     STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_BI_CHAN, STOP_THIEU_DENO,
     # Instagram hàng loạt: mất phiên / chưa có cookie ⇒ "Lỗi" nhãn riêng, không bao giờ "Xong" rỗng.
     STOP_IG_MAT_PHIEN, STOP_IG_CHUA_CO_COOKIE,
+    # Facebook page hàng loạt (không cookie): hộp thoại đăng nhập chặn mà chưa đủ số ⇒ "Lỗi" nhãn riêng, không "Xong" rỗng.
+    STOP_FB_CHAN_DANG_NHAP,
 })
 # Trần nghỉ giữa hai vòng worker khi lỗi LẶP (nghỉ lùi dần: poll, 2×poll, 4×poll…).
 # Đủ dài để không ghi log dồn dập khi DB/đĩa hỏng kéo dài, đủ ngắn để tự chạy lại
@@ -181,6 +184,11 @@ def la_link_le(url: str) -> bool:
 def la_kenh_youtube(url: str) -> bool:
     """Job này là kênh / tab / playlist YouTube (một URL, số video theo ô số lượng)."""
     return isinstance(chon_nguon((tach_link(url) or [url])[0]), YoutubeKenh)
+
+
+def la_facebook_trang(url: str) -> bool:
+    """Job này là Facebook page hàng loạt (tab Videos / Reels, không cookie)."""
+    return isinstance(chon_nguon((tach_link(url) or [url])[0]), FacebookTrang)
 
 
 def la_instagram_hang_loat(url: str) -> bool:
@@ -789,8 +797,9 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     # khác, và trần dung lượng một file (yt-dlp bỏ file lớn hơn, không ném lỗi).
     tiktok_le = not la_nen_tang_khac and la_link_le(job["url"])
     kw_cong_dia = {"truoc_moi_file": _kiem_dia} if (la_nen_tang_khac or tiktok_le) else {}
-    # Kênh YouTube cũng chịu trần dung lượng lúc tải: mục liệt kê phẳng không mang kích thước để chặn trước.
-    if tiktok_le or la_kenh_youtube(job["url"]):
+    # Kênh YouTube và Facebook page cũng chịu trần dung lượng lúc tải: mục liệt kê phẳng không mang kích thước để chặn
+    # trước (thời lượng: nút FB có thì lọc lúc liệt kê, không có thì đo sau tải như Short — `VideoRef.la_short`).
+    if tiktok_le or la_kenh_youtube(job["url"]) or la_facebook_trang(job["url"]):
         kw_cong_dia["max_filesize"] = TRAN_DUNG_LUONG_BYTE
     # Nền tảng link lẻ: opts yt-dlp riêng + cổng IP (ghi lượt TRƯỚC mỗi lần gọi, kể cả lần thử lại) + nghỉ jitter.
     nen_tang_job = job.get("nen_tang") or models.NEN_TANG_MAC_DINH

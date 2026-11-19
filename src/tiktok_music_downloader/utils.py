@@ -380,3 +380,7 @@ STOP_THIEU_DENO = "thieu_deno"
 # XHR báo lỗi…) ⇒ job `failed` nhãn "Cookie IG hết hạn / bị IG chặn", KHÔNG BAO GIỜ "xong" rỗng.
 STOP_IG_CHUA_CO_COOKIE = "ig_chua_co_cookie"
 STOP_IG_MAT_PHIEN = "ig_mat_phien"
+# Facebook page hàng loạt (R-09, Đường A không cookie): hộp thoại đăng nhập KHÔNG đóng được (không có nút Close) mà chưa
+# đủ số xin ⇒ dừng nhãn riêng. Phát cả khi 0 video mới mà thư viện đã có vài mã (không bao giờ `already_owned`): tường mới
+# là lý do chưa đủ, không phải "đã có hết". Job `failed` khi rỗng; chạy lại vô ích (cần cookie tài khoản phụ — Đường B).
+STOP_FB_CHAN_DANG_NHAP = "fb_chan_dang_nhap"

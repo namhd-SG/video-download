@@ -28,6 +28,7 @@
     het_thoi_gian: "Hết giờ", het_vong: "Hết vòng quét", page_cap: "Chạm trần trang", het_dia: "Đĩa sắp đầy",
     tran_gio: "Chạm trần giờ", tran_ngay: "Chạm trần ngày",
     ig_mat_phien: "Cookie IG hết hạn / bị IG chặn", ig_chua_co_cookie: "Chưa có cookie IG",
+    fb_chan_dang_nhap: "Facebook đòi đăng nhập",
     nghi_bi_chan: "Nghi bị chặn", bi_chan: "Nền tảng chặn", thieu_deno: "Máy thiếu Deno",
     hashtag_khong_tra_duoc: "Hashtag không đọc được", index_failed: "Nguồn ngoài lỗi",
     source_empty: "Nguồn rỗng", already_owned: "Đã có hết", stalled: "Hết video",

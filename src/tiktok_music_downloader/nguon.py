@@ -10,6 +10,8 @@ theo id, còn lại yt-dlp), nên thêm nguồn cùng kiểu tải không phải
 
 `InstagramHangLoat` (`nguon_instagram.py`) nhận profile reels / từ khoá / hashtag / audio của Instagram.
 
+`FacebookTrang` (`nguon_facebook_trang.py`) nhận tab Videos / Reels của page Facebook, không cookie (R-09).
+
 `YoutubeKenh` nhận kênh / tab Videos-Shorts / playlist YouTube (liệt kê N video MỚI, đứng trước `LinkLe`).
 
 `LinkLe` nhận video lẻ của nhiều nền tảng bằng chính bộ nhận dạng của yt-dlp (`ie.suitable`, không gọi mạng),
@@ -34,6 +36,7 @@ from yt_dlp.extractor.youtube import YoutubeTabIE
 
 from tiktok_music_downloader import downloader, gdrive
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
+from tiktok_music_downloader.nguon_facebook_trang import FacebookTrang
 from tiktok_music_downloader.nguon_instagram import InstagramHangLoat
 from tiktok_music_downloader.nguon_profile_yt_dlp import liet_ke_profile_yt_dlp
 from tiktok_music_downloader.scraper import scrape_music_page_multi
@@ -909,15 +912,16 @@ class YoutubeTimKiem(YoutubeKenh):
 # Hai nguồn liệt kê/tải qua yt-dlp trên lane nền tảng khác: cùng cổng IP (`cong`), cùng cổng bật/tắt nền tảng
 # (`nen_tang_bat`), cùng đường báo lỗi riêng từng video. Chỗ nào cần "nguồn này đi qua pacer" thì hỏi tập này,
 # đừng liệt kê từng lớp (thêm nguồn yt-dlp mới = thêm vào đây).
-NGUON_YT_DLP_NEN_TANG_KHAC: tuple[type, ...] = (LinkLe, YoutubeKenh, YoutubeTimKiem, InstagramHangLoat)
+NGUON_YT_DLP_NEN_TANG_KHAC: tuple[type, ...] = (LinkLe, YoutubeKenh, YoutubeTimKiem, InstagramHangLoat, FacebookTrang)
 
 # Thứ tự = thứ tự thử `nhan`; nguồn đầu tiên nhận thì thắng. Các tập URL không giao nhau (FB Ads Library nằm
 # trước `LinkLe` vì extractor `Facebook*` của yt-dlp không được cướp link thư viện quảng cáo; `YoutubeKenh` đứng
 # trước `LinkLe` cho cùng lý do: URL tab của kênh/playlist không phải video lẻ; `YoutubeTimKiem` cũng vậy: trang
 # tìm kiếm/hashtag YouTube không phải video lẻ; `InstagramHangLoat` cũng vậy: profile/
-# từ khoá/hashtag/audio của IG không phải `/reel/<mã>/` hay `/p/<mã>/` của link lẻ).
+# từ khoá/hashtag/audio của IG không phải `/reel/<mã>/` hay `/p/<mã>/` của link lẻ; `FacebookTrang` cũng vậy: tab
+# `/<page>/videos|reels` không phải `/reel/<mã>`, `/watch/?v=` hay `/<page>/videos/<mã>` của link lẻ).
 NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), YoutubeKenh(), YoutubeTimKiem(),
-                            InstagramHangLoat(), LinkLe())
+                            InstagramHangLoat(), FacebookTrang(), LinkLe())
 
 
 # Nguồn dùng khi một URL cũ không nguồn nào nhận (xem `web/queue.py::_fetch_refs`).

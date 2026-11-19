@@ -27,7 +27,7 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader, trinh_duyet_patchright
 from tiktok_music_downloader.nguon import (
     NEN_TANG_LINK_LE, NGUON, NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, TRAN_DUNG_LUONG_BYTE,
-    TRAN_THOI_LUONG_GIAY, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
+    TRAN_THOI_LUONG_GIAY, FacebookTrang, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
 from tiktok_music_downloader.utils import che_url
 from web import gan_phien_ban_tai_nguyen
 from web import giai_captcha
@@ -386,6 +386,9 @@ MAX_LINK_MOT_JOB = 50
 # DỪNG (không chờ): 30 video ≈ 2 lượt liệt kê + 30 lượt tải ≈ nửa trần IP YouTube 60 lượt/giờ toàn hệ thống
 # (`web/pacer.py`), chừa nửa còn lại cho người khác; 50 video ≈ 53 lượt thì chỉ cần ai đó đã dùng ≥ 8 lượt là job hỏng.
 MAX_VIDEO_KENH_YOUTUBE = 30
+# Trần ô số lượng cho job Facebook page (R-09, Đường A không cookie): khách chỉ thấy ≈16–50 video đầu rồi gặp tường đăng
+# nhập, nên xin nhiều hơn là vô nghĩa. 1 lượt mở trang + 20 lượt tải = 21 < trần IP Facebook 30 lượt/giờ (`web/pacer.py`).
+MAX_VIDEO_TRANG_FB = 20
 MAX_KY_TU_O_LINK = MAX_LINK_MOT_JOB * 2048
 
 
@@ -574,6 +577,11 @@ def create_job(payload: CreateJobRequest,
             status_code=400,
             detail=(f"kênh/playlist YouTube tối đa {MAX_VIDEO_KENH_YOUTUBE} video mỗi lượt (giới hạn chung cả "
                     f"công ty ≈30 video YouTube/giờ); hãy giảm ô số lượng"))
+    elif isinstance(nguon, FacebookTrang) and so_luong > MAX_VIDEO_TRANG_FB:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"Facebook page tối đa {MAX_VIDEO_TRANG_FB} video mỗi lượt (không cookie, khách chỉ thấy khoảng "
+                    f"16–50 video đầu); hãy giảm ô số lượng"))
     # Trần ngày theo cookie là trần của tài khoản TikTok: chỉ áp cho job TikTok (và URL không nguồn nào
     # nhận, vẫn đi cổng này trước khi 400 như cũ). Job nền tảng khác có trần IP riêng ở `web/pacer.py`.
     if nguon is None or nen_tang == models.NEN_TANG_MAC_DINH:
@@ -743,6 +751,7 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
             "so_luong_mot_luot": MAX_SO_LUONG,
             "link_mot_luot": MAX_LINK_MOT_JOB,
             "video_kenh_youtube": MAX_VIDEO_KENH_YOUTUBE,
+            "video_trang_facebook": MAX_VIDEO_TRANG_FB,
             "thoi_luong_video_giay": TRAN_THOI_LUONG_GIAY,
             "dung_luong_video_mb": TRAN_DUNG_LUONG_BYTE // (1024 * 1024),
             "tiktok_moi_ngay": {

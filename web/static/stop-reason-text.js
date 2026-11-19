@@ -64,6 +64,10 @@ const STOP_REASON_TEXT = {
                        "(xuất từ instagram.com khi đã đăng nhập) rồi chạy lại.",
     cookie_khong_phai_instagram: "Dừng: cookie bạn đã dán không phải cookie Instagram (không có cookie nào của " +
                                  "instagram.com). Dán lại cookie xuất khi đang mở instagram.com.",
+    // Facebook page hàng loạt (R-09, không cookie): khách xem được một ít rồi gặp hộp thoại đăng nhập không đóng được.
+    fb_chan_dang_nhap: "Dừng: Facebook chặn khách chưa đăng nhập (hộp thoại đăng nhập không đóng được) nên chỉ lấy " +
+                       "được phần đầu của trang — thường khoảng 16–22 video ở tab Videos, 50 ở tab Reels. Chạy lại " +
+                       "không ra thêm; video đã tải vẫn còn. Muốn lấy nhiều hơn cần cookie tài khoản phụ (chưa hỗ trợ).",
     thieu_deno: "Dừng: máy chạy chưa có Deno nên không tải được YouTube — đây là lỗi cấu hình máy, không phải " +
                 "lỗi video. Báo người quản trị.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
@@ -72,8 +76,8 @@ const STOP_REASON_TEXT = {
     // mở bằng "Xong:". Nhánh hashtag cũng phát mã này khi nguồn hết trang mà
     // chưa đủ số xin (`hashtag_enumerator.py`), nên câu phải đúng cả hai ca.
     source_empty: "Nguồn không đưa thêm video nào cho link này. Nếu chưa tải " +
-                  "được video nào: link có thể sai hoặc đã hết hạn, hoặc nguồn " +
-                  "chưa có video — kiểm lại link.",
+                  "được video nào: link có thể sai hoặc đã hết hạn, nguồn chưa có video, hoặc nền tảng " +
+                  "ẩn tab này khi chưa đăng nhập — kiểm lại link.",
     // KHÔNG phải "đã tải rồi": feed TikTok trả RỖNG (0 byte) ở mọi lần hỏi,
     // nên việc thư viện có hay không chưa từng được hỏi tới. Đo 01–02/10: trang
     // hiện captcha với trình duyệt tự động; không cookie / cookie khác rỗng y

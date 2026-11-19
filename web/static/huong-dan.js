@@ -17,6 +17,7 @@
     fb_ads: "facebook.com/ads/library/?…",
     drive: "drive.google.com/drive/folders/… (thư mục chia sẻ công khai)",
     youtube_kenh: "youtube.com/@kênh, youtube.com/@kênh/shorts, youtube.com/@kênh/videos, youtube.com/playlist?list=…",
+    facebook_trang: "facebook.com/tên-page, facebook.com/tên-page/videos, facebook.com/tên-page/reels",
     link_le: "youtube.com/watch?v=…, youtube.com/shorts/…, tiktok.com/@tên/video/…, …",
   };
 
