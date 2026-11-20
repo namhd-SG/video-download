@@ -45,6 +45,7 @@
       <a href="#tao-luot">Tạo một lượt tải</a>
       <a href="#gioi-han">Giới hạn</a>
       <a href="#cookie">Cookie TikTok</a>
+      <a href="#cookie-instagram">Cookie Instagram</a>
       <a href="#thu-vien">Thư viện, cụm và bộ</a>
       <a href="#ly-do-dung">Vì sao lượt tải dừng</a>
       <a href="#thay-logo">Thay logo</a>
@@ -59,7 +60,8 @@
         <thead><tr><th>Loại link</th><th>Dán vào ô link</th></tr></thead>
         <tbody><tr><td colspan="2" class="muted">Đang tải…</td></tr></tbody>
       </table>
-      <p><strong>Nền tảng đang bật cho link video lẻ và kênh YouTube:</strong>
+      <!-- nguon.py NGUON_YT_DLP_NEN_TANG_KHAC: link lẻ, kênh/tìm kiếm YouTube, Instagram hàng loạt, Facebook page cùng đi qua cờ nền tảng bật -->
+      <p><strong>Nền tảng đang bật (link video lẻ, kênh/tìm kiếm YouTube, Instagram, Facebook page):</strong>
         <span id="nen-tang-bat" class="hd-chip-hang">…</span></p>
       <!-- web/app.py create_job: nền tảng trong `pacer.nen_tang_dang_tat` ⇒ 503 "tạm tắt do bị chặn, admin bật lại" -->
       <p id="tam-tat" class="hd-loi" hidden>Đang <strong>tạm tắt</strong> do bị nền tảng chặn:
@@ -73,10 +75,11 @@
       <ol class="hd-buoc">
         <!-- web/static/index.html: ô link "Mỗi dòng một link · Ctrl/⌘+Enter để tạo" -->
         <li>Dán link vào ô <em>Tạo lượt tải mới</em>. Nhiều link thì <strong>mỗi dòng một link</strong>.</li>
-        <!-- web/app.py::_chon_nguon_cho_o_nhap — nhiều link chỉ nhận LinkLe, cùng một nền tảng -->
+        <!-- web/app.py::_chon_nguon_cho_o_nhap — nhiều link chỉ nhận LinkLe, cùng một nền tảng;
+             nguon_instagram.py / nguon_facebook_trang.py docstring "Một job = MỘT URL"; nguon.py YoutubeTimKiem kế thừa YoutubeKenh -->
         <li>Nhiều link trong một lượt chỉ được khi <strong>tất cả là video lẻ của cùng một nền tảng</strong>
-          (tối đa <b data-tran="link_mot_luot">…</b> link). Trang TikTok, kênh YouTube, thư viện quảng cáo
-          Facebook và thư mục Drive thì <strong>một link mỗi lượt</strong>.</li>
+          (tối đa <b data-tran="link_mot_luot">…</b> link). Trang TikTok, kênh và tìm kiếm/hashtag YouTube,
+          Instagram hàng loạt, Facebook page, thư viện quảng cáo Facebook và thư mục Drive thì <strong>một link mỗi lượt</strong>.</li>
         <!-- web/app.py::CreateJobRequest.so_luong (le=MAX_SO_LUONG); create_job: LinkLe ⇒ so_luong = len(links),
              YoutubeKenh ⇒ ≤ MAX_VIDEO_KENH_YOUTUBE. Lọc trùng: web/models.py::known_video_ids — "kho đã có file
              này chưa", KHÔNG theo người (web/queue.py `_already_have`). -->
@@ -138,6 +141,28 @@
       </table>
     </section>
 
+    <section class="panel" id="cookie-instagram">
+      <h2>Cookie Instagram</h2>
+      <!-- nguon_instagram.py InstagramHangLoat.liet_ke: không cookie ⇒ on_stop(STOP_IG_CHUA_CO_COOKIE), không chạy ẩn danh;
+           link video lẻ (/reel/, /p/) đi đường LinkLe, không qua đây -->
+      <p>Tải hàng loạt từ Instagram (profile, từ khoá, hashtag, audio) <strong>bắt buộc có cookie</strong> của bạn —
+        không có thì lượt tải dừng ngay, không chạy ẩn danh. Cookie là của <strong>riêng từng người</strong>.</p>
+      <!-- web/static/settings.html thẻ data-nen-tang="instagram": "Cookie Instagram — dùng tài khoản PHỤ" + các bước ⓘ -->
+      <p><strong>Dùng tài khoản Instagram phụ</strong>, không dùng tài khoản chính.</p>
+      <ol class="hd-buoc">
+        <li>Cài tiện ích <strong>Cookie-Editor</strong> trên trình duyệt.</li>
+        <li>Mở <strong>instagram.com</strong> khi <strong>đã đăng nhập tài khoản phụ</strong>.</li>
+        <li>Cookie-Editor → <em>Export</em> → <em>Export as JSON</em>.</li>
+        <li>Vào <a href="/settings.html">Cài đặt</a>, thẻ <em>Cookie Instagram</em>, dán chuỗi → <em>Lưu cookie</em>.</li>
+      </ol>
+      <!-- settings-instagram.js: cookie_het_han / "Cookie IG hết hạn / bị IG chặn" ⇒ "Đăng nhập lại tài khoản phụ, xuất và dán cookie mới";
+           bị từ chối ⇒ "Cookie cũ (nếu có) vẫn đang dùng" -->
+      <p class="muted">Máy chủ kiểm cookie trước khi nhận; bị từ chối thì cookie cũ vẫn giữ. Lượt tải dừng vì mất phiên
+        hoặc thẻ báo cookie hết hạn thì đăng nhập lại tài khoản phụ, xuất và dán cookie mới.</p>
+      <!-- nguon_instagram.py log "carousel bỏ qua" (ig_quet_cuon: kq.so_carousel) -->
+      <p class="muted">Chỉ lấy video (reel); bài nhiều ảnh (carousel) và bài ảnh bị bỏ qua.</p>
+    </section>
+
     <section class="panel" id="thu-vien">
       <h2>Thư viện, cụm và bộ</h2>
       <ul class="hd-buoc">
@@ -150,13 +175,19 @@
         <!-- index.html comment: "Tạo bộ tự tìm" mở Creative Desk trong tab mới, dùng phiên của chính bạn -->
         <li><strong>Tạo bộ tự tìm:</strong> chọn video → <em>Tạo bộ tự tìm</em>, Creative Desk mở trong tab mới và bộ
           được tạo bằng tài khoản của bạn ở đó. Video đã vào bộ được ẩn khỏi lưới 7 ngày (xem lại bằng chip
-          <em>Đã vào bộ</em>).</li>
+          <em>Đã vào bộ</em>).
+          <!-- web/vao_bo_don.py docstring: đủ 7 ngày ⇒ trash_file(drive_file_id của NGUỒN); KHÔNG đụng bản trong bộ, KHÔNG xoá hàng `videos`;
+               chạy khi VIDEODL_BAT_DON_NGAY7 bật (web/models_vao_bo.py:36-40) -->
+          Sau 7 ngày, <strong>tệp nguồn</strong> trong thư mục Drive của lượt tải đó chuyển vào <strong>Thùng rác Drive</strong>
+          (lấy lại được trong 30 ngày). Bản trong bộ và dòng trong thư viện vẫn còn.</li>
         <!-- app.js loaiDaChon: confirm "Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày)…" -->
         <li><strong>Xoá:</strong> bỏ video khỏi thư viện <em>của bạn</em>; tệp vào Thùng rác Drive (lấy lại được trong
           30 ngày), người khác không bị ảnh hưởng, và lượt quét sau sẽ không tải lại video đó.</li>
         <!-- stop-reason-text.js khong_do_duoc_feed / feed_rong: nút "Tôi giải ngay" -->
-        <li><strong>TikTok đòi xác minh (captcha):</strong> thẻ lượt tải hiện nút <em>Tôi giải ngay</em> — bấm để tự
-          giải trong cửa sổ hiện ra, xong thì lượt tải chạy tiếp.</li>
+        <!-- captcha_xoay.py SO_LAN_THU=3 (cờ VIDEODL_TU_GIAI_CAPTCHA, scraper.py:590): tool tự thử rồi mới gọi người -->
+        <li><strong>TikTok đòi xác minh (captcha xoay):</strong> máy <strong>tự giải trước</strong> (thử vài lần). Không qua được
+          thì thẻ lượt tải hiện nút <em>Tôi giải ngay</em> — bấm để tự giải trong cửa sổ hiện ra, xong thì lượt tải
+          chạy tiếp.</li>
       </ul>
     </section>
 
@@ -201,8 +232,11 @@
       <ul class="hd-buoc">
         <!-- nguon.py:228 "Không có Threads: không extractor nào của bản yt-dlp cài chứa thread" -->
         <li>Threads.</li>
-        <!-- nguon.py:224-225: kênh/playlist ngoài YouTube (TikTokUser qua yt-dlp, InstagramUser…) không nhận -->
-        <li>Kênh / trang cá nhân / playlist của nền tảng ngoài YouTube và TikTok — chỉ nhận link video lẻ.</li>
+        <!-- NGUON (nguon.py:923-924): kênh/hàng loạt chỉ có TikTok, YouTube, Instagram (nguon_instagram.py phan_tich_url),
+             Facebook page (nguon_facebook_trang.py tab videos/reels), thư viện quảng cáo FB, Drive. Còn lại chỉ link lẻ -->
+        <li>Kênh / trang cá nhân / playlist của các nền tảng khác (X, Pinterest, Douyin, Bilibili…) — chỉ nhận link video lẻ.
+          Facebook chỉ nhận tab <em>Videos</em>/<em>Reels</em> của page (không phải trang cá nhân); Instagram chỉ nhận
+          profile (reels), từ khoá, hashtag, audio.</li>
         <!-- docs pha 4 (PR #65 Known limits): /c/<tên>, /user/<tên>, music.youtube.com playlist bị từ chối -->
         <li>Link YouTube dạng <code>/c/&lt;tên&gt;</code>, <code>/user/&lt;tên&gt;</code> và playlist YouTube Music.</li>
         <li>Video riêng tư, chỉ thành viên, hoặc cần đăng nhập ở nền tảng ngoài TikTok.</li>
