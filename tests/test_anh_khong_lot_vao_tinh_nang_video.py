@@ -10,6 +10,11 @@ Hai lớp:
   * Xoá `AND {LA_VIDEO}` (hoặc `{LA_VIDEO} AND `) khỏi MỘT câu bất kỳ trong `web/models_cum.py`,
     `web/models_chia.py`, `web/nhap_cum_cli.py`, `web/thay_logo_routes.py` — thử riêng từng module.
   * Đổi `FROM videos v` thành `FROM videos` ở một câu (bỏ bí danh `v`).
+  * Bỏ `{LA_VIDEO}` khỏi truy vấn trong `thay_logo_routes._ban_vao_bo_cua` (hoặc `chu_video_vao_bo`),
+    `models_cum.khung_cum` (qua `_VIDEO_TRONG_LO_CAT`), `models_chia._kiem_video_ids_thao_tac`,
+    `_giai_quyet_kieu`, `_giai_quyet_kieu_vao_cum` ⇒ các test hành vi cuối file (`test_ban_vao_bo_cua_*`,
+    `test_chu_video_vao_bo_*`, `test_khung_cum_*`, `test_thao_tac_theo_id_*`, `test_duyet_*_khong_nhan_anh_*`) đỏ,
+    không chỉ test cấu trúc.
   * Trong `web/vao_bo_drive.py` bỏ vế `or mimeType contains 'image/'` ở truy vấn liệt kê Shared Drive
     hoặc Thùng rác (ca này đỏ ở `test_vao_bo_drive_that.py` và `test_anh_vao_bo_va_don.py`).
 """
@@ -273,3 +278,80 @@ def test_tao_job_thay_logo_id_anh_la_422_cho_ca_admin_lan_member(api, kho):
         assert r.status_code == 422, "một ảnh lẫn trong lô video cũng chặn cả lô"
     r = c.post("/api/thay-logo/jobs", headers=_h(TOI), json={"drive_file_ids": [_fid("v1")], "ten_bo": "Bộ thử"})
     assert r.status_code == 201, (r.status_code, r.content)
+
+
+# --- hành vi: các câu truy vấn mà bộ quét cấu trúc một mình không giữ được ----------------------------
+
+def _gan_ban_trong_bo(db, kho):
+    """Video v1 và ảnh a1 cùng có bản sao trong bộ (ảnh vào sổ qua dữ liệu lệch/cũ)."""
+    for v, ban in (("v1", "ban-v1"), (kho["a1"], "ban-a1")):
+        _sql(db, "INSERT INTO video_vao_bo (video_id, an_luc, chu) VALUES (?, ?, ?)", v, LUC, TOI)
+        _sql(db, "INSERT INTO video_vao_bo_ban (video_id, ban_copy_id, folder_id, ma_bo, bang_chung, thay_luc) "
+                 "VALUES (?, ?, 'BO1', 'N.1', 'properties', ?)", v, ban, LUC)
+
+
+@pytest.mark.parametrize("nguoi_tao", [TOI, None], ids=["thanh_vien", "admin"])
+def test_ban_vao_bo_cua_khong_nhan_ban_cua_anh(kho, nguoi_tao):
+    from fastapi import HTTPException
+    db = kho["db"]
+    _gan_ban_trong_bo(db, kho)
+    muc_v = thay_logo_routes.MucVaoBo(video_id="v1", ban_copy_id="ban-v1")
+    muc_a = thay_logo_routes.MucVaoBo(video_id=kho["a1"], ban_copy_id="ban-a1")
+    assert set(thay_logo_routes._ban_vao_bo_cua(db, nguoi_tao, [muc_v])) == {"ban-v1"}
+    with pytest.raises(HTTPException) as e:
+        thay_logo_routes._ban_vao_bo_cua(db, nguoi_tao, [muc_a])
+    assert e.value.status_code == 403, "bản sao của ảnh không được ra như bản sao của video"
+    with pytest.raises(HTTPException) as e:
+        thay_logo_routes._ban_vao_bo_cua(db, nguoi_tao, [muc_v, muc_a])
+    assert e.value.status_code == 403, "một ảnh lẫn trong lô video chặn cả lô"
+
+
+def test_chu_video_vao_bo_khong_tra_chu_cua_anh(kho):
+    db = kho["db"]
+    _gan_ban_trong_bo(db, kho)
+    assert set(thay_logo_routes.chu_video_vao_bo(db, ["v1", kho["a1"]])) == {"v1"}
+
+
+def test_khung_cum_khong_tra_anh_nhet_thang_vao_cum(kho):
+    db = kho["db"]
+    cum, _ = models_cum.tao_cum(db, TOI, "Dance", "Kiem", "lo")
+    models_cum.gan_video(db, cum, TOI, TOI, ["v1"])
+    _sql(db, "INSERT INTO video_cum (video_id, chu, cum_id) VALUES (?, ?, ?)", kho["a1"], TOI, cum)
+    assert [r["video_id"] for r in models_cum.khung_cum(db, TOI, TOI)] == ["v1"]
+
+
+def _nhap_anh_vao_kieu(kho):
+    """Lượt chia có kiểu chứa v1 và (dữ liệu lệch) ảnh a1 còn sống: trả (chia_lan_id, cum_nhap_id)."""
+    db = kho["db"]
+    lan = models_chia.tao_chia_lan(db, kho["ca_hai"], TOI, "p1")
+    models_chia.ghi_de_xuat(db, lan, TOI, [{"nhom": "n", "kieu": [{"kieu": "couple", "video_ids": ["v1"]}]}])
+    with sqlite3.connect(db) as c:
+        cn = c.execute("SELECT id FROM cum_nhap WHERE chia_lan_id = ?", (lan,)).fetchone()[0]
+        c.execute("INSERT INTO video_cum_nhap (chia_lan_id, video_id, cum_nhap_id, lan) VALUES (?, ?, ?, 'kieu')",
+                  (lan, kho["a1"], cn))
+    return lan, cn
+
+
+def test_thao_tac_theo_id_tu_choi_anh_nhu_video_da_loai(kho):
+    lan, _ = _nhap_anh_vao_kieu(kho)
+    with models._connect(kho["db"]) as conn:
+        kq = models_chia._kiem_video_ids_thao_tac(conn, lan, TOI, [kho["a1"]])
+    assert kq == {"tu_choi": "video_da_loai", "video_ids": [kho["a1"]]}
+
+
+def _cac_video_trong_cum_that(db):
+    with sqlite3.connect(db) as c:
+        return {r[0] for r in c.execute("SELECT video_id FROM video_cum")}
+
+
+def test_duyet_kieu_tao_cum_moi_khong_nhan_anh_nhet_vao_kieu(kho):
+    lan, cn = _nhap_anh_vao_kieu(kho)
+    models_chia.duyet_kieu(kho["db"], lan, cn, TOI, TOI, usecase="Dance", insight_goc="Kiem")
+    assert _cac_video_trong_cum_that(kho["db"]) == {"v1"}
+
+
+def test_duyet_kieu_gop_vao_cum_co_san_khong_nhan_anh_nhet_vao_kieu(kho):
+    lan, cn = _nhap_anh_vao_kieu(kho)
+    cum, _ = models_cum.tao_cum(kho["db"], TOI, "Dance", "Kiem", "lo")
+    models_chia.duyet_kieu(kho["db"], lan, cn, TOI, TOI, usecase="Dance", insight_goc="Kiem", gop_vao_cum_id=cum)
+    assert _cac_video_trong_cum_that(kho["db"]) == {"v1"}
