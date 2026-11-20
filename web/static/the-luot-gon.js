@@ -39,6 +39,15 @@
 
   const so = (x) => Number(x) || 0;
 
+  // Nhãn loại tải của lượt (`job.loai_tai`): "Ảnh" / "Cả hai" luôn hiện; "Video" chỉ khi tính năng tải ảnh đang bật
+  // (`ctx.hienNhanVideo`) — cờ tắt thì thẻ y hệt trước. Thiếu trường (máy chủ cũ) ⇒ không nhãn.
+  const NHAN_LOAI_TAI = Object.freeze({ anh: "Ảnh", ca_hai: "Cả hai", video: "Video" });
+  function nhanLoaiTai(job, ctx) {
+    const chu = NHAN_LOAI_TAI[job.loai_tai];
+    if (!chu || (job.loai_tai === "video" && !ctx.hienNhanVideo)) return "";
+    return `<span class="nhan-loai-tai nhan-loai-${ctx.esc(job.loai_tai)}" title="Loại tải của lượt này">${chu}</span>`;
+  }
+
   // Mã → nhãn; `feed_rong`/`khong_do_duoc_feed` đổi nghĩa theo trạng thái (đang chờ người giải vs đã hỏng).
   function nhanMa(job) {
     const ma = job.ly_do_dung;
@@ -141,7 +150,7 @@
       <li class="queue-item${job.trang_thai === "cho_xac_minh" ? " can-xn" : ""}" id="job-${id}" data-status="${esc(job.trang_thai)}" ` +
       `tabindex="0" role="button" aria-haspopup="dialog" aria-label="${esc(`Lượt #${id}: ${chip.chu}, ${note.chu}. Mở chi tiết`)}">
         <div class="queue-item-top">
-          <span class="status-badge status-${esc(chip.lop)}">${esc(chip.chu)}</span>
+          <span class="status-badge status-${esc(chip.lop)}">${esc(chip.chu)}</span>${nhanLoaiTai(job, ctx)}
           <span class="grow"></span>
           <span class="chi-tiet">Chi tiết</span>
         </div>
@@ -218,7 +227,7 @@
           ${acts.length ? `<div class="hn-nut">${acts.map((a) => a.html).join("")}${ghi}</div>` : ""}
         </div>` : "";
     return `
-      <div class="hn-pop-h"><span class="status-badge status-${esc(ctx.chip.lop)}">${esc(ctx.chip.chu)}</span>
+      <div class="hn-pop-h"><span class="status-badge status-${esc(ctx.chip.lop)}">${esc(ctx.chip.chu)}</span>${nhanLoaiTai(job, ctx)}
         <h3 id="hn-tieu" class="grow">${esc(note.chu)}</h3><span class="ma">#${id}</span>
         <button type="button" class="btn icon ghost" data-hn-dong aria-label="Đóng">✕</button></div>
       <div class="hn-pop-b">

@@ -76,6 +76,7 @@
       esc: escapeHtml, chip: nhanTrangThai(job), stopText, taoLuc: fmtDateTime(job.tao_luc),
       mo: state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
       dangGuiChayLai: state.dangGuiChayLai.has(job.id), dangGuiTaiLai: state.dangGuiTaiLai.has(job.id),
+      hienNhanVideo: state.taiAnhBat === true,   // cờ tải ảnh bật ⇒ lượt video cũng có nhãn "Video" để so với "Ảnh"
     };
   }
 

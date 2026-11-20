@@ -33,7 +33,12 @@
 
   async function moBoTuTim() {
     if (state.dangBanGiao) return;  // bấm đúp khi đang chờ ack ⇒ bỏ qua
-    const daChon = state.videos.filter((v) => state.selected.has(v.video_id));
+    // Thẻ đã chọn ⇒ các TỆP thật để gửi. Video: chính nó. Bài ảnh (thẻ khoá bằng `bai_id`): MỖI tệp của bài là một
+    // item — Creative Desk nhận từng file Drive, không có khái niệm "bài" — kèm `chonId` = khoá thẻ để bỏ chọn đúng
+    // thẻ sau khi gửi. (Viết tại chỗ: harness `tests/js/` trích riêng hàm này.)
+    const daChon = state.videos.filter((v) => state.selected.has(v.video_id)).flatMap((v) => (v.loai === "anh"
+      ? (v.files || []).map((f) => ({ ...f, chonId: v.video_id }))
+      : [v]));
     // Video chưa lên Drive thì KHÔNG có gì để copy. Bỏ chúng TRƯỚC khi gửi và
     // nói ra số bị bỏ — để số video mỗi bộ bên kia đếm trên đúng thứ sẽ copy.
     const chuaLenDrive = daChon.filter((v) => !v.drive_file_id);
@@ -99,7 +104,10 @@
     if (kq.ket === "ack") {
       // Chỉ bỏ chọn đúng những video ĐÃ gửi: video chưa lên Drive / thiếu link
       // vẫn giữ tick để người dùng thấy chúng chưa đi đâu cả.
-      boChonCacVideo(guiDuoc.map((v) => v.video_id));
+      // Thẻ ảnh chỉ bỏ chọn khi MỌI tệp của bài đã đi (còn tệp bị bỏ lại thì giữ tick để người dùng thấy bài chưa trọn).
+      const conLai = new Set([...chuaLenDrive, ...nguonChet, ...conSong.filter((v) => !guiDuoc.includes(v))]
+        .map((v) => v.chonId || v.video_id));
+      boChonCacVideo([...new Set(guiDuoc.map((v) => v.chonId || v.video_id))].filter((id) => !conLai.has(id)));
       showToast(`Đã gửi ${items.length} video sang Creative Desk — chia bộ và bấm tạo ở tab đó.${ghiChuBoLai}`);
       return;
     }

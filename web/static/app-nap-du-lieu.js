@@ -223,23 +223,31 @@
     // mới hỏng.
     const { luot, signal } = batDauLuotNap();
     const phia = state.chiVaoBo ? 1 : 0;
-    const url = (offset) => `/videos?limit=${LIBRARY_PAGE}&offset=${offset}&vao_bo=${phia}`;
+    // Loại CHỐT ở đầu lượt: đổi công tắc "Loại" giữa chừng sẽ bắt đầu lượt mới và huỷ lượt này.
+    const loai = state.loaiThuVien;
+    const laAnh = loai === "anh";
+    // Ảnh: `/anh` trả BÀI (mỗi bài nhiều tệp); `hang` đổi mỗi bài thành một "thẻ" cùng hình một video để lưới, bộ lọc,
+    // phân trang và lựa chọn dùng lại nguyên (video_id của thẻ = bai_id; tệp thật nằm ở `files`/`file_ids`).
+    const duong = laAnh ? "/anh" : "/videos";
+    const hang = (res) => (laAnh ? res.bai.map(theTuBaiAnh) : res.videos);
+    const url = (offset) => `${duong}?limit=${LIBRARY_PAGE}&offset=${offset}&vao_bo=${phia}`;
     let first, videos, tong, resCum = null;
     try {
       first = await apiGet(url(0), { signal });
-      videos = first.videos.slice();
+      videos = hang(first);
       tong = first.tong;
       while (luot === state.luotNapVideo && videos.length < tong && videos.length < LIBRARY_MAX) {
-        const next = await apiGet(url(videos.length), { signal });
-        if (next.videos.length === 0) break;   // server hết hàng sớm hơn `tong`
-        videos.push(...next.videos);
+        const next = hang(await apiGet(url(videos.length), { signal }));
+        if (next.length === 0) break;   // server hết hàng sớm hơn `tong`
+        videos.push(...next);
       }
       if (luot !== state.luotNapVideo) return false;
       // Cụm nạp cùng nhịp với video: chip và số đếm đọc cả hai. Lấy về ở đây, GHI
       // ở bước commit (`apDungCum`) — lượt bị thay không được đè cụm. Cụm lỗi thì
       // thư viện VẪN hiện (không chip), và nói ra — đừng để thanh bên trống câm.
+      // Ảnh không vào cụm ⇒ không nạp `/cum` ở chế độ ảnh.
       try {
-        resCum = await apiGet("/cum", { signal });
+        if (!laAnh) resCum = await apiGet("/cum", { signal });
       } catch (err) {
         if (err instanceof PhienHetHan) throw err;
         // Lượt đã bị thay (kể cả bị abort ở đây) ⇒ lỗi /cum của nó không phải sự
@@ -260,12 +268,14 @@
         g.setAttribute("aria-busy", "false");
         if (state.phiaDaVe !== undefined) {
           state.chiVaoBo = state.phiaDaVe === 1;
+          state.loaiThuVien = state.loaiDaVe || "video";   // công tắc "Loại" cũng về loại đang thật sự vẽ
           renderLibrary();
           g.dataset.napPhia = String(state.phiaDaVe);
         } else {
           // Chưa vẽ lần nào: không vẽ, nhưng chip vẫn về mặc định (tắt) cho khớp
           // lưới rỗng, và hết "đang nạp".
           state.chiVaoBo = false;
+          state.loaiThuVien = "video";
           veChipVaoBo();
         }
         g.dataset.luotXong = String(luot);
@@ -293,6 +303,7 @@
     state.tongVaoBo = typeof first.tong_vao_bo === "number" ? first.tong_vao_bo : undefined;
     state.videosTotal = tong;
     veCanhBaoGioiHan(tong);
+    state.loaiDaVe = loai;
     state.videosDaDon = first.da_don_trong_cum || [];
     // Lựa chọn giờ sống qua nhiều trang (26/09) ⇒ id của video đã biến mất (xoá
     // ở tab khác, rơi khỏi tập đã nạp) phải rơi khỏi lựa chọn, nếu không nó bị
@@ -311,10 +322,74 @@
     const grid = document.getElementById("card-grid");
     grid.setAttribute("aria-busy", "false");
     grid.dataset.napPhia = String(phia);
+    grid.dataset.napLoai = loai;
     // Mốc "lượt `luot` đã kết thúc" (thành công hay hỏng) — tín hiệu chắc chắn cho test.
     grid.dataset.luotXong = String(luot);
     loadBadgeDonLoi().catch(() => { /* phiên hết hạn đã được các lời gọi khác báo */ });
     return true;
+  }
+
+  // Một BÀI ảnh (`GET /anh`) ⇒ một "thẻ" cùng hình video: lấy hàng của tệp 01 làm gốc (tiêu đề, người đăng, link gốc,
+  // `drive_file_id`…), đè danh tính bằng `bai_id` (khoá chọn/lọc của lưới) và mang `files`/`file_ids` để thao tác
+  // (gửi Creative Desk, Bỏ) mở rộng thành TỪNG TỆP. `thumb_id` = video_id của tệp 01 (thumb đặt tên theo tệp).
+  function theTuBaiAnh(b) {
+    const dau = b.files[0] || {};
+    const daVaoBo = b.files.find((f) => f.vao_bo);
+    return {
+      ...dau, video_id: b.bai_id, loai: "anh", bai_id: b.bai_id, thumb_id: b.thumb_id,
+      file_ids: b.file_ids, so_anh: b.so_anh, files: b.files, nguon: b.nguon, tao_luc: b.tao_luc,
+      cum_id: null, vao_bo: daVaoBo ? daVaoBo.vao_bo : null, duration: null, play_count: null,
+    };
+  }
+
+  // Công tắc "Loại" Video | Ảnh của thư viện — KHÔNG phải nhóm trong `FILTER_GROUPS`: nhóm lọc chỉ cắt trên tập đã
+  // nạp, mà ảnh nằm ở API khác nên chọn loại phải NẠP LẠI. Vẽ bằng JS, chỉ khi tính năng bật (cờ tắt ⇒ DOM y hệt cũ).
+  function veCongTacLoaiThuVien() {
+    const hang = document.querySelector(".filter-row");
+    if (!hang || state.taiAnhBat !== true) return;
+    if (!document.getElementById("chip-loai")) {
+      const nhom = document.createElement("span");
+      nhom.id = "chip-loai";
+      nhom.className = "chip-loai";
+      nhom.setAttribute("role", "group");
+      nhom.setAttribute("aria-label", "Loại trong thư viện");
+      nhom.innerHTML = '<span class="chip-loai-nhan">Loại</span>' +
+        '<button type="button" data-loai-thu-vien="video">Video</button>' +
+        '<button type="button" data-loai-thu-vien="anh">Ảnh</button>';
+      nhom.addEventListener("click", (ev) => {
+        const b = ev.target.closest("[data-loai-thu-vien]");
+        if (b) doiLoaiThuVien(b.dataset.loaiThuVien);
+      });
+      hang.insertBefore(nhom, hang.firstChild);
+    }
+    veTrangThaiLoaiThuVien();
+  }
+
+  // Tô nút đang chọn + đánh dấu lưới theo loại (CSS ẩn cụm/"Đưa vào cụm" ở chế độ ảnh). Gọi từ `renderLibrary`.
+  function veTrangThaiLoaiThuVien() {
+    document.querySelectorAll("#chip-loai [data-loai-thu-vien]").forEach((b) => {
+      const on = b.dataset.loaiThuVien === state.loaiThuVien;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
+    const lay = document.querySelector(".lib-layout");
+    if (lay) lay.dataset.loai = state.loaiThuVien;
+    document.body.dataset.loaiThuVien = state.loaiThuVien;
+  }
+
+  // Đổi loại ⇒ nạp lại từ API tương ứng. Khoá chọn của hai loại khác nhau (video_id ↔ bai_id) nên lựa chọn bị xoá,
+  // và cụm/trang/bộ lọc về mặc định (ảnh không có cụm). Nạp hỏng ⇒ `loadVideos` đưa công tắc về loại đang vẽ.
+  async function doiLoaiThuVien(loai) {
+    if (loai === state.loaiThuVien || (loai !== "video" && loai !== "anh")) return;
+    state.loaiThuVien = loai;
+    state.selected.clear();
+    state.cumLoc = "tat_ca";
+    state.trang = 1;
+    for (const g of FILTER_GROUPS) state.filters[g.id].clear();
+    renderFilterBar();
+    veTrangThaiLoaiThuVien();
+    renderSelectionBar();
+    await napLaiThuVien();
   }
 
   // Ô `#error` dùng chung (form job, dữ liệu ban đầu, thư viện). Nguồn đi qua đây giữ MỘT

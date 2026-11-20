@@ -124,12 +124,12 @@
         showToast("Không chép được — chọn và copy tay.");
       }
     } else if (nut.dataset.taiLai !== undefined) {
-      // "Tải lại": cùng link, cùng số xin (`tong`), cùng usecase/insight — một POST /jobs như form và "Tải thêm".
+      // "Tải lại": cùng link, cùng số xin (`tong`), cùng usecase/insight, cùng loại tải (`loai_tai`: lượt ảnh phải ra lượt ảnh) — một POST /jobs như form và "Tải thêm".
       if (state.dangGuiTaiLai.has(id)) return;
       state.dangGuiTaiLai.add(id);
       renderQueue();
       try {
-        const kq = await guiTaoJob(taoJobBody(job.url, job.tong, job.usecase, job.insight_goc));
+        const kq = await guiTaoJob(taoJobBody(job.url, job.tong, job.usecase, job.insight_goc, job.loai_tai));
         if (kq.ok) {
           showToast(`Đã tạo lượt mới tải lại ${job.tong} video.`);
           if (state.popupId === id) dongPopup(false);
@@ -163,7 +163,7 @@
         // Đúng đường tạo lượt của form: một POST /jobs, không route riêng.
         // Mang theo usecase / insight gốc của lượt gốc: chạy lại là CÙNG một
         // việc, và bỏ hai ô này thì màn nháp duyệt kiểu hỏi lại từ đầu.
-        const kq = await guiTaoJob(taoJobBody(job.url, n, job.usecase, job.insight_goc));
+        const kq = await guiTaoJob(taoJobBody(job.url, n, job.usecase, job.insight_goc, job.loai_tai));
         if (kq.ok) {
           state.chayLai.delete(id);
           showToast(`Đã tạo lượt mới kiếm thêm ${n} video.`);

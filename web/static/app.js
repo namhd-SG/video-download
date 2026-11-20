@@ -12,10 +12,13 @@
   // dung: client cũ (không có hai ô) và người để trống hai ô phải gửi cùng
   // một body — server đọc "vắng trường" và "trường rỗng" khác nhau cho việc
   // khác (xem `_chuan_hoa_truong_tuy_chon` ở web/app.py).
-  function taoJobBody(url, soLuong, usecase, insightGoc) {
+  // `loaiTai` (video | anh | ca_hai) cũng theo luật đó: vắng/`video` ⇒ KHÔNG có khoá, để body của lượt video
+  // y hệt hôm nay (cờ tải ảnh tắt thì server từ chối mọi `loai_tai` khác `video`).
+  function taoJobBody(url, soLuong, usecase, insightGoc, loaiTai) {
     const body = { url, so_luong: soLuong };
     if (usecase) body.usecase = usecase;
     if (insightGoc) body.insight_goc = insightGoc;
+    if (loaiTai && loaiTai !== "video") body.loai_tai = loaiTai;
     return body;
   }
 
@@ -41,6 +44,42 @@
     }
   }
 
+  // ---- Công tắc loại tải của form: Video | Ảnh | Cả hai ----
+  // Vẽ BẰNG JS và chỉ khi `/tinh-nang.tai_anh_bat`: cờ tắt thì DOM form y hệt bản cũ (không phần tử ẩn nào).
+  // Mặc định Video, KHÔNG nhớ lựa chọn (không localStorage; thành công xong tự về Video — `datLoaiTaiForm`).
+  const LOAI_TAI_FORM = Object.freeze([["video", "Video"], ["anh", "Ảnh"], ["ca_hai", "Cả hai"]]);
+  // Chữ đơn vị cạnh ô số: một bài ảnh tính là MỘT mục trong N.
+  const DON_VI_THEO_LOAI = Object.freeze({ video: "video mới", anh: "bài ảnh mới", ca_hai: "mục mới" });
+
+  function veCongTacLoaiTai() {
+    const opts = document.querySelector("#job-form .b-opts");
+    if (!opts || document.getElementById("loai-tai") || state.taiAnhBat !== true) return;
+    const nhom = document.createElement("span");
+    nhom.id = "loai-tai";
+    nhom.className = "loai-tai seg-loai";
+    nhom.setAttribute("role", "radiogroup");
+    nhom.setAttribute("aria-label", "Loại tải");
+    nhom.innerHTML = LOAI_TAI_FORM.map(([ma, nhan]) =>
+      `<label><input type="radio" name="loai-tai" value="${ma}"${ma === "video" ? " checked" : ""} />` +
+      `<span>${nhan}</span></label>`).join("");
+    nhom.addEventListener("change", () => datLoaiTaiForm(docLoaiTaiForm()));
+    opts.insertBefore(nhom, opts.firstChild);
+  }
+
+  // "video" khi không có công tắc (cờ tắt) — body của lượt video không có `loai_tai`.
+  function docLoaiTaiForm() {
+    const o = document.querySelector('#job-form input[name="loai-tai"]:checked');
+    return o ? o.value : "video";
+  }
+
+  function datLoaiTaiForm(ma) {
+    const o = document.querySelector(`#job-form input[name="loai-tai"][value="${ma}"]`);
+    if (!o) return;   // không có công tắc: không đổi chữ gì
+    o.checked = true;
+    const don = document.getElementById("so-luong").nextElementSibling;
+    if (don) don.textContent = DON_VI_THEO_LOAI[ma] || DON_VI_THEO_LOAI.video;
+  }
+
   // Ctrl/⌘+Enter trong ô nhập nhiều dòng ⇒ gửi form (Enter trần xuống dòng để dán nhiều link).
   function laPhimGuiForm(ev) {
     return !!(ev && (ev.ctrlKey || ev.metaKey) && ev.key === "Enter");
@@ -62,11 +101,12 @@
     const insightGoc = document.getElementById("insight-goc").value.trim();
     submitBtn.disabled = true;
     try {
-      const kq = await guiTaoJob(taoJobBody(url, soLuong, usecase, insightGoc));
+      const kq = await guiTaoJob(taoJobBody(url, soLuong, usecase, insightGoc, docLoaiTaiForm()));
       if (!kq.ok) {
         errorBox.textContent = kq.loi;
         return;
       }
+      datLoaiTaiForm("video");   // không nhớ lựa chọn: mỗi lượt mới bắt đầu lại từ Video
       document.getElementById("url").value = "";
       document.getElementById("usecase").value = "";
       document.getElementById("insight-goc").value = "";
@@ -141,6 +181,14 @@
     cauLyDo: cauMaDung,
   });
   // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
+  // Cờ tải ảnh quyết định có vẽ công tắc "Video | Ảnh | Cả hai" (form) và "Loại" (thư viện) hay không.
+  // Lỗi/cờ tắt ⇒ không vẽ gì: giao diện y hệt bản chỉ-video.
+  apiGet("/tinh-nang").then((tt) => {
+    state.taiAnhBat = tt.tai_anh_bat === true;
+    veCongTacLoaiTai();
+    veCongTacLoaiThuVien();
+    renderQueue();   // nhãn "Video" trên thẻ lượt chỉ hiện khi tính năng bật
+  }).catch((err) => { if (err instanceof PhienHetHan) baoPhienHetHan(); });
   Promise.all([loadJobs(), napLaiThuVien(), loadBannerCookie()]).catch((err) => {
     ghiOLoi("Không tải được dữ liệu ban đầu: ", err.message);
   });
