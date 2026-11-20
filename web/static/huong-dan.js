@@ -17,6 +17,11 @@
     fb_ads: "facebook.com/ads/library/?…",
     drive: "drive.google.com/drive/folders/… (thư mục chia sẻ công khai)",
     youtube_kenh: "youtube.com/@kênh, youtube.com/@kênh/shorts, youtube.com/@kênh/videos, youtube.com/playlist?list=…",
+    // nguon_instagram.py::phan_tich_url: /<user>/ hoặc /<user>/reels/, /explore/search/keyword/?q=… (q=#tag ⇒ hashtag),
+    // /explore/tags/<tag>/, /reels/audio/<số>/ — cần cookie Instagram của bạn.
+    instagram_hang_loat: "instagram.com/tên/reels/, instagram.com/explore/search/keyword/?q=…, instagram.com/explore/tags/…, instagram.com/reels/audio/…",
+    // nguon.py::_tu_khoa_tim_kiem_youtube (/results?search_query=) và _MAU_DUONG_HASHTAG (/hashtag/<tag>).
+    youtube_tim_kiem: "youtube.com/results?search_query=…, youtube.com/hashtag/…",
     facebook_trang: "facebook.com/tên-page, facebook.com/tên-page/videos, facebook.com/tên-page/reels",
     link_le: "youtube.com/watch?v=…, youtube.com/shorts/…, tiktok.com/@tên/video/…, …",
   };
