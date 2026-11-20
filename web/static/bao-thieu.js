@@ -29,12 +29,14 @@
   //   stalled       ⇒ "Hết video"     (nguồn không còn gì TikTok cho xem)
   //   already_owned ⇒ "Đã có hết"     (thư viện có hết, đổi nguồn)
   //   source_empty  ⇒ "Nguồn rỗng"
+  //   tai_anh_tat ⇒ "Tải ảnh đang tắt" (job ảnh gặp cờ tải ảnh TẮT: chạy lại vô ích tới khi admin bật cờ)
   //   fb_chan_dang_nhap ⇒ "Facebook đòi đăng nhập" (Facebook page không cookie: tường cắt khi chưa đủ số xin; chạy
   //                        lại vô ích nên KHÔNG có trong `MA_CHAY_LAI_DUOC`; job có thể ghi "Xong" khi tải được vài video)
   const NHAN_THEO_LY_DO = Object.freeze({
     nghi_bi_chan: "Nghi bị chặn", stalled: "Hết video",
     already_owned: "Đã có hết", source_empty: "Nguồn rỗng",
     fb_chan_dang_nhap: "Facebook đòi đăng nhập",
+    tai_anh_tat: "Tải ảnh đang tắt",
   });
 
   const DANG_CHAY = new Set(["pending", "running"]);

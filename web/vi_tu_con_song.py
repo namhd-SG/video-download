@@ -35,3 +35,9 @@ CHUA_AN = ("NOT EXISTS (SELECT 1 FROM video_vao_bo b_an "
            "WHERE b_an.video_id = v.video_id AND b_an.an_luc IS NOT NULL)")
 
 CON_SONG_CHUNG = f"{CHUA_LOAI} AND {CHUA_DON_DRIVE}"
+
+# Loại hàng của `videos` (cột `loai`, xem `models.init_db`): mỗi TỆP ảnh của một bài là một hàng `loai='anh'`. Các truy
+# vấn của tính năng CHỈ-VIDEO (cụm, chia kiểu, thay logo) thêm `LA_VIDEO` để ảnh không bao giờ lọt vào đó; thư viện
+# ảnh và máy vào bộ/dọn (chạy trên mọi hàng một-hàng-một-tệp) KHÔNG thêm.
+LA_VIDEO = "v.loai = 'video'"
+LA_ANH = "v.loai = 'anh'"

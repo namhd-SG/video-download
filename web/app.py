@@ -16,7 +16,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
@@ -27,12 +27,16 @@ from sse_starlette.sse import EventSourceResponse
 from tiktok_music_downloader import downloader, trinh_duyet_patchright
 from tiktok_music_downloader.nguon import (
     NEN_TANG_LINK_LE, NGUON, NGUON_YT_DLP_NEN_TANG_KHAC, TEN_HIEN_THI, TIEN_TO_ID_LINK_LE, TRAN_DUNG_LUONG_BYTE,
-    TRAN_THOI_LUONG_GIAY, FacebookTrang, LinkLe, YoutubeKenh, chon_nguon, mo_ta_cac_nguon, nen_tang_bat, tach_link)
+    TRAN_THOI_LUONG_GIAY, FacebookTrang, LinkLe, YoutubeKenh, chon_nguon, chon_nguon_moi_loai, loai_ho_tro_cua,
+    mo_ta_cac_nguon, nen_tang_bat, tach_link)
+from tiktok_music_downloader.tai_anh_cau_hinh import (
+    LOAI_ANH, LOAI_CA_HAI, LOAI_VIDEO, NEN_TANG_CO_ANH, TIEN_TO_ID_ANH, tai_anh_dang_bat)
 from tiktok_music_downloader.utils import che_url
 from web import gan_phien_ban_tai_nguyen
 from web import giai_captcha
 from web import giai_captcha_api
 from web import models
+from web import models_anh
 from web import models_chia
 from web import models_cum
 from web import models_giai_captcha
@@ -177,7 +181,8 @@ MAX_VIDEO_ID_LEN = 32
 # Drive tới ~44 ký tự nên trần dài hơn). Vẫn là HÌNH DẠNG chặn traversal: không có `/`, `.`, NUL.
 MAX_VIDEO_ID_TIEN_TO_LEN = 64
 # Cộng tiền tố id của link lẻ đa nền tảng (`yt-`, `ig-`, …), lấy từ bảng nguồn để không chép hai nơi.
-_MAU_VIDEO_ID_TIEN_TO = re.compile(r"(?:fb|gd|" + "|".join(TIEN_TO_ID_LINK_LE) + r")-[A-Za-z0-9_\-]+")
+# `anh` = tệp ảnh của bài ảnh (`anh-<nt>-<id bài>-<NN>`): thumb và "Bỏ" nhận id ảnh.
+_MAU_VIDEO_ID_TIEN_TO = re.compile(r"(?:fb|gd|anh|" + "|".join(TIEN_TO_ID_LINK_LE) + r")-[A-Za-z0-9_\-]+")
 SSE_POLL_SECONDS = 1.0
 _END_STATES = ("done", "failed", "interrupted")
 
@@ -377,6 +382,9 @@ class CreateJobRequest(BaseModel):
     # (`_chuan_hoa_truong_tuy_chon`), không phải 422 của FastAPI.
     usecase: str | None = None
     insight_goc: str | None = None
+    # Chế độ tải: video (mặc định ≡ hôm nay, client cũ không gửi) | anh | ca_hai. Giá trị lạ ⇒ 422 của FastAPI.
+    # Khác video mà cờ `VIDEODL_TAI_ANH_BAT` tắt ⇒ 400 (xem `create_job`).
+    loai_tai: Literal["video", "anh", "ca_hai"] = LOAI_VIDEO
 
 
 # Ô nhập nhận NHIỀU link video lẻ (mỗi dòng một link, cùng nền tảng). Trần số link một lượt, và trần độ dài cả
@@ -392,19 +400,44 @@ MAX_VIDEO_TRANG_FB = 20
 MAX_KY_TU_O_LINK = MAX_LINK_MOT_JOB * 2048
 
 
-def _chon_nguon_cho_o_nhap(links: list[str]):
+_TEN_LOAI_TAI = {LOAI_VIDEO: "Video", LOAI_ANH: "Ảnh", LOAI_CA_HAI: "Cả hai"}
+
+
+def _cau_khong_ho_tro_loai(nguon, link: str, loai: str) -> str:
+    """Câu 400 khi nguồn NHẬN link nhưng không hỗ trợ loại tải đã chọn — nói rõ nguồn nào, còn chọn được gì."""
+    con_lai = sorted(loai_ho_tro_cua(nguon, link), key=list(_TEN_LOAI_TAI).index)
+    if isinstance(nguon, FacebookTrang) and loai == LOAI_CA_HAI:
+        return "Facebook page: chọn Video hoặc Ảnh (một lượt chỉ lấy một tab)"
+    return (f"{nguon.mo_ta_url} không hỗ trợ tải {_TEN_LOAI_TAI[loai]} cho link này"
+            f" (chỉ chọn được: {', '.join(_TEN_LOAI_TAI[x] for x in con_lai) or 'không có'})")
+
+
+def _nguon_cho_link(link: str, loai: str):
+    """`chon_nguon(link, loai)`; khi xin ảnh/cả hai mà nguồn nhận link nhưng không hỗ trợ loại ⇒ 400 nói rõ lý do
+    (chế độ video giữ nguyên: link không nguồn nào nhận ⇒ None, câu 400 chung ở `create_job`)."""
+    nguon = chon_nguon(link, loai)
+    if nguon is None and loai != LOAI_VIDEO:
+        co_nhan = chon_nguon_moi_loai(link)
+        if co_nhan is not None:
+            raise HTTPException(status_code=400, detail=_cau_khong_ho_tro_loai(co_nhan, link, loai))
+    return nguon
+
+
+def _chon_nguon_cho_o_nhap(links: list[str], loai: str = LOAI_VIDEO):
     """`(nguồn, nền tảng)` cho nội dung ô nhập, hoặc ném `HTTPException(400)` cho lỗi nhiều link.
 
     Một link: đúng như trước (nguồn nhận hoặc None). Nhiều link: TẤT CẢ phải là link video lẻ (`LinkLe`) CÙNG
     một nền tảng — trang TikTok music/tag/profile, Ads Library, thư mục Drive vẫn MỘT URL mỗi lượt. Link lẻ
     mà nền tảng chưa bật ⇒ 400 nói rõ (nền tảng nằm trong bảng nhưng cấu hình chưa bật); kênh/playlist YouTube
-    (`YoutubeKenh`) chịu cùng cổng đó."""
+    (`YoutubeKenh`) chịu cùng cổng đó.
+
+    `loai` (video | anh | ca_hai) đi vào MỌI link: nguồn không hỗ trợ loại ⇒ 400 (`_nguon_cho_link`)."""
     if not links:
         return None, None
-    nguon = chon_nguon(links[0])
+    nguon = _nguon_cho_link(links[0], loai)
     if len(links) > 1:
         for i, link in enumerate(links, start=1):
-            n = chon_nguon(link)
+            n = _nguon_cho_link(link, loai)
             if not isinstance(n, LinkLe):
                 raise HTTPException(
                     status_code=400,
@@ -559,7 +592,10 @@ def create_job(payload: CreateJobRequest,
     links = tach_link(payload.url)
     if len(payload.url) > MAX_KY_TU_O_LINK or len(links) > MAX_LINK_MOT_JOB:
         raise HTTPException(status_code=400, detail=f"tối đa {MAX_LINK_MOT_JOB} link mỗi lượt")
-    nguon, nen_tang = _chon_nguon_cho_o_nhap(links)
+    # Cổng cờ tải ảnh: tắt thì job ảnh KHÔNG được tạo (không để lại hàng pending ma, không chạy như video).
+    if payload.loai_tai != LOAI_VIDEO and not tai_anh_dang_bat():
+        raise HTTPException(status_code=400, detail="tính năng tải ảnh đang tắt; chọn chế độ Video")
+    nguon, nen_tang = _chon_nguon_cho_o_nhap(links, payload.loai_tai)
     # Nền tảng đang TẮT sau tín hiệu chặn: từ chối ngay (job nhận vào chỉ nằm im, không ai giải thích). Chạm trần
     # giờ/ngày thì VẪN nhận — trần tự mở, job chờ trong hàng.
     if nen_tang in pacer.TRAN and nen_tang in pacer.nen_tang_dang_tat(DB_PATH):
@@ -609,7 +645,8 @@ def create_job(payload: CreateJobRequest,
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     # Nhiều link lưu nguyên khối, mỗi dòng một link (không thêm cột/bảng): `jobs.url` vẫn là MỘT chuỗi.
     job_id = models.create_job(DB_PATH, "\n".join(links), so_luong, nguoi_tao,
-                               usecase=usecase, insight_goc=insight_goc, nen_tang=nen_tang)
+                               usecase=usecase, insight_goc=insight_goc, nen_tang=nen_tang,
+                               loai_tai=payload.loai_tai)
     job = models.get_job(DB_PATH, job_id)
     assert job is not None  # vừa tạo xong, không thể vắng
     return _job_ra_api(job)
@@ -746,6 +783,10 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
         "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
         "ten_hien_thi": TEN_HIEN_THI,
         "thay_logo_bat": worker_thay_logo is not None,
+        # Tải ảnh: cờ `VIDEODL_TAI_ANH_BAT` và các nền tảng có ảnh đang chạy được (cờ bật ∩ `VIDEODL_NEN_TANG_BAT`);
+        # cờ tắt ⇒ danh sách rỗng. Chỉ bool và tên nền tảng.
+        "tai_anh_bat": tai_anh_dang_bat(),
+        "nen_tang_anh": sorted(NEN_TANG_CO_ANH & nen_tang_bat()) if tai_anh_dang_bat() else [],
         "tran": {
             "thay_logo_video_mot_luot": thay_logo_routes.TRAN_VIDEO_MOT_JOB,
             "so_luong_mot_luot": MAX_SO_LUONG,
@@ -964,6 +1005,23 @@ def admin_cap_nhat(email: str, body: CapNhatNguoiDung,
     return {"email": e, "la_admin": _la_admin(e)}
 
 
+def _kiem_tham_so_trang(limit: int, offset: int, vao_bo: int | None) -> bool | None:
+    """Kiểm `limit`/`offset`/`vao_bo` của `GET /videos` và `GET /anh` (CÙNG luật, cùng câu 400); trả `vao_bo` đã
+    đổi thành phía lọc (`None` = cả hai)."""
+    if limit < 1 or limit > MAX_VIDEOS_PAGE_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
+    if offset < 0:
+        raise HTTPException(status_code=400, detail="offset không được âm")
+    # Chip "Đã vào bộ" lọc Ở SERVER: `vao_bo=0` chỉ video chưa vào bộ (lưới mặc
+    # định), `=1` chỉ video đã vào bộ, không truyền ⇒ cả hai (JS cũ còn cache).
+    # Lọc ở client thì video ẩn vẫn chiếm suất `LIBRARY_MAX` của lưới mặc định.
+    if vao_bo not in (None, 0, 1):
+        raise HTTPException(status_code=400, detail="vao_bo phải là 0 hoặc 1")
+    return None if vao_bo is None else bool(vao_bo)
+
+
 @app.get("/videos")
 def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | None = None,
                 nguoi_tao: str = Depends(require_user)) -> dict:
@@ -978,19 +1036,10 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | No
     Filtered here rather than in the grid: hiding rows on screen while the
     API still hands them over is not filtering. `nguon` carries the words
     somebody typed into search, so it is filtered too.
+
+    Chỉ trả hàng VIDEO (`models.list_videos` mặc định `loai="video"`); bài ảnh ở `GET /anh`.
     """
-    if limit < 1 or limit > MAX_VIDEOS_PAGE_SIZE:
-        raise HTTPException(
-            status_code=400,
-            detail=f"limit phải trong khoảng 1..{MAX_VIDEOS_PAGE_SIZE}")
-    if offset < 0:
-        raise HTTPException(status_code=400, detail="offset không được âm")
-    # Chip "Đã vào bộ" lọc Ở SERVER: `vao_bo=0` chỉ video chưa vào bộ (lưới mặc
-    # định), `=1` chỉ video đã vào bộ, không truyền ⇒ cả hai (JS cũ còn cache).
-    # Lọc ở client thì video ẩn vẫn chiếm suất `LIBRARY_MAX` của lưới mặc định.
-    if vao_bo not in (None, 0, 1):
-        raise HTTPException(status_code=400, detail="vao_bo phải là 0 hoặc 1")
-    phia = None if vao_bo is None else bool(vao_bo)
+    phia = _kiem_tham_so_trang(limit, offset, vao_bo)
     chi_cua = None if _la_admin(nguoi_tao) else nguoi_tao
     videos = models.list_videos(DB_PATH, chi_cua, limit=limit, offset=offset, vao_bo=phia)
     # Một truy vấn `sources_for_videos` cho CẢ TRANG, không phải một truy vấn
@@ -1021,6 +1070,33 @@ def list_videos(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | No
         # vẫn giữ chỗ trong lô — trang cắt lô trên cùng tập với server
         # (`models_chia._video_trong_lo`) nên phải biết chúng.
         "da_don_trong_cum": models_cum.video_da_don_trong_cum(DB_PATH, nguoi_tao, chi_cua),
+    }
+
+
+@app.get("/anh")
+def list_anh(limit: int = VIDEOS_PAGE_SIZE, offset: int = 0, vao_bo: int | None = None,
+             nguoi_tao: str = Depends(require_user)) -> dict:
+    """Thư viện ẢNH, GOM THEO BÀI: cùng tham số lọc/phân trang/quyền như `GET /videos` (chỉ ảnh của chính mình;
+    admin thấy hết; `vao_bo` lọc ở mức TỆP rồi mới gom — `models_anh`). Mỗi bài trả `bai_id`, `thumb_id`, `file_ids`,
+    `so_anh`, `nguon` và `files`: mỗi tệp cùng hình một video của `/videos` (`nguon`, `cum_id` luôn None vì ảnh không
+    vào cụm, `vao_bo`) để client dùng lại bộ lọc/ban giao Creative Desk. `limit`/`offset` đếm BÀI, không đếm tệp."""
+    phia = _kiem_tham_so_trang(limit, offset, vao_bo)
+    chi_cua = None if _la_admin(nguoi_tao) else nguoi_tao
+    bai = models_anh.list_bai_anh(DB_PATH, chi_cua, limit=limit, offset=offset, vao_bo=phia)
+    # Lượt thấy của cả bài ghi dưới `bai_id` (không phải từng tệp); một truy vấn cho cả trang.
+    nguon = models.sources_for_videos(DB_PATH, [b["bai_id"] for b in bai], chi_cua)
+    id_tep = [f["video_id"] for b in bai for f in b["files"]]
+    da_vao_bo = models_vao_bo.vao_bo_cho_videos(DB_PATH, id_tep)
+    for b in bai:
+        b["nguon"] = nguon.get(b["bai_id"], [])
+        for f in b["files"]:
+            f["nguon"] = b["nguon"]
+            f["cum_id"] = None
+            f["vao_bo"] = da_vao_bo.get(f["video_id"])
+    return {
+        "tong": models_anh.count_bai_anh(DB_PATH, chi_cua, vao_bo=phia),
+        "tong_vao_bo": models_anh.count_bai_anh(DB_PATH, chi_cua, vao_bo=True),
+        "bai": bai,
     }
 
 
@@ -1178,7 +1254,11 @@ def gan_video_cum(cum_id: int, body: GanVideoCumRequest,
     Trả số đã đổi và danh sách id bị bỏ qua — gán: id không thuộc thư viện của
     bạn/đã loại; gỡ: id không nằm trong cụm này. Gộp hai con số thành một chữ
     "xong" là cách một lượt gán hụt nửa đi qua mà không ai thấy.
+
+    Id ảnh (`anh-…`) ⇒ 422: cụm là tính năng CHỈ-VIDEO. Kiểm theo HÌNH id (không chạm DB nên không lộ id nào có thật).
     """
+    if any(v.startswith(TIEN_TO_ID_ANH) for v in body.video_ids):
+        raise HTTPException(status_code=422, detail="ảnh không vào được cụm (cụm chỉ dành cho video)")
     if body.bo:
         doi = models_cum.go_video(DB_PATH, cum_id, nguoi_tao, body.video_ids)
     else:

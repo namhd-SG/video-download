@@ -413,6 +413,10 @@ def test_migration_chay_hai_lan_khong_mat_dong_va_khong_null(tmp_path):
         assert "nen_tang" in [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
         assert c.execute("SELECT COUNT(*) FROM jobs WHERE nen_tang IS NULL").fetchone()[0] == 0
         assert c.execute("SELECT COUNT(*) FROM jobs WHERE nen_tang = 'tiktok'").fetchone()[0] == 5
+        # Cột chế độ tải ảnh cũng được cộng và điền mặc định 'video' cho hàng cũ.
+        assert "loai_tai" in [r[1] for r in c.execute("PRAGMA table_info(jobs)")]
+        assert c.execute("SELECT COUNT(*) FROM jobs WHERE loai_tai = 'video'").fetchone()[0] == 5
+        assert {"loai", "bai_id", "thu_tu", "bai_thu_muc_id"} <= {r[1] for r in c.execute("PRAGMA table_info(videos)")}
     # Sao lưu đúng MỘT bản trước migration, bản đó là DB cũ nguyên vẹn (5 jobs, chưa có cột).
     ban_sao = list(tmp_path.glob("jobs.db.truoc-nen-tang-*"))
     assert len(ban_sao) == 1

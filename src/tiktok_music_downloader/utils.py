@@ -11,6 +11,7 @@ from dataclasses import dataclass
 # Chromium already lowercases `.href` from the DOM, so this only covers a
 # hand-typed or autocapitalised paste like `Https://WWW.TikTok.com/tag/x`.
 _VIDEO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/video/(\d+)", re.I)
+_PHOTO_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/@[\w.\-]+/photo/(\d+)", re.I)
 # Slug allows: \w (Unicode word chars — Vietnamese, Russian, etc.),
 # hyphen, and `%` for percent-encoded URLs (e.g., Arabic slugs pasted from browser).
 _MUSIC_RE = re.compile(r"https?://(?:www\.)?tiktok\.com/music/[\w\-%]+-(\d+)", re.I)
@@ -103,6 +104,15 @@ class VideoRef:
     # Video lấy từ tab `/shorts` của kênh YouTube: mục của tab đó KHÔNG BAO GIỜ mang `duration`, nên trần thời
     # lượng phải kiểm SAU khi tải (xem `web/queue.py::_JobProgress`). Chỉ `nguon.YoutubeKenh` đặt cờ này.
     la_short: bool = False
+    # Chế độ tải ẢNH (xem `tai_anh_cau_hinh`). Mặc định = video thường: mọi nguồn/đường cũ không đặt gì ⇒ y hệt trước.
+    # `loai`: "video" | "anh" (ref ra khỏi nguồn luôn đã phân loại — không có "chưa rõ").
+    # `anh_urls`: MỖI phần tử là tuple URL dự phòng cho MỘT tệp, theo thứ tự tệp trong bài; tải phải thử lần lượt
+    # (đã đo: một host `urlList[0]` timeout, `urlList[1]` thành công). Vd `(("u1a", "u1b"), ("u2a",))` = 2 tệp.
+    # `anh_kieu`: cùng độ dài `anh_urls`, mỗi phần tử "anh" hoặc "video" (con-video của carousel Instagram).
+    # Ref ảnh mang `video_id` = `bai_id` (`anh-<nt>-<id bài>`); `filename` (một ref = `<id>.mp4`) KHÔNG áp cho ảnh.
+    loai: str = "video"
+    anh_urls: tuple = ()
+    anh_kieu: tuple = ()
 
     @property
     def filename(self) -> str:
@@ -131,8 +141,9 @@ _MAU_DRIVE = re.compile(
 # dấu vết nội dung khách đã tải nên không vào log, cùng lý do với `gd-`. Cần ≥6 ký tự sau gạch để `yt-dlp:` (tên thư
 # viện, vào log DEBUG) không bị che; che dư một chuỗi như `x-forwarded-for` chỉ làm log kém đọc, che thiếu mới là rò.
 # `fb-` (Ads Library, số tài sản quảng cáo công khai) và `fbv-` trước giờ không che: `fb-` giữ nguyên; `fbv-` che vì
-# là id video người dùng dán link.
-_MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|x|pin|dy|bili|snap)-([\w\-]{6,})")
+# là id video người dùng dán link. `fbp-` (id ảnh Facebook page, `anh-fbp-<id>`) che cùng lý do; `anh-ig-<mã>` đã che nhờ
+# `ig-`, còn `anh-tt-<id>` GIỮ nguyên như id TikTok (cố ý, xem dưới) nên KHÔNG thêm `anh`/`tt` vào mẫu này.
+_MAU_ID_NEN_TANG = re.compile(r"(?i)\b(?:yt|ig|fbv|fbp|x|pin|dy|bili|snap)-([\w\-]{6,})")
 # Thông điệp lỗi của yt-dlp mở đầu bằng `[extractor] <id video>:` (id TRẦN, không tiền tố) — vd
 # `ERROR: [youtube] dQw4w9WgXcQ: Video unavailable`. Che id, giữ nhãn extractor và lý do.
 # TikTok KHÔNG che: id video TikTok trong thông điệp lỗi được GIỮ có chủ đích (để dò đúng video hỏng).
@@ -192,6 +203,12 @@ def parse_video_url(url: str) -> VideoRef | None:
     if not m:
         return None
     return VideoRef(video_id=m.group(1), url=url)
+
+
+def parse_photo_url(url: str) -> str | None:
+    """Id số của bài ảnh TikTok `/@user/photo/<id>`, hoặc None nếu không khớp."""
+    m = _PHOTO_RE.match(url.strip())
+    return m.group(1) if m else None
 
 
 def is_music_page(url: str) -> bool:
@@ -384,3 +401,6 @@ STOP_IG_MAT_PHIEN = "ig_mat_phien"
 # đủ số xin ⇒ dừng nhãn riêng. Phát cả khi 0 video mới mà thư viện đã có vài mã (không bao giờ `already_owned`): tường mới
 # là lý do chưa đủ, không phải "đã có hết". Job `failed` khi rỗng; chạy lại vô ích (cần cookie tài khoản phụ — Đường B).
 STOP_FB_CHAN_DANG_NHAP = "fb_chan_dang_nhap"
+# Chế độ tải ảnh (`VIDEODL_TAI_ANH_BAT`) đang TẮT mà job ảnh vẫn tới được `process_job` (tạo lúc cờ bật, cờ tắt sau đó):
+# job `failed` ngay ở đầu hàm, trước mọi lời gọi nguồn — không chạy như job video.
+STOP_TAI_ANH_TAT = "tai_anh_tat"
