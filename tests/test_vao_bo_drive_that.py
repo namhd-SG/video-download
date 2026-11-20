@@ -103,7 +103,7 @@ def test_thung_rac_dung_q_fields_phan_trang():
     d, dv = tao(DichVuGia([{"files": [{"id": "t1"}], "nextPageToken": "P2"}]))
     assert d.liet_ke_video_thung_rac("P1") == ([{"id": "t1"}], "P2")
     assert dv.goi[0] == ("list", {
-        "q": "trashed = true and mimeType contains 'video/'", "corpora": "allDrives",
+        "q": "trashed = true and (mimeType contains 'video/' or mimeType contains 'image/')", "corpora": "allDrives",
         "includeItemsFromAllDrives": True, "supportsAllDrives": True, "pageSize": 1000,
         "pageToken": "P1", "fields": "nextPageToken,files(id)"})
 
@@ -119,7 +119,7 @@ def test_ban_sao_theo_dau_va_shared_drive_giu_truy_van_cu():
     assert d.liet_ke_video_shared_drive("DRV", "T") == ([], "N")
     kw = dv.goi[1][1]
     assert (kw["corpora"], kw["driveId"], kw["pageToken"], kw["pageSize"]) == ("drive", "DRV", "T", 1000)
-    assert kw["q"] == "trashed = false and mimeType contains 'video/'"
+    assert kw["q"] == "trashed = false and (mimeType contains 'video/' or mimeType contains 'image/')"
 
 
 def test_lay_tep_404_la_khong_thay_con_403_nem_nguyen():

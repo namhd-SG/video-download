@@ -16,7 +16,7 @@ import math
 from pathlib import Path
 
 from web.models import _connect, _now
-from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG, DA_DON_DRIVE
+from web.vi_tu_con_song import CHUA_LOAI, CON_SONG_CHUNG, DA_DON_DRIVE, LA_VIDEO
 
 # Trần `items` của một lần bàn giao — trùng `HANDOFF_MAX` (web/static/app.js)
 # và `MAX_ITEMS` bên meta-ads (hợp đồng `nhan`, quy tắc 7).
@@ -87,7 +87,7 @@ def _dang_ra(row, so_video: int, lo_mo: list[dict], so_video_cat: int) -> dict:
 _VIDEO_CON_THAY = (
     "JOIN videos v ON v.video_id = vc.video_id "
     "LEFT JOIN jobs j ON j.id = v.job_id "
-    f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
+    f"WHERE {CON_SONG_CHUNG} AND {LA_VIDEO} AND (? IS NULL OR j.nguoi_tao = ?) "
 )
 
 
@@ -99,7 +99,7 @@ _VIDEO_CON_THAY = (
 _VIDEO_TRONG_LO_CAT = (
     "JOIN videos v ON v.video_id = vc.video_id "
     "LEFT JOIN jobs j ON j.id = v.job_id "
-    f"WHERE {CHUA_LOAI} AND (? IS NULL OR j.nguoi_tao = ?) "
+    f"WHERE {CHUA_LOAI} AND {LA_VIDEO} AND (? IS NULL OR j.nguoi_tao = ?) "
 )
 
 
@@ -278,7 +278,7 @@ def gan_video(db_path: Path, cum_id: int, chu: str, chi_cua: str | None,
         marks = ",".join("?" * len(ids))
         hop_le = [r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} AND {LA_VIDEO} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*ids, chi_cua, chi_cua]).fetchall()]
         conn.executemany(

@@ -23,6 +23,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from web.vi_tu_con_song import LA_VIDEO
 from web import lifecycle, models, models_chia, models_cum, models_dac_diem
 
 MA_OK = 0
@@ -56,6 +57,7 @@ def _cho_chia(db: Path) -> int:
     with models._connect(db) as conn:
         rows = conn.execute(
             "SELECT j.id, j.url, j.nguoi_tao FROM jobs j WHERE j.trang_thai = 'done' "
+            f"AND EXISTS (SELECT 1 FROM videos v WHERE v.job_id = j.id AND {LA_VIDEO}) "
             "AND NOT EXISTS (SELECT 1 FROM chia_lan c WHERE c.job_id = j.id "
             "AND c.trang_thai IN ('de_xuat', 'da_duyet')) ORDER BY j.id").fetchall()
     _in([{"job_id": r["id"], "url": r["url"], "nguoi_tao": r["nguoi_tao"]} for r in rows])
@@ -77,7 +79,7 @@ def _liet(db: Path, job_id: int, nhan_ver: str | None, caption_ver: str | None) 
         if job is None:
             _bao(f"không có job {job_id}")
             return MA_KHONG_CO_JOB
-        tong = conn.execute("SELECT COUNT(*) FROM videos WHERE job_id = ?",
+        tong = conn.execute(f"SELECT COUNT(*) FROM videos v WHERE v.job_id = ? AND {LA_VIDEO}",
                             (job_id,)).fetchone()[0]
         rows = models_chia.video_vao_luot_chia(conn, job_id)
         bi_loc = models_chia.dem_bi_loc_theo_ly_do(conn, job_id)
@@ -234,7 +236,7 @@ def _ghi_dac_diem(db: Path, job_id: int, tep: str) -> int:
             _bao(f"không có job {job_id}")
             return MA_KHONG_CO_JOB
         cua_job = {r["video_id"] for r in conn.execute(
-            "SELECT video_id FROM videos WHERE job_id = ?", (job_id,)).fetchall()}
+            f"SELECT v.video_id FROM videos v WHERE v.job_id = ? AND {LA_VIDEO}", (job_id,)).fetchall()}
         la = sorted({h["video_id"] for h in hang} - cua_job)
         if la:
             _bao(f"tệp sai: {len(la)} id không thuộc job {job_id}: {', '.join(la[:10])}")

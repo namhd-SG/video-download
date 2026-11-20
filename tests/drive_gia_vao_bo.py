@@ -11,6 +11,11 @@ import copy
 from web.vao_bo_drive import KHOA_DAU_NGUON, DriveKhongThay
 
 
+def _la_video_hoac_anh(t: dict) -> bool:
+    """Mô phỏng vế mime của truy vấn liệt kê thật (`video/` hoặc `image/`)."""
+    return t.get("mimeType", "video/mp4").startswith(("video/", "image/"))
+
+
 class DriveGia:
     def __init__(self, *, trang: int = 100, trang_rong_dau: bool = False,
                  tra_ca_thung_rac: bool = False):
@@ -29,20 +34,23 @@ class DriveGia:
 
     # --- dựng kho ---
     def them_nguon(self, fid, *, md5="M1", size="1000", parents=("SRC",), drive="D1",
-                   trashed=False):
+                   trashed=False, mime="video/mp4"):
+        # `mime`: tệp ảnh là `image/jpeg` — vào bộ/dọn không xét mime, chỉ hai truy vấn LIỆT KÊ
+        # (Shared Drive, Thùng rác) lọc theo `video/` hoặc `image/` như bản thật.
         self.tep[fid] = {"id": fid, "md5Checksum": md5, "size": size, "parents": list(parents),
-                         "trashed": trashed, "driveId": drive, "properties": {}}
+                         "trashed": trashed, "driveId": drive, "properties": {}, "mimeType": mime}
         return self.tep[fid]
 
     def them_ban(self, fid, nguon_id, *, folder="BO1", md5=None, size=None, trashed=False,
-                 dau=True, parents=None, drive="D1"):
+                 dau=True, parents=None, drive="D1", mime=None):
         n = self.tep.get(nguon_id, {})
         self.tep[fid] = {
             "id": fid, "md5Checksum": md5 if md5 is not None else n.get("md5Checksum"),
             "size": size if size is not None else n.get("size"),
             "parents": list(parents) if parents is not None else [folder],
             "trashed": trashed, "driveId": drive,
-            "properties": {KHOA_DAU_NGUON: nguon_id} if dau else {}}
+            "properties": {KHOA_DAU_NGUON: nguon_id} if dau else {},
+            "mimeType": mime or n.get("mimeType", "video/mp4")}
         return self.tep[fid]
 
     def dat_ten_thu_muc(self, folder, ten):
@@ -85,14 +93,14 @@ class DriveGia:
     def liet_ke_video_thung_rac(self, page_token):
         self.goi.append(("liet_ke_thung_rac", "*"))
         self._loi("liet_ke_thung_rac", "*")
-        return self._trang([copy.deepcopy(t) for t in self.tep.values() if t["trashed"]],
-                           page_token)
+        return self._trang([copy.deepcopy(t) for t in self.tep.values()
+                            if t["trashed"] and _la_video_hoac_anh(t)], page_token)
 
     def liet_ke_video_shared_drive(self, drive_id, page_token):
         self.goi.append(("liet_ke_drive", drive_id))
         self._loi("liet_ke_drive", drive_id)
         khop = [copy.deepcopy(t) for t in self.tep.values()
-                if t.get("driveId") == drive_id and t.get("md5Checksum")
+                if t.get("driveId") == drive_id and t.get("md5Checksum") and _la_video_hoac_anh(t)
                 and (self.tra_ca_thung_rac or not t["trashed"])]
         return self._trang(khop, page_token)
 

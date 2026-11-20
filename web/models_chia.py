@@ -31,7 +31,7 @@ from pathlib import Path
 from web import models_cum, models_dac_diem, models_vao_bo
 from web.models import _connect, _now
 from web.vi_tu_con_song import (CHUA_AN, CHUA_DON_DRIVE, CHUA_LOAI,
-                                CON_SONG_CHUNG, DA_DON_DRIVE)
+                                CON_SONG_CHUNG, DA_DON_DRIVE, LA_VIDEO)
 
 # Tập ĐÓNG cho `chia_lan.trang_thai`, `video_cum_nhap.lan` và
 # `thao_tac_duyet.loai`. Kiểm ở Python, không CHECK constraint — lý do ở
@@ -270,14 +270,14 @@ def video_vao_luot_chia(conn, job_id: int) -> list:
     `description`."""
     dieu_kien = " AND ".join(("v.job_id = ?", *(d for _, d in DIEU_KIEN_VAO_LUOT_CHIA)))
     return conn.execute(
-        f"SELECT v.video_id, v.description FROM videos v WHERE {dieu_kien} "
+        f"SELECT v.video_id, v.description FROM videos v WHERE {dieu_kien} AND {LA_VIDEO} "
         "ORDER BY v.tao_luc, v.video_id", (job_id,)).fetchall()
 
 
 def dem_bi_loc_theo_ly_do(conn, job_id: int) -> dict[str, int]:
     """`{lý do: số video của job KHÔNG qua điều kiện đó}` — một video trượt
     hai điều kiện được đếm ở cả hai."""
-    return {ly_do: conn.execute(f"SELECT COUNT(*) FROM videos v WHERE v.job_id = ? "
+    return {ly_do: conn.execute(f"SELECT COUNT(*) FROM videos v WHERE v.job_id = ? AND {LA_VIDEO} "
                                 f"AND NOT ({d})", (job_id,)).fetchone()[0]
             for ly_do, d in DIEU_KIEN_VAO_LUOT_CHIA}
 
@@ -317,7 +317,7 @@ def nhap_de_xuat(db_path: Path, job_id: int, phien_ban_prompt: str, truc: str | 
             return None
         chu = job["nguoi_tao"]
         cua_job = {r["video_id"] for r in conn.execute(
-            "SELECT video_id FROM videos WHERE job_id = ?", (job_id,)).fetchall()}
+            f"SELECT v.video_id FROM videos v WHERE v.job_id = ? AND {LA_VIDEO}", (job_id,)).fetchall()}
         duoc_vao = {r["video_id"] for r in video_vao_luot_chia(conn, job_id)}
 
         moi_id = [v for n in nhoms for k in n["kieu"] for v in k["video_ids"]]
@@ -410,7 +410,7 @@ def lay_chia(db_path: Path, chia_lan_id: int, chu: str, la_admin: bool = False) 
         # lượt đã có thì lọc lúc đọc.
         da_loai = {r["video_id"] for r in conn.execute(
             "SELECT vcn.video_id FROM video_cum_nhap vcn JOIN videos v ON v.video_id = vcn.video_id "
-            f"WHERE vcn.chia_lan_id = ? AND NOT ({CON_SONG_CHUNG})", (chia_lan_id,)).fetchall()}
+            f"WHERE vcn.chia_lan_id = ? AND NOT ({CON_SONG_CHUNG} AND {LA_VIDEO})", (chia_lan_id,)).fetchall()}
         for r in conn.execute(
                 "SELECT video_id, cum_nhap_id, lan FROM video_cum_nhap "
                 "WHERE chia_lan_id = ? ORDER BY video_id", (chia_lan_id,)).fetchall():
@@ -759,7 +759,7 @@ def _giai_quyet_kieu(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
         marks = ",".join("?" * len(con_lai))
         hop_le = {r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} AND {LA_VIDEO} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*con_lai, chi_cua, chi_cua]).fetchall()}
         bi_bo = [v for v in con_lai if v not in hop_le]
@@ -849,7 +849,7 @@ def _giai_quyet_kieu_vao_cum(conn, chia_lan_id: int, cum_nhap_id: int, chu: str,
         marks = ",".join("?" * len(con_lai))
         hop_le = {r["video_id"] for r in conn.execute(
             f"SELECT v.video_id FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} "
+            f"WHERE v.video_id IN ({marks}) AND {CON_SONG_CHUNG} AND {LA_VIDEO} "
             f"AND (? IS NULL OR j.nguoi_tao = ?)",
             [*con_lai, chi_cua, chi_cua]).fetchall()}
         bi_bo = [v for v in con_lai if v not in hop_le]
@@ -1132,7 +1132,7 @@ def _kiem_video_ids_thao_tac(conn, chia_lan_id, chu, video_ids, *, lan_khong_hop
     # mã riêng cho id của người khác sẽ cho bất kỳ ai dò "video X có trong kho
     # và đã bị loại". Id ngoài lượt rơi xuống `khong_hop_le` như mọi id lạ.
     da_loai = sorted(r["video_id"] for r in conn.execute(
-        f"SELECT v.video_id FROM videos v WHERE NOT ({CON_SONG_CHUNG}) "
+        f"SELECT v.video_id FROM videos v WHERE NOT ({CON_SONG_CHUNG} AND {LA_VIDEO}) "
         f"AND v.video_id IN ({marks})", unique_ids).fetchall() if r["video_id"] in trong_luot)
     if da_loai:
         return {"tu_choi": "video_da_loai", "video_ids": da_loai}
@@ -1693,7 +1693,7 @@ def _video_trong_lo(conn, cum: dict, chu: str, chi_cua: str | None, thu: int) ->
         "FROM video_cum vc "
         "JOIN videos v ON v.video_id = vc.video_id "
         "LEFT JOIN jobs j ON j.id = v.job_id "
-        f"WHERE {CHUA_LOAI} AND (? IS NULL OR j.nguoi_tao = ?) "
+        f"WHERE {CHUA_LOAI} AND {LA_VIDEO} AND (? IS NULL OR j.nguoi_tao = ?) "
         "AND vc.chu = ? AND vc.cum_id = ? "
         "ORDER BY v.tao_luc ASC, v.video_id ASC",
         (chi_cua, chi_cua, chu, cum["id"])).fetchall()

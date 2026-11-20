@@ -176,7 +176,7 @@ class DriveThat:
         r = self._svc().files().list(
             corpora="drive", driveId=drive_id, includeItemsFromAllDrives=True,
             supportsAllDrives=True, pageSize=1000, pageToken=page_token,
-            q="trashed = false and mimeType contains 'video/'",
+            q="trashed = false and (mimeType contains 'video/' or mimeType contains 'image/')",
             fields=f"nextPageToken,files({TRUONG_TEP})").execute()
         return r.get("files", []), r.get("nextPageToken")
 
@@ -195,7 +195,7 @@ class DriveThat:
 
     def liet_ke_video_thung_rac(self, page_token: str | None):
         r = self._svc().files().list(
-            q="trashed = true and mimeType contains 'video/'", corpora="allDrives",
+            q="trashed = true and (mimeType contains 'video/' or mimeType contains 'image/')", corpora="allDrives",
             includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000,
             pageToken=page_token, fields="nextPageToken,files(id)").execute()
         return r.get("files", []), r.get("nextPageToken")

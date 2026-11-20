@@ -124,7 +124,8 @@ def test_drive_ids_cua_dung_dinh_nghia_so_huu_cua_thu_vien(tmp_path):
     db = tmp_path / "jobs.db"
     with sqlite3.connect(db) as c:
         c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT)")
-        c.execute("CREATE TABLE videos (id INTEGER PRIMARY KEY, job_id INTEGER, drive_file_id TEXT)")
+        c.execute("CREATE TABLE videos (id INTEGER PRIMARY KEY, job_id INTEGER, drive_file_id TEXT, "
+                  "loai TEXT NOT NULL DEFAULT 'video')")
         c.executemany("INSERT INTO jobs VALUES (?,?)", [(1, "a@x"), (2, "b@x")])
         c.executemany("INSERT INTO videos (job_id, drive_file_id) VALUES (?,?)", [(1, "A" * 20), (2, "B" * 20)])
     assert thay_logo_routes.drive_ids_cua(db, "a@x", ["A" * 20, "B" * 20]) == {"A" * 20}
@@ -140,10 +141,10 @@ def _jobs_db(db, hang=()):
         c.execute("CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT, nen_tang TEXT)")
         # `url` NOT NULL như bảng thật (`web/models.py`): route đọc link gốc cho hand-off "Tạo bộ tự tìm".
         c.execute("CREATE TABLE IF NOT EXISTS videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT, "
-                  "url TEXT NOT NULL DEFAULT '')")
+                  "url TEXT NOT NULL DEFAULT '', loai TEXT NOT NULL DEFAULT 'video')")
         for i, (fid, vid, title, nt, nguoi) in enumerate(hang, 1):
             c.execute("INSERT INTO jobs VALUES (?,?,?)", (i, nguoi, nt))
-            c.execute("INSERT INTO videos VALUES (?,?,?,?,?)", (vid, i, title, fid, f"https://x/{vid}"))
+            c.execute("INSERT INTO videos (video_id, job_id, title, drive_file_id, url) VALUES (?,?,?,?,?)", (vid, i, title, fid, f"https://x/{vid}"))
 
 
 def _bo(db, nguoi, ten, fids, tao_luc=None):
