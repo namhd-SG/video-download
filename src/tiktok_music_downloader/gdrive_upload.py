@@ -210,13 +210,9 @@ class DriveUploader:
                                 reason=type(exc).__name__)
         return UploadResult(outcome=UploadOutcome.SUCCESS, file_id=file_id)
 
-    def create_job_folder(self, job_id: int) -> UploadResult:
-        """Create one Drive folder for this job, inside the configured
-        Shared Drive folder. Reuses `UploadResult`'s 3-state shape: on
-        SUCCESS, `file_id` is the FOLDER's id — pass it straight into
-        `upload_file(path, parent_folder_id=result.file_id)` — and
-        `web_view_link` is the folder's browser link to persist via
-        `web/models.py::set_job_drive_folder_link`."""
+    def create_folder(self, name: str, parent_id: str | None = None) -> UploadResult:
+        """Tạo một thư mục Drive tên `name` trong `parent_id` (mặc định: thư mục Shared Drive đã cấu hình).
+        Hình kết quả như `create_job_folder`: SUCCESS ⇒ `file_id` là id THƯ MỤC, `web_view_link` là link duyệt."""
         if not self.is_configured():
             return UploadResult(
                 outcome=UploadOutcome.NOT_CONFIGURED,
@@ -227,11 +223,20 @@ class DriveUploader:
                 ),
             )
         metadata = {
-            "name": f"job-{job_id}",
+            "name": name,
             "mimeType": "application/vnd.google-apps.folder",
-            "parents": [self._folder_id],
+            "parents": [parent_id or self._folder_id],
         }
-        return self._create_drive_object(metadata, media_path=None, label=f"job-{job_id} folder")
+        return self._create_drive_object(metadata, media_path=None, label=f"{name} folder")
+
+    def create_job_folder(self, job_id: int) -> UploadResult:
+        """Create one Drive folder for this job, inside the configured
+        Shared Drive folder. Reuses `UploadResult`'s 3-state shape: on
+        SUCCESS, `file_id` is the FOLDER's id — pass it straight into
+        `upload_file(path, parent_folder_id=result.file_id)` — and
+        `web_view_link` is the folder's browser link to persist via
+        `web/models.py::set_job_drive_folder_link`."""
+        return self.create_folder(f"job-{job_id}")
 
     def _create_drive_object(self, metadata: dict[str, Any], *, media_path: Path | None,
                               label: str) -> UploadResult:
