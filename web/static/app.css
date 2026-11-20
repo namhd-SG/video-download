@@ -298,6 +298,9 @@
   .pill.clear-all { background: transparent; border-style: dashed; cursor: pointer; }
 
   .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 14px; }
+  /* Thẻ không được rộng hơn cột (min-width:auto mặc định của ô lưới sẽ theo chữ dài nhất); tác giả dài cắt "…". */
+  .card { min-width: 0; }
+  .card-meta .card-author { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card {
     position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     background: var(--surface); cursor: pointer; transition: box-shadow .15s, border-color .15s;

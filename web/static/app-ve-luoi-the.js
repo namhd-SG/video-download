@@ -222,7 +222,10 @@
     const duration = laAnh ? null : fmtDuration(video.duration);
     const plays = fmtCount(video.play_count);
     const metaParts = [];
-    metaParts.push(escapeHtml(video.author || "(chưa rõ người đăng)"));
+    // Bọc span để CSS cắt "…" được: handle dài không dấu cách (vd `thoitrang.congso.hangngay_official`) để trần trong
+    // flex sẽ ép cột lưới rộng ra và tràn sang thẻ bên.
+    const tacGia = escapeHtml(video.author || "(chưa rõ người đăng)");
+    metaParts.push(`<span class="card-author" title="${tacGia}">${tacGia}</span>`);
     if (video.region) metaParts.push(escapeHtml(video.region));
     if (plays !== null) metaParts.push(`${plays} lượt xem`);
     return `

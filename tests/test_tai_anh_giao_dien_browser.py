@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import zlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -65,14 +66,28 @@ def _job(db: Path, loai_tai: str, *, tong=10, xong=4, ly_do=None, trang_thai="do
     return job
 
 
-def _bai(db: Path, job: int, so_bai: int, so_anh: int = 3) -> list[str]:
-    """`so_bai` bài ảnh, mỗi bài `so_anh` tệp; trả danh sách bai_id (mới nhất cuối)."""
+# Số ảnh mỗi bài, cũ → mới: có bài 1 ảnh, 8–20 ảnh, 35 ảnh (trần TikTok đã đo). Bài MỚI NHẤT (cuối) có 3 ảnh: các
+# test gửi Creative Desk / nút Bỏ dùng nó và mong đúng 3 tệp.
+SO_ANH_MOI_BAI = (1, 8, 35, 12, 20, 1, 9, 15, 2, 18, 5, 3)
+# Tên/tác giả dài như bài thật để thẻ phải tự cắt chữ.
+_TIEU_DE = ("Phối đồ công sở mùa đông: áo khoác dạ dáng dài, quần ống suông và giày loafer — bộ {n} ảnh chi tiết",
+            "Review 7 quán cà phê làm việc yên tĩnh quanh hồ Tây, có ổ cắm và wifi mạnh (phần {n})",
+            "Công thức bánh chuối nướng không đường cho người ăn kiêng, từng bước có ảnh #{n}")
+_TAC_GIA = ("thoitrang.congso.hangngay_official", "caphe.lamviec.hanoi", "bep.nha.minh.an.lanh")
+
+
+def _bai(db: Path, job: int, so_anh_moi_bai=SO_ANH_MOI_BAI) -> list[str]:
+    """Mỗi phần tử = một bài với chừng ấy tệp; thời điểm tạo cách nhau 7 phút, tăng dần ⇒ danh sách bai_id trả về có
+    bài MỚI NHẤT ở cuối (thư viện phải vẽ ngược lại: mới nhất trước)."""
     ra = []
-    for i in range(so_bai):
+    goc = datetime(2026, 11, 20, 1, 0, tzinfo=timezone.utc)
+    for i, so_anh in enumerate(so_anh_moi_bai):
         bai_id = f"anh-tt-76{i:03d}00000{i}"
-        rows = [{"video_id": file_id_anh(bai_id, k), "job_id": job, "url": f"https://www.tiktok.com/@a/photo/{bai_id}",
-                 "title": f"Bài ảnh số {i + 1}", "author": "tai.anh.ui", "bai_id": bai_id, "thu_tu": k,
-                 "drive_file_id": f"drv{bai_id[-6:]}{k:02d}abcdefg", "tao_luc": f"2026-11-20T0{i % 9}:00:00+00:00"}
+        tao_luc = (goc + timedelta(minutes=7 * i)).isoformat()
+        rows = [{"video_id": file_id_anh(bai_id, k), "job_id": job,
+                 "url": f"https://www.tiktok.com/@{_TAC_GIA[i % 3]}/photo/{bai_id}",
+                 "title": _TIEU_DE[i % 3].format(n=i + 1), "author": _TAC_GIA[i % 3], "bai_id": bai_id, "thu_tu": k,
+                 "drive_file_id": f"drv{bai_id[-6:]}{k:02d}abcdefg", "tao_luc": tao_luc}
                 for k in range(1, so_anh + 1)]
         models_anh.ghi_bai_anh(db, rows)
         ra.append(bai_id)
@@ -130,7 +145,7 @@ def du_lieu(may_chu):
         models.record_video(db, j_video, f"76870000{i:02d}", "https://www.tiktok.com/@a/video/1", title=f"Video thật {i + 1}",
                             author="tai.anh.ui", duration=15 + i, play_count=1000 * (i + 1), region="VN",
                             drive_file_id=f"drvvideo{i:02d}abcdefghi")
-    bai = _bai(db, j_anh, 12)
+    bai = _bai(db, j_anh)
     return {"db": db, "j_anh": j_anh, "j_hong": j_hong, "j_ca": j_ca, "j_video": j_video, "bai": bai}
 
 
@@ -276,12 +291,36 @@ def test_thu_vien_cong_tac_loai_nap_anh_theo_bai(mo, du_lieu):
     assert not p.locator("#cum-rail").is_visible()
     p.locator("#card-grid .card").first.click()
     assert not p.locator('[data-action="cum"]').is_visible()
-    # Loại KHÔNG nằm trong các hộp lọc.
+    # Loại KHÔNG nằm trong các hộp lọc; "Dài"/"Thị trường" (ảnh không có dữ liệu đó) ẩn ở chế độ Ảnh.
     assert "Loại" not in p.locator("#filter-bar").inner_text()
+    assert p.locator('#filter-bar [data-group="dai"], #filter-bar [data-group="thi_truong"]').count() == 0
+    assert p.locator('#filter-bar [data-group="nguon"]').count() == 1
+    # Mới nhất trước, đúng thứ tự thời điểm tạo (seed tăng dần ⇒ lưới là chiều ngược lại).
+    thu_tu = p.eval_on_selector_all("#card-grid .card", "els => els.map(e => e.dataset.videoId)")
+    assert thu_tu == list(reversed(du_lieu["bai"]))
     p.locator('#chip-loai [data-loai-thu-vien="video"]').click()
     p.wait_for_function("document.getElementById('card-grid').dataset.napLoai === 'video'")
     assert p.locator("#card-grid .card").count() == 7
+    assert p.locator('#filter-bar [data-group="dai"]').count() == 1, "về Video ⇒ nhóm Dài hiện lại"
     assert p.locator("#selection-bar").is_hidden()              # lựa chọn không đi qua loại khác
+
+
+@pytest.mark.parametrize("rong", [390, 1440])
+def test_thu_vien_anh_ten_dai_khong_tran_the_va_khong_cuon_ngang(mo, du_lieu, rong):
+    """Tác giả là handle dài không dấu cách: trước khi bọc `.card-author` nó ép cột lưới rộng ra (390: lưới tràn
+    ngang, cột phải bị cắt; 1440: chữ đè sang thẻ bên). Đột biến: bỏ `.card { min-width: 0; }` HOẶC bỏ dòng CSS
+    `.card-meta .card-author` trong `app.css` ⇒ ĐỎ."""
+    p, _ = mo(bat=True, rong=rong)
+    _sang_anh(p)
+    do = p.evaluate("""() => {
+        const luoi = document.getElementById('card-grid').getBoundingClientRect();
+        const tran_the = [...document.querySelectorAll('#card-grid .card')].filter(c => {
+            const r = c.getBoundingClientRect(), a = c.querySelector('.card-author').getBoundingClientRect();
+            return r.right > luoi.right + 1 || a.right > r.right + 1;
+        }).length;
+        return {cuon_ngang: document.documentElement.scrollWidth > document.documentElement.clientWidth, tran_the};
+    }""")
+    assert do == {"cuon_ngang": False, "tran_the": 0}
 
 
 def test_gui_creative_desk_mo_rong_thanh_tung_tep(mo, du_lieu):

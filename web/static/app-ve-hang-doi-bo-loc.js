@@ -129,7 +129,9 @@
   // ========================================================================
   function renderFilterBar() {
     const bar = document.getElementById("filter-bar");
-    bar.innerHTML = FILTER_GROUPS.map(renderFilterBox).join("");
+    bar.innerHTML = FILTER_GROUPS
+      .filter((g) => !(g.chiVideo && state.loaiThuVien === "anh"))
+      .map(renderFilterBox).join("");
     // Popover đóng khi bấm ra ngoài hoặc Esc — gắn MỘT LẦN, không nhân bản
     // mỗi lần renderFilterBar chạy lại.
   }

@@ -241,8 +241,9 @@
   // nhóm bình thường có `getBuckets` — đừng bật lại ở dạng disabled.
   const FILTER_GROUPS = [
     { id: "nguon", label: "Nguồn", getBuckets: sourceBuckets },
-    { id: "dai", label: "Dài", getBuckets: (v) => [durationBucket(v.duration)] },
-    { id: "thi_truong", label: "Thị trường", getBuckets: (v) => [regionBucket(v.region)] },
+    // `chiVideo`: ảnh không có thời lượng/thị trường ⇒ nhóm ẩn khi thư viện ở chế độ Ảnh (đổi loại đã xoá bộ lọc).
+    { id: "dai", label: "Dài", chiVideo: true, getBuckets: (v) => [durationBucket(v.duration)] },
+    { id: "thi_truong", label: "Thị trường", chiVideo: true, getBuckets: (v) => [regionBucket(v.region)] },
     { id: "ngay_tai", label: "Ngày tải", getBuckets: (v) => [dateBucket(v.tao_luc)] },
     // Bỏ nhóm "Người tải" 17/09: thư viện chỉ còn video của chính người đang
     // xem (user chốt "ai nhấn tải thì của người đó"), nên nhóm này chỉ còn
