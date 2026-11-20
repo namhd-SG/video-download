@@ -129,7 +129,7 @@ def test_nhieu_link_xet_loai_tung_link(may, monkeypatch):
 
 def test_tinh_nang_co_tai_anh_bat_va_nen_tang_anh_giao_voi_nen_tang_bat(may, monkeypatch):
     tn = app_mod.tinh_nang(nguoi_tao=TOI)
-    assert tn["tai_anh_bat"] is False and tn["nen_tang_anh"] == []
+    assert "tai_anh_bat" not in tn and "nen_tang_anh" not in tn, "cờ tắt ⇒ phản hồi /tinh-nang như trước khi có ảnh"
     monkeypatch.setenv(cfg.ENV_TAI_ANH_BAT, "1")
     tn = app_mod.tinh_nang(nguoi_tao=TOI)
     assert tn["tai_anh_bat"] is True and tn["nen_tang_anh"] == ["facebook", "instagram", "tiktok"]

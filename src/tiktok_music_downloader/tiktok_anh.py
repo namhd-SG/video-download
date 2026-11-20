@@ -50,6 +50,16 @@ class LoiNguonTikTok(Exception):
         self.ma = ma
 
 
+class LoiChanTikTok(Exception):
+    """Thăm lại bài gặp dấu hiệu TikTok CHẶN/GIỚI HẠN (HTTP 403/429, trang không có dữ liệu bài) — khác "bài không
+    còn": queue đếm số lần liên tiếp và dừng lượt `bi_chan` thay vì báo nhầm từng bài là đã gỡ."""
+
+
+# HTTP 403/429 và trang trống dữ liệu (trang chặn/captcha) ⇒ chặn; 404/410/statusCode≠0 ⇒ bài không còn.
+_MA_HTTP_CHAN = frozenset({403, 429})
+_LY_DO_TRANG_CHAN = "trang không có dữ liệu bài"
+
+
 def _id_bai(url_hoac_id: str) -> str:
     """Id số của bài từ id trần, link `/photo/<id>` hoặc `/video/<id>`; ngoài ra `ValueError`."""
     gia_tri = (url_hoac_id or "").strip()
@@ -183,13 +193,16 @@ def tham_bai(url_hoac_id: str, proxy: str | None = None) -> VideoRef:
 
 def tham_lai(ref: VideoRef, proxy: str | None = None) -> VideoRef | None:
     """Đúng chữ ký `web.queue_anh.HamThamLai`: thăm lại bài ảnh `ref` lấy URL mới. Bài không còn/không xem được/
-    đã thành video ⇒ `None`; lỗi mạng ném nguyên (queue tính là hụt phía ta)."""
+    đã thành video ⇒ `None`; dấu hiệu chặn ⇒ `LoiChanTikTok`; lỗi mạng ném nguyên (queue tính là hụt phía ta)."""
     m = _MAU_BAI_ID_TT.match(ref.video_id or "")
     if not m:
         raise ValueError("bai_id không phải bài ảnh TikTok")
     try:
         moi = tham_bai(m.group(1), proxy)
     except LoiNguonTikTok as exc:
+        if exc.ma in _MA_HTTP_CHAN or str(exc) == _LY_DO_TRANG_CHAN:
+            log.warning("thăm lại bài ảnh TikTok: dấu hiệu chặn (%s)", exc.ma if exc.ma is not None else "trang chặn")
+            raise LoiChanTikTok(f"TikTok chặn/giới hạn ({exc.ma if exc.ma is not None else 'trang chặn'})") from None
         log.warning("thăm lại bài ảnh TikTok: phía nguồn (%s)", exc.ma if exc.ma is not None else "khác")
         return None
     return moi if moi.loai == LOAI_ANH else None

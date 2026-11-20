@@ -45,7 +45,8 @@
   }
 
   // ---- Công tắc loại tải của form: Video | Ảnh | Cả hai ----
-  // Vẽ BẰNG JS và chỉ khi `/tinh-nang.tai_anh_bat`: cờ tắt thì DOM form y hệt bản cũ (không phần tử ẩn nào).
+  // Vẽ BẰNG JS và chỉ khi `/tinh-nang.tai_anh_bat`: cờ tắt thì form không có phần tử nào của công tắc
+  // (kể cả phần tử ẩn). Lưu ý: CSS thẻ `.card{min-width:0}` + cắt `.card-author` là thay đổi CHUNG, áp cả thẻ video.
   // Mặc định Video, KHÔNG nhớ lựa chọn (không localStorage; thành công xong tự về Video — `datLoaiTaiForm`).
   const LOAI_TAI_FORM = Object.freeze([["video", "Video"], ["anh", "Ảnh"], ["ca_hai", "Cả hai"]]);
   // Chữ đơn vị cạnh ô số: một bài ảnh tính là MỘT mục trong N.
@@ -182,7 +183,7 @@
   });
   // Thư viện tự báo lỗi của nó (`napLaiThuVien` ⇒ ô `#error` khi lần đầu hỏng).
   // Cờ tải ảnh quyết định có vẽ công tắc "Video | Ảnh | Cả hai" (form) và "Loại" (thư viện) hay không.
-  // Lỗi/cờ tắt ⇒ không vẽ gì: giao diện y hệt bản chỉ-video.
+  // Lỗi/cờ tắt ⇒ không vẽ công tắc nào (form/thư viện không có phần tử của tính năng ảnh).
   apiGet("/tinh-nang").then((tt) => {
     state.taiAnhBat = tt.tai_anh_bat === true;
     veCongTacLoaiTai();

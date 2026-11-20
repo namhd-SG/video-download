@@ -153,7 +153,8 @@ class _NguoiUpload:
         return self.dv
 
 
-def test_truy_van_drive_that_xin_ca_video_lan_anh():
+def test_truy_van_drive_that_xin_ca_video_lan_anh(monkeypatch):
+    monkeypatch.setenv("VIDEODL_TAI_ANH_BAT", "1")
     dv = _DichVu()
     d = DriveThat(_NguoiUpload(dv))
     d.liet_ke_video_shared_drive("D1", None)

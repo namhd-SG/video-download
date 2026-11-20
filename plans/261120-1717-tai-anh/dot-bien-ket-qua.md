@@ -35,3 +35,27 @@ Mỗi dòng: áp phép sửa tối thiểu (1 chỗ, xác nhận `git diff --sta
 
 Lỗ hổng phát hiện: 7 câu `{LA_VIDEO}` (M12b-g) chỉ đỏ test cấu trúc — đã bổ sung 7 test hành vi cuối `tests/test_anh_khong_lot_vao_tinh_nang_video.py` (lệnh áp ghi ở docstring đầu file).
 Không có lỗ hổng ở M1-M11, M13-M19.
+
+## Đợt 2 — sửa theo review PR #125 (2026-11-20)
+
+Cùng cách: áp 1 chỗ → chạy file test đích → hoàn nguyên → chạy lại. Script: áp/hoàn nguyên tự động, ghi dòng tổng pytest.
+
+| M# | File áp | Phép sửa | Test đích | Khi áp | Khi hoàn nguyên |
+|---|---|---|---|---|---|
+| H1 | web/queue_anh.py | `_dung_vi_loi_tham_lai` bỏ `cong.xu_ly_loi` (trả None ngay) | test_queue_anh.py | 5 failed | xanh |
+| H1b | web/queue_anh.py | lỗi thăm lại là tín hiệu dừng → `if False` (gom về lỗi hệ thống như cũ) | test_queue_anh.py | 5 failed | xanh |
+| M1 | web/queue.py | bỏ nhánh `ket_qua_anh.ly_do_dung` | test_queue_anh.py | 1 failed | xanh |
+| M2a | tiktok_anh.py | 403/429/trang chặn → không ném `LoiChanTikTok` | test_tiktok_anh.py | 3 failed | xanh |
+| M2b | web/queue_anh.py | không đếm chặn liên tiếp | test_queue_anh.py | 1 failed | xanh |
+| M2c | web/queue_anh.py | dừng ở lần chặn đầu (không đếm lại khi xen bài OK) | test_queue_anh.py | 2 failed | xanh |
+| M3 | web/vao_bo_drive.py | thêm `image/` vô điều kiện | test_vao_bo_drive_that.py | 1 failed | xanh |
+| M4 | web/app.py | `/tinh-nang` luôn có khoá ảnh | test_trang_huong_dan.py + test_tai_anh_api.py | 2 failed | xanh |
+| M5a | web/lifecycle_anh.py | `except BaseException` không trash thư mục bài | test_lifecycle_anh.py | 2 failed | xanh |
+| M5b | web/lifecycle_anh.py | `on_bai_anh_verified` không bắt Exception của uploader | test_lifecycle_anh.py | 2 failed | xanh |
+| M5c | web/lifecycle_anh.py | `_bo_thu_muc_dang` không bắt lỗi `trash_file` | test_lifecycle_anh.py | 1 failed | xanh |
+| L1 | web/lifecycle_anh.py | 0 hàng mới vẫn báo xong (không trash thư mục trùng) | test_lifecycle_anh.py | 1 failed | xanh |
+| L1q | web/queue_anh.py | bài đã có vẫn xong+1 | test_queue_anh.py | 1 failed | xanh |
+| L4 | tai_anh.py | bỏ rào `la_bai_id_hop_le` | test_tai_anh_loi.py | 5 failed | xanh |
+| L5 | web/lifecycle_anh.py | không xoá thumb khi ghi DB trượt | test_lifecycle_anh.py | 1 failed | xanh |
+
+15/15 đạt.

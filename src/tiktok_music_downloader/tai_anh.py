@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader.tai_anh_cau_hinh import BYTE_TOI_THIEU, LOAI_ANH, TRAN_ANH_MOI_BAI
+from tiktok_music_downloader.tai_anh_cau_hinh import BYTE_TOI_THIEU, LOAI_ANH, TRAN_ANH_MOI_BAI, la_bai_id_hop_le
 from tiktok_music_downloader.utils import USER_AGENTS, VideoRef
 
 log = logging.getLogger("ttmd.tai_anh")
@@ -151,6 +151,9 @@ def tai_mot_bai(ref: VideoRef, thu_muc: Path, proxy: str | None = None, *,
     `kiem_video`: hàm kiểm con-video (production truyền `web.queue.verify_video_stream`; `src` không import `web`).
     `lay`: thay `requests.get` khi test. Không bao giờ ném: mọi lỗi nằm trong `KetQuaTaiBai`."""
     bai_id = ref.video_id
+    if not la_bai_id_hop_le(bai_id):
+        # `bai_id` thành tên thư mục bị mkdir/rmtree bên dưới: không tin nguồn, tự rào (chặn `..`, `/`, rỗng).
+        return KetQuaTaiBai(False, str(bai_id), loai_loi=LOI_HE_THONG, ly_do="bai_id sai hình")
     urls_moi_tep = tuple(ref.anh_urls or ())
     k = len(urls_moi_tep)
     if ref.loai != LOAI_ANH or k == 0 or any(not u for u in urls_moi_tep):

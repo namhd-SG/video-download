@@ -187,3 +187,71 @@ def test_ghi_db_trat_thi_trash_thu_muc_va_bai_failed(moi_truong, monkeypatch):
     kq = lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 2), db_path=db, uploader=up)
     assert not kq.ok and up.da_trash == [f"F-{BAI}"]
     assert not (tmp / "tai" / BAI).exists()
+    # L5: thumb vừa cắt mà không có hàng đi kèm ⇒ xoá, không để rác trong thumbs/
+    assert not lifecycle.thumb_path_for(db, f"{BAI}-01").exists()
+
+
+# ---------------------------------------------------------------------------
+# Review PR #125: chết giữa chừng (M5), bài đã có (L1)
+# ---------------------------------------------------------------------------
+
+class _ChetGiuaChung(BaseException):
+    """Giả lập KeyboardInterrupt/SystemExit khi máy chủ tắt giữa lúc upload."""
+
+
+def test_chet_giua_luc_upload_trash_thu_muc_bai_roi_nem_lai(moi_truong):
+    """M5: BaseException bay qua vòng upload ⇒ thư mục bài dở bị trash, local sạch, lỗi gốc ném lại nguyên vẹn."""
+    db, job_id, tmp = moi_truong
+    up = UploaderGia()
+    goc = up.upload_file
+
+    def upload(path, parent_folder_id=None):
+        if up.so_upload == 1:
+            raise _ChetGiuaChung()
+        return goc(path, parent_folder_id)
+    up.upload_file = upload
+    with pytest.raises(_ChetGiuaChung):
+        lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 3), db_path=db, uploader=up)
+    assert up.da_trash == [f"F-{BAI}"] and _hang(db) == []
+    assert not (tmp / "tai" / BAI).exists()
+
+
+@pytest.mark.parametrize("cho_hong", ["create_folder", "upload_file"])
+def test_uploader_nem_exception_la_bai_failed_khong_giet_job(moi_truong, cho_hong):
+    """M5: uploader ném `Exception` (lỗi lạ của thư viện Drive) ⇒ bài FAILED (trả kết quả), không ném ra vòng job."""
+    db, job_id, tmp = moi_truong
+    up = UploaderGia()
+
+    def hong(*a, **k):
+        raise RuntimeError("thư viện Drive nổ")
+    setattr(up, cho_hong, hong)
+    kq = lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 2), db_path=db, uploader=up)
+    assert not kq.ok and "RuntimeError" in (kq.reason or "")
+    assert _hang(db) == [] and not (tmp / "tai" / BAI).exists()
+    if cho_hong == "upload_file":
+        assert up.da_trash == [f"F-{BAI}"], "thư mục bài đã tạo phải được dọn"
+
+
+def test_trash_nem_exception_khong_de_loi_goc(moi_truong):
+    """`trash_file` ném khi dọn ⇒ vẫn FAILED theo lỗi upload gốc, không thành lỗi khác."""
+    db, job_id, tmp = moi_truong
+    up = UploaderGia(hong_tep=1)
+
+    def trash(file_id):
+        raise RuntimeError("trash nổ")
+    up.trash_file = trash
+    kq = lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 2), db_path=db, uploader=up)
+    assert not kq.ok and kq.reason == "Forbidden"
+
+
+def test_bai_da_co_du_hang_thi_trash_thu_muc_trung_va_bao_bo_qua(moi_truong):
+    """L1: ghi 0 hàng mới (lượt khác ghi trước) ⇒ thư mục vừa tạo là bản trùng: trash, trả SUCCESS + `LY_DO_BAI_DA_CO`."""
+    db, job_id, tmp = moi_truong
+    up1 = UploaderGia()
+    assert lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 2), db_path=db,
+                                             uploader=up1).ok
+    up2 = UploaderGia()
+    kq = lifecycle_anh.on_bai_anh_verified(job_id=job_id, ref=_ref(), tep=_tao_tep(tmp, 2), db_path=db, uploader=up2)
+    assert kq.ok and kq.reason == lifecycle_anh.LY_DO_BAI_DA_CO
+    assert up2.da_trash == [f"F-{BAI}"]
+    assert len(_hang(db)) == 2, "không thêm hàng"

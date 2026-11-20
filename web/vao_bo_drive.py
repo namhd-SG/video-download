@@ -15,6 +15,7 @@ import re
 from typing import Protocol
 
 from tiktok_music_downloader.gdrive_upload import DriveUploader, UploadOutcome
+from tiktok_music_downloader.tai_anh_cau_hinh import tai_anh_dang_bat
 
 log = logging.getLogger("videodl.web.vao_bo")
 
@@ -55,6 +56,14 @@ class DriveVaoBo(Protocol):
     def ten_thu_muc(self, folder_id: str) -> str: ...
     def bo_vao_thung_rac(self, file_id: str) -> bool:
         """True CHỈ khi Drive báo ok. Chưa cấu hình / trượt ⇒ False."""
+
+
+def _dieu_kien_mime() -> str:
+    """Điều kiện loại tệp cho các truy vấn liệt kê: cờ tải ảnh TẮT ⇒ đúng truy vấn cũ (chỉ video); BẬT ⇒ thêm ảnh.
+    Đọc cờ lúc gọi (cùng cách `tai_anh_dang_bat`)."""
+    if tai_anh_dang_bat():
+        return "(mimeType contains 'video/' or mimeType contains 'image/')"
+    return "mimeType contains 'video/'"
 
 
 def id_drive_hop_le(file_id: object) -> bool:
@@ -176,7 +185,7 @@ class DriveThat:
         r = self._svc().files().list(
             corpora="drive", driveId=drive_id, includeItemsFromAllDrives=True,
             supportsAllDrives=True, pageSize=1000, pageToken=page_token,
-            q="trashed = false and (mimeType contains 'video/' or mimeType contains 'image/')",
+            q=f"trashed = false and {_dieu_kien_mime()}",
             fields=f"nextPageToken,files({TRUONG_TEP})").execute()
         return r.get("files", []), r.get("nextPageToken")
 
@@ -195,7 +204,7 @@ class DriveThat:
 
     def liet_ke_video_thung_rac(self, page_token: str | None):
         r = self._svc().files().list(
-            q="trashed = true and (mimeType contains 'video/' or mimeType contains 'image/')", corpora="allDrives",
+            q=f"trashed = true and {_dieu_kien_mime()}", corpora="allDrives",
             includeItemsFromAllDrives=True, supportsAllDrives=True, pageSize=1000,
             pageToken=page_token, fields="nextPageToken,files(id)").execute()
         return r.get("files", []), r.get("nextPageToken")

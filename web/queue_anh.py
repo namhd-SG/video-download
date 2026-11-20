@@ -21,12 +21,14 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from tiktok_music_downloader import nguon_facebook_trang, nguon_instagram, tai_anh, tiktok_anh
 from tiktok_music_downloader.downloader import BATCH_REST_SECONDS, BATCH_SIZE
 from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH
-from tiktok_music_downloader.utils import JitterThrottle, VideoRef, che_url
+from tiktok_music_downloader.utils import (
+    STOP_BI_CHAN, STOP_IG_CHUA_CO_COOKIE, STOP_IG_MAT_PHIEN, JitterThrottle, VideoRef, che_url,
+)
 from web import lifecycle_anh, models
 
 log = logging.getLogger("ttmd.queue_anh")
@@ -35,6 +37,10 @@ log = logging.getLogger("ttmd.queue_anh")
 # "he_thong" = phía ta (ERROR, khung đỏ).
 LOAI_LOI_NGUON = "tiktok"
 LOAI_LOI_HE_THONG = "he_thong"
+
+# Số lần thăm lại LIÊN TIẾP gặp dấu hiệu chặn (TikTok 403/429/trang chặn) thì dừng cả lượt `bi_chan`: thăm tiếp chỉ làm
+# đậm dấu vết và báo nhầm từng bài là "không còn".
+TRAN_CHAN_LIEN_TIEP = 3
 
 # Hàm thăm bài lại: `(ref, proxy) -> VideoRef | None`. Trả ref MỚI (cùng `video_id` = bai_id, `loai="anh"`, URL ảnh
 # mới) hoặc None khi bài không còn (gỡ/riêng tư). Ném lỗi ⇒ hụt phía ta.
@@ -85,6 +91,29 @@ def _tham_lai_mac_dinh(ref: VideoRef, proxy: str | None) -> VideoRef | None:
     return ham(ref, proxy)
 
 
+class _KetQuaThu(NamedTuple):
+    """Kết quả tải (+ thăm lại) một bài. `ly_do_dung`: dừng cả lượt; `ghi_loi_bai`: bài này cũng phải ghi lỗi trước
+    khi dừng (lỗi thăm lại là tín hiệu dừng); `chan`: thăm lại gặp dấu hiệu chặn (đếm liên tiếp)."""
+    kq: tai_anh.KetQuaTaiBai
+    ly_do_dung: str | None = None
+    ghi_loi_bai: bool = False
+    chan: bool = False
+
+
+def _dung_vi_loi_tham_lai(ref: VideoRef, exc: Exception, xu_ly_loi: Callable[[BaseException], str | None]) -> str | None:
+    """Lỗi thăm lại có phải tín hiệu dừng cả lượt không — khớp `nguon.py` (nhánh liệt kê bài ảnh): cổng nền tảng nhận
+    ra tín hiệu chặn ⇒ lý do của cổng; bài Instagram thiếu cookie / mất phiên (kể cả 429) ⇒ dừng job như nguồn IG."""
+    dung = xu_ly_loi(exc)
+    if dung:
+        return dung
+    if _nen_tang_cua_bai(ref.video_id) == "ig":
+        if isinstance(exc, ValueError) and "cookie" in str(exc):
+            return STOP_IG_CHUA_CO_COOKIE
+        if isinstance(exc, RuntimeError) and "mất phiên" in str(exc):
+            return STOP_IG_MAT_PHIEN
+    return None
+
+
 @dataclass(frozen=True)
 class KetQuaCacBai:
     """`ly_do_dung`: lý do dừng cả lượt ảnh do chính vòng này phát hiện (hết đĩa / cổng bảo dừng); None = chạy hết."""
@@ -94,36 +123,44 @@ class KetQuaCacBai:
 
 
 def _tai_va_tham_lai(ref: VideoRef, thu_muc: Path, proxy: str | None, kiem_video, tai_mot_bai, tham_lai,
-                     truoc_tham_lai: Callable[[], str | None]) -> tuple[tai_anh.KetQuaTaiBai, str | None]:
-    """`(kết quả, lý do dừng)`. Thăm lại tối đa MỘT lần; sau lần thăm mà URL vẫn 403/410 ⇒ lỗi phía nguồn.
+                     truoc_tham_lai: Callable[[], str | None],
+                     xu_ly_loi: Callable[[BaseException], str | None]) -> _KetQuaThu:
+    """Thăm lại tối đa MỘT lần; sau lần thăm mà URL vẫn 403/410 ⇒ lỗi phía nguồn.
 
     Ref ảnh CHƯA có URL (`anh_urls` rỗng — trang liệt kê chỉ thấy anchor `/photo/`, chưa thấy dữ liệu bài) thì thăm
     bài NGAY, không tải trước (tải trước chỉ ra "bài không có ảnh" sai phía nguồn)."""
     if ref.anh_urls:
         kq = tai_mot_bai(ref, thu_muc, proxy, kiem_video=kiem_video)
         if kq.ok or not kq.can_tham_lai:
-            return kq, None
+            return _KetQuaThu(kq)
     else:
         kq = _hut(ref, tai_anh.LOI_NGUON, "bài ảnh chưa có URL ảnh")
     ly_do_dung = truoc_tham_lai()
     if ly_do_dung:
-        return kq, ly_do_dung
+        return _KetQuaThu(kq, ly_do_dung)
     try:
         ref_moi = tham_lai(ref, proxy)
     except _ChuaCoHamThamLai:
-        return _hut(ref, tai_anh.LOI_NGUON, "URL ảnh hết hạn, nguồn chưa hỗ trợ thăm lại"), None
-    except Exception as exc:  # noqa: BLE001 — hàm của nền tảng; mọi lỗi của nó là một bài hụt, không giết job
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_NGUON, "URL ảnh hết hạn, nguồn chưa hỗ trợ thăm lại"))
+    except tiktok_anh.LoiChanTikTok:
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_NGUON, "TikTok chặn/giới hạn khi thăm lại bài"), chan=True)
+    except Exception as exc:  # noqa: BLE001 — hàm của nền tảng; lỗi thường là một bài hụt, không giết job
+        dung = _dung_vi_loi_tham_lai(ref, exc, xu_ly_loi)
+        if dung:
+            log.warning("thăm lại bài ảnh: tín hiệu dừng lượt (%s)", dung)
+            return _KetQuaThu(_hut(ref, tai_anh.LOI_NGUON, f"thăm lại bài: nguồn bảo dừng ({dung})"), dung,
+                              ghi_loi_bai=True)
         log.error("thăm lại bài ảnh lỗi (%s)", type(exc).__name__)
-        return _hut(ref, tai_anh.LOI_HE_THONG, f"thăm lại bài lỗi ({type(exc).__name__})"), None
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_HE_THONG, f"thăm lại bài lỗi ({type(exc).__name__})"))
     if ref_moi is None:
-        return _hut(ref, tai_anh.LOI_NGUON, "bài không còn khi thăm lại"), None
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_NGUON, "bài không còn khi thăm lại"))
     if ref_moi.video_id != ref.video_id or ref_moi.loai != LOAI_ANH:
-        return _hut(ref, tai_anh.LOI_HE_THONG, "thăm lại trả bài lệch id/loại"), None
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_HE_THONG, "thăm lại trả bài lệch id/loại"))
     kq2 = tai_mot_bai(ref_moi, thu_muc, proxy, kiem_video=kiem_video)
     if not kq2.ok and kq2.can_tham_lai:
         # Vẫn 403/410 sau khi đã có URL mới ⇒ nguồn không cho tải, thăm thêm cũng vô ích.
-        return _hut(ref, tai_anh.LOI_NGUON, kq2.ly_do or "403 sau thăm lại"), None
-    return kq2, None
+        return _KetQuaThu(_hut(ref, tai_anh.LOI_NGUON, kq2.ly_do or "403 sau thăm lại"))
+    return _KetQuaThu(kq2)
 
 
 def _hut(ref: VideoRef, loai_loi: str, ly_do: str) -> tai_anh.KetQuaTaiBai:
@@ -164,8 +201,12 @@ def tai_cac_bai_anh(
     def _truoc_goi() -> str | None:
         return cong.truoc_goi() if cong is not None else None
 
+    def _xu_ly_loi(exc: BaseException) -> str | None:
+        return cong.xu_ly_loi(exc) if cong is not None else None
+
     xong = loi = 0
     da_lam_trong_lo = 0
+    chan_lien_tiep = 0
     ly_do_dung: str | None = None
     for ref in anh_refs:
         if kiem_dia is not None:
@@ -182,19 +223,31 @@ def tai_cac_bai_anh(
         if ly_do_dung:
             log.warning("dừng lượt ảnh: cổng nền tảng từ chối (%s)", ly_do_dung)
             break
-        kq, ly_do_dung = _tai_va_tham_lai(ref, thu_muc, proxy, kiem_video, tai_mot_bai, tham_lai,
-                                          _truoc_goi_sau_nghi(cho_nghi, _truoc_goi))
-        if ly_do_dung:
+        thu = _tai_va_tham_lai(ref, thu_muc, proxy, kiem_video, tai_mot_bai, tham_lai,
+                               _truoc_goi_sau_nghi(cho_nghi, _truoc_goi), _xu_ly_loi)
+        kq, ly_do_dung = thu.kq, thu.ly_do_dung
+        if ly_do_dung and not thu.ghi_loi_bai:
             log.warning("dừng lượt ảnh trước khi thăm lại: cổng nền tảng từ chối (%s)", ly_do_dung)
             break
         da_lam_trong_lo += 1
+        chan_lien_tiep = chan_lien_tiep + 1 if thu.chan else 0
         if not kq.ok:
             loi += 1
             ghi_loi(ref, kq.ly_do or "bài ảnh hụt",
                     loai=LOAI_LOI_NGUON if kq.loai_loi == tai_anh.LOI_NGUON else LOAI_LOI_HE_THONG)
+            if ly_do_dung:
+                log.warning("dừng lượt ảnh: lỗi thăm lại là tín hiệu dừng (%s)", ly_do_dung)
+                break
+            if chan_lien_tiep >= TRAN_CHAN_LIEN_TIEP:
+                ly_do_dung = STOP_BI_CHAN
+                log.warning("dừng lượt ảnh: %d lần thăm lại liên tiếp gặp dấu hiệu chặn", chan_lien_tiep)
+                break
             continue
         ket_qua_up = hook(job_id=job_id, ref=ref, tep=kq.tep, db_path=db_path)
-        if ket_qua_up.ok:
+        if ket_qua_up.ok and ket_qua_up.reason == lifecycle_anh.LY_DO_BAI_DA_CO:
+            # Bài đã có trong thư viện (lượt khác ghi trước): không xong+1, không lỗi — chỉ ghi lần thấy.
+            ghi_sighting(ref)
+        elif ket_qua_up.ok:
             models.increment_job_counts(db_path, job_id, xong_delta=1)
             ghi_sighting(ref)
             xong += 1

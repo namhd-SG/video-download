@@ -31,6 +31,10 @@ log = logging.getLogger("ttmd.lifecycle_anh")
 
 _DUOI_VIDEO = ".mp4"
 
+# `reason` của kết quả SUCCESS khi cả K hàng đã có sẵn (lượt khác ghi trước): thư mục vừa tạo là bản trùng, đã trash;
+# người gọi tính là bỏ qua, không phải xong+1.
+LY_DO_BAI_DA_CO = "bai_anh_da_co"
+
 
 class UploaderAnhLike(Protocol):
     """Phần uploader Drive mà đường ảnh dùng; chữ ký khớp `gdrive_upload.DriveUploader`."""
@@ -73,7 +77,10 @@ def _bo_thu_muc_dang(uploader: UploaderAnhLike, job_id: int, thu_muc_bai_id: str
     """Trash thư mục bài dở trên Drive. Trash trượt không đổi kết quả bài (vẫn FAILED) nhưng phải để lại dấu."""
     if not thu_muc_bai_id:
         return
-    r = uploader.trash_file(thu_muc_bai_id)
+    try:
+        r = uploader.trash_file(thu_muc_bai_id)
+    except Exception as exc:  # noqa: BLE001 — dọn hụt không được đè kết quả/lỗi gốc của bài
+        r = UploadResult(outcome=UploadOutcome.FAILED, reason=type(exc).__name__)
     if not r.ok:
         log.error("job %s: không trash được thư mục bài dở trên Drive (%s: %s) — lần chạy sau sẽ tạo thư mục "
                   "cùng tên (trùng), không mất dữ liệu; dọn tay thư mục bài thiếu tệp",
@@ -97,9 +104,12 @@ def on_bai_anh_verified(*, job_id: int, ref: VideoRef, tep: Sequence[Path], db_p
     if not tep:
         return UploadResult(outcome=UploadOutcome.FAILED, reason="bài ảnh không có tệp")
     thu_muc_local = tep[0].parent
-    uploader = uploader or lifecycle._get_uploader()
     try:
+        uploader = uploader or lifecycle._get_uploader()
         return _day_bai_len(job_id, ref, list(tep), db_path, uploader)
+    except Exception as exc:  # noqa: BLE001 — uploader ném (create_folder/trash_file…) ⇒ một bài FAILED, không giết job
+        log.error("job %s: bài ảnh FAILED — uploader ném lỗi (%s)", job_id, type(exc).__name__)
+        return UploadResult(outcome=UploadOutcome.FAILED, reason=f"uploader lỗi: {type(exc).__name__}")
     finally:
         shutil.rmtree(thu_muc_local, ignore_errors=True)
 
@@ -124,7 +134,18 @@ def _day_bai_len(job_id: int, ref: VideoRef, tep: list[Path], db_path: Path | No
         log.warning("job %s: bài ảnh FAILED — không tạo được thư mục bài (%s)", job_id, thu_muc_bai.outcome.value)
         return thu_muc_bai if not thu_muc_bai.ok else UploadResult(
             outcome=UploadOutcome.FAILED, reason="thư mục bài không có id")
+    try:
+        return _day_tep_va_ghi(job_id, ref, tep, db_path, uploader, thu_muc_bai)
+    except BaseException:
+        # Chết giữa chừng (lỗi lạ của uploader, KeyboardInterrupt/SystemExit khi tắt máy chủ): không để lại thư mục
+        # bài dở trên Drive mà DB không biết tới. Dọn rồi ném lại nguyên lỗi.
+        log.error("job %s: bài ảnh dở dang khi có lỗi bay qua — trash thư mục bài", job_id)
+        _bo_thu_muc_dang(uploader, job_id, thu_muc_bai.file_id)
+        raise
 
+
+def _day_tep_va_ghi(job_id: int, ref: VideoRef, tep: list[Path], db_path: Path | None,
+                    uploader: UploaderAnhLike, thu_muc_bai: UploadResult) -> UploadResult:
     file_ids: list[str] = []
     for i, duong_dan in enumerate(tep, start=1):
         ket_qua, lan_thu_lai = lifecycle._upload_co_thu_lai(uploader, duong_dan, thu_muc_bai.file_id)
@@ -141,14 +162,23 @@ def _day_bai_len(job_id: int, ref: VideoRef, tep: list[Path], db_path: Path | No
 
     if db_path is not None:
         # Thumb TRƯỚC khi ghi hàng (local còn nguyên); video_id của tệp 01 để `video_nay_cua_toi` khớp.
-        _cat_thumb_quietly(tep[0], db_path, file_id_anh(ref.video_id, 1))
+        thumb_id = file_id_anh(ref.video_id, 1)
+        co_thumb_truoc = thumb_path_for(db_path, thumb_id).exists()
+        _cat_thumb_quietly(tep[0], db_path, thumb_id)
         try:
-            models_anh.ghi_bai_anh(db_path, _hang_db(job_id, ref, tep, file_ids, thu_muc_bai.file_id))
+            so_hang_moi = models_anh.ghi_bai_anh(db_path, _hang_db(job_id, ref, tep, file_ids, thu_muc_bai.file_id))
         except Exception as exc:  # noqa: BLE001 — tệp đã lên Drive mà không có hàng ⇒ hoàn tác cả bài cho nhất quán
             log.error("job %s: bài ảnh đã lên Drive nhưng ghi DB trượt (%s) — trash thư mục bài để lần chạy "
                       "sau làm lại từ đầu", job_id, type(exc).__name__)
             _bo_thu_muc_dang(uploader, job_id, thu_muc_bai.file_id)
+            if not co_thumb_truoc:      # thumb không có hàng đi kèm = rác trong thumbs/
+                thumb_path_for(db_path, thumb_id).unlink(missing_ok=True)
             return UploadResult(outcome=UploadOutcome.FAILED, reason=f"ghi DB trượt: {type(exc).__name__}")
+        if so_hang_moi == 0:
+            # Cả K hàng đã có (lượt khác ghi trước): thư mục vừa tạo là bản trùng trên Drive ⇒ trash, báo bỏ qua.
+            log.info("job %s: bài ảnh đã có trong thư viện — trash thư mục trùng vừa tạo", job_id)
+            _bo_thu_muc_dang(uploader, job_id, thu_muc_bai.file_id)
+            return UploadResult(outcome=UploadOutcome.SUCCESS, reason=LY_DO_BAI_DA_CO)
     log.info("job %s: bài ảnh %d tệp lên Drive xong, đã xoá local", job_id, len(tep))
     return UploadResult(outcome=UploadOutcome.SUCCESS, file_id=thu_muc_bai.file_id, drive_id=thu_muc_bai.drive_id,
                         web_view_link=thu_muc_bai.web_view_link)

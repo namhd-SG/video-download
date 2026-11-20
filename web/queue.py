@@ -859,7 +859,7 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
         return
     if anh_refs:
         # Chỉ tới đây khi bước video KHÔNG dừng (het_dia / cổng bảo dừng ở trên đã `return`).
-        queue_anh.tai_cac_bai_anh(
+        ket_qua_anh = queue_anh.tai_cac_bai_anh(
             anh_refs, job_id=job_id, db_path=db_path, thu_muc=output_dir,
             kiem_dia=_kiem_dia, cong=cong,
             kiem_video=lambda path: verify_video_stream(path),   # tra lúc gọi: test/đột biến vá được
@@ -867,6 +867,15 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
             ghi_sighting=lambda ref: progress._note_sighting(ref, da_tai=True),
             tham_lai=queue_anh.tham_lai_theo_job(cookies_path))   # IG thăm lại bằng jar của người tạo job
         if _dung_job_neu_can():
+            return
+        if ket_qua_anh.ly_do_dung:
+            # Lý do dừng do chính vòng ảnh phát hiện mà cổng/đĩa không biết (IG mất phiên/thiếu cookie khi thăm lại,
+            # TikTok chặn liên tiếp): ghi lý do rồi đóng `failed`, như các nhánh dừng ở trên.
+            try:
+                models.set_job_stop_reason(db_path, job_id, ket_qua_anh.ly_do_dung)
+            except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+                log.warning("job %s: không ghi được lý do dừng", job_id)
+            models.finish_job(db_path, job_id, "failed")
             return
     # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
     # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không

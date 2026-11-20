@@ -775,7 +775,7 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
     `VIDEODL_NEN_TANG_BAT` đang áp), nên đổi trần hay bật nền tảng thì trang đổi theo, không
     ai phải nhớ sửa chữ. Chỉ trả hằng và cờ: không đường dẫn, không email, không gì của cookie.
     """
-    return {
+    tn = {
         "nguon": [{"ten": n.ten, "mo_ta": n.mo_ta_url} for n in NGUON],
         "nen_tang_link_le": sorted(NEN_TANG_LINK_LE),
         "nen_tang_bat": sorted(nen_tang_bat()),
@@ -783,10 +783,6 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
         "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
         "ten_hien_thi": TEN_HIEN_THI,
         "thay_logo_bat": worker_thay_logo is not None,
-        # Tải ảnh: cờ `VIDEODL_TAI_ANH_BAT` và các nền tảng có ảnh đang chạy được (cờ bật ∩ `VIDEODL_NEN_TANG_BAT`);
-        # cờ tắt ⇒ danh sách rỗng. Chỉ bool và tên nền tảng.
-        "tai_anh_bat": tai_anh_dang_bat(),
-        "nen_tang_anh": sorted(NEN_TANG_CO_ANH & nen_tang_bat()) if tai_anh_dang_bat() else [],
         "tran": {
             "thay_logo_video_mot_luot": thay_logo_routes.TRAN_VIDEO_MOT_JOB,
             "so_luong_mot_luot": MAX_SO_LUONG,
@@ -804,6 +800,12 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
             "ip_moi_nen_tang": {nt: {"gio": g, "ngay": n} for nt, (g, n) in pacer.TRAN.items()},
         },
     }
+    if tai_anh_dang_bat():
+        # Tải ảnh: chỉ có khoá khi cờ `VIDEODL_TAI_ANH_BAT` BẬT (cờ tắt ⇒ phản hồi đúng như trước khi có tính năng).
+        # `nen_tang_anh` = nền tảng có ảnh ∩ `VIDEODL_NEN_TANG_BAT`. Chỉ bool và tên nền tảng.
+        tn["tai_anh_bat"] = True
+        tn["nen_tang_anh"] = sorted(NEN_TANG_CO_ANH & nen_tang_bat())
+    return tn
 
 
 @app.get("/me/cookie")

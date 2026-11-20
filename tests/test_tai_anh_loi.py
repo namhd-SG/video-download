@@ -160,3 +160,13 @@ def test_con_video_ma_khong_co_ham_kiem_thi_hut_chu_khong_cho_qua(tmp_path):
     kq = tai_anh.tai_mot_bai(ref_anh([("v",)], ("video",)), tmp_path,
                              lay=LayGia({"v": PhanHoi(body=video, ctype="video/mp4")}))
     assert not kq.ok
+
+
+@pytest.mark.parametrize("bai_id", ["../thoat", "anh-tt-1/../../x", "", "khong-tien-to", "anh-tt-a b"])
+def test_bai_id_sai_hinh_bi_tu_choi_truoc_mkdir(tmp_path, bai_id):
+    """Review PR #125 L4: `bai_id` thành tên thư mục bị mkdir/rmtree ⇒ tự rào, không tin nguồn."""
+    ref = VideoRef(video_id=bai_id, url="https://nguon.invalid/x", loai="anh",
+                   anh_urls=(("https://cdn.invalid/0",),))
+    kq = tai_anh.tai_mot_bai(ref, tmp_path / "dl", lay=lambda *a, **k: pytest.fail("không được tải"))
+    assert not kq.ok and kq.loai_loi == tai_anh.LOI_HE_THONG and kq.ly_do == "bai_id sai hình"
+    assert not (tmp_path / "dl").exists() and list(tmp_path.iterdir()) == []

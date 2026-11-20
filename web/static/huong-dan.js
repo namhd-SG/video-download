@@ -71,8 +71,10 @@
     document.getElementById("tam-tat").hidden = !tamTat.length;
     document.getElementById("nen-tang-tam-tat").textContent = tamTat.map(ten).join(", ");
 
-    // Tải ảnh: chỉ cờ + danh sách nền tảng từ máy chủ; cờ tắt ⇒ một câu nói rõ, phần chi tiết ẩn.
+    // Tải ảnh: chỉ cờ + danh sách nền tảng từ máy chủ; cờ tắt (máy chủ không gửi khoá) ⇒ cả mục và link mục lục ẩn.
     const taiAnhBat = tn.tai_anh_bat === true;
+    document.getElementById("tai-anh").hidden = !taiAnhBat;
+    document.getElementById("muc-luc-tai-anh").hidden = !taiAnhBat;
     const nenTangAnh = tn.nen_tang_anh || [];
     document.getElementById("tai-anh-trang-thai").textContent = taiAnhBat
       ? "Tính năng tải ảnh đang BẬT trên máy này."

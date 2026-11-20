@@ -366,8 +366,11 @@ def test_huong_dan_muc_tai_anh_theo_co(mo, may_chu, du_lieu, bat, mong):
     p, _ = mo(bat=bat)
     p.goto(may_chu[0] + "huong-dan.html")
     p.wait_for_function("!document.getElementById('tai-anh-trang-thai').textContent.includes('…')")
-    assert mong in p.inner_text("#tai-anh-trang-thai")
+    assert mong in p.text_content("#tai-anh-trang-thai")
     assert p.locator("#tai-anh-chi-tiet").is_visible() is bat
+    # Cờ tắt ⇒ cả mục "Tải ảnh" và link mục lục của nó ẩn (trang như trước khi có tính năng).
+    assert p.locator("#tai-anh").is_visible() is bat
+    assert p.locator("#muc-luc-tai-anh").is_visible() is bat
 
 
 # ---------------------------------------------------------------------- ảnh chụp

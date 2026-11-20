@@ -581,3 +581,138 @@ def test_tiktok_va_facebook_da_dang_ky_tham_lai_luc_nap():
     from tiktok_music_downloader import nguon_facebook_trang, tiktok_anh
     assert queue_anh._THAM_LAI["tt"] is tiktok_anh.tham_lai
     assert queue_anh._THAM_LAI["fbp"] is nguon_facebook_trang.tham_lai
+
+
+# ---------------------------------------------------------------------------
+# Review PR #125: lỗi thăm lại là TÍN HIỆU DỪNG (IG mất phiên/thiếu cookie, cổng nhận chặn, TikTok chặn liên tiếp)
+# ---------------------------------------------------------------------------
+
+def ref_ig(ma: str) -> VideoRef:
+    return VideoRef(video_id=f"anh-ig-{ma}", url=f"https://www.instagram.com/p/{ma}/", loai="anh",
+                    anh_urls=((f"https://cdn.invalid/{ma}/0",),))
+
+
+def _het_han_moi_bai(monkeypatch):
+    monkeypatch.setattr(tai_anh, "tai_mot_bai", lambda r, t, p=None, **k: _ket_qua_het_han(r.video_id))
+
+
+@pytest.mark.parametrize("loi,mong", [
+    (RuntimeError("nguồn instagram: mất phiên [http_429]"), "ig_mat_phien"),
+    (RuntimeError("nguồn instagram: mất phiên [url_dang_nhap]"), "ig_mat_phien"),
+    (ValueError("link ảnh Instagram cần cookie IG"), "ig_chua_co_cookie"),
+])
+def test_tham_lai_ig_mat_phien_dung_luot_khong_tham_tiep(db, tmp_path, monkeypatch, loi, mong):
+    """27 bài IG hết hạn URL mà phiên đã mất: bài đầu thăm lại lỗi ⇒ dừng lượt với lý do IG, KHÔNG thăm 26 bài sau,
+    bài đó ghi lỗi phía nguồn (khung xám), không phải lỗi hệ thống."""
+    _het_han_moi_bai(monkeypatch)
+    tham: list = []
+
+    def tham_lai(r, p):
+        tham.append(r.video_id)
+        raise loi
+
+    ghi = Ghi()
+    refs = [ref_ig(f"M{i}") for i in range(27)]
+    _, kq = _chay_anh(db, tmp_path, refs, ghi, tham_lai=tham_lai)
+    assert tham == ["anh-ig-M0"], "mất phiên ở bài đầu thì không thăm tiếp bài nào"
+    assert kq.ly_do_dung == mong and (kq.xong, kq.loi) == (0, 1)
+    assert ghi.loi == [("anh-ig-M0", queue_anh.LOAI_LOI_NGUON)]
+
+
+def test_tham_lai_loi_thuong_van_la_mot_bai_hut_he_thong(db, tmp_path, monkeypatch):
+    """Lỗi không phải tín hiệu dừng (vd mạng) ⇒ bài hụt phía ta, lượt chạy tiếp các bài sau."""
+    _het_han_moi_bai(monkeypatch)
+    tham: list = []
+
+    def tham_lai(r, p):
+        tham.append(r.video_id)
+        raise OSError("mạng rớt")
+
+    ghi = Ghi()
+    _, kq = _chay_anh(db, tmp_path, [ref_ig("A"), ref_ig("B")], ghi, tham_lai=tham_lai)
+    assert tham == ["anh-ig-A", "anh-ig-B"] and kq.ly_do_dung is None
+    assert [l for _, l in ghi.loi] == [queue_anh.LOAI_LOI_HE_THONG] * 2
+
+
+def test_tham_lai_loi_cong_nhan_la_chan_thi_dung_bi_chan(db, tmp_path, monkeypatch):
+    """Cổng nền tảng (IG/FB) nhận lỗi thăm lại là tín hiệu chặn ⇒ `cong.xu_ly_loi` được gọi, lượt dừng `bi_chan`."""
+    _het_han_moi_bai(monkeypatch)
+
+    class Cong:
+        def __init__(self):
+            self.loi = []
+
+        def truoc_goi(self):
+            return None
+
+        def xu_ly_loi(self, exc):
+            self.loi.append(str(exc))
+            return "bi_chan"
+
+    def tham_lai(r, p):
+        raise RuntimeError("HTTP Error 429")
+
+    cong, ghi = Cong(), Ghi()
+    _, kq = _chay_anh(db, tmp_path, [ref_anh("A"), ref_anh("B")], ghi, cong=cong, tham_lai=tham_lai)
+    assert cong.loi == ["HTTP Error 429"] and kq.ly_do_dung == "bi_chan" and kq.loi == 1
+
+
+def test_tiktok_chan_lien_tiep_dung_luot_bi_chan(db, tmp_path, monkeypatch):
+    """TikTok 403/429/trang chặn khi thăm lại: đủ `TRAN_CHAN_LIEN_TIEP` lần liên tiếp ⇒ dừng `bi_chan`, chữ lỗi nói
+    "TikTok chặn/giới hạn" (không phải "bài không còn")."""
+    from tiktok_music_downloader import tiktok_anh
+    _het_han_moi_bai(monkeypatch)
+    tham: list = []
+
+    def tham_lai(r, p):
+        tham.append(r.video_id)
+        raise tiktok_anh.LoiChanTikTok("TikTok chặn/giới hạn (429)")
+
+    loi_chu: list = []
+    kq = queue_anh.tai_cac_bai_anh(
+        [ref_anh(f"A{i}") for i in range(10)], job_id=_job(db)[0], db_path=db, thu_muc=tmp_path / "dl",
+        ghi_loi=lambda ref, ly_do, *, loai: loi_chu.append((ly_do, loai)), ghi_sighting=lambda ref: None,
+        tham_lai=tham_lai)
+    assert len(tham) == queue_anh.TRAN_CHAN_LIEN_TIEP
+    assert kq.ly_do_dung == "bi_chan" and kq.loi == queue_anh.TRAN_CHAN_LIEN_TIEP
+    assert loi_chu and all("TikTok chặn/giới hạn" in c and l == queue_anh.LOAI_LOI_NGUON for c, l in loi_chu)
+
+
+def test_tiktok_chan_xen_bai_thanh_cong_thi_dem_lai_tu_dau(db, tmp_path, monkeypatch):
+    from tiktok_music_downloader import tiktok_anh
+    lifecycle.set_uploader(UploaderGia())
+    goi = _tai_gia(monkeypatch, hut={f"anh-tt-C{i}": _ket_qua_het_han(f"anh-tt-C{i}") for i in range(5)})
+
+    def tham_lai(r, p):
+        raise tiktok_anh.LoiChanTikTok("TikTok chặn/giới hạn (403)")
+
+    # chặn, chặn, OK, chặn, chặn, OK ⇒ không lần nào đủ 3 liên tiếp
+    refs = [ref_anh("C0"), ref_anh("C1"), ref_anh("OK1"), ref_anh("C2"), ref_anh("C3"), ref_anh("OK2")]
+    ghi = Ghi()
+    _, kq = _chay_anh(db, tmp_path, refs, ghi, tham_lai=tham_lai)
+    assert kq.ly_do_dung is None and (kq.xong, kq.loi) == (2, 4) and len(goi) == 6
+
+
+def test_job_ig_tham_lai_mat_phien_dong_job_voi_ly_do(db, tmp_path, monkeypatch):
+    """M1: `ly_do_dung` của vòng ảnh mà cổng/đĩa không biết (IG mất phiên khi thăm lại) ⇒ job `failed` + lý do."""
+    _het_han_moi_bai(monkeypatch)
+    monkeypatch.setattr(queue_anh, "tham_lai_theo_job", lambda ck: (
+        lambda r, p: (_ for _ in ()).throw(RuntimeError("nguồn instagram: mất phiên [http_429]"))))
+    monkeypatch.setattr(queue_mod, "download_all", lambda *a, **k: pytest.fail("không có ref video"))
+    jid, job = _job(db, loai="anh")
+    models.claim_next_pending_job(db)
+    _hoan_tat_tu_refs(db, tmp_path / "dl", models.get_job(db, jid), [ref_ig("A"), ref_ig("B")], {}, None,
+                      lambda **kw: _UPLOAD_OK)
+    j = models.get_job(db, jid)
+    assert (j["trang_thai"], j["ly_do_dung"]) == ("failed", "ig_mat_phien")
+
+
+def test_bai_da_co_trong_thu_vien_tinh_bo_qua_khong_xong_khong_loi(db, tmp_path, monkeypatch):
+    """L1: hook báo bài đã có (lượt khác ghi trước) ⇒ không xong+1, không lỗi, vẫn ghi lần thấy."""
+    _tai_gia(monkeypatch)
+    monkeypatch.setattr(queue_anh.lifecycle_anh, "on_bai_anh_verified", lambda **kw: UploadResult(
+        outcome=UploadOutcome.SUCCESS, reason=queue_anh.lifecycle_anh.LY_DO_BAI_DA_CO))
+    ghi = Ghi()
+    jid, kq = _chay_anh(db, tmp_path, [ref_anh("A")], ghi)
+    assert (kq.xong, kq.loi) == (0, 0) and ghi.sighting == ["anh-tt-A"] and ghi.loi == []
+    assert models.get_job(db, jid)["xong"] == 0

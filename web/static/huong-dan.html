@@ -47,7 +47,7 @@
       <a href="#cookie">Cookie TikTok</a>
       <a href="#cookie-instagram">Cookie Instagram</a>
       <a href="#thu-vien">Thư viện, cụm và bộ</a>
-      <a href="#tai-anh">Tải ảnh</a>
+      <a href="#tai-anh" id="muc-luc-tai-anh" hidden>Tải ảnh</a>
       <a href="#ly-do-dung">Vì sao lượt tải dừng</a>
       <a href="#thay-logo">Thay logo</a>
       <a href="#chua-co">Chưa hỗ trợ</a>
@@ -192,9 +192,10 @@
       </ul>
     </section>
 
-    <!-- Cờ và danh sách nền tảng KHÔNG viết tay: huong-dan.js điền từ GET /tinh-nang (tai_anh_bat, nen_tang_anh).
+    <!-- Cả mục (và link mục lục) ẨN mặc định; huong-dan.js chỉ hiện khi GET /tinh-nang có tai_anh_bat = true.
+         Cờ và danh sách nền tảng KHÔNG viết tay: huong-dan.js điền từ GET /tinh-nang (tai_anh_bat, nen_tang_anh).
          Câu tả hành vi: ảnh vào bộ + dọn ngày 7 như video (đường vào bộ/dọn chạy trên từng tệp ảnh), không cụm/thay logo. -->
-    <section class="panel" id="tai-anh">
+    <section class="panel" id="tai-anh" hidden>
       <h2>Tải ảnh</h2>
       <p id="tai-anh-trang-thai" class="muted">…</p>
       <div id="tai-anh-chi-tiet" hidden>

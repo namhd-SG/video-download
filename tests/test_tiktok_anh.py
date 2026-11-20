@@ -228,3 +228,29 @@ def test_profile_yt_dlp_loai_anh_roi_ve_trinh_duyet_khong_cham_mang(monkeypatch)
     monkeypatch.setattr(npy, "profile_yt_dlp_dang_bat", lambda: True)
     for loai in ("anh", "ca_hai"):
         assert npy.liet_ke_profile_yt_dlp("https://www.tiktok.com/@u1", max_videos=5, loai=loai) is None
+
+
+@pytest.mark.parametrize("ma", [403, 429])
+def test_tham_lai_http_chan_nem_loi_chan_khong_bao_bai_khong_con(monkeypatch, ma):
+    """Review PR #125 M2: 403/429 khi thăm lại là TikTok chặn/giới hạn, không phải bài đã gỡ (trả None)."""
+    class R:
+        status_code, text = ma, ""
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: R())
+    with pytest.raises(ta.LoiChanTikTok, match="TikTok chặn/giới hạn"):
+        ta.tham_lai(VideoRef(video_id=f"anh-tt-{ID_ANH}", url="x", loai="anh"), None)
+
+
+def test_tham_lai_trang_chan_khong_co_du_lieu_bai_la_loi_chan(monkeypatch):
+    _noi_html(monkeypatch, "<html><body>Please wait...</body></html>")
+    with pytest.raises(ta.LoiChanTikTok):
+        ta.tham_lai(VideoRef(video_id=f"anh-tt-{ID_ANH}", url="x", loai="anh"), None)
+
+
+@pytest.mark.parametrize("ma", [404, 410])
+def test_tham_lai_404_410_van_la_bai_khong_con(monkeypatch, ma):
+    class R:
+        status_code, text = ma, ""
+    import requests
+    monkeypatch.setattr(requests, "get", lambda *a, **k: R())
+    assert ta.tham_lai(VideoRef(video_id=f"anh-tt-{ID_ANH}", url="x", loai="anh"), None) is None

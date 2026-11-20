@@ -99,7 +99,8 @@ def test_theo_lo_id_sai_hinh_dang_bi_tu_choi_truoc_khi_dung_truy_van(xau):
     assert dv.goi == [] and d._up.so_lan_dung == 0, "không dựng dịch vụ, không gọi mạng"
 
 
-def test_thung_rac_dung_q_fields_phan_trang():
+def test_thung_rac_dung_q_fields_phan_trang(monkeypatch):
+    monkeypatch.setenv("VIDEODL_TAI_ANH_BAT", "1")
     d, dv = tao(DichVuGia([{"files": [{"id": "t1"}], "nextPageToken": "P2"}]))
     assert d.liet_ke_video_thung_rac("P1") == ([{"id": "t1"}], "P2")
     assert dv.goi[0] == ("list", {
@@ -108,7 +109,8 @@ def test_thung_rac_dung_q_fields_phan_trang():
         "pageToken": "P1", "fields": "nextPageToken,files(id)"})
 
 
-def test_ban_sao_theo_dau_va_shared_drive_giu_truy_van_cu():
+def test_ban_sao_theo_dau_va_shared_drive_giu_truy_van_cu(monkeypatch):
+    monkeypatch.setenv("VIDEODL_TAI_ANH_BAT", "1")
     d, dv = tao(DichVuGia([{"files": []}, {"files": [], "nextPageToken": "N"}]))
     d.liet_ke_ban_sao_theo_dau(id_(1), None)
     assert dv.goi[0][1]["q"] == ("properties has {key='videodesk_src' and value='%s'} "
@@ -128,3 +130,13 @@ def test_lay_tep_404_la_khong_thay_con_403_nem_nguyen():
         with pytest.raises(mong) as e:
             d.lay_tep(id_(1))
         assert (status == 404) == isinstance(e.value, DriveKhongThay)
+
+
+def test_co_tai_anh_tat_thi_truy_van_liet_ke_y_nhu_cu(monkeypatch):
+    """Cờ tải ảnh TẮT ⇒ hai truy vấn liệt kê đúng chuỗi trước khi có tính năng ảnh (chỉ video)."""
+    monkeypatch.delenv("VIDEODL_TAI_ANH_BAT", raising=False)
+    d, dv = tao(DichVuGia([{"files": []}, {"files": []}]))
+    d.liet_ke_video_shared_drive("DRV", None)
+    d.liet_ke_video_thung_rac(None)
+    assert dv.goi[0][1]["q"] == "trashed = false and mimeType contains 'video/'"
+    assert dv.goi[1][1]["q"] == "trashed = true and mimeType contains 'video/'"

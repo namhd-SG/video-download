@@ -58,9 +58,14 @@ def bai_id_anh(nt: str, id_bai: str) -> str:
     return bai_id
 
 
+def la_bai_id_hop_le(bai_id: object) -> bool:
+    """`bai_id` đúng hình `anh-…` chỉ chữ-số/gạch — rào cho mọi chỗ dùng nó làm tên thư mục/tệp (mkdir/rmtree)."""
+    return isinstance(bai_id, str) and bai_id.startswith(TIEN_TO_ID_ANH) and bool(_MAU_ID_BAI.fullmatch(bai_id))
+
+
 def file_id_anh(bai_id: str, thu_tu: int) -> str:
     """`<bai_id>-<NN>` (NN 2 chữ số, `thu_tu` bắt đầu từ 1) — `video_id` của hàng `videos` cho MỘT tệp ảnh."""
-    if not isinstance(bai_id, str) or not bai_id.startswith(TIEN_TO_ID_ANH) or not _MAU_ID_BAI.fullmatch(bai_id):
+    if not la_bai_id_hop_le(bai_id):
         raise ValueError("bai_id sai hình")
     if isinstance(thu_tu, bool) or not isinstance(thu_tu, int) or not 1 <= thu_tu <= 99:
         raise ValueError("thu_tu phải là số nguyên 1..99")
