@@ -864,7 +864,8 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
             kiem_dia=_kiem_dia, cong=cong,
             kiem_video=lambda path: verify_video_stream(path),   # tra lúc gọi: test/đột biến vá được
             ghi_loi=progress._ghi_loi,
-            ghi_sighting=lambda ref: progress._note_sighting(ref, da_tai=True))
+            ghi_sighting=lambda ref: progress._note_sighting(ref, da_tai=True),
+            tham_lai=queue_anh.tham_lai_theo_job(cookies_path))   # IG thăm lại bằng jar của người tạo job
         if _dung_job_neu_can():
             return
     # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:

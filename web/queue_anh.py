@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from tiktok_music_downloader import tai_anh
+from tiktok_music_downloader import nguon_facebook_trang, nguon_instagram, tai_anh, tiktok_anh
 from tiktok_music_downloader.downloader import BATCH_REST_SECONDS, BATCH_SIZE
 from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH
 from tiktok_music_downloader.utils import JitterThrottle, VideoRef, che_url
@@ -58,6 +58,22 @@ def _nen_tang_cua_bai(bai_id: str) -> str | None:
     return phan[1] if len(phan) == 3 and phan[0] == "anh" and phan[1] in _NHAN_NEN_TANG else None
 
 
+# TikTok và Facebook thăm bài ẩn danh ⇒ đăng ký thẳng lúc nạp module. Instagram cần cookie của người tạo job nên
+# không nằm trong bảng: `tham_lai_theo_job(cookies_path)` bọc riêng.
+dang_ky_tham_lai("tt", tiktok_anh.tham_lai)
+dang_ky_tham_lai("fbp", nguon_facebook_trang.tham_lai)
+
+
+def tham_lai_theo_job(cookies_path: str | None) -> HamThamLai:
+    """Hàm thăm lại cho MỘT job: bài Instagram mở bằng jar IG của người tạo job (`cookies_path`; thiếu ⇒ hàm IG ném
+    `ValueError` ⇒ bài hụt phía ta, không coi là bài gỡ); nền tảng khác tra bảng đăng ký."""
+    def _ham(ref: VideoRef, proxy: str | None) -> VideoRef | None:
+        if _nen_tang_cua_bai(ref.video_id) == "ig":
+            return nguon_instagram.tham_lai(ref, proxy, cookies_path=cookies_path)
+        return _tham_lai_mac_dinh(ref, proxy)
+    return _ham
+
+
 class _ChuaCoHamThamLai(Exception):
     """Nền tảng của bài chưa đăng ký hàm thăm lại."""
 
@@ -79,10 +95,16 @@ class KetQuaCacBai:
 
 def _tai_va_tham_lai(ref: VideoRef, thu_muc: Path, proxy: str | None, kiem_video, tai_mot_bai, tham_lai,
                      truoc_tham_lai: Callable[[], str | None]) -> tuple[tai_anh.KetQuaTaiBai, str | None]:
-    """`(kết quả, lý do dừng)`. Thăm lại tối đa MỘT lần; sau lần thăm mà URL vẫn 403/410 ⇒ lỗi phía nguồn."""
-    kq = tai_mot_bai(ref, thu_muc, proxy, kiem_video=kiem_video)
-    if kq.ok or not kq.can_tham_lai:
-        return kq, None
+    """`(kết quả, lý do dừng)`. Thăm lại tối đa MỘT lần; sau lần thăm mà URL vẫn 403/410 ⇒ lỗi phía nguồn.
+
+    Ref ảnh CHƯA có URL (`anh_urls` rỗng — trang liệt kê chỉ thấy anchor `/photo/`, chưa thấy dữ liệu bài) thì thăm
+    bài NGAY, không tải trước (tải trước chỉ ra "bài không có ảnh" sai phía nguồn)."""
+    if ref.anh_urls:
+        kq = tai_mot_bai(ref, thu_muc, proxy, kiem_video=kiem_video)
+        if kq.ok or not kq.can_tham_lai:
+            return kq, None
+    else:
+        kq = _hut(ref, tai_anh.LOI_NGUON, "bài ảnh chưa có URL ảnh")
     ly_do_dung = truoc_tham_lai()
     if ly_do_dung:
         return kq, ly_do_dung

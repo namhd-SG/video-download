@@ -376,11 +376,52 @@ def test_link_le_che_do_anh_loc_bai_da_co_theo_bai_id_truoc_khi_goi_mang():
     assert [r.video_id for r in bo] == ["anh-tt-7123456789012345678", "anh-ig-Cx9AbZ12"]
 
 
-def test_link_le_che_do_anh_bai_chua_co_thi_chua_cai_trinh_liet_ke_nem_ro_rang_khong_tra_video():
-    with pytest.raises(NotImplementedError):
-        _liet_ke_le(TT_VIDEO, "anh")
-    with pytest.raises(NotImplementedError):
-        _liet_ke_le(TT_PHOTO, "ca_hai")
+def _ref_anh_tt():
+    return VideoRef(video_id="anh-tt-7123456789012345678", url=TT_VIDEO, loai="anh",
+                    anh_urls=(("https://cdn.vi.du/01.jpg",),), anh_kieu=("anh",))
+
+
+def test_link_le_tiktok_che_do_anh_di_qua_trinh_tham_bai_va_ghi_luot_cong(monkeypatch):
+    from tiktok_music_downloader import tiktok_anh
+    goi = []
+    monkeypatch.setattr(tiktok_anh, "liet_ke_link_le", lambda url, *, loai, proxy=None: goi.append(loai) or [_ref_anh_tt()])
+
+    class Cong:
+        luot = 0
+
+        def truoc_goi(self):
+            Cong.luot += 1
+            return None
+
+    ket, _hoi, _bo = _liet_ke_le(TT_PHOTO, "anh", cong=Cong())
+    assert [r.video_id for r in ket] == ["anh-tt-7123456789012345678"]
+    assert goi == ["anh"] and Cong.luot == 1, "thăm bài là một lời gọi mạng: phải ghi lượt cổng"
+
+
+def test_link_le_tiktok_bai_khong_xem_duoc_la_loi_rieng_link_khong_giet_job(monkeypatch):
+    from tiktok_music_downloader import tiktok_anh
+
+    def _loi(url, *, loai, proxy=None):
+        raise tiktok_anh.LoiNguonTikTok("statusCode 10204", 10204)
+
+    monkeypatch.setattr(tiktok_anh, "liet_ke_link_le", _loi)
+    loi, dung = [], []
+    ket = nguon.LinkLe().liet_ke(TT_PHOTO, max_videos=5, already_have=lambda ids: set(), on_skip=lambda r: None,
+                                 on_stop=dung.append, loai="anh", ghi_loi_video=lambda ma, ct: loi.append(ma))
+    assert ket == [] and loi == ["bai_khong_xem_duoc"]
+
+
+def test_link_le_instagram_anh_thieu_cookie_dung_ca_job(monkeypatch):
+    from tiktok_music_downloader import nguon_instagram
+
+    def _thieu(url, *, cookies_path, proxy=None):
+        raise ValueError("link ảnh Instagram cần cookie IG")
+
+    monkeypatch.setattr(nguon_instagram, "doc_bai_link_le", _thieu)
+    dung = []
+    ket = nguon.LinkLe().liet_ke(IG_BAI, max_videos=5, already_have=lambda ids: set(), on_skip=lambda r: None,
+                                 on_stop=dung.append, loai="anh")
+    assert ket == [] and dung[-1] == "ig_chua_co_cookie"
 
 
 def test_link_le_nhan_cookies_path_va_loai_khong_nuot_vao_tham_so_thua():

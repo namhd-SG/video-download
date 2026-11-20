@@ -62,6 +62,8 @@ from tiktok_music_downloader.phan_loai_loi import (
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_COMPLETE,
+    STOP_IG_CHUA_CO_COOKIE,
+    STOP_IG_MAT_PHIEN,
     STOP_SOURCE_EMPTY,
     STOP_STALLED,
     VideoRef,
@@ -594,6 +596,15 @@ class LinkLe:
                          cookies_path: str | None, cong=None) -> list[VideoRef]:
         """Điểm cắm DUY NHẤT cho link lẻ ở chế độ ảnh/cả hai: trả `VideoRef` đã phân loại (`loai="anh"` kèm `anh_urls`,
         hoặc `loai="video"`) cho MỘT link. Chưa có trình liệt kê ⇒ `NotImplementedError` — không im lặng trả video."""
+        # Nhập muộn: chỉ chế độ ảnh cần hai module này.
+        if nen_tang == "tiktok":
+            from tiktok_music_downloader import tiktok_anh
+            return tiktok_anh.liet_ke_link_le(link, loai=loai, proxy=proxy)
+        if nen_tang == "instagram":
+            from tiktok_music_downloader import nguon_instagram
+            ref = nguon_instagram.doc_bai_link_le(link, cookies_path=cookies_path, proxy=proxy)
+            # None = bài gỡ HOẶC bài video: ở `ca_hai` người gọi thử tiếp nhánh video (yt-dlp) cho chính link này.
+            return [] if ref is None or (loai != LOAI_CA_HAI and ref.loai != loai) else [ref]
         raise NotImplementedError(f"link lẻ {nen_tang}: chưa hỗ trợ liệt kê loại '{loai}'")
 
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
@@ -642,9 +653,43 @@ class LinkLe:
                 da_bo_vi_da_co += 1
                 continue
             if loai != LOAI_VIDEO:
-                refs.extend(self._liet_ke_bai_anh(link, nen_tang, loai=loai, proxy=proxy,
-                                                  cookies_path=cookies_path, cong=cong))
-                continue
+                # Thăm bài là một lời gọi mạng: cùng nghỉ jitter + lượt pacer như nhánh video bên dưới.
+                if da_goi_mang and nghi is not None:
+                    nghi()
+                if cong is not None:
+                    dung = cong.truoc_goi()
+                    if dung:
+                        break
+                da_goi_mang = True
+                try:
+                    bai = self._liet_ke_bai_anh(link, nen_tang, loai=loai, proxy=proxy,
+                                                cookies_path=cookies_path, cong=cong)
+                except NotImplementedError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — một link hỏng không giết cả job (trừ tín hiệu chặn/phiên)
+                    if cong is not None:
+                        dung = cong.xu_ly_loi(exc)
+                        if dung:
+                            break
+                    if nen_tang == "instagram":
+                        # IG không bao giờ chạy ẩn danh: thiếu cookie / mất phiên ⇒ dừng cả job như nguồn IG hàng loạt.
+                        if isinstance(exc, ValueError) and "cookie" in str(exc):
+                            dung = STOP_IG_CHUA_CO_COOKIE
+                            break
+                        if isinstance(exc, RuntimeError) and "mất phiên" in str(exc):
+                            dung = STOP_IG_MAT_PHIEN
+                            break
+                    ma = "bai_khong_xem_duoc" if getattr(exc, "loai", None) == "tiktok" else (
+                        "khong_nhan" if isinstance(exc, ValueError) else "loi_khac")
+                    loi(ma, che_url(str(exc)))
+                    continue
+                if bai:
+                    refs.extend(bai)
+                    continue
+                if not (loai == LOAI_CA_HAI and nen_tang == "instagram"):
+                    loi("khac_loai", "")
+                    continue
+                # IG `ca_hai`, bài không phải ảnh ⇒ đi tiếp nhánh video (yt-dlp) bên dưới cho chính link này.
             if nen_tang == "tiktok":
                 ref = parse_video_url(link)
                 if ref is not None:

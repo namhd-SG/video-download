@@ -550,3 +550,34 @@ def test_captcha_worker_ham_quet_chua_biet_loai_thi_job_anh_loi_ro(monkeypatch, 
     monkeypatch.setattr(t.worker.scraper, "quet_tren_trang", lambda page, url, **kw: da_quet.append(1) or [])
     kq = h.chay()       # worker nuốt lỗi lượt giải ⇒ job về chờ xác minh, không trả refs video
     assert da_quet == [] and kq.loai != "refs"
+
+
+def test_bai_anh_chua_co_url_thi_tham_bai_truoc_khi_tai(db, tmp_path, monkeypatch):
+    """Trang liệt kê chỉ thấy anchor `/photo/` ⇒ ref ảnh `anh_urls=()`: phải thăm bài lấy URL rồi mới tải, KHÔNG tải
+    ref rỗng (sẽ ra "bài không có ảnh" sai phía nguồn).
+    Đột biến: bỏ nhánh `if ref.anh_urls:` trong `_tai_va_tham_lai` (luôn tải trước) ⇒ test ĐỎ."""
+    import dataclasses
+    goi = _tai_gia(monkeypatch)
+    ref_rong = dataclasses.replace(ref_anh("A"), anh_urls=())
+    tham: list = []
+    ghi = Ghi()
+    _chay_anh(db, tmp_path, [ref_rong], ghi,
+              tham_lai=lambda r, p: tham.append(r.video_id) or ref_anh("A"))
+    assert tham == ["anh-tt-A"], "thăm bài đúng một lần, TRƯỚC khi tải"
+    assert goi == ["anh-tt-A"] and len(goi) == 1, "chỉ tải ref đã có URL, không tải ref rỗng"
+
+
+def test_tham_lai_theo_job_bai_instagram_mang_cookie_cua_job(monkeypatch):
+    from tiktok_music_downloader import nguon_instagram
+    nhan: list = []
+    monkeypatch.setattr(nguon_instagram, "tham_lai",
+                        lambda ref, proxy=None, *, cookies_path=None: nhan.append(cookies_path) or ref)
+    ref_ig = VideoRef(video_id="anh-ig-Cx9AbZ12", url="https://www.instagram.com/p/Cx9AbZ12/", loai="anh")
+    assert queue_anh.tham_lai_theo_job("/jar/ig.txt")(ref_ig, None) is ref_ig
+    assert nhan == ["/jar/ig.txt"]
+
+
+def test_tiktok_va_facebook_da_dang_ky_tham_lai_luc_nap():
+    from tiktok_music_downloader import nguon_facebook_trang, tiktok_anh
+    assert queue_anh._THAM_LAI["tt"] is tiktok_anh.tham_lai
+    assert queue_anh._THAM_LAI["fbp"] is nguon_facebook_trang.tham_lai
