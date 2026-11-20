@@ -16,11 +16,21 @@ import re
 from dataclasses import dataclass
 from urllib.parse import parse_qs, urlsplit
 
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH, TRAN_ANH_MOI_BAI, bai_id_anh
+from tiktok_music_downloader.utils import VideoRef
+
 TIEN_TO_CHONG_HIJACK = "for (;;);"
 MEDIA_ANH, MEDIA_VIDEO, MEDIA_CAROUSEL = 1, 2, 8
 # Mã bài IG: chữ-số, gạch dưới, gạch nối. Chặn mã lạ trước khi ghép vào URL tải / tên tệp.
 _MAU_MA_BAI = re.compile(r"[A-Za-z0-9_\-]{5,30}")
 TEN_GRAPHQL_DICH = {"ProfileReelsTab": "profile", "KeywordSearchExplorePage": "keyword"}
+# Tên XHR của lưới bài `/<user>/` (ảnh + carousel + reel chung một luồng; đo ở `probe-results.md` I2/I7). CHỈ bắt khi
+# job xin ảnh/cả hai: chế độ video giữ bộ tên cũ ⇒ y hệt hôm nay. `PolarisProfilePostsTabContentQuery` khớp-chứa-chuỗi
+# nên phủ cả biến thể `…_connection`.
+TEN_GRAPHQL_ANH = {"PolarisProfilePostsTabContentQuery": "profile", "PolarisProfilePostsQuery": "profile"}
+URL_BAI = "https://www.instagram.com/p/{}/"
+# Mỗi tệp giữ tối đa từng ấy URL (lớn nhất trước, còn lại là dự phòng khi một host timeout).
+TRAN_URL_DU_PHONG = 3
 DUONG_AUDIO = "/api/v1/clips/music/"
 DUONG_GRAPHQL = ("/graphql/query", "/api/graphql")
 
@@ -76,8 +86,9 @@ def doc_json(body: str):
         return None
 
 
-def la_xhr_dich(url: str, post_data: str | None) -> str | None:
-    """Loại XHR đích ("profile" | "keyword" | "audio") hay None nếu không phải thứ ta cần bắt."""
+def la_xhr_dich(url: str, post_data: str | None, *, gom_anh: bool = False) -> str | None:
+    """Loại XHR đích ("profile" | "keyword" | "audio") hay None nếu không phải thứ ta cần bắt. `gom_anh` (job ảnh/cả
+    hai) bắt thêm tên XHR lưới bài của profile (`TEN_GRAPHQL_ANH`); mặc định False ≡ hôm nay."""
     try:
         duong = urlsplit(url).path
     except ValueError:
@@ -86,7 +97,8 @@ def la_xhr_dich(url: str, post_data: str | None) -> str | None:
         return "audio"
     if duong.rstrip("/") in DUONG_GRAPHQL and post_data:
         ten = parse_qs(post_data).get("fb_api_req_friendly_name", [""])[0]
-        for khoa, loai in TEN_GRAPHQL_DICH.items():
+        bang = {**TEN_GRAPHQL_DICH, **TEN_GRAPHQL_ANH} if gom_anh else TEN_GRAPHQL_DICH
+        for khoa, loai in bang.items():
             if khoa in ten:
                 return loai
     return None
@@ -137,6 +149,131 @@ def loc_video(nodes: list[dict]) -> tuple[list[dict], int]:
             thay.add(ma)
             video.append(n)
     return video, len(carousel)
+
+
+def _url_ung_vien(muc: dict) -> tuple[str, ...]:
+    """URL ảnh của một mục (node bài ảnh hoặc con của carousel): `image_versions2.candidates` từ lớn đến nhỏ
+    (theo diện tích), bỏ URL trùng/rỗng, cắt `TRAN_URL_DU_PHONG`. Không có ⇒ ()."""
+    iv = muc.get("image_versions2")
+    cands = iv.get("candidates") if isinstance(iv, dict) else None
+    if not isinstance(cands, list):
+        return ()
+
+    def dien_tich(c) -> int:
+        w, h = c.get("width"), c.get("height")
+        return (w if isinstance(w, int) else 0) * (h if isinstance(h, int) else 0)
+
+    co_url = [c for c in cands if isinstance(c, dict) and isinstance(c.get("url"), str) and c["url"]]
+    ra: list[str] = []
+    for c in sorted(co_url, key=dien_tich, reverse=True):      # sort ổn định: hoà diện tích giữ thứ tự gốc
+        if c["url"] not in ra:
+            ra.append(c["url"])
+    return tuple(ra[:TRAN_URL_DU_PHONG])
+
+
+def _url_video_con(muc: dict) -> tuple[str, ...]:
+    """URL con-video của carousel: `video_versions[0].url` đầu, các bản còn lại làm dự phòng."""
+    vv = muc.get("video_versions")
+    if not isinstance(vv, list):
+        return ()
+    ra = [v["url"] for v in vv if isinstance(v, dict) and isinstance(v.get("url"), str) and v["url"]]
+    return tuple(dict.fromkeys(ra))[:TRAN_URL_DU_PHONG]
+
+
+def tep_cua_node(node: dict) -> list[tuple[tuple[str, ...], str]]:
+    """Các tệp của MỘT bài ảnh theo thứ tự: `[(urls_du_phong, "anh"|"video"), …]`. Ảnh đơn (1) = 1 tệp; carousel (8) =
+    mỗi con một tệp (con ảnh lấy candidate lớn nhất, con video lấy `video_versions[0]`). Bất kỳ con nào thiếu URL
+    ⇒ `[]` (một bộ ảnh thiếu tệp là bộ sai: bỏ cả bài, không tải nửa chừng)."""
+    mt = node.get("media_type")
+    if mt == MEDIA_ANH:
+        u = _url_ung_vien(node)
+        return [(u, "anh")] if u else []
+    if mt != MEDIA_CAROUSEL:
+        return []
+    con = node.get("carousel_media")
+    if not isinstance(con, list) or not con:
+        return []
+    ra: list[tuple[tuple[str, ...], str]] = []
+    for c in con:
+        if not isinstance(c, dict):
+            return []
+        if c.get("media_type") == MEDIA_VIDEO:
+            u, kieu = _url_video_con(c), "video"
+        elif c.get("media_type") == MEDIA_ANH:
+            u, kieu = _url_ung_vien(c), "anh"
+        else:
+            return []
+        if not u:
+            return []
+        ra.append((u, kieu))
+    return ra
+
+
+def ref_anh_tu_node(node: dict) -> VideoRef | None:
+    """`VideoRef(loai="anh")` của một bài ảnh/carousel (`video_id` = `anh-ig-<mã>`; 1 carousel = 1 ref) hoặc None khi
+    mã sai hình / thiếu URL / vượt trần tệp."""
+    ma = node.get("code")
+    if not isinstance(ma, str) or not _MAU_MA_BAI.fullmatch(ma):
+        return None
+    tep = tep_cua_node(node)
+    if not tep or len(tep) > TRAN_ANH_MOI_BAI:
+        return None
+    tt = tom_tat_node(node)
+    return VideoRef(video_id=bai_id_anh("ig", ma), url=URL_BAI.format(ma), title=tt["title"], author=tt["author"],
+                    loai=LOAI_ANH, anh_urls=tuple(u for u, _ in tep), anh_kieu=tuple(k for _, k in tep))
+
+
+def loc_anh(nodes: list[dict]) -> tuple[list[dict], int]:
+    """`(node ảnh/carousel đủ URL theo thứ tự không trùng mã, số bài ảnh/carousel bị bỏ vì thiếu URL/sai hình)`.
+    Giữ `media_type` 1 và 8; video (2) bị bỏ. Carousel là MỘT bài dù có bao nhiêu con (kể cả con video)."""
+    thay: set[str] = set()
+    ra: list[dict] = []
+    hong = 0
+    for n in nodes:
+        if n.get("media_type") not in (MEDIA_ANH, MEDIA_CAROUSEL) or n["code"] in thay:
+            continue
+        thay.add(n["code"])
+        if ref_anh_tu_node(n) is None:
+            hong += 1
+        else:
+            ra.append(n)
+    return ra, hong
+
+
+def loc_ca_hai(nodes: list[dict]) -> tuple[list[tuple[str, dict]], int]:
+    """Cho `ca_hai`: `([("video"|"anh", node), …] theo thứ tự gặp không trùng mã, số bài ảnh hỏng)`. Video = `loc_video`,
+    ảnh/carousel = `loc_anh`; hai bộ lọc chạy trên CÙNG danh sách nên thứ tự lưới được giữ."""
+    video, _ = loc_video(nodes)
+    anh, hong = loc_anh(nodes)
+    la_video = {n["code"] for n in video}
+    la_anh = {n["code"] for n in anh}
+    gop = [("video" if n["code"] in la_video else "anh", n) for n in nodes
+           if n["code"] in la_video | la_anh]
+    thay: set[str] = set()
+    ra = []
+    for loai, n in gop:
+        if n["code"] not in thay:
+            thay.add(n["code"])
+            ra.append((loai, n))
+    return ra, hong
+
+
+def ref_anh_tu_script(cac_script: list[str], ma: str) -> VideoRef | None:
+    """Link lẻ `/p/<mã>/`: trong các `<script type="application/json">` lúc tải, tìm node ĐÚNG mã `ma` (bài khác
+    — gợi ý, feed — nằm chung trang nên KHÔNG lấy theo vị trí) rồi dựng ref ảnh. Node đúng mã mà thiếu URL thì thử
+    node cùng mã khác (một mã có thể xuất hiện ở nhiều script, bản đầy đủ không nhất thiết đứng đầu). Không có ⇒ None."""
+    if not _MAU_MA_BAI.fullmatch(ma):
+        return None
+    for chu in cac_script:
+        goc = doc_json(chu)
+        if goc is None:
+            continue
+        for n in duyet_node_media(goc):
+            if n["code"] == ma and n.get("media_type") in (MEDIA_ANH, MEDIA_CAROUSEL):
+                ref = ref_anh_tu_node(n)
+                if ref is not None:
+                    return ref
+    return None
 
 
 def doc_phan_trang(goc) -> Phan | None:
