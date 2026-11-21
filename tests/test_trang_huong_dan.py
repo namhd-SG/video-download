@@ -87,6 +87,7 @@ def test_tinh_nang_chi_tra_hang_khong_tra_gi_cua_nguoi_dung(tmp_path, monkeypatc
     assert tn["nen_tang_tam_tat"] == ["youtube"]
 
     # `thay_logo_bat`: một cờ bool (tính năng có dựng worker không) — không mang dữ liệu của ai.
+    # Cờ tải ảnh tắt (mặc định) ⇒ không có khoá ảnh: đúng tập khoá như trước khi có tính năng.
     assert set(tn) == {"nguon", "nen_tang_link_le", "nen_tang_bat", "nen_tang_tam_tat", "ten_hien_thi", "thay_logo_bat", "tran"}
     assert NGUOI not in tho and "@" not in tho
     for bi_mat in ("bi-mat", str(tmp_path), str(Path.home())):

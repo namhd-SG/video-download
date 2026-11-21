@@ -20,6 +20,8 @@ from playwright.sync_api import (
 )
 
 from tiktok_music_downloader import captcha_xoay, trinh_duyet_patchright
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH, LOAI_CA_HAI, LOAI_VIDEO, bai_id_anh
+from tiktok_music_downloader.tiktok_anh import ref_anh_tu_feed
 
 from tiktok_music_downloader.utils import (
     che_url,
@@ -36,6 +38,7 @@ from tiktok_music_downloader.utils import (
     VideoRef,
     is_profile_page,
     is_search_page,
+    parse_photo_url,
     parse_video_url,
     random_user_agent,
 )
@@ -44,6 +47,8 @@ log = logging.getLogger("ttmd")
 
 # Video anchors on a music page render as <a href="https://www.tiktok.com/@user/video/123...">
 _VIDEO_LINK_SELECTOR = 'a[href*="/video/"]'
+# Bài ảnh (photo/slideshow) hiện thành anchor `/photo/` (đo: music page 72 `/photo/` + 88 `/video/`).
+_PHOTO_LINK_SELECTOR = 'a[href*="/photo/"]'
 
 # Cookie-Editor / EditThisCookie export keys mapped to Playwright's expected keys.
 # Playwright rejects unknown fields and uses different names / sameSite values, so
@@ -127,8 +132,41 @@ def _load_cookies(path: Path) -> list[dict]:
     return cookies
 
 
-def _collect_links(page: Page) -> set[VideoRef]:
-    """Snapshot all currently rendered video links on the page."""
+def _gop_theo_id(refs: Iterable[VideoRef]) -> set[VideoRef]:
+    """Gộp ref trùng `video_id`: cùng một bài ảnh có thể gặp lúc CHƯA có URL ảnh (anchor) rồi lúc có (feed) —
+    giữ bản có `anh_urls`, không để một bài đếm hai lần."""
+    tot: dict[str, VideoRef] = {}
+    for r in refs:
+        cu = tot.get(r.video_id)
+        if cu is None or (r.anh_urls and not cu.anh_urls):
+            tot[r.video_id] = r
+    return set(tot.values())
+
+
+def _gom_link_anh(page: Page, loai: str, anh_feed: dict[str, VideoRef]) -> set[VideoRef]:
+    """Chế độ ảnh/cả hai: anchor `/photo/` (+ `/video/` khi cả hai) cộng bài ảnh đã đọc từ feed. Anchor có mặt
+    trong feed lấy bản feed (đủ `anh_urls`); không có ⇒ ref ảnh CHƯA có `anh_urls` (xem `scrape_music_page_multi`)."""
+    refs: set[VideoRef] = set(anh_feed.values())
+    if loai == LOAI_CA_HAI:
+        refs |= _collect_links(page)
+    hrefs = page.eval_on_selector_all(_PHOTO_LINK_SELECTOR, "els => els.map(e => e.href)")
+    for href in hrefs:
+        id_bai = parse_photo_url(href)
+        if id_bai is None:
+            continue
+        bai_id = bai_id_anh("tt", id_bai)
+        if bai_id not in anh_feed:
+            refs.add(VideoRef(video_id=bai_id, url=href, loai=LOAI_ANH))
+    return _gop_theo_id(refs)
+
+
+def _collect_links(page: Page, loai: str = LOAI_VIDEO,
+                   anh_feed: dict[str, VideoRef] | None = None) -> set[VideoRef]:
+    """Snapshot all currently rendered video links on the page.
+
+    `loai` khác video ⇒ nhánh ảnh (`_gom_link_anh`); mặc định video chạy đúng như trước."""
+    if loai != LOAI_VIDEO:
+        return _gom_link_anh(page, loai, anh_feed if anh_feed is not None else {})
     refs: set[VideoRef] = set()
     hrefs = page.eval_on_selector_all(
         _VIDEO_LINK_SELECTOR, "els => els.map(e => e.href)"
@@ -305,6 +343,22 @@ def _watch_feed_api(page: Page, dem_trang: Callable[[], None] | None = None,
     page.on("response", on_response)
 
 
+def _gom_anh_tu_feed(page: Page, anh_feed: dict[str, VideoRef]) -> None:
+    """Chế độ ảnh/cả hai: nghe phản hồi feed kết quả, bóc bài có `imagePost` (đủ URL ảnh) vào `anh_feed`.
+
+    Nghe RIÊNG với `_watch_feed_api` (đường video không đổi một dòng). Không escape lỗi nào: một phản hồi
+    không phải JSON/đã bị đóng chỉ là một feed không đọc được, không làm hỏng lượt quét."""
+    def on_response(resp: Response) -> None:
+        try:
+            if _feed_marker(resp.url) is None or not (200 <= resp.status < 300) or resp.request.method != "GET":
+                return
+            anh_feed.update({k: v for k, v in ref_anh_tu_feed(resp.json()).items() if k not in anh_feed})
+        except Exception as exc:  # noqa: BLE001 — không để lỗi nghe lọt ra Playwright
+            log.debug("feed ảnh: bỏ qua một phản hồi (%s)", type(exc).__name__)
+
+    page.on("response", on_response)
+
+
 # JS helper: find the actual scrollable container (TikTok search uses an inner
 # div with its own overflow, not the document body). We probe all elements
 # and return the largest one whose scrollHeight exceeds its clientHeight.
@@ -352,6 +406,8 @@ def _auto_scroll(
     max_videos: int,
     scroll_pause: float,
     idle_rounds: int,
+    loai: str = LOAI_VIDEO,
+    anh_feed: dict[str, VideoRef] | None = None,
 ) -> set[VideoRef]:
     """Scroll until target reached, end of feed, or `idle_rounds` with no growth.
 
@@ -372,9 +428,13 @@ def _auto_scroll(
     log.debug("scroll layout: %s", layout)
 
     while True:
-        new_batch = _collect_links(page)
-        before = len(seen)
-        seen |= new_batch
+        if loai == LOAI_VIDEO:
+            new_batch = _collect_links(page)
+            before = len(seen)
+            seen |= new_batch
+        else:
+            before = len(seen)
+            seen = _gop_theo_id(seen | _collect_links(page, loai, anh_feed))
         log.debug("scroll: %d unique (added %d)", len(seen), len(seen) - before)
 
         if len(seen) >= max_videos:
@@ -611,6 +671,7 @@ def quet_tren_trang(
     thong_ke_feed: dict[str, int] | None = None,
     tai_lai_truoc_khi_cuon: bool = False,
     kiem_truoc_khi_cuon: Callable[[dict[str, int]], bool] | None = None,
+    loai: str = LOAI_VIDEO,
 ) -> list[VideoRef]:
     """Lõi quét của `scrape_music_page`, chạy trên một `Page` ĐÃ MỞ sẵn.
 
@@ -630,6 +691,9 @@ def quet_tren_trang(
     nào), hàm trả danh sách rỗng. Dùng cho ranh giới "sau khi người giải captcha xong, nếu trang
     vẫn bị chặn thì tool không chạm thêm". Không truyền ⇒ y hệt trước.
 
+    `loai` (mặc định video ≡ trước): `anh`/`ca_hai` thêm anchor `/photo/` và bài `imagePost` đọc từ feed;
+    ref ảnh gặp ở anchor mà feed chưa đưa URL có `anh_urls=()` (người nhận phải thăm bài để lấy URL).
+
     Mỗi page chỉ gọi MỘT lần: mỗi lần gọi gắn thêm một bộ nghe `response`, gọi hai lần
     trên cùng page thì đếm đôi.
 
@@ -638,8 +702,11 @@ def quet_tren_trang(
     # Bộ đếm RIÊNG của lượt này: lượt hâm cần biết lượt NÀY đã rỗng chưa, không phải
     # cộng dồn của người gọi. Cộng vào `thong_ke_feed` ở finally.
     feed_luot: dict[str, int] = {}
+    anh_feed: dict[str, VideoRef] = {}
     try:
         _watch_feed_api(page, dem_trang, feed_luot)
+        if loai != LOAI_VIDEO:
+            _gom_anh_tu_feed(page, anh_feed)
         if tai_lai_truoc_khi_cuon:
             page.reload(wait_until="domcontentloaded", timeout=30_000)
             _cho_link(page)
@@ -649,7 +716,10 @@ def quet_tren_trang(
         if kiem_truoc_khi_cuon is not None and not kiem_truoc_khi_cuon(feed_luot):
             refs = set()
         else:
-            refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+            if loai == LOAI_VIDEO:
+                refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds)
+            else:
+                refs = _auto_scroll(page, max_videos, scroll_pause, idle_rounds, loai=loai, anh_feed=anh_feed)
     finally:
         if thong_ke_feed is not None:
             for o in ("rong", "co_du_lieu"):
@@ -671,6 +741,7 @@ def scrape_music_page(
     dem_trang: Callable[[], None] | None = None,
     thong_ke_feed: dict[str, int] | None = None,
     user_agent: str | None = None,
+    loai: str = LOAI_VIDEO,
 ) -> list[VideoRef]:
     """Open music page, scroll, return up-to-max unique VideoRefs (newest-first as rendered).
 
@@ -712,9 +783,10 @@ def scrape_music_page(
             if cookies_path:
                 ctx.add_cookies(_load_cookies(Path(cookies_path)))
             page = ctx.new_page()
+            kw_loai = {} if loai == LOAI_VIDEO else {"loai": loai}
             ordered = quet_tren_trang(
                 page, music_url, max_videos, scroll_pause, idle_rounds,
-                dem_trang=dem_trang, thong_ke_feed=thong_ke_feed,
+                dem_trang=dem_trang, thong_ke_feed=thong_ke_feed, **kw_loai,
             )
         except BaseException:
             dang_loi = True
@@ -753,6 +825,7 @@ def scrape_music_page_multi(
     max_seconds: float | None = None,
     dung_som_khi_feed_rong: bool = False,
     thong_ke_feed_ra: dict[str, int] | None = None,
+    loai: str = LOAI_VIDEO,
     **kwargs,
 ) -> list[VideoRef]:
     """Run scrape_music_page N times, dedupe, with anti-block safeguards.
@@ -793,6 +866,9 @@ def scrape_music_page_multi(
     lượt toàn video đã có cho `rate` thấp giả ⇒ DỪNG SỚM SAI đúng lúc cần đào
     tiếp; chia cho batch đã lọc ⇒ mẫu số co theo tử số ⇒ `rate` không bao giờ
     xuống ⇒ CHẠY TỚI KỊCH TRẦN. Cả hai đều là hỏng âm thầm.
+
+    `loai` (mặc định video ≡ trước): `anh`/`ca_hai` chuyển xuống `quet_tren_trang`. Ref ảnh lấy từ anchor mà feed
+    chưa đưa URL có `anh_urls=()` — tải ngay sẽ hụt "bài không có ảnh", nên lớp hàng đợi phải thăm bài trước.
 
     `max_seconds` là trần thời gian cả lượt (user chốt 10 phút). Kiểm TRƯỚC khi
     ngủ giữa hai lượt: ngủ 60-180s rồi mới phát hiện hết giờ là vứt đi đúng
@@ -879,8 +955,10 @@ def scrape_music_page_multi(
         # 40 cái đã có bị bỏ lại ngay ở lượt 3 thay vì lượt 5.
         con_thieu = max_videos - len(moi)
         muc_tieu_tho = max(max_videos, (len(da_thay) + con_thieu) * 2)
+        # Video: gọi y hệt trước (không thêm khoá `loai`); ảnh/cả hai: chuyển `loai` xuống lượt quét.
+        kw_loai = {} if loai == LOAI_VIDEO else {"loai": loai}
         batch = scrape_music_page(music_url, max_videos=muc_tieu_tho,
-                                  thong_ke_feed=thong_ke_feed, **kwargs)
+                                  thong_ke_feed=thong_ke_feed, **kw_loai, **kwargs)
         if thong_ke_feed_ra is not None:
             # Ngay sau mỗi lượt (không chờ cuối hàm): lượt sau ném thì tổng của các
             # lượt đã chạy vẫn nằm ở người gọi.

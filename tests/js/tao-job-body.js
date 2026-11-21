@@ -18,4 +18,9 @@ console.log(JSON.stringify({
   dien_ca_hai: taoJobBody("https://x", 5, "Dance", "Badaboum"),
   chi_usecase: taoJobBody("https://x", 5, "Dance", ""),
   chi_insight: taoJobBody("https://x", 5, "", "Badaboum"),
+  // `loai_tai` chỉ vào body khi khác video (vắng / "video" ⇒ body y hệt lượt video cũ).
+  loai_vang: taoJobBody("https://x", 5, "", "", undefined),
+  loai_video: taoJobBody("https://x", 5, "", "", "video"),
+  loai_anh: taoJobBody("https://x", 5, "", "", "anh"),
+  loai_ca_hai: taoJobBody("https://x", 5, "Dance", "", "ca_hai"),
 }));

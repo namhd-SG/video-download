@@ -28,14 +28,15 @@ from tiktok_music_downloader.nguon_facebook_trang import FacebookTrang
 from tiktok_music_downloader.nguon_instagram import InstagramHangLoat
 from dataclasses import replace
 
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_CA_HAI, LOAI_VIDEO, tai_anh_dang_bat
 from tiktok_music_downloader.utils import (
-    STOP_ALREADY_OWNED, STOP_BI_CHAN, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
+    STOP_TAI_ANH_TAT, STOP_ALREADY_OWNED, STOP_BI_CHAN, STOP_FEED_RONG, STOP_HASHTAG_KHONG_TRA_DUOC, STOP_HET_DIA, STOP_HET_VONG,
     STOP_THIEU_DENO, STOP_TRAN_GIO, STOP_TRAN_NGAY, STOP_IG_CHUA_CO_COOKIE, STOP_IG_MAT_PHIEN,
     STOP_FB_CHAN_DANG_NHAP, STOP_INDEX_FAILED, STOP_NGHI_BI_CHAN, STOP_SOURCE_EMPTY, VideoRef, is_profile_page,
     che_url, parse_tag_slug, random_user_agent,
 )
 from tiktok_music_downloader.watermark import find_deno, find_ffmpeg
-from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, pacer, profile_theo_job
+from web import giai_captcha, giai_captcha_worker, models, models_giai_captcha, pacer, profile_theo_job, queue_anh
 # Re-exported: `cookies_path_for_user` moved to `web/cookies.py` so
 # `web/lifecycle.py` can reach it too without importing this module back.
 # Callers (and its tests) still reach it as `queue.cookies_path_for_user`.
@@ -175,10 +176,17 @@ class LifecycleHook(Protocol):
                  db_path: Path | None = None) -> UploadResult: ...
 
 
-def la_link_le(url: str) -> bool:
+def _chon_nguon_theo_loai(link: str, loai: str):
+    """Cửa chọn nguồn của hàng đợi: video ⇒ gọi `chon_nguon(link)` y hệt trước (không đối số thêm); ảnh/cả hai ⇒ truyền
+    `loai` để nguồn không hỗ trợ loại đó bị loại."""
+    return chon_nguon(link) if loai == LOAI_VIDEO else chon_nguon(link, loai)
+
+
+def la_link_le(url: str, loai: str = LOAI_VIDEO) -> bool:
     """Job này là link video lẻ (một hoặc nhiều dòng) chứ không phải trang để quét. Nguồn của từng video link lẻ là
-    URL của CHÍNH video đó: nhãn chung theo job ("link đầu (+N)") gắn sai nghĩa cho mọi video còn lại."""
-    return isinstance(chon_nguon((tach_link(url) or [url])[0]), LinkLe)
+    URL của CHÍNH video đó: nhãn chung theo job ("link đầu (+N)") gắn sai nghĩa cho mọi video còn lại.
+    `loai` (loại tải của job): link `/photo/` chỉ là link lẻ khi job xin ảnh — cùng cửa `chon_nguon` với lúc tạo job."""
+    return isinstance(_chon_nguon_theo_loai((tach_link(url) or [url])[0], loai), LinkLe)
 
 
 def la_kenh_youtube(url: str) -> bool:
@@ -232,7 +240,8 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
                  job_id: int | None = None,
                  ly_do_ra: dict | None = None,
                  xac_minh_ra: dict | None = None,
-                 nen_tang: str = models.NEN_TANG_MAC_DINH) -> list[VideoRef]:
+                 nen_tang: str = models.NEN_TANG_MAC_DINH,
+                 loai: str = LOAI_VIDEO) -> list[VideoRef]:
     """Enumerate (hashtag) or scrape (music/search/profile) refs for one job.
 
     Videos the library already owns are dropped here, before anything is
@@ -266,7 +275,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     KHÔNG tải link lạc nào mà trang bị chặn còn lộ ra. Không truyền ⇒ y hệt trước.
     """
     nguon = source_label(url)
-    link_le = la_link_le(url)
+    link_le = la_link_le(url, loai)
     _ly_do_cuoi = {"v": None}
 
     def _already_have(ids: list[str]) -> set[str]:
@@ -402,11 +411,16 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
     # thì lỗi rõ, KHÔNG âm thầm chạy trình quét TikTok (Playwright, captcha) trong lane `khac`.
     # Ô nhập có thể mang NHIỀU link (mỗi dòng một, cùng nền tảng): chọn nguồn theo link đầu — bộ nhận dạng
     # `.match` chỉ trên một chuỗi một dòng — còn `liet_ke` nhận nguyên khối.
-    nguon_url = chon_nguon((tach_link(url) or [url])[0])
+    nguon_url = _chon_nguon_theo_loai((tach_link(url) or [url])[0], loai)
     if nguon_url is None:
+        if loai != LOAI_VIDEO:
+            # Xin ảnh mà không nguồn nào nhận: KHÔNG rơi về nguồn mặc định (sẽ trả video cho job ảnh).
+            raise ValueError(f"không nguồn nào nhận url của job loại {loai!r}")
         if nen_tang != models.NEN_TANG_MAC_DINH:
             raise ValueError(f"không nguồn nào nhận url của job nền tảng {nen_tang!r}")
         nguon_url = NGUON_MAC_DINH
+    # Video ⇒ không thêm kwarg nào (lời gọi y hệt trước); ảnh/cả hai ⇒ nguồn nhận `loai` và trả ref đã phân loại.
+    kw_loai_job: dict = {} if loai == LOAI_VIDEO else {"loai": loai}
     kw_link_le: dict = {}
     if isinstance(nguon_url, NGUON_YT_DLP_NEN_TANG_KHAC):
         # Link lẻ và kênh YouTube: mọi lời gọi nền tảng ở bước liệt kê đi qua cổng IP (ghi lượt TRƯỚC khi gọi, nghỉ jitter giữa
@@ -431,6 +445,7 @@ def _fetch_refs(url: str, max_videos: int, cookies_path: str | None,
             max_seconds=TRAN_GIAY_MOT_LUOT,
             kw_profile=kw_profile,
             **kw_link_le,
+            **kw_loai_job,
         )
 
     # Log đo (ĐK-403-2): dòng KẾT của lượt mang `nguon=yt_dlp|browser` ⇒ đếm lượt `moi` THẬT SỰ mở trình
@@ -717,8 +732,12 @@ class _JobProgress:
         pass
 
 
+def _ref_hop_loai(ref: VideoRef, loai: str) -> bool:
+    return loai == LOAI_CA_HAI or ref.loai == loai
+
+
 def _loc_trung_mot_lan(db_path: Path, job: dict, refs: list[VideoRef],
-                       ly_do_ra: dict) -> list[VideoRef]:
+                       ly_do_ra: dict, loai: str = LOAI_VIDEO) -> list[VideoRef]:
     """Sau khi người giải captcha và tool quét MỘT lượt (không đào sâu nhiều lượt): áp lọc trùng
     với thư viện ĐÚNG MỘT lần ở cuối, như `scrape_music_page_multi` làm sau mỗi lượt — cùng dấu
     nguồn (`video_sightings`), cùng bộ đếm `bo_qua`, cùng lý do dừng (`already_owned` /
@@ -726,6 +745,8 @@ def _loc_trung_mot_lan(db_path: Path, job: dict, refs: list[VideoRef],
     có đào sâu / `already_have` giữa các lượt (plan: MỘT lượt `_auto_scroll`)."""
     job_id, max_videos = job["id"], int(job["tong"])
     nguon = source_label(job["url"])
+    # Chỉ giữ loại job xin (video ⇒ bỏ bài ảnh lạc vào; ảnh ⇒ bỏ video; cả hai ⇒ giữ hết) TRƯỚC khi đếm bỏ qua/dừng.
+    refs = [r for r in refs if _ref_hop_loai(r, loai)]
     owned = models.known_video_ids(db_path, [r.video_id for r in refs]) if refs else set()
     moi: list[VideoRef] = []
     bo_qua = 0
@@ -777,8 +798,13 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
         models.finish_job(db_path, job_id, ket_qua)
         return
     output_dir = downloads_dir / str(job_id)
-    progress = _JobProgress(db_path, job_id, refs, output_dir, lifecycle_hook,
-                             nguon=source_label(job["url"]), link_le=la_link_le(job["url"]))
+    loai_tai = job.get("loai_tai") or LOAI_VIDEO
+    # Tách theo loại ref: video đi `download_all` (hợp đồng 1 ref = `<id>.mp4`), ảnh đi `queue_anh` (K tệp/bài).
+    # Job video thuần: `video_refs == refs` ⇒ lời gọi `download_all` và `_JobProgress` y hệt trước.
+    video_refs = [r for r in refs if r.loai == LOAI_VIDEO]
+    anh_refs = [r for r in refs if r.loai != LOAI_VIDEO]
+    progress = _JobProgress(db_path, job_id, video_refs, output_dir, lifecycle_hook,
+                             nguon=source_label(job["url"]), link_le=la_link_le(job["url"], loai_tai))
     # Job nền tảng khác (file lớn, đĩa máy chạy chỉ còn vài GB và do swap của account khác kéo xuống):
     # kiểm đĩa SỐNG trước TỪNG file, cùng ngưỡng với cổng lúc tạo/nhận job. Dưới ngưỡng ⇒ dừng job có lý do
     # `het_dia`, không tải tiếp. Job TikTok giữ nguyên (không truyền hook).
@@ -795,7 +821,7 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     # TikTok COLLECTION: lời gọi y hệt trước (không thêm kwarg nào). TikTok video LẺ cũng chạy ở lane TikTok nhưng
     # là link người dán tuỳ ý (không phải trang quét quen thuộc): kiểm đĩa SỐNG trước từng file như nền tảng
     # khác, và trần dung lượng một file (yt-dlp bỏ file lớn hơn, không ném lỗi).
-    tiktok_le = not la_nen_tang_khac and la_link_le(job["url"])
+    tiktok_le = not la_nen_tang_khac and la_link_le(job["url"], loai_tai)
     kw_cong_dia = {"truoc_moi_file": _kiem_dia} if (la_nen_tang_khac or tiktok_le) else {}
     # Kênh YouTube và Facebook page cũng chịu trần dung lượng lúc tải: mục liệt kê phẳng không mang kích thước để chặn
     # trước (thời lượng: nút FB có thì lọc lúc liệt kê, không có thì đo sau tải như Short — `VideoRef.la_short`).
@@ -806,23 +832,51 @@ def _hoan_tat_tu_refs(db_path: Path, downloads_dir: Path, job: dict, refs: list[
     cong = pacer.CongNenTang(db_path, job_id, nen_tang_job) if nen_tang_job in pacer.TRAN else None
     if cong is not None:
         kw_cong_dia.update(nen_tang=nen_tang_job, cong=cong, delay_range=pacer.NGHI_GIUA_LUOT)
-    download_all(refs, output_dir, cookies_path=cookies_path, progress=progress, **kw_cong_dia)
-    if cong is not None and cong.ly_do_dung and not het_dia:
-        # Cổng bảo dừng (trần giờ/ngày, nền tảng bị tắt, tín hiệu chặn): các video đã lên Drive vẫn tính; chạy lại
-        # (hoặc admin bật lại) sẽ bỏ qua chúng nhờ lọc trùng. Ghi lý do TRƯỚC khi đóng job.
-        try:
-            models.set_job_stop_reason(db_path, job_id, cong.ly_do_dung)
-        except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
-            log.warning("job %s: không ghi được lý do dừng", job_id)
-        models.finish_job(db_path, job_id, "failed")
+    if video_refs:      # job ảnh thuần không có ref video: không mở `download_all` (cookie tạm, yt-dlp) để làm gì
+        download_all(video_refs, output_dir, cookies_path=cookies_path, progress=progress, **kw_cong_dia)
+
+    def _dung_job_neu_can() -> bool:
+        """Các kiểm dừng sẵn có, dùng chung sau bước video VÀ sau bước ảnh. True ⇒ job đã đóng `failed`."""
+        if cong is not None and cong.ly_do_dung and not het_dia:
+            # Cổng bảo dừng (trần giờ/ngày, nền tảng bị tắt, tín hiệu chặn): các video đã lên Drive vẫn tính; chạy
+            # lại (hoặc admin bật lại) sẽ bỏ qua chúng nhờ lọc trùng. Ghi lý do TRƯỚC khi đóng job.
+            try:
+                models.set_job_stop_reason(db_path, job_id, cong.ly_do_dung)
+            except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+                log.warning("job %s: không ghi được lý do dừng", job_id)
+            models.finish_job(db_path, job_id, "failed")
+            return True
+        if het_dia:
+            try:
+                models.set_job_stop_reason(db_path, job_id, STOP_HET_DIA)
+            except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+                log.warning("job %s: không ghi được lý do dừng", job_id)
+            models.finish_job(db_path, job_id, "failed")
+            return True
+        return False
+
+    if _dung_job_neu_can():
         return
-    if het_dia:
-        try:
-            models.set_job_stop_reason(db_path, job_id, STOP_HET_DIA)
-        except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
-            log.warning("job %s: không ghi được lý do dừng", job_id)
-        models.finish_job(db_path, job_id, "failed")
-        return
+    if anh_refs:
+        # Chỉ tới đây khi bước video KHÔNG dừng (het_dia / cổng bảo dừng ở trên đã `return`).
+        ket_qua_anh = queue_anh.tai_cac_bai_anh(
+            anh_refs, job_id=job_id, db_path=db_path, thu_muc=output_dir,
+            kiem_dia=_kiem_dia, cong=cong,
+            kiem_video=lambda path: verify_video_stream(path),   # tra lúc gọi: test/đột biến vá được
+            ghi_loi=progress._ghi_loi,
+            ghi_sighting=lambda ref: progress._note_sighting(ref, da_tai=True),
+            tham_lai=queue_anh.tham_lai_theo_job(cookies_path))   # IG thăm lại bằng jar của người tạo job
+        if _dung_job_neu_can():
+            return
+        if ket_qua_anh.ly_do_dung:
+            # Lý do dừng do chính vòng ảnh phát hiện mà cổng/đĩa không biết (IG mất phiên/thiếu cookie khi thăm lại,
+            # TikTok chặn liên tiếp): ghi lý do rồi đóng `failed`, như các nhánh dừng ở trên.
+            try:
+                models.set_job_stop_reason(db_path, job_id, ket_qua_anh.ly_do_dung)
+            except Exception:  # noqa: BLE001 — lý do dừng hụt không được che trạng thái "lỗi"
+                log.warning("job %s: không ghi được lý do dừng", job_id)
+            models.finish_job(db_path, job_id, "failed")
+            return
     # Mốc kết thúc ghi SAU khi đã biết kết quả thật, không vô điều kiện:
     # tong > 0 mà xong == 0 (mọi ref đều lỗi/không lên được Drive) không
     # phải là "done" dù download_all không raise.
@@ -854,7 +908,15 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
     lifecycle_hook = lifecycle_hook or on_video_verified
     job_id = job["id"]
     la_luot_giai = job.get("trang_thai") == "dang_mo" and profile_theo_job.profile_captcha_dang_bat()
+    loai_tai = job.get("loai_tai") or LOAI_VIDEO
     try:
+        # CỔNG CỜ Ở ĐẦU HÀM, trước mọi việc (kể cả mở nguồn): job ảnh/cả hai còn trong hàng mà cờ đã tắt ⇒ `failed`
+        # có lý do, 0 lời gọi nguồn — tuyệt đối không chạy tiếp như video (nguồn sẽ trả bài ảnh vào đường video).
+        if loai_tai != LOAI_VIDEO and not tai_anh_dang_bat():
+            log.warning("job %s: tính năng tải ảnh đang tắt — dừng job loại %s", job_id, loai_tai)
+            models.set_job_stop_reason(db_path, job_id, STOP_TAI_ANH_TAT)
+            models.finish_job(db_path, job_id, "failed")
+            return
         # Cookie là của TikTok (jar riêng từng người). Job nền tảng khác không dùng nó, và một jar
         # TikTok hỏng/hết hạn không được làm hỏng job Facebook Ads / Drive không liên quan.
         la_tiktok = (job.get("nen_tang") or models.NEN_TANG_MAC_DINH) == models.NEN_TANG_MAC_DINH
@@ -868,7 +930,8 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
         cookies_path = cookies_path_for_user(cookies_dir, job["nguoi_tao"]) if la_tiktok else None
         # Instagram HÀNG LOẠT: cookie IG của người tạo job là BẮT BUỘC (không có phiên thì IG không trả danh sách).
         # Không jar / jar hỏng / hết hạn ⇒ dừng nhãn rõ TRƯỚC khi mở trình duyệt, không chạy ẩn danh.
-        if job.get("nen_tang") == "instagram" and la_instagram_hang_loat(job["url"]):
+        # Chế độ ảnh: cả link lẻ `/p/` cũng cần cookie (ảnh đơn/carousel chỉ đọc được khi đăng nhập).
+        if job.get("nen_tang") == "instagram" and (la_instagram_hang_loat(job["url"]) or loai_tai != LOAI_VIDEO):
             cookies_path, ma_dung = _kiem_jar_instagram(cookies_dir, job["nguoi_tao"])
             if ma_dung is not None:
                 log.warning("job %s: cookie IG không dùng được [%s]", job_id, ma_dung)
@@ -893,13 +956,14 @@ def process_job(db_path: Path, downloads_dir: Path, cookies_dir: Path, job: dict
                 headless=not profile_theo_job.profile_headful_dang_bat())
             if kq.loai != giai_captcha_worker.LOAI_REFS:
                 return  # job đã về `cho_xac_minh` (hoặc `failed` do người bấm "Dừng job")
-            refs = _loc_trung_mot_lan(db_path, job, kq.refs or [], dung)
+            refs = _loc_trung_mot_lan(db_path, job, kq.refs or [], dung, loai_tai)
         else:
             xac_minh: dict = {}
             refs = _fetch_refs(job["url"], max_videos=job["tong"], cookies_path=cookies_path,
                                 db_path=db_path, job_id=job_id, ly_do_ra=dung,
                                 xac_minh_ra=xac_minh,
-                                nen_tang=job.get("nen_tang") or models.NEN_TANG_MAC_DINH)
+                                nen_tang=job.get("nen_tang") or models.NEN_TANG_MAC_DINH,
+                                loai=loai_tai)
             if xac_minh.get("ly_do"):
                 # TikTok đòi xác minh trên trang profile: dừng, chờ NGƯỜI giải — không tải link lạc,
                 # không "Xong" giả, không tự retry. Lúc này scraper đã đóng context ⇒ worker rảnh.

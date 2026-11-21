@@ -681,6 +681,7 @@ KHONG_CAN_KIEM_CHU = {
     "GET /jobs": "trả danh sách, tự lọc bên trong `models.list_jobs`",
     "POST /jobs": "tạo cho chính người đang gọi",
     "GET /videos": "trả danh sách, tự lọc bên trong `models.list_videos`",
+    "GET /anh": "trả danh sách bài ảnh, tự lọc bên trong `models_anh.list_bai_anh` (cùng luật chủ như `/videos`)",
     "GET /me": "chính người đang gọi",
     "GET /me/cookie": "chính người đang gọi",
     "PUT /me/cookie": "chính người đang gọi",

@@ -29,6 +29,7 @@ from tiktok_music_downloader.thay_logo import (ap_vao_bo, hang_doi, link_da_kiem
 from tiktok_music_downloader.thay_logo.drive_tl import DriveTLThat
 from tiktok_music_downloader.thay_logo.hop_thu import HopThu, LoiHopThu
 from web import thay_logo_khoanh_routes, thay_logo_tai_len_routes
+from web.vi_tu_con_song import LA_VIDEO
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +106,25 @@ TRAN_TRANG_VIDEO = 300  # số dòng tối đa mỗi lần trả của /videos
 TRAN_QUET_VIDEO = 5000  # trần số dòng đọc khi lọc theo nền tảng (chống quét cả bảng)
 
 
+def co_id_anh(jobs_db, drive_ids: list[str], video_ids: list[str]) -> bool:
+    """Trong các id người dùng chọn có ẢNH không (hàng `videos.loai='anh'` khớp `drive_file_id` hoặc `video_id`, hoặc id mang
+    tiền tố `anh-` dù chưa có hàng). Thay logo CHỈ-VIDEO: ảnh bị chặn cho cả admin lẫn member. `jobs.db` mở CHỈ ĐỌC; không đọc
+    được ⇒ ném `sqlite3.Error` để người gọi trả 503 (không đoán "không phải ảnh")."""
+    if any(v.startswith("anh-") for v in video_ids) or any(d.startswith("anh-") for d in drive_ids):
+        return True
+    if (not drive_ids and not video_ids) or not os.path.exists(jobs_db):
+        return False        # chưa có `jobs.db` ⇒ chưa có hàng video nào, càng không có ảnh
+    with closing(_sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5)) as c:
+        for i in range(0, max(len(drive_ids), len(video_ids)), 500):
+            fd, vd = drive_ids[i:i + 500], video_ids[i:i + 500]
+            dk = [*(["v.drive_file_id IN (%s)" % ",".join("?" * len(fd))] if fd else []),
+                  *(["v.video_id IN (%s)" % ",".join("?" * len(vd))] if vd else [])]
+            if dk and c.execute(f"SELECT 1 FROM videos v WHERE v.loai = 'anh' AND ({' OR '.join(dk)}) LIMIT 1",
+                                [*fd, *vd]).fetchone():
+                return True
+    return False
+
+
 def drive_ids_cua(jobs_db, email: str, ids: list[str]) -> set[str]:
     """Trong `ids`, những `drive_file_id` thuộc thư viện CỦA `email` — cùng định nghĩa sở hữu với `web/models.py:list_videos`
     (video thuộc người tạo job đã tải nó). Mở `jobs.db` CHỈ ĐỌC; không đọc được ⇒ tập rỗng (từ chối là hướng an toàn)."""
@@ -112,7 +132,7 @@ def drive_ids_cua(jobs_db, email: str, ids: list[str]) -> set[str]:
         return set()
     try:
         with _sqlite3.connect(f"file:{jobs_db}?mode=ro", uri=True, timeout=5) as c:
-            rows = c.execute("SELECT v.drive_file_id FROM videos v JOIN jobs j ON j.id = v.job_id WHERE j.nguoi_tao = ? "
+            rows = c.execute(f"SELECT v.drive_file_id FROM videos v JOIN jobs j ON j.id = v.job_id WHERE j.nguoi_tao = ? AND {LA_VIDEO} "
                              f"AND v.drive_file_id IN ({','.join('?' * len(ids))})", [email, *ids]).fetchall()
     except _sqlite3.Error:
         return set()
@@ -132,7 +152,7 @@ def thong_tin_thu_vien(jobs_db, ids: list[str]) -> dict[str, dict] | None:
                 lo = ids[i:i + 500]
                 for fid, vid, title, nen_tang, chu, url in c.execute(
                         "SELECT v.drive_file_id, v.video_id, v.title, j.nen_tang, j.nguoi_tao, v.url FROM videos v LEFT JOIN jobs j "
-                        f"ON j.id = v.job_id WHERE v.drive_file_id IN ({','.join('?' * len(lo))})", lo):
+                        f"ON j.id = v.job_id WHERE {LA_VIDEO} AND v.drive_file_id IN ({','.join('?' * len(lo))})", lo):
                     out[fid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "chu": chu, "url": url}
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được thư viện %s (%s)", jobs_db, type(e).__name__)
@@ -269,6 +289,13 @@ def dang_ky_route_member(app: FastAPI, lay_log_db: Callable[[], object], require
             raise HTTPException(422, "chưa chọn video nào")
         if len(ids) + len(vao_bo) + len(may) > TRAN_VIDEO_MOT_JOB:
             raise HTTPException(422, f"tối đa {TRAN_VIDEO_MOT_JOB} video mỗi lượt")
+        # Ảnh KHÔNG thay logo được (tính năng chỉ-video): chặn trước mọi kiểm quyền, kể cả admin.
+        try:
+            if co_id_anh(_jobs_db(), ids, [m.video_id for m in vao_bo]):
+                raise HTTPException(422, "Ảnh không dùng được cho thay logo — chỉ chọn video.")
+        except _sqlite3.Error as e:
+            log.warning("thay logo: không kiểm được id ảnh (%s)", type(e).__name__)
+            raise HTTPException(503, "Chưa kiểm được loại tệp — thử lại sau ít phút.") from None
         # Member chỉ được thay logo video trong thư viện CỦA MÌNH: service account đọc được mọi file nó được chia sẻ, nên
         # không kiểm thì biết ID là lấy được bản copy video của người khác. Admin được dán ID bất kỳ.
         trong = thu_vien_cua(email, ids)  # id thuộc thư viện CỦA người tạo — dùng chung cho cổng quyền và nhãn nguồn
@@ -846,7 +873,7 @@ def thong_tin_theo_video(jobs_db, video_ids: list[str]) -> dict[str, dict] | Non
                 lo = video_ids[i:i + 500]
                 for vid, title, nen_tang, url in c.execute(
                         "SELECT v.video_id, v.title, j.nen_tang, v.url FROM videos v LEFT JOIN jobs j ON j.id = v.job_id "
-                        f"WHERE v.video_id IN ({','.join('?' * len(lo))})", lo):
+                        f"WHERE {LA_VIDEO} AND v.video_id IN ({','.join('?' * len(lo))})", lo):
                     out[vid] = {"video_id": vid, "title": title, "nen_tang": nen_tang, "url": url}
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được thư viện theo video_id %s (%s)", jobs_db, type(e).__name__)
@@ -878,7 +905,7 @@ def _doc_da_vao_bo(jobs_db, nguoi_tao: str | None, q: str = "", tu_iso: str | No
     `q`/`tu_iso`/`den_iso` lọc theo BỘ (`folder_id`): mã bộ chứa `q`, ngày vào bộ = bản sao SỚM NHẤT của bộ (trong phạm vi chủ).
     Lọc TRƯỚC trần dòng ⇒ tìm ra cả bộ cũ mà danh sách không lọc đã cắt mất."""
     dk_chu, tham_chu = ("", []) if nguoi_tao is None else (" AND j.nguoi_tao = ?", [nguoi_tao])
-    nen = "FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id WHERE 1=1"
+    nen = f"FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id WHERE {LA_VIDEO}"
     loc_bo, tham_bo = "", []
     if q or tu_iso or den_iso:
         co_bo = []
@@ -933,7 +960,7 @@ def _ban_vao_bo_cua(jobs_db, nguoi_tao: str | None, muc: list[MucVaoBo]) -> dict
                 "vb.chu AS chu_so "
                 "FROM video_vao_bo_ban b JOIN videos v ON v.video_id = b.video_id JOIN jobs j ON j.id = v.job_id "
                 "LEFT JOIN video_vao_bo vb ON vb.video_id = b.video_id "
-                f"WHERE b.ban_copy_id IN ({','.join('?' * len(muc))}){dk}", [m.ban_copy_id for m in muc] + tham).fetchall()
+                f"WHERE {LA_VIDEO} AND b.ban_copy_id IN ({','.join('?' * len(muc))}){dk}", [m.ban_copy_id for m in muc] + tham).fetchall()
     except _sqlite3.Error as e:
         log.warning("thay logo: không đọc được sổ đã-vào-bộ (%s)", type(e).__name__)
         raise HTTPException(503, "Chưa kiểm được video đã vào bộ — thử lại sau ít phút.") from None
@@ -1003,7 +1030,7 @@ def chu_video_vao_bo(jobs_db, video_ids: list[str]) -> dict[str, tuple[str | Non
                 lo = video_ids[i:i + 500]
                 for vid, nguoi_tao, chu in c.execute(
                         "SELECT v.video_id, j.nguoi_tao, vb.chu FROM videos v JOIN jobs j ON j.id = v.job_id "
-                        f"LEFT JOIN video_vao_bo vb ON vb.video_id = v.video_id WHERE v.video_id IN ({','.join('?' * len(lo))})", lo):
+                        f"LEFT JOIN video_vao_bo vb ON vb.video_id = v.video_id WHERE {LA_VIDEO} AND v.video_id IN ({','.join('?' * len(lo))})", lo):
                     out[vid] = (nguoi_tao, chu)
     except _sqlite3.Error as e:
         log.warning("thay logo áp: không đọc được chủ video (%s)", type(e).__name__)

@@ -6,7 +6,9 @@ Số đo thật (18/11/2026, không cookie, `plans/reports/do-261118-r09-fb-page
   · tab /videos: nút `Video` ở `<container>.edges[].node` với container ∈ `CONTAINER_VIDEOS`, cộng nút trực tiếp
     `channel_tab_popular_video` (thẻ "Most popular" — thuộc tab thật, không mang `__typename`).
   · tab /reels: `aggregated_fb_shorts.edges[].profile_reel_node.node.attachments[].media`.
-  · mọi nút có `owner.id`; id chủ page chiếm đa số trong lượt (lọc ở `fb_quet_cuon`).
+  · tab /photos: nút `Photo` ở `data.node.all_collections.nodes[].style_renderer.collection.pageItems.edges[].node.node`,
+    KHÔNG có `owner` ⇒ ràng buộc bằng đường dẫn container (`boc_nut_anh`); URL ảnh = `viewer_image.uri`.
+  · mọi nút video có `owner.id`; id chủ page chiếm đa số trong lượt (lọc ở `fb_quet_cuon`).
 
 KHÔNG quét regex phẳng toàn trang: regex phẳng thấy cả video của bình luận / quảng cáo / gợi ý. Ở đây chỉ nút nằm đúng
 đường dẫn container mới được nhận. Module không ghi log (mã video / URL không được vào log).
@@ -184,3 +186,77 @@ def boc_nut(goc_json: list, tab: str) -> KetQuaBoc:
     thay: set[str] = set()
     ket.nut = [n for n in ket.nut if not (n.ma in thay or thay.add(n.ma))]
     return ket
+
+
+# ---------------------------------------------------------------------------------------------- tab /photos
+CONTAINER_ANH = "all_collections"
+
+
+@dataclass(frozen=True)
+class NutAnh:
+    ma: str      # fbid (số)
+    uri: str     # `viewer_image.uri` (https)
+
+
+def _uri_anh(nut: dict, khoa: str) -> str | None:
+    img = nut.get(khoa)
+    uri = img.get("uri") if isinstance(img, dict) else None
+    return uri if isinstance(uri, str) and uri.startswith("https://") else None
+
+
+def _la_nut_anh(o) -> bool:
+    return (isinstance(o, dict) and o.get("__typename") == "Photo" and isinstance(o.get("id"), str)
+            and _MAU_MA.fullmatch(o["id"]) is not None)
+
+
+def _nut_trong_collection(col) -> list:
+    """Các `edges[].node.node` của `collection.pageItems` (một phần tử của `all_collections.nodes[]`)."""
+    sr = col.get("style_renderer") if isinstance(col, dict) else None
+    c = sr.get("collection") if isinstance(sr, dict) else None
+    pi = c.get("pageItems") if isinstance(c, dict) else None
+    edges = pi.get("edges") if isinstance(pi, dict) else None
+    ra = []
+    for e in edges if isinstance(edges, list) else []:
+        n = e.get("node") if isinstance(e, dict) else None
+        ra.append(n.get("node") if isinstance(n, dict) else None)
+    return ra
+
+
+def boc_nut_anh(goc_json: list) -> list[NutAnh]:
+    """Nút `Photo` (id số + `viewer_image.uri`) nằm ĐÚNG đường dẫn container `all_collections.nodes[]…pageItems.edges[]
+    .node.node`. Nút Photo ở chỗ khác (bình luận, gợi ý, quảng cáo) bị bỏ. Trùng id chỉ giữ một."""
+    ra: list[NutAnh] = []
+    thay: set[str] = set()
+    ngan_xep = list(reversed(goc_json))
+    while ngan_xep:
+        o = ngan_xep.pop()
+        if isinstance(o, dict):
+            ac = o.get(CONTAINER_ANH)
+            nodes = ac.get("nodes") if isinstance(ac, dict) else None
+            for col in nodes if isinstance(nodes, list) else []:
+                for n in _nut_trong_collection(col):
+                    uri = _uri_anh(n, "viewer_image") if _la_nut_anh(n) else None
+                    if uri and n["id"] not in thay:
+                        thay.add(n["id"])
+                        ra.append(NutAnh(n["id"], uri))
+            ngan_xep.extend(reversed(list(o.values())))
+        elif isinstance(o, list):
+            ngan_xep.extend(reversed(o))
+    return ra
+
+
+def tim_uri_anh_theo_id(goc_json: list, ma: str) -> str | None:
+    """URL ảnh của nút `Photo` có id `ma` ở BẤT KỲ đâu trong cây (trang `/photo/?fbid=` mở đích danh một ảnh): ưu tiên
+    `viewer_image.uri`, rồi `image.uri`. Không thấy ⇒ None."""
+    ngan_xep = list(reversed(goc_json))
+    while ngan_xep:
+        o = ngan_xep.pop()
+        if isinstance(o, dict):
+            if o.get("__typename") == "Photo" and o.get("id") == ma:
+                uri = _uri_anh(o, "viewer_image") or _uri_anh(o, "image")
+                if uri:
+                    return uri
+            ngan_xep.extend(reversed(list(o.values())))
+        elif isinstance(o, list):
+            ngan_xep.extend(reversed(o))
+    return None

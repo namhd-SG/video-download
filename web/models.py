@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH, LOAI_VIDEO
 from web import giai_captcha as gc
 from web.vi_tu_con_song import CHUA_AN, CON_SONG_CHUNG
 
@@ -397,28 +398,39 @@ def _add_column_if_missing(conn, table: str, column: str, decl: str) -> None:
             raise
 
 
-def _sao_luu_truoc_cot_nen_tang(db_path: Path) -> Path | None:
-    """Sao lưu `jobs.db` MỘT lần, ngay trước migration thêm `jobs.nen_tang`.
+def _sao_luu_khi_thieu_cot_jobs(db_path: Path, cot: str, nhan: str) -> Path | None:
+    """Sao lưu `jobs.db` ngay trước migration thêm `jobs.<cot>`: chỉ khi DB đã có bảng `jobs` mà thiếu cột đó.
 
-    Chỉ chạy khi DB đã có bảng `jobs` mà chưa có cột đó (tức đúng lượt khởi động đầu tiên của bản
-    có hai hàng đợi); DB mới hay DB đã migrate thì không sao lưu gì. Dùng backup API của SQLite
-    (bản nhất quán kể cả khi đang có WAL), ghi cạnh DB: `<tên>.truoc-nen-tang-<giờ UTC>`.
-    """
+    DB mới hay DB đã migrate thì không sao lưu gì. Dùng backup API của SQLite (bản nhất quán kể cả khi đang
+    có WAL), ghi cạnh DB: `<tên>.<nhan>-<giờ UTC>`."""
     if not Path(db_path).exists():
         return None
     with sqlite3.connect(db_path) as nguon:
         co_jobs = nguon.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='jobs'").fetchone()
-        if not co_jobs or any(r[1] == "nen_tang" for r in nguon.execute("PRAGMA table_info(jobs)")):
+        if not co_jobs or any(r[1] == cot for r in nguon.execute("PRAGMA table_info(jobs)")):
             return None
-        dich = Path(f"{db_path}.truoc-nen-tang-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
+        dich = Path(f"{db_path}.{nhan}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}")
         with sqlite3.connect(dich) as ban_sao:
             nguon.backup(ban_sao)
     return dich
 
 
+def _sao_luu_truoc_cot_nen_tang(db_path: Path) -> Path | None:
+    """Sao lưu `jobs.db` MỘT lần, ngay trước migration thêm `jobs.nen_tang` (tức đúng lượt khởi động đầu tiên
+    của bản có hai hàng đợi): `<tên>.truoc-nen-tang-<giờ UTC>`."""
+    return _sao_luu_khi_thieu_cot_jobs(db_path, "nen_tang", "truoc-nen-tang")
+
+
+def _sao_luu_truoc_tai_anh(db_path: Path) -> Path | None:
+    """Sao lưu `jobs.db` MỘT lần, ngay trước migration thêm `jobs.loai_tai` và 4 cột ảnh của `videos`
+    (chế độ tải ảnh): `<tên>.truoc-tai-anh-<giờ UTC>`. Chỉ khi có bảng `jobs` mà thiếu `loai_tai`."""
+    return _sao_luu_khi_thieu_cot_jobs(db_path, "loai_tai", "truoc-tai-anh")
+
+
 def init_db(db_path: Path) -> None:
     _sao_luu_truoc_cot_nen_tang(db_path)
+    _sao_luu_truoc_tai_anh(db_path)
     with _connect(db_path) as conn:
         conn.execute(_SCHEMA)
         conn.execute(_VIDEOS_SCHEMA)
@@ -564,6 +576,16 @@ def init_db(db_path: Path) -> None:
         # Số video của lô LÚC mở (mẫu số cùng thời điểm với `so_item`) — lấy từ
         # CÙNG response payload. NULL cùng lúc với `so_item` khi chưa biết.
         _add_column_if_missing(conn, "cum_lo_mo", "so_video", "INTEGER")
+        # Chế độ tải ẢNH — CHỈ CỘNG cột, hàng cũ tự điền mặc định 'video' (NOT NULL DEFAULT) nên mọi đường cũ
+        # không đổi. `jobs.loai_tai` = video | anh | ca_hai. Mỗi TỆP ảnh là một hàng `videos` (`loai='anh'`,
+        # `video_id` = `<bai_id>-<NN>`) để máy vào bộ / Creative Desk / dọn ngày 7 chạy nguyên trên một hàng một tệp:
+        # `bai_id` gom các tệp của một bài, `thu_tu` (từ 1) là thứ tự tệp, `bai_thu_muc_id` là thư mục Drive của bài.
+        _add_column_if_missing(conn, "jobs", "loai_tai", f"TEXT NOT NULL DEFAULT '{LOAI_VIDEO}'")
+        _add_column_if_missing(conn, "videos", "loai", f"TEXT NOT NULL DEFAULT '{LOAI_VIDEO}'")
+        _add_column_if_missing(conn, "videos", "bai_id", "TEXT")
+        _add_column_if_missing(conn, "videos", "thu_tu", "INTEGER")
+        _add_column_if_missing(conn, "videos", "bai_thu_muc_id", "TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_videos_bai_id ON videos(bai_id)")
 
 
 def ghi_nhan_nguoi_dung(db_path: Path, email: str) -> None:
@@ -705,7 +727,7 @@ def moi_admin_tu_env(db_path: Path, emails: list[str]) -> int:
 
 def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
               usecase: str | None = None, insight_goc: str | None = None,
-              nen_tang: str = NEN_TANG_MAC_DINH) -> int:
+              nen_tang: str = NEN_TANG_MAC_DINH, loai_tai: str = LOAI_VIDEO) -> int:
     """Insert a pending job. `so_luong` (what the user asked for) IS `tong`,
     and nothing overwrites it afterwards.
 
@@ -722,12 +744,14 @@ def create_job(db_path: Path, url: str, so_luong: int, nguoi_tao: str,
     `usecase`/`insight_goc` tuỳ chọn (mặc định `None`) — hỏi lúc tạo job để
     `chia_lan` sau này có sẵn giá trị mà không phải gõ lại (xem dòng
     `_add_column_if_missing(conn, "jobs", "usecase", ...)` phía trên). Client
-    cũ không gửi hai trường này vẫn tạo job như trước."""
+    cũ không gửi hai trường này vẫn tạo job như trước.
+
+    `loai_tai` (video | anh | ca_hai, THAM SỐ CUỐI): chế độ tải của lượt. Mặc định video = đúng như trước."""
     with _connect(db_path) as conn:
         cur = conn.execute(
             "INSERT INTO jobs (url, trang_thai, tong, xong, loi, loi_tiktok, tao_luc, nguoi_tao, "
-            "usecase, insight_goc, nen_tang) VALUES (?, 'pending', ?, 0, 0, 0, ?, ?, ?, ?, ?)",
-            (url, so_luong, _now(), nguoi_tao, usecase, insight_goc, nen_tang),
+            "usecase, insight_goc, nen_tang, loai_tai) VALUES (?, 'pending', ?, 0, 0, 0, ?, ?, ?, ?, ?, ?)",
+            (url, so_luong, _now(), nguoi_tao, usecase, insight_goc, nen_tang, loai_tai),
         )
         job_id = cur.lastrowid
     assert job_id is not None
@@ -1249,15 +1273,19 @@ def known_video_ids(db_path: Path, video_ids: list[str]) -> set[str]:
     loại sẽ làm lượt quét sau tải LẠI đúng video mà chủ vừa bỏ — tốn một lượt
     TikTok và dựng lại thứ họ vừa dọn. Thư viện lọc ở `list_videos`; chỗ này
     thì không.
+
+    Bài ảnh: mỗi tệp là một hàng (`video_id` = `<bai_id>-<NN>`), nên "đã có bài này" hỏi theo `bai_id`
+    (UNION). Id ảnh mang tiền tố `anh-` không bao giờ trùng id video ⇒ không cần tham số theo chế độ.
     """
     if not video_ids:
         return set()
     marks = ",".join("?" * len(video_ids))
     with _connect(db_path) as conn:
         rows = conn.execute(
-            f"SELECT video_id FROM videos WHERE video_id IN ({marks})", video_ids
+            f"SELECT video_id FROM videos WHERE video_id IN ({marks}) "
+            f"UNION SELECT bai_id FROM videos WHERE bai_id IN ({marks})", [*video_ids, *video_ids]
         ).fetchall()
-    return {r["video_id"] for r in rows}
+    return {r[0] for r in rows}
 
 
 def _loc_vao_bo(vao_bo: bool | None) -> str:
@@ -1269,8 +1297,17 @@ def _loc_vao_bo(vao_bo: bool | None) -> str:
     return f"AND {CHUA_AN} " if not vao_bo else f"AND NOT {CHUA_AN} "
 
 
+def _loc_loai(loai: str) -> tuple[str, tuple]:
+    """Mảnh SQL (kèm tham số) lọc `v.loai`. `list_videos`/`count_videos` mặc định "video" ⇒ lưới video và mọi
+    người gọi cũ KHÔNG thấy hàng ảnh. Chỉ nhận video | anh (gom theo bài ảnh ở `models_anh`)."""
+    if loai not in (LOAI_VIDEO, LOAI_ANH):
+        raise ValueError(f"loai không hợp lệ: {loai!r}")
+    return "AND v.loai = ? ", (loai,)
+
+
 def list_videos(db_path: Path, chi_cua: str | None,
-                limit: int = 500, offset: int = 0, vao_bo: bool | None = None) -> list[dict]:
+                limit: int = 500, offset: int = 0, vao_bo: bool | None = None,
+                loai: str = LOAI_VIDEO) -> list[dict]:
     """Newest first, showing only what `chi_cua` downloaded. `None` = all,
     which is for admins.
 
@@ -1288,32 +1325,37 @@ def list_videos(db_path: Path, chi_cua: str | None,
     from the count as well as the grid. It keeps `nguoi_tao = NULL`, so it
     falls out for every member and only an admin (`chi_cua=None`) still sees
     it. That is the safe direction to fail.
+
+    `loai` ("video" mặc định | "anh"): lọc `v.loai` — lưới video không bao giờ thấy hàng ảnh.
     """
+    loc_loai, tham_so_loai = _loc_loai(loai)
     with _connect(db_path) as conn:
         rows = conn.execute(
             "SELECT v.*, j.nguoi_tao FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
             f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) "
-            + _loc_vao_bo(vao_bo) +
+            + loc_loai + _loc_vao_bo(vao_bo) +
             "ORDER BY v.tao_luc DESC, v.video_id DESC "
             "LIMIT ? OFFSET ?",
-            (chi_cua, chi_cua, limit, offset),
+            (chi_cua, chi_cua, *tham_so_loai, limit, offset),
         ).fetchall()
     return [dict(r) for r in rows]
 
 
-def count_videos(db_path: Path, chi_cua: str | None, vao_bo: bool | None = None) -> int:
+def count_videos(db_path: Path, chi_cua: str | None, vao_bo: bool | None = None,
+                 loai: str = LOAI_VIDEO) -> int:
     """Must filter exactly like `list_videos`: the UI uses this number to
     decide whether to ask for another page, and prints it as "N video". A
     total taken over the whole warehouse would both over-page and tell each
     member a number that is not theirs.
     """
+    loc_loai, tham_so_loai = _loc_loai(loai)
     with _connect(db_path) as conn:
         return int(conn.execute(
             "SELECT COUNT(*) FROM videos v "
             "LEFT JOIN jobs j ON j.id = v.job_id "
-            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) " + _loc_vao_bo(vao_bo),
-            (chi_cua, chi_cua),
+            f"WHERE {CON_SONG_CHUNG} AND (? IS NULL OR j.nguoi_tao = ?) " + loc_loai + _loc_vao_bo(vao_bo),
+            (chi_cua, chi_cua, *tham_so_loai),
         ).fetchone()[0])
 
 

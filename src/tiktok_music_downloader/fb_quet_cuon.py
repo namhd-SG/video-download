@@ -24,7 +24,10 @@ from tiktok_music_downloader.utils import (
     STOP_STALLED, VideoRef,
 )
 
+from tiktok_music_downloader.tai_anh_cau_hinh import bai_id_anh
+
 TIEN_TO_ID_FB = "fbv-"
+URL_ANH = "https://www.facebook.com/photo/?fbid={}"
 URL_REEL = "https://www.facebook.com/reel/{}"
 URL_VIDEO = "https://www.facebook.com/watch/?v={}"
 NGHI_CUON_GIAY = (2.5, 4.0)     # nghỉ giữa hai lần cuộn (đo bước 0)
@@ -160,4 +163,38 @@ def quet(trang: TrangFB, url: str, *, tab: str, max_videos: int,
     elif not kq.ly_do:
         # Hết nguồn mà chưa đủ: có video mới ít hơn xin ⇒ stalled; chỉ có bài đã có ⇒ already_owned; không có gì ⇒ rỗng.
         kq.ly_do = (STOP_STALLED if kq.refs else STOP_ALREADY_OWNED if kq.so_da_co else STOP_SOURCE_EMPTY)
+    return kq
+
+
+def quet_anh(trang: TrangFB, url: str, *, max_videos: int, already_have: Callable[[list[str]], set[str]],
+             on_skip: Callable[[VideoRef], None], max_seconds: float | None = None,
+             ngu: Callable[[float], None] | None = None) -> KetQuaQuet:
+    """Tab /photos: chỉ đọc `<script type="application/json">` LÚC TẢI TRANG (không XHR phân trang, không cuộn — đã đo:
+    khách chỉ thấy 8 ảnh/page, cuộn không thêm). Một nút Photo = một ref ảnh (`anh-fbp-<fbid>`, một tệp).
+    Chưa đủ N mà có hộp thoại đăng nhập ⇒ `fb_chan_dang_nhap`; chưa đủ N không hộp thoại ⇒ như `quet` (stalled /
+    already_owned / source_empty). `max_seconds` không dùng (một lượt tải) — giữ cho khớp chữ ký các quét khác."""
+    ngu = ngu or time.sleep
+    kq = KetQuaQuet()
+    if trang.mo(url) == 429:
+        kq.chan_429 = True
+        return kq
+    ngu(CHO_BAN_DAU_GIAY)
+    kq.so_xhr = len(trang.lay_xhr())
+    nut = ph.boc_nut_anh(ph.doc_script_json(trang.lay_script_json()))
+    ref_cua = {n.ma: VideoRef(video_id=bai_id_anh("fbp", n.ma), url=URL_ANH.format(n.ma), loai="anh",
+                              anh_urls=((n.uri,),), anh_kieu=("anh",)) for n in nut}
+    da_co = already_have([r.video_id for r in ref_cua.values()]) if ref_cua else set()
+    for r in ref_cua.values():
+        if r.video_id in da_co:
+            kq.so_da_co += 1
+            on_skip(r)
+        else:
+            kq.refs.append(r)
+    kq.refs = kq.refs[:max_videos]
+    if len(kq.refs) >= max_videos:
+        kq.ly_do = STOP_COMPLETE
+    elif trang.dau_dom().co_hop_thoai_dang_nhap:
+        kq.co_tuong, kq.ly_do = True, STOP_FB_CHAN_DANG_NHAP       # xin nhiều hơn số khách thấy ⇒ tường
+    else:
+        kq.ly_do = STOP_STALLED if kq.refs else STOP_ALREADY_OWNED if kq.so_da_co else STOP_SOURCE_EMPTY
     return kq

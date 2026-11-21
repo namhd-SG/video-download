@@ -47,6 +47,7 @@
       <a href="#cookie">Cookie TikTok</a>
       <a href="#cookie-instagram">Cookie Instagram</a>
       <a href="#thu-vien">Thư viện, cụm và bộ</a>
+      <a href="#tai-anh" id="muc-luc-tai-anh" hidden>Tải ảnh</a>
       <a href="#ly-do-dung">Vì sao lượt tải dừng</a>
       <a href="#thay-logo">Thay logo</a>
       <a href="#chua-co">Chưa hỗ trợ</a>
@@ -189,6 +190,29 @@
           thì thẻ lượt tải hiện nút <em>Tôi giải ngay</em> — bấm để tự giải trong cửa sổ hiện ra, xong thì lượt tải
           chạy tiếp.</li>
       </ul>
+    </section>
+
+    <!-- Cả mục (và link mục lục) ẨN mặc định; huong-dan.js chỉ hiện khi GET /tinh-nang có tai_anh_bat = true.
+         Cờ và danh sách nền tảng KHÔNG viết tay: huong-dan.js điền từ GET /tinh-nang (tai_anh_bat, nen_tang_anh).
+         Câu tả hành vi: ảnh vào bộ + dọn ngày 7 như video (đường vào bộ/dọn chạy trên từng tệp ảnh), không cụm/thay logo. -->
+    <section class="panel" id="tai-anh" hidden>
+      <h2>Tải ảnh</h2>
+      <p id="tai-anh-trang-thai" class="muted">…</p>
+      <div id="tai-anh-chi-tiet" hidden>
+        <p>Nền tảng tải được ảnh trên máy này: <span id="nen-tang-anh" class="hd-chip-hang">…</span></p>
+        <ul class="hd-buoc">
+          <li><strong>Chọn loại trước khi tạo lượt:</strong> ở ô tạo lượt có nhóm <em>Video | Ảnh | Cả hai</em>, mặc định <em>Video</em>
+            và không nhớ lựa chọn lần trước. Chế độ <em>Ảnh</em> chỉ lấy bài ảnh (slideshow, ảnh đơn, carousel); <em>Cả hai</em> lấy cả video lẫn ảnh.
+            Nguồn không có ảnh (YouTube, thư viện quảng cáo, Drive…) hoặc không hỗ trợ chế độ đã chọn sẽ bị từ chối ngay lúc tạo, kèm lý do.</li>
+          <li><strong>Một bài ảnh = một mục</strong> trong số lượng đã xin. Bài chỉ được lưu khi tải đủ và lên Drive đủ mọi ảnh — hụt một ảnh
+            thì cả bài tính là lỗi và chạy lại sẽ tải lại từ đầu. Slideshow TikTok chỉ lưu ảnh gốc, không lưu nhạc.</li>
+          <li><strong>Trong thư viện:</strong> bật <em>Loại ▸ Ảnh</em> để xem bài ảnh (mỗi thẻ là một bài, hiện số ảnh). Thẻ lượt tải có nhãn
+            <em>Ảnh</em> / <em>Video</em> / <em>Cả hai</em>.</li>
+          <li><strong>Gửi Creative Desk, Bỏ, dọn:</strong> ảnh đi như video — chọn bài rồi <em>Tạo bộ tự tìm</em> (mỗi ảnh là một tệp trong bộ),
+            <em>Xoá</em> đưa cả bài vào Thùng rác Drive, và ảnh đã vào bộ cũng bị dọn sau 7 ngày như video.</li>
+          <li><strong>Không có:</strong> chia cụm, <em>Đưa vào cụm</em> và Thay logo chỉ dành cho video; ảnh không xuất hiện ở đó.</li>
+        </ul>
+      </div>
     </section>
 
     <section class="panel" id="ly-do-dung">

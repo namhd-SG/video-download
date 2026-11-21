@@ -28,6 +28,8 @@ from typing import Callable
 from urllib.parse import urlsplit
 
 from tiktok_music_downloader import captcha_xoay, scraper
+from tiktok_music_downloader.nguon import _kw_loai as kw_loai  # noqa: PLC2701 — một cửa chung `loai` (video ⇒ {})
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_VIDEO
 from tiktok_music_downloader.utils import VideoRef
 from web import giai_captcha as gc
 from web import models, profile_theo_job
@@ -335,9 +337,12 @@ def _quet_sau_giai_than(page, cdp, guard, phien, db_path: Path, job: dict, profi
 
     # SPA đã đổi đường dẫn bằng pushState ⇒ không reload được đúng trang ⇒ vào lại như lượt thường.
     ve_dung_trang = urlsplit(page.url).path == guard.path
+    # Loại tải của job tới tận lời gọi quét: video ⇒ không thêm kwarg (y hệt trước); ảnh/cả hai ⇒ `quet_tren_trang`
+    # PHẢI nhận `loai`, không thì `NotImplementedError` rõ ràng (không lặng lẽ quét ra video cho job ảnh).
     refs = scraper.quet_tren_trang(
         page, profile_url, max_videos=max_videos * 2, dem_trang=dem_trang,
         thong_ke_feed={}, tai_lai_truoc_khi_cuon=ve_dung_trang, kiem_truoc_khi_cuon=kiem,
+        **kw_loai(scraper.quet_tren_trang, job.get("loai_tai") or LOAI_VIDEO, "quét trang profile TikTok"),
     )
     if da_chan["v"]:
         return _cho_xac_minh(gc.LD_CAPTCHA_CHUA_XONG)

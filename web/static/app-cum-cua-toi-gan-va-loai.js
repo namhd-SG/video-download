@@ -135,13 +135,21 @@
   }
 
   async function loaiDaChon() {
-    const ids = [...state.selected];
-    if (!ids.length) return;
+    const khoaThe = [...state.selected];
+    if (!khoaThe.length) return;
+    const laAnh = state.loaiThuVien === "anh";
+    // Khoá thẻ ⇒ id tệp gửi `POST /videos/loai`. Video: chính nó. Bài ảnh: `file_ids` của bài (server bỏ theo TỪNG tệp =
+    // một hàng `videos`). Viết tại chỗ: harness `tests/js/` trích riêng hàm này.
+    const idTepCuaThe = (k) => {
+      const v = (state.videos || []).find((x) => x.video_id === k);
+      return v && v.loai === "anh" ? (v.file_ids || []) : [k];
+    };
+    const ids = khoaThe.flatMap(idTepCuaThe);   // chia lô ≤ LOAI_TOI_DA_MOI_LUOT tính trên TỆP
     // Hỏi trước: xoá là việc khó lùi ở phía người dùng (tệp vào Thùng rác
     // Drive). Nói rõ nó KHÔNG đụng người khác — đó là thứ người bấm cần biết
     // để bấm mà không phải đoán.
     const ok = window.confirm(
-      `Bỏ ${ids.length} video khỏi thư viện của bạn?` +
+      (laAnh ? `Bỏ ${khoaThe.length} bài ảnh (${ids.length} ảnh) khỏi thư viện của bạn?` : `Bỏ ${ids.length} video khỏi thư viện của bạn?`) +
       `${dongNgoaiTrang(demNgoaiTrang(state.selected, state.idTrang))}\n\n` +
       `Tệp vào Thùng rác Drive (lấy lại được trong 30 ngày). ` +
       `Người khác không bị ảnh hưởng, và lượt quét sau của bạn sẽ không tải lại chúng.`);
@@ -155,6 +163,7 @@
     const tong = { da_loai: 0, drive_truot: 0, khong_phai_cua_ban: 0 };
     let loi = null;
     let loDaGui = 0;
+    const daGui = new Set();
     const soLo = Math.ceil(ids.length / LOAI_TOI_DA_MOI_LUOT);
     for (let i = 0; i < ids.length; i += LOAI_TOI_DA_MOI_LUOT) {
       const lo = ids.slice(i, i + LOAI_TOI_DA_MOI_LUOT);
@@ -165,7 +174,9 @@
         tong.khong_phai_cua_ban += res.khong_phai_cua_ban.length;
         // Gỡ khỏi lựa chọn ĐÚNG lô vừa xong — như bản một-lượt trước đây
         // `clear()` sau khi API trả về. Lô chưa gửi vẫn nằm đó để bấm lại.
-        lo.forEach((id) => state.selected.delete(id));
+        // Thẻ ảnh chỉ rời lựa chọn khi MỌI tệp của bài đã đi (một bài có thể cắt ngang hai lô).
+        lo.forEach((id) => daGui.add(id));
+        khoaThe.forEach((k) => { if (idTepCuaThe(k).every((f) => daGui.has(f))) state.selected.delete(k); });
         loDaGui++;
       } catch (err) {
         if (err instanceof PhienHetHan) { baoPhienHetHan(); return; }

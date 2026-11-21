@@ -71,6 +71,20 @@
     document.getElementById("tam-tat").hidden = !tamTat.length;
     document.getElementById("nen-tang-tam-tat").textContent = tamTat.map(ten).join(", ");
 
+    // Tải ảnh: chỉ cờ + danh sách nền tảng từ máy chủ; cờ tắt (máy chủ không gửi khoá) ⇒ cả mục và link mục lục ẩn.
+    const taiAnhBat = tn.tai_anh_bat === true;
+    document.getElementById("tai-anh").hidden = !taiAnhBat;
+    document.getElementById("muc-luc-tai-anh").hidden = !taiAnhBat;
+    const nenTangAnh = tn.nen_tang_anh || [];
+    document.getElementById("tai-anh-trang-thai").textContent = taiAnhBat
+      ? "Tính năng tải ảnh đang BẬT trên máy này."
+      : "Tính năng tải ảnh đang TẮT trên máy này — ô tạo lượt chỉ có video. Cần dùng thì báo quản trị viên bật.";
+    document.getElementById("tai-anh-chi-tiet").hidden = !taiAnhBat;
+    const hangAnh = document.getElementById("nen-tang-anh");
+    hangAnh.textContent = "";
+    for (const nt of nenTangAnh) hangAnh.append(o("span", ten(nt), "hd-chip"));
+    if (!nenTangAnh.length) hangAnh.textContent = "chưa có nền tảng nào đang bật";
+
     const tran = Object.assign({}, tn.tran, {
       thoi_luong_video_phut: Math.round(tn.tran.thoi_luong_video_giay / 60),
     });

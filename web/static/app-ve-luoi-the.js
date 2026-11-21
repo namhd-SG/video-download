@@ -73,7 +73,7 @@
     document.getElementById("so-moi-trang").innerHTML = SO_MOI_TRANG.map((n) =>
       `<button type="button" data-so="${n}" class="${n === state.soMoiTrang ? "on" : ""}" aria-pressed="${n === state.soMoiTrang}">${n}</button>`).join("");
     document.getElementById("lib-pager-dem").textContent =
-      `Hiện ${ct.dau + 1}–${ct.dau + ct.muc.length} / ${tongLoc} video`;
+      `Hiện ${ct.dau + 1}–${ct.dau + ct.muc.length} / ${tongLoc} ${state.loaiThuVien === "anh" ? "bài ảnh" : "video"}`;
     veNutChonTrang();
   }
 
@@ -148,10 +148,13 @@
     const noMatch = document.getElementById("no-match-state");
 
     veChipVaoBo();
+    veTrangThaiLoaiThuVien();
     // "Thư viện chưa có video nào" chỉ khi CẢ HAI phía chip đều rỗng. Lưới chỉ nạp
     // một phía: phía này rỗng mà phía kia có (chip bật mà chưa video nào vào bộ,
     // hoặc mọi video đều đã vào bộ) là "không khớp bộ lọc", như trước.
     if (state.videos.length === 0 && !state.chiVaoBo && !(state.tongVaoBo > 0)) {
+      const tieuDe = emptyState.querySelector("h3");
+      if (tieuDe) tieuDe.textContent = state.loaiThuVien === "anh" ? "Thư viện chưa có bài ảnh nào" : "Thư viện chưa có video nào";
       emptyState.hidden = false;
       noMatch.hidden = true;
       grid.hidden = true;
@@ -178,7 +181,8 @@
     const nen = videoTrongNen().length;
     const parts = [];
     parts.push(filtered.length === nen ? `${nen}` : `${filtered.length}/${nen}`);
-    parts.push(state.chiVaoBo ? "video đã vào bộ" : "video");
+    const donVi = state.loaiThuVien === "anh" ? "bài ảnh" : "video";
+    parts.push(state.chiVaoBo ? `${donVi} đã vào bộ` : donVi);
     if (loaded < total) parts.push(`(đang hiện ${loaded} trong ${total})`);
     document.getElementById("library-count").textContent = parts.join(" ");
 
@@ -214,17 +218,22 @@
 
   function renderCard(video) {
     const isSelected = state.selected.has(video.video_id);
-    const duration = fmtDuration(video.duration);
+    const laAnh = video.loai === "anh";
+    const duration = laAnh ? null : fmtDuration(video.duration);
     const plays = fmtCount(video.play_count);
     const metaParts = [];
-    metaParts.push(escapeHtml(video.author || "(chưa rõ người đăng)"));
+    // Bọc span để CSS cắt "…" được: handle dài không dấu cách (vd `thoitrang.congso.hangngay_official`) để trần trong
+    // flex sẽ ép cột lưới rộng ra và tràn sang thẻ bên.
+    const tacGia = escapeHtml(video.author || "(chưa rõ người đăng)");
+    metaParts.push(`<span class="card-author" title="${tacGia}">${tacGia}</span>`);
     if (video.region) metaParts.push(escapeHtml(video.region));
     if (plays !== null) metaParts.push(`${plays} lượt xem`);
     return `
       <div class="card${isSelected ? " selected" : ""}" data-video-id="${escapeHtml(video.video_id)}" role="checkbox" aria-checked="${isSelected}" tabindex="0">
         <div class="card-thumb">
-          <img src="/thumbs/${encodeURIComponent(video.video_id)}" alt="" loading="lazy" />
+          <img src="/thumbs/${encodeURIComponent(laAnh ? video.thumb_id : video.video_id)}" alt="" loading="lazy" />
           ${duration ? `<span class="card-duration">${duration}</span>` : ""}
+          ${laAnh ? `<span class="card-duration card-so-anh">${Number(video.so_anh) || 0} ảnh</span>` : ""}
         </div>
         <span class="card-check"></span>
         <div class="card-body">
@@ -234,7 +243,7 @@
           ${video.url
             ? `<a class="card-link" href="${escapeHtml(video.url)}" target="_blank" rel="noopener" data-video-link>Xem gốc ↗</a>`
             : `<span class="card-link card-link-trong">chưa rõ link gốc</span>`}
-          ${chipCum(video)}
+          ${laAnh ? "" : chipCum(video)}
         </div>
       </div>`;
   }

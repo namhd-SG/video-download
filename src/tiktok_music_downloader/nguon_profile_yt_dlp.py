@@ -34,6 +34,7 @@ from typing import Callable
 from yt_dlp import YoutubeDL
 
 from tiktok_music_downloader import phan_loai_loi_profile_yt_dlp as pl
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_VIDEO
 from tiktok_music_downloader.utils import VideoRef
 
 log = logging.getLogger("ttmd")
@@ -104,8 +105,14 @@ def liet_ke_profile_yt_dlp(
     already_have: Callable[[list[str]], set[str]] | None = None,
     on_skip: Callable[[VideoRef], None] | None = None,
     dem_trang: Callable[[], None] | None = None,
+    loai: str = LOAI_VIDEO,
 ) -> list[VideoRef] | None:
-    """Liệt kê tối đa `max_videos` video MỚI từ trang `@profile` qua yt-dlp; hỏng/0 mục hợp lệ ⇒ `None`."""
+    """Liệt kê tối đa `max_videos` video MỚI từ trang `@profile` qua yt-dlp; hỏng/0 mục hợp lệ ⇒ `None`.
+
+    `loai` ảnh/cả hai ⇒ `None` NGAY (không chạm mạng): mục phẳng của yt-dlp đều là `/video/`, không phân loại
+    được bài ảnh (đo: 60/60 mục `/video/`, bài ảnh đã biết không có trong 30 đầu) — người gọi rơi về trình duyệt."""
+    if loai != LOAI_VIDEO:
+        return None
     if not profile_yt_dlp_dang_bat():
         return None
     refs, loi, da_keo = _mot_luot(url, 1, max_videos=max_videos, proxy=proxy, already_have=already_have,

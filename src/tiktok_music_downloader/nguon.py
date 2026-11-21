@@ -23,6 +23,7 @@ cờ môi trường do người gọi dựng sẵn rồi truyền vào qua tham 
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 import os
 import re
@@ -37,10 +38,19 @@ from yt_dlp.extractor.youtube import YoutubeTabIE
 from tiktok_music_downloader import downloader, gdrive
 from tiktok_music_downloader.hashtag_enumerator import enumerate_hashtag
 from tiktok_music_downloader.nguon_facebook_trang import FacebookTrang
+from tiktok_music_downloader.nguon_facebook_trang import phan_tich_url as _phan_tich_fb
 from tiktok_music_downloader.nguon_instagram import InstagramHangLoat
+from tiktok_music_downloader.nguon_instagram import phan_tich_url as _phan_tich_ig
 from tiktok_music_downloader.nguon_profile_yt_dlp import liet_ke_profile_yt_dlp
 from tiktok_music_downloader.scraper import scrape_music_page_multi
 from tiktok_music_downloader.scraper_fb import scrape_ads_library
+from tiktok_music_downloader.tai_anh_cau_hinh import (
+    LOAI_ANH,
+    LOAI_CA_HAI,
+    LOAI_HOP_LE,
+    LOAI_VIDEO,
+    bai_id_anh,
+)
 from tiktok_music_downloader.phan_loai_loi import (
     LOI_LA_PLAYLIST,
     LOI_QUA_DAI,
@@ -52,6 +62,8 @@ from tiktok_music_downloader.phan_loai_loi import (
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_COMPLETE,
+    STOP_IG_CHUA_CO_COOKIE,
+    STOP_IG_MAT_PHIEN,
     STOP_SOURCE_EMPTY,
     STOP_STALLED,
     VideoRef,
@@ -61,11 +73,26 @@ from tiktok_music_downloader.utils import (
     is_profile_page,
     is_tiktok_collection,
     loai_nguon,
+    parse_photo_url,
     parse_tag_slug,
     parse_video_url,
 )
 
 log = logging.getLogger("ttmd")
+
+# Loại tải một nguồn/link hỗ trợ (xem `tai_anh_cau_hinh`). Mặc định của mọi nguồn = chỉ video (đúng hôm nay).
+LOAI_CHI_VIDEO: frozenset[str] = frozenset({LOAI_VIDEO})
+LOAI_CA_BA: frozenset[str] = frozenset(LOAI_HOP_LE)
+
+
+def _kw_loai(ham: Callable, loai: str, ten: str) -> dict:
+    """`{}` cho video (người gọi cũ y hệt, kể cả hàm không biết `loai`); `{"loai": loai}` cho ảnh/cả hai nếu `ham`
+    nhận `loai`, còn không ⇒ `NotImplementedError` RÕ — không bao giờ lặng lẽ trả video khi người dùng xin ảnh."""
+    if loai == LOAI_VIDEO:
+        return {}
+    if "loai" not in inspect.signature(ham).parameters:
+        raise NotImplementedError(f"{ten}: chưa hỗ trợ liệt kê loại '{loai}'")
+    return {"loai": loai}
 
 
 class Nguon(Protocol):
@@ -84,7 +111,11 @@ class Nguon(Protocol):
         """Nhãn ngắn thay cho URL khi ghi log (URL/handle không được vào log)."""
 
     def liet_ke(self, url: str, **kw) -> list[VideoRef]:
-        """Liệt kê video của URL. Tham số cụ thể do từng nguồn định nghĩa."""
+        """Liệt kê video của URL. Tham số cụ thể do từng nguồn định nghĩa. Nguồn biết ảnh nhận thêm `loai`
+        (keyword, mặc định "video"); ref trả về luôn đã phân loại `video|anh` (`VideoRef.loai`)."""
+
+    # Tuỳ chọn: `loai_ho_tro(url) -> frozenset[str]` — loại tải URL này hỗ trợ (tập con của video/anh/ca_hai). Không
+    # có ⇒ chỉ video. Nguồn nằm ở module khác (Instagram, Facebook page) được `loai_ho_tro_cua` tính hộ ở cuối file.
 
 
 class TikTokCollection:
@@ -102,19 +133,26 @@ class TikTokCollection:
     def loai_log(self, url: str) -> str:
         return loai_nguon(url)
 
+    def loai_ho_tro(self, url: str) -> frozenset[str]:
+        """Music / hashtag / search / profile TikTok: cả video, ảnh, cả hai."""
+        return LOAI_CA_BA
+
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None,
                 cookies_path: str | None, already_have: Callable[[list[str]], set[str]],
                 on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
                 on_pages: Callable[[int], None], dem_trang: Callable[[], None],
                 passes: int, max_seconds: float | None,
-                kw_profile: dict, nguon_ra: dict | None = None) -> list[VideoRef]:
+                kw_profile: dict, nguon_ra: dict | None = None, loai: str = LOAI_VIDEO) -> list[VideoRef]:
+        """`loai` (mặc định video ≡ hôm nay) chỉ được chuyển xuống trình liệt kê khi KHÁC video (`_kw_loai`):
+        trình nào chưa biết `loai` thì `NotImplementedError` rõ ràng chứ không trả video."""
         tag = parse_tag_slug(url)
         if tag is not None:
             # Hashtag đi đường chỉ mục bên thứ ba, không có cookie/profile; lọc từng trang
             # nên "đào sâu tới khi đủ N mới" chạy được.
             return enumerate_hashtag(tag, max_videos=max_videos, proxy=proxy,
                                      already_have=already_have, on_skip=on_skip,
-                                     on_stop=on_stop, on_pages=on_pages)
+                                     on_stop=on_stop, on_pages=on_pages,
+                                     **_kw_loai(enumerate_hashtag, loai, "hashtag TikTok"))
         # Tách `nguon_ra` khỏi bản sao `kw_profile` trước khi `**` vào `scrape_music_page_multi`:
         # không để khoá lạ lọt xuống trình quét trình duyệt.
         kw_prof = dict(kw_profile)
@@ -131,6 +169,7 @@ class TikTokCollection:
                 already_have=already_have,
                 on_skip=on_skip,
                 dem_trang=dem_trang,
+                **_kw_loai(liet_ke_profile_yt_dlp, loai, "profile TikTok (yt-dlp)"),
             )
             if refs is not None:
                 if nguon_ra is not None:
@@ -157,6 +196,7 @@ class TikTokCollection:
             cookies_path=cookies_path,
             proxy=proxy,
             dem_trang=dem_trang,
+            **_kw_loai(scrape_music_page_multi, loai, "music/search/profile TikTok (trình duyệt)"),
             **kw_prof,
         )
 
@@ -209,6 +249,9 @@ class FbAdsLibrary:
     def loai_log(self, url: str) -> str:
         return "fb_ads"
 
+    def loai_ho_tro(self, url: str) -> frozenset[str]:
+        return LOAI_CHI_VIDEO
+
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
                 already_have: Callable[[list[str]], set[str]],
                 on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
@@ -237,6 +280,9 @@ class DriveFolder:
 
     def loai_log(self, url: str) -> str:
         return "drive"
+
+    def loai_ho_tro(self, url: str) -> frozenset[str]:
+        return LOAI_CHI_VIDEO
 
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
                 already_have: Callable[[list[str]], set[str]],
@@ -470,6 +516,31 @@ def _ref_tu_info(info: dict | None, link: str, tien_to: str) -> tuple[VideoRef |
     ), None
 
 
+# Mã bài `/p/<mã>/` của Instagram (ảnh đơn / carousel); `/reel/<mã>`, `/tv/<mã>` KHÔNG khớp.
+_MAU_BAI_INSTAGRAM = re.compile(r"https?://(?:www\.)?instagram\.com/(?:[\w.]+/)?p/([\w\-]+)", re.I)
+
+
+def _ma_bai_instagram(url: str) -> str | None:
+    m = _MAU_BAI_INSTAGRAM.match(url.strip())
+    return m.group(1) if m else None
+
+
+def _id_bai_anh_tam(link: str, nen_tang: str) -> str | None:
+    """`bai_id` (`anh-tt-<id>` / `anh-ig-<mã>`) suy từ chính link, KHÔNG gọi mạng — để bỏ bài ảnh đã có TRƯỚC lời gọi
+    nền tảng (chế độ ảnh). Nền tảng khác / link sai hình ⇒ None."""
+    try:
+        if nen_tang == "tiktok":
+            ref = parse_video_url(link)
+            id_so = ref.video_id if ref is not None else parse_photo_url(link)
+            return bai_id_anh("tt", id_so) if id_so else None
+        if nen_tang == "instagram":
+            ma = _ma_bai_instagram(link)
+            return bai_id_anh("ig", ma) if ma else None
+    except ValueError:
+        return None
+    return None
+
+
 class LinkLe:
     """Video LẺ của nhiều nền tảng (xem `BANG_LINK_LE`), một hoặc nhiều link (mỗi dòng một link) trong một job.
 
@@ -480,36 +551,73 @@ class LinkLe:
     ten = "link_le"
     mo_ta_url = "link video lẻ (YouTube, TikTok, Instagram, Facebook, X, Pinterest, Douyin, Bilibili, Snapchat)"
 
-    def phan_loai(self, url: str) -> tuple[str, str] | None:
-        """`(nen_tang, tien_to)` nếu URL là video lẻ của nền tảng trong bảng, ngược lại None."""
-        url = chuan_hoa_link(url)
-        loai = BANG_LINK_LE.get(_ie_key_cua(url) or "")
-        if loai is None:
-            return None
-        if loai[0] == "tiktok" and parse_video_url(url) is None:
-            return None   # TikTok mà không phải `/@user/video/<số>` (embed, photo…): không có id trần để dùng
-        return loai
+    def phan_loai(self, url: str, loai: str = LOAI_VIDEO) -> tuple[str, str] | None:
+        """`(nen_tang, tien_to)` nếu URL là video lẻ của nền tảng trong bảng, ngược lại None.
 
-    def nhan(self, url: str) -> bool:
-        return self.phan_loai(url) is not None
+        `loai` (mặc định video ≡ hôm nay): TikTok `/@user/photo/<id>` CHỈ được nhận khi `loai != video` (yt-dlp không
+        nhận dạng link ảnh nên không qua bảng extractor; id số lấy thẳng từ URL như link `/video/`)."""
+        url = chuan_hoa_link(url)
+        if loai != LOAI_VIDEO and parse_photo_url(url) is not None:
+            return BANG_LINK_LE["TikTok"]
+        loai_link = BANG_LINK_LE.get(_ie_key_cua(url) or "")
+        if loai_link is None:
+            return None
+        if loai_link[0] == "tiktok" and parse_video_url(url) is None:
+            return None   # TikTok mà không phải `/@user/video/<số>` (embed…): không có id trần để dùng
+        return loai_link
+
+    def nhan(self, url: str, loai: str = LOAI_VIDEO) -> bool:
+        return self.phan_loai(url, loai) is not None
+
+    def loai_ho_tro(self, url: str) -> frozenset[str]:
+        """Loại tải của link (link đầu nếu nhiều dòng): TikTok `/video/` và Instagram `/p/` ⇒ cả ba (bài đăng có thể
+        là slideshow/carousel); TikTok `/photo/` ⇒ ảnh hoặc cả hai (không phải video thuần); còn lại chỉ video."""
+        link = chuan_hoa_link((tach_link(url) or [""])[0])
+        if parse_photo_url(link) is not None:
+            return frozenset({LOAI_ANH, LOAI_CA_HAI})
+        pl = self.phan_loai(link)
+        if pl is not None and (pl[0] == "tiktok" or (pl[0] == "instagram" and _ma_bai_instagram(link))):
+            return LOAI_CA_BA
+        return LOAI_CHI_VIDEO
 
     def nen_tang(self, url: str) -> str:
-        loai = self.phan_loai(url)
+        # `LOAI_ANH`: link ảnh TikTok cũng thuộc nền tảng tiktok; với mọi link khác kết quả y hệt `LOAI_VIDEO`.
+        loai = self.phan_loai(url, LOAI_ANH)
         if loai is None:
             raise ValueError("url không phải link video lẻ")
         return loai[0]
 
     def loai_log(self, url: str) -> str:
         link = (tach_link(url) or [""])[0]
-        loai = self.phan_loai(link)
+        loai = self.phan_loai(link, LOAI_ANH)
         return f"{loai[0] if loai else 'khac'}:video"
+
+    def _liet_ke_bai_anh(self, link: str, nen_tang: str, *, loai: str, proxy: str | None,
+                         cookies_path: str | None, cong=None) -> list[VideoRef]:
+        """Điểm cắm DUY NHẤT cho link lẻ ở chế độ ảnh/cả hai: trả `VideoRef` đã phân loại (`loai="anh"` kèm `anh_urls`,
+        hoặc `loai="video"`) cho MỘT link. Chưa có trình liệt kê ⇒ `NotImplementedError` — không im lặng trả video."""
+        # Nhập muộn: chỉ chế độ ảnh cần hai module này.
+        if nen_tang == "tiktok":
+            from tiktok_music_downloader import tiktok_anh
+            return tiktok_anh.liet_ke_link_le(link, loai=loai, proxy=proxy)
+        if nen_tang == "instagram":
+            from tiktok_music_downloader import nguon_instagram
+            ref = nguon_instagram.doc_bai_link_le(link, cookies_path=cookies_path, proxy=proxy)
+            # None = bài gỡ HOẶC bài video: ở `ca_hai` người gọi thử tiếp nhánh video (yt-dlp) cho chính link này.
+            return [] if ref is None or (loai != LOAI_CA_HAI and ref.loai != loai) else [ref]
+        raise NotImplementedError(f"link lẻ {nen_tang}: chưa hỗ trợ liệt kê loại '{loai}'")
 
     def liet_ke(self, url: str, *, max_videos: int, proxy: str | None = None,
                 already_have: Callable[[list[str]], set[str]],
                 on_skip: Callable[[VideoRef], None], on_stop: Callable[[str], None],
                 cong=None, ghi_loi_video: Callable[[str, str], None] | None = None,
-                nghi: Callable[[], None] | None = None, **_chua_dung) -> list[VideoRef]:
-        """`url` là một hoặc nhiều link (mỗi dòng một). `cong` (`web/pacer.py::CongNenTang`): `truoc_goi()` ghi lượt
+                nghi: Callable[[], None] | None = None, cookies_path: str | None = None,
+                loai: str = LOAI_VIDEO, **_chua_dung) -> list[VideoRef]:
+        """`loai` (mặc định video ≡ hôm nay) và `cookies_path` (trước đây bị nuốt vào `**_chua_dung`) do chế độ ảnh
+        cần: Instagram `/p/` luôn đòi cookie. Ở chế độ ảnh, `id_tam` là `bai_id` nên bài đã có bị bỏ TRƯỚC lời gọi mạng;
+        bài còn lại chưa có trình liệt kê ⇒ `_liet_ke_bai_anh` (một điểm cắm duy nhất).
+
+        `url` là một hoặc nhiều link (mỗi dòng một). `cong` (`web/pacer.py::CongNenTang`): `truoc_goi()` ghi lượt
         TRƯỚC mỗi lời gọi mạng và trả lý do dừng, `xu_ly_loi(exc)` trả lý do dừng khi lỗi là tín hiệu chặn.
         `ghi_loi_video(mã, chi_tiết)` nhận lỗi RIÊNG từng link (private, quá dài, lỗi mạng…) — job vẫn chạy tiếp.
         `nghi()` chạy giữa hai lời gọi mạng liên tiếp (nghỉ jitter)."""
@@ -518,15 +626,18 @@ class LinkLe:
         ten_nt = "link_le"
         links = []
         for link in tach_link(url):
-            loai_link = self.phan_loai(link)
+            loai_link = self.phan_loai(link, loai)
             if loai_link is None:
                 loi("khong_nhan", "")
             else:
                 links.append((chuan_hoa_link(link), *loai_link))
         # Link thư viện ĐÃ có (theo id suy từ URL, không mạng) bị bỏ TRƯỚC khi gọi nền tảng: mỗi lời gọi là một
         # lượt tính vào trần IP, nên không được đốt lượt cho video không cần. Một lần hỏi cả danh sách.
-        id_tam = {link: (parse_video_url(link).video_id if nt == "tiktok" else _id_tam(link, tt))
-                  for link, nt, tt in links}
+        if loai == LOAI_VIDEO:
+            id_tam = {link: (parse_video_url(link).video_id if nt == "tiktok" else _id_tam(link, tt))
+                      for link, nt, tt in links}
+        else:
+            id_tam = {link: _id_bai_anh_tam(link, nt) for link, nt, _tt in links}
         da_co = already_have([i for i in id_tam.values() if i]) if id_tam else set()
         refs: list[VideoRef] = []
         da_bo_vi_da_co = 0
@@ -541,6 +652,44 @@ class LinkLe:
                 on_skip(VideoRef(video_id=tam, url=link))
                 da_bo_vi_da_co += 1
                 continue
+            if loai != LOAI_VIDEO:
+                # Thăm bài là một lời gọi mạng: cùng nghỉ jitter + lượt pacer như nhánh video bên dưới.
+                if da_goi_mang and nghi is not None:
+                    nghi()
+                if cong is not None:
+                    dung = cong.truoc_goi()
+                    if dung:
+                        break
+                da_goi_mang = True
+                try:
+                    bai = self._liet_ke_bai_anh(link, nen_tang, loai=loai, proxy=proxy,
+                                                cookies_path=cookies_path, cong=cong)
+                except NotImplementedError:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — một link hỏng không giết cả job (trừ tín hiệu chặn/phiên)
+                    if cong is not None:
+                        dung = cong.xu_ly_loi(exc)
+                        if dung:
+                            break
+                    if nen_tang == "instagram":
+                        # IG không bao giờ chạy ẩn danh: thiếu cookie / mất phiên ⇒ dừng cả job như nguồn IG hàng loạt.
+                        if isinstance(exc, ValueError) and "cookie" in str(exc):
+                            dung = STOP_IG_CHUA_CO_COOKIE
+                            break
+                        if isinstance(exc, RuntimeError) and "mất phiên" in str(exc):
+                            dung = STOP_IG_MAT_PHIEN
+                            break
+                    ma = "bai_khong_xem_duoc" if getattr(exc, "loai", None) == "tiktok" else (
+                        "khong_nhan" if isinstance(exc, ValueError) else "loi_khac")
+                    loi(ma, che_url(str(exc)))
+                    continue
+                if bai:
+                    refs.extend(bai)
+                    continue
+                if not (loai == LOAI_CA_HAI and nen_tang == "instagram"):
+                    loi("khac_loai", "")
+                    continue
+                # IG `ca_hai`, bài không phải ảnh ⇒ đi tiếp nhánh video (yt-dlp) bên dưới cho chính link này.
             if nen_tang == "tiktok":
                 ref = parse_video_url(link)
                 if ref is not None:
@@ -710,6 +859,9 @@ class YoutubeKenh:
 
     def loai_log(self, url: str) -> str:
         return "youtube:kenh"
+
+    def loai_ho_tro(self, url: str) -> frozenset[str]:
+        return LOAI_CHI_VIDEO       # YoutubeTimKiem kế thừa
 
     def _link_liet_ke(self, url: str, max_videos: int) -> str:
         """Địa chỉ thật đưa cho yt-dlp (lớp con đổi cách dịch URL người dùng nhập)."""
@@ -928,10 +1080,60 @@ NGUON: tuple[Nguon, ...] = (TikTokCollection(), FbAdsLibrary(), DriveFolder(), Y
 NGUON_MAC_DINH: Nguon = NGUON[0]
 
 
-def chon_nguon(url: str) -> Nguon | None:
-    """Nguồn đầu tiên nhận URL, hoặc None nếu không nguồn nào nhận."""
+def loai_ho_tro_cua(nguon: Nguon, url: str) -> frozenset[str]:
+    """Loại tải mà `nguon` hỗ trợ cho `url` (đã được `nguon.nhan`). Nguồn tự khai `loai_ho_tro` thì tin nó; hai nguồn
+    nằm ở module khác tính hộ tại đây theo dạng URL (đọc đường dẫn, KHÔNG gọi mạng); còn lại chỉ video.
+
+    Instagram: profile `/<user>/`, từ khoá, hashtag ⇒ cả ba; `/<user>/reels/` và audio ⇒ chỉ video.
+    Facebook page: tab videos/reels ⇒ video; tab photos ⇒ ảnh; `/<page>` trần ⇒ video hoặc ảnh. KHÔNG có "cả hai":
+    một lượt chỉ mở MỘT tab (số lượng N không có nghĩa nếu chia hai tab)."""
+    ham = getattr(nguon, "loai_ho_tro", None)
+    if ham is not None:
+        return ham(url)
+    if isinstance(nguon, InstagramHangLoat):
+        d = _phan_tich_ig(url)
+        if d is None or d.loai == "audio":
+            return LOAI_CHI_VIDEO
+        if d.loai == "profile" and urlsplit(url.strip()).path.rstrip("/").lower().endswith("/reels"):
+            return LOAI_CHI_VIDEO
+        return LOAI_CA_BA
+    if isinstance(nguon, FacebookTrang):
+        tab = _MAU_DUONG_TAB_FB.fullmatch(urlsplit(url.strip()).path or "/")
+        tab = (tab.group(1) or "").lower() if tab else ""
+        if tab in ("videos", "reels"):
+            return LOAI_CHI_VIDEO
+        if tab == "photos":
+            return frozenset({LOAI_ANH})
+        return frozenset({LOAI_VIDEO, LOAI_ANH})
+    return LOAI_CHI_VIDEO
+
+
+# `/<page>` + tab tuỳ chọn của Facebook page (khác `nguon_facebook_trang._MAU_DUONG` ở chỗ nhận cả `photos`).
+_MAU_DUONG_TAB_FB = re.compile(r"/[^/]+(?:/(videos|reels|photos))?/?", re.I)
+
+
+def _nguon_nhan(n: Nguon, url: str, loai: str) -> bool:
+    """`n.nhan(url)` — riêng `LinkLe` nhận thêm `loai` (link ảnh TikTok chỉ được nhận khi xin ảnh/cả hai)."""
+    return n.nhan(url, loai) if isinstance(n, LinkLe) else n.nhan(url)
+
+
+def chon_nguon(url: str, loai: str = LOAI_VIDEO) -> Nguon | None:
+    """Nguồn đầu tiên nhận URL VÀ hỗ trợ `loai`, hoặc None (không nguồn nào nhận, hoặc nguồn nhận nhưng không hỗ trợ
+    loại này — hỏi `chon_nguon_moi_loai` để phân biệt). Gọi không tham số ≡ hành vi trước khi có chế độ ảnh.
+    `loai` ngoài video/anh/ca_hai ⇒ `ValueError` (lỗi của người gọi, không phải của URL)."""
+    if loai not in LOAI_HOP_LE:
+        raise ValueError(f"loai không hợp lệ: {loai!r}")
     for n in NGUON:
-        if n.nhan(url):
+        if _nguon_nhan(n, url, loai):
+            return n if loai in loai_ho_tro_cua(n, url) else None
+    return None
+
+
+def chon_nguon_moi_loai(url: str) -> Nguon | None:
+    """Nguồn nhận URL ở BẤT KỲ loại nào (video hoặc ảnh), bỏ qua việc nó có hỗ trợ loại đang xin hay không. Dùng để
+    nói đúng lý do 400: "link này không được nhận" khác "link này không hỗ trợ loại bạn chọn"."""
+    for n in NGUON:
+        if _nguon_nhan(n, url, LOAI_VIDEO) or _nguon_nhan(n, url, LOAI_ANH):
             return n
     return None
 

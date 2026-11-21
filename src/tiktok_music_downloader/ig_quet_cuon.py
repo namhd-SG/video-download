@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Protocol
 
 from tiktok_music_downloader import ig_xhr_phan_tich as ph
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH, LOAI_CA_HAI, LOAI_VIDEO, bai_id_anh
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED, STOP_COMPLETE, STOP_HET_THOI_GIAN, STOP_HET_VONG, STOP_SOURCE_EMPTY, STOP_STALLED,
     VideoRef,
@@ -49,6 +50,7 @@ class KetQuaQuet:
     so_cuon: int = 0
     so_xhr: int = 0
     so_da_co: int = 0               # video thư viện đã có (đã `on_skip`)
+    so_anh_hong: int = 0            # bài ảnh/carousel bỏ vì thiếu URL (chỉ số, vào log)
 
 
 def _ref_tu_node(node: dict) -> VideoRef:
@@ -57,12 +59,29 @@ def _ref_tu_node(node: dict) -> VideoRef:
     return VideoRef(video_id=TIEN_TO_ID_IG + ma, url=URL_REEL.format(ma), title=tt["title"], author=tt["author"])
 
 
+def _muc_cua_dot(nodes: list[dict], loai: str) -> tuple[list[tuple[str, dict]], int]:
+    """`([(kiểu, node), …], số ảnh hỏng)` của một đợt XHR theo `loai`. Video ⇒ `loc_video` NGUYÊN (≡ hôm nay)."""
+    if loai == LOAI_ANH:
+        anh, hong = ph.loc_anh(nodes)
+        return [("anh", n) for n in anh], hong
+    if loai == LOAI_CA_HAI:
+        return ph.loc_ca_hai(nodes)
+    video, _ = ph.loc_video(nodes)
+    return [("video", n) for n in video], 0
+
+
+def _id_muc(kieu: str, node: dict) -> str:
+    return bai_id_anh("ig", node["code"]) if kieu == "anh" else TIEN_TO_ID_IG + node["code"]
+
+
 def quet(trang: TrangIG, url: str, *, la_audio: bool, max_videos: int,
          already_have: Callable[[list[str]], set[str]], on_skip: Callable[[VideoRef], None],
          tran_cuon: int = TRAN_LUOT_CUON, max_seconds: float | None = None,
          ngu: Callable[[float], None] | None = None,
          ngau_nhien: Callable[[float, float], float] | None = None,
-         dong_ho: Callable[[], float] | None = None) -> KetQuaQuet:
+         dong_ho: Callable[[], float] | None = None, loai: str = LOAI_VIDEO) -> KetQuaQuet:
+    """`loai` video (mặc định) ≡ hôm nay; `anh` = ảnh + carousel (mỗi bài MỘT ref, `loai="anh"`); `ca_hai` = cả hai
+    trong thứ tự lưới. `max_videos` đếm số MỤC (bài) mới, bất kể loại."""
     # Tra lúc GỌI (không buộc vào hàm lúc import): test thay `time.sleep` / `random.uniform` được.
     ngu, ngau_nhien, dong_ho = ngu or time.sleep, ngau_nhien or random.uniform, dong_ho or time.monotonic
     kq = KetQuaQuet()
@@ -94,13 +113,14 @@ def quet(trang: TrangIG, url: str, *, la_audio: bool, max_videos: int,
             if goc is None:
                 continue
             nodes = ph.duyet_node_media(goc)
-            video, _ = ph.loc_video(nodes)
+            muc, hong = _muc_cua_dot(nodes, loai)
+            kq.so_anh_hong += hong
             carousel.update(n["code"] for n in nodes if n.get("media_type") == ph.MEDIA_CAROUSEL)
-            chua_thay = [n for n in video if n["code"] not in thay]
-            thay.update(n["code"] for n in chua_thay)
-            da_co = already_have([TIEN_TO_ID_IG + n["code"] for n in chua_thay]) if chua_thay else set()
-            for n in chua_thay:
-                ref = _ref_tu_node(n)
+            chua_thay = [(k, n) for k, n in muc if n["code"] not in thay]
+            thay.update(n["code"] for _, n in chua_thay)
+            da_co = already_have([_id_muc(k, n) for k, n in chua_thay]) if chua_thay else set()
+            for k, n in chua_thay:
+                ref = ph.ref_anh_tu_node(n) if k == "anh" else _ref_tu_node(n)
                 if ref.video_id in da_co:
                     kq.so_da_co += 1
                     on_skip(ref)

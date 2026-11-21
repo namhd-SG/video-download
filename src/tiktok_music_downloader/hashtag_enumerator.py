@@ -20,6 +20,7 @@ replace that one function and the rest of the tool is unaffected.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import re
@@ -29,6 +30,7 @@ import urllib.parse
 import urllib.request
 from typing import Callable
 
+from tiktok_music_downloader.tai_anh_cau_hinh import LOAI_ANH, LOAI_CA_HAI, TRAN_ANH_MOI_BAI, bai_id_anh
 from tiktok_music_downloader.utils import (
     STOP_ALREADY_OWNED,
     STOP_COMPLETE,
@@ -133,8 +135,27 @@ def _clean_int(value: object) -> int | None:
     return number if number >= 0 else None
 
 
+def _anh_tu_muc_tikwm(item: dict) -> tuple[tuple[str, ...], ...]:
+    """Mỗi ảnh của bài tikwm (khoá `images`, danh sách URL) thành một tuple URL; `()` khi không phải bài ảnh
+    hoặc có ảnh hỏng (bài ảnh đi tất-cả-hoặc-không, một URL lạ là cả bài lạ)."""
+    anh = item.get("images")
+    if not isinstance(anh, list) or not anh:
+        return ()
+    if not all(isinstance(u, str) and u.startswith(("http://", "https://")) for u in anh):
+        return ()
+    return tuple((u,) for u in anh)
+
+
+def _giu_ref(la_anh: bool, loai: str | None) -> bool:
+    """`loai=None` = hành vi cũ (giữ mọi bài như video). Còn lại: video ⇒ bỏ bài ảnh; anh ⇒ chỉ bài ảnh."""
+    if loai is None or loai == LOAI_CA_HAI:
+        return True
+    return la_anh if loai == LOAI_ANH else not la_anh
+
+
 def _provider_page(challenge_id: str, cursor: int,
-                   proxy: str | None = None) -> tuple[list[VideoRef], int, bool, bool]:
+                   proxy: str | None = None,
+                   loai: str | None = None) -> tuple[list[VideoRef], int, bool, bool]:
     """One page from the provider: (refs, next_cursor, has_more, ok).
 
     `ok` is separate from `has_more` on purpose: a failed request and a genuine
@@ -142,6 +163,9 @@ def _provider_page(challenge_id: str, cursor: int,
     turn a truncated list into an apparent complete one.
 
     THE SEAM. Swap this function to change indexes; callers only see VideoRefs.
+
+    `loai=None` (mặc định) giữ NGUYÊN hành vi cũ. Truyền loại ⇒ bài có khoá `images` thành ref ảnh
+    (`anh_urls` từ index, id `anh-tt-<id>`) và lọc theo loại; N đếm theo BÀI.
     """
     query = urllib.parse.urlencode(
         {"challenge_id": challenge_id, "count": _PAGE_SIZE, "cursor": cursor})
@@ -174,7 +198,7 @@ def _provider_page(challenge_id: str, cursor: int,
             handle = str((author or {}).get("unique_id") or "") if isinstance(author, dict) else ""
             if not handle:
                 continue    # without a handle the post URL cannot be built
-            refs.append(VideoRef(
+            ref = VideoRef(
                 video_id=vid,
                 url=f"https://www.tiktok.com/@{handle}/video/{vid}",
                 # Catalogue metadata, already paid for: it rides along in the
@@ -189,7 +213,18 @@ def _provider_page(challenge_id: str, cursor: int,
                 play_count=_clean_int(item.get("play_count")),
                 music_id=_clean_str((item.get("music_info") or {}).get("id")
                                      if isinstance(item.get("music_info"), dict) else None),
-            ))
+            )
+            if loai is not None:
+                anh = _anh_tu_muc_tikwm(item)
+                if not _giu_ref(bool(anh), loai):
+                    continue
+                if anh:
+                    if len(anh) > TRAN_ANH_MOI_BAI:
+                        continue    # bài quá nhiều ảnh = bài lạ, không đưa vào hàng đợi
+                    ref = dataclasses.replace(
+                        ref, video_id=bai_id_anh("tt", vid), loai=LOAI_ANH,
+                        anh_urls=anh, anh_kieu=("anh",) * len(anh))
+            refs.append(ref)
         next_cursor = int(data.get("cursor") or 0)
     except (AttributeError, TypeError, ValueError) as exc:
         # The index is unofficial; the day its shape changes must not surface
@@ -205,8 +240,12 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
                        already_have: Callable[[list[str]], set[str]] | None = None,
                        on_skip: Callable[[VideoRef], None] | None = None,
                        on_stop: Callable[[str], None] | None = None,
-                       on_pages: Callable[[int], None] | None = None) -> list[VideoRef]:
+                       on_pages: Callable[[int], None] | None = None,
+                       loai: str | None = None) -> list[VideoRef]:
     """Return up to max_videos unique VideoRefs for a hashtag.
+
+    `loai=None` (không truyền) ≡ hành vi cũ. `"video"` bỏ bài ảnh, `"anh"` chỉ bài ảnh, `"ca_hai"` cả hai;
+    `max_videos` đếm theo BÀI (một bài ảnh nhiều tệp vẫn là 1).
 
     An empty list means the hashtag could not be enumerated, and a SHORT list
     means the run stopped early — both say so at WARNING. It never reports a
@@ -231,7 +270,8 @@ def enumerate_hashtag(tag: str, max_videos: int = 200, max_pages: int = 40,
 
     for page in range(1, max_pages + 1):
         pages_read = page
-        page_refs, cursor, has_more, ok = _provider_page(challenge_id, cursor, proxy=proxy)
+        kw_loai = {} if loai is None else {"loai": loai}
+        page_refs, cursor, has_more, ok = _provider_page(challenge_id, cursor, proxy=proxy, **kw_loai)
         if not ok:
             truncated_because = STOP_INDEX_FAILED
             break

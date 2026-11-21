@@ -298,6 +298,9 @@
   .pill.clear-all { background: transparent; border-style: dashed; cursor: pointer; }
 
   .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 14px; }
+  /* Thẻ không được rộng hơn cột (min-width:auto mặc định của ô lưới sẽ theo chữ dài nhất); tác giả dài cắt "…". */
+  .card { min-width: 0; }
+  .card-meta .card-author { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .card {
     position: relative; border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
     background: var(--surface); cursor: pointer; transition: box-shadow .15s, border-color .15s;
@@ -1295,3 +1298,24 @@ h1, h2, h3 { font-weight: 600; }
   .hn-pop-h, .hn-pop-b { padding-left: var(--s-4); padding-right: var(--s-4); }
 }
 .hn-nut .btn.sm { height: 28px; }
+
+/* ===== Tải ảnh: công tắc loại tải (form + thư viện), nhãn trên thẻ lượt, thẻ bài ảnh =====
+   Mọi phần tử này chỉ được JS vẽ khi `/tinh-nang.tai_anh_bat` — cờ tắt thì không có gì ở đây hiện ra. */
+.seg-loai, .chip-loai { display: inline-flex; align-items: stretch; border: 1px solid var(--border-strong); border-radius: var(--r-pill); overflow: hidden; background: var(--surface); }
+.seg-loai label { display: inline-flex; cursor: pointer; }
+.seg-loai input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.seg-loai label span, .chip-loai button { padding: .3rem .75rem; font-size: .8rem; color: var(--text); background: transparent; border: 0; cursor: pointer; line-height: 1.3; }
+.seg-loai label + label span, .chip-loai button + button { border-left: 1px solid var(--border); }
+.seg-loai input:checked + span, .chip-loai button.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.seg-loai input:focus-visible + span, .chip-loai button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chip-loai { align-self: center; }
+.chip-loai-nhan { display: inline-flex; align-items: center; padding: 0 .6rem; font-size: .75rem; color: var(--text-muted); border-right: 1px solid var(--border); }
+.nhan-loai-tai { font-size: .68rem; font-weight: 600; padding: .14rem .5rem; border-radius: var(--r-pill); border: 1px solid var(--border-strong); color: var(--text-muted); background: var(--surface); white-space: nowrap; flex: none; }
+.nhan-loai-anh, .nhan-loai-ca_hai { border-color: var(--accent); color: var(--accent); }
+.hn-pop-h .nhan-loai-tai { align-self: center; }
+.card-so-anh { left: auto; right: 6px; }
+/* Ảnh không vào cụm: ẩn thanh bên cụm, đầu cụm và nút "Đưa vào cụm" khi thư viện đang ở chế độ Ảnh. */
+.lib-layout[data-loai="anh"] .cum-rail, .lib-layout[data-loai="anh"] .cum-head { display: none; }
+body[data-loai-thu-vien="anh"] .selection-actions [data-action="cum"],
+body[data-loai-thu-vien="anh"] .selection-actions .pop-wrap { display: none; }
+@media (max-width: 480px) { .seg-loai { order: -1; } }

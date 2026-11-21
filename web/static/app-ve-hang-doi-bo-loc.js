@@ -76,6 +76,7 @@
       esc: escapeHtml, chip: nhanTrangThai(job), stopText, taoLuc: fmtDateTime(job.tao_luc),
       mo: state.chayLai.has(job.id) ? state.chayLai.get(job.id) : null,
       dangGuiChayLai: state.dangGuiChayLai.has(job.id), dangGuiTaiLai: state.dangGuiTaiLai.has(job.id),
+      hienNhanVideo: state.taiAnhBat === true,   // cờ tải ảnh bật ⇒ lượt video cũng có nhãn "Video" để so với "Ảnh"
     };
   }
 
@@ -128,7 +129,9 @@
   // ========================================================================
   function renderFilterBar() {
     const bar = document.getElementById("filter-bar");
-    bar.innerHTML = FILTER_GROUPS.map(renderFilterBox).join("");
+    bar.innerHTML = FILTER_GROUPS
+      .filter((g) => !(g.chiVideo && state.loaiThuVien === "anh"))
+      .map(renderFilterBox).join("");
     // Popover đóng khi bấm ra ngoài hoặc Esc — gắn MỘT LẦN, không nhân bản
     // mỗi lần renderFilterBar chạy lại.
   }

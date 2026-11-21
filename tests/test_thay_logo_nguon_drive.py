@@ -391,9 +391,9 @@ def test_videos_link_toi_file_thu_vien_nguoi_khac_khong_lo_title_nen_tang_video_
     import sqlite3
     with sqlite3.connect(ctx.db.parent / "jobs.db") as c:
         c.execute("CREATE TABLE jobs (id INTEGER PRIMARY KEY, nguoi_tao TEXT, nen_tang TEXT)")
-        c.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT, url TEXT NOT NULL)")
+        c.execute("CREATE TABLE videos (video_id TEXT PRIMARY KEY, job_id INTEGER, title TEXT, drive_file_id TEXT, url TEXT NOT NULL, loai TEXT NOT NULL DEFAULT 'video')")
         c.execute("INSERT INTO jobs VALUES (1, 'b@x', 'tiktok')")
-        c.execute("INSERT INTO videos VALUES ('7777777', 1, 'Bí mật của B', ?, 'https://www.tiktok.com/@b/video/7777777')", (ID("1"),))
+        c.execute("INSERT INTO videos (video_id, job_id, title, drive_file_id, url) VALUES ('7777777', 1, 'Bí mật của B', ?, 'https://www.tiktok.com/@b/video/7777777')", (ID("1"),))
     ctx.post("/api/thay-logo/kiem-link", headers=_h("a@x"), json={"links": [_link("1")]})
     assert _tao(ctx, "a@x", [ID("1")]).status_code == 201
     conn = nhat_ky.mo(ctx.db)

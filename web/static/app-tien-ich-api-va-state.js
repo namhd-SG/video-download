@@ -241,8 +241,9 @@
   // nhóm bình thường có `getBuckets` — đừng bật lại ở dạng disabled.
   const FILTER_GROUPS = [
     { id: "nguon", label: "Nguồn", getBuckets: sourceBuckets },
-    { id: "dai", label: "Dài", getBuckets: (v) => [durationBucket(v.duration)] },
-    { id: "thi_truong", label: "Thị trường", getBuckets: (v) => [regionBucket(v.region)] },
+    // `chiVideo`: ảnh không có thời lượng/thị trường ⇒ nhóm ẩn khi thư viện ở chế độ Ảnh (đổi loại đã xoá bộ lọc).
+    { id: "dai", label: "Dài", chiVideo: true, getBuckets: (v) => [durationBucket(v.duration)] },
+    { id: "thi_truong", label: "Thị trường", chiVideo: true, getBuckets: (v) => [regionBucket(v.region)] },
     { id: "ngay_tai", label: "Ngày tải", getBuckets: (v) => [dateBucket(v.tao_luc)] },
     // Bỏ nhóm "Người tải" 17/09: thư viện chỉ còn video của chính người đang
     // xem (user chốt "ai nhấn tải thì của người đó"), nên nhóm này chỉ còn
@@ -269,6 +270,9 @@
     videosDaDon: [],          // GET /videos → da_don_trong_cum: video đã dọn khỏi Drive, GIỮ CHỖ trong lô
     khungCum: undefined,      // GET /cum → khung_cum: tập cắt lô của mọi cụm (undefined = server cũ)
     cumLoc: "tat_ca",         // "tat_ca" | "chua" | <cum id> — bộ lọc thanh bên "Cụm của tôi"
+    taiAnhBat: false,         // GET /tinh-nang → tai_anh_bat: có công tắc loại tải / "Loại" thư viện không
+    loaiThuVien: "video",     // "video" | "anh": thư viện đang NẠP /videos hay /anh (không nhớ giữa các lần mở trang)
+    loaiDaVe: undefined,      // loại mà lưới ĐANG thật sự vẽ (như `phiaDaVe`)
     chiVaoBo: false,          // chip "Đã vào bộ": true ⇒ lưới CHỈ hiện video đã vào bộ; false ⇒ ẩn chúng
     tongVaoBo: undefined,     // GET /videos → tong_vao_bo: số trên chip (undefined = server cũ, tự đếm)
     luotNapVideo: 0,          // lượt `loadVideos` mới nhất — lượt cũ về trễ thì bỏ

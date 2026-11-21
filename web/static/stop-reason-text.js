@@ -68,6 +68,9 @@ const STOP_REASON_TEXT = {
     fb_chan_dang_nhap: "Dừng: Facebook chặn khách chưa đăng nhập (hộp thoại đăng nhập không đóng được) nên chỉ lấy " +
                        "được phần đầu của trang — thường khoảng 16–22 video ở tab Videos, 50 ở tab Reels. Chạy lại " +
                        "không ra thêm; video đã tải vẫn còn. Muốn lấy nhiều hơn cần cookie tài khoản phụ (chưa hỗ trợ).",
+    // Tải ảnh (Video/Ảnh/Cả hai) đang TẮT ở máy chạy mà lượt này là lượt ảnh: dừng trước khi gọi nền tảng.
+    tai_anh_tat: "Dừng: tính năng tải ảnh đang tắt ở máy chạy nên lượt này không chạy. Báo quản trị viên bật " +
+                 "tải ảnh, hoặc tạo lại lượt ở chế độ Video.",
     thieu_deno: "Dừng: máy chạy chưa có Deno nên không tải được YouTube — đây là lỗi cấu hình máy, không phải " +
                 "lỗi video. Báo người quản trị.",
     already_owned: "Xong: thư viện đã có hết video mà nguồn này đang đưa ra. " +
