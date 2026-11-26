@@ -19,7 +19,7 @@
   <key>EnvironmentVariables</key>
   <dict>
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <string>__HOME__/micromamba/envs/work/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
     <key>OMP_NUM_THREADS</key>
     <string>2</string>
     <key>CAT_TUTORIAL_WEB</key>

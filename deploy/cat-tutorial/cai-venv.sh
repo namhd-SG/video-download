@@ -38,8 +38,9 @@ fi
 "$V" -m pip install open_clip_torch rapidocr-onnxruntime pillow numpy
 "$V" -c 'import torch, open_clip, rapidocr_onnxruntime, PIL, numpy; print("venv OK — torch", torch.__version__)'
 
-echo "== 2. ffmpeg (cùng PATH với plist)"
-PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" command -v ffmpeg \
+echo "== 2. ffmpeg + ffprobe (cùng PATH với plist; ca-n: micromamba env work)"
+PATH="$HOME/micromamba/envs/work/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" command -v ffmpeg >/dev/null \
+  && PATH="$HOME/micromamba/envs/work/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin" command -v ffprobe \
   || { echo "DỪNG: không thấy ffmpeg trong PATH của plist — cài ffmpeg hoặc sửa PATH trong $LABEL.plist" >&2; exit 3; }
 
 echo "== 3. wrapper + plist"
