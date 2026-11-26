@@ -1,9 +1,15 @@
-// Link "Thay logo" trên thanh trên: ẨN mặc định (index.html), chỉ hiện khi máy chủ bật tính năng (`/tinh-nang` → thay_logo_bat).
-// Ẩn trước rồi mới hiện — không có khoảnh khắc member thấy một link dẫn tới tính năng đang tắt.
+// Link "Thay logo" + "Cắt tutorial" trên thanh trên: ẨN mặc định, chỉ hiện khi máy chủ bật tính năng (`/tinh-nang` →
+// thay_logo_bat / cat_tutorial_bat). Ẩn trước rồi mới hiện — không có khoảnh khắc member thấy link dẫn tới tính năng đang tắt.
+// Trang không có link nào đó (vd thay-logo.html luôn hiện link của chính nó, không có id) thì bỏ qua link đó, link kia vẫn chạy.
 (async () => {
   try {
     const r = await fetch("/tinh-nang", { redirect: "manual" });
-    if (r.ok && (await r.json()).thay_logo_bat) document.getElementById("link-thay-logo").hidden = false;
+    if (!r.ok) return;
+    const tn = await r.json();
+    for (const [id, bat] of [["link-thay-logo", tn.thay_logo_bat], ["link-cat-tutorial", tn.cat_tutorial_bat]]) {
+      const a = document.getElementById(id);
+      if (a && bat) a.hidden = false;
+    }
   } catch (_) { /* không hỏi được ⇒ giữ ẩn */ }
 })();
 

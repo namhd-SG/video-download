@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Video Desk — Cắt tutorial</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="app.css" />
+<link rel="stylesheet" href="cat-tutorial.css" />
+</head>
+<body class="trang-cat-tutorial">
+<div class="app">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>Video Desk</div>
+    <nav class="topbar-nav">
+      <a href="/">Tải video</a>
+      <a href="/thay-logo.html" id="link-thay-logo" hidden>Thay logo</a>
+      <a href="/cat-tutorial.html" id="link-cat-tutorial" class="here" aria-current="page">Cắt tutorial</a>
+      <a href="/settings.html">Cài đặt</a>
+      <a href="/huong-dan.html">Hướng dẫn</a>
+    </nav>
+    <div class="topbar-user">
+      <span id="topbar-email" class="topbar-email" hidden></span>
+      <button id="theme-toggle" type="button" title="Đổi giao diện sáng/tối" aria-label="Đổi giao diện sáng/tối">◐</button>
+    </div>
+  </header>
+  <!-- Trạng thái trước khi có khung: đang hỏi máy chủ / tính năng tắt / không hỏi được. cat-tutorial.js thay chữ. -->
+  <p id="ct-bao" class="ct-bao" role="status">Đang mở công cụ Cắt tutorial…</p>
+  <!-- `src` chỉ gán khi `/tinh-nang` báo cat_tutorial_bat — cờ tắt thì không gọi `/cat-tutorial/` lần nào. -->
+  <iframe id="ct-khung" class="ct-khung" title="Cắt tutorial" hidden></iframe>
+</div>
+<script src="cat-tutorial.js"></script>
+<script src="thay-logo-link.js"></script>
+</body>
+</html>

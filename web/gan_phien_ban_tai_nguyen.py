@@ -19,7 +19,7 @@ from starlette.responses import HTMLResponse
 from starlette.staticfiles import StaticFiles
 
 # Danh sách CỐ ĐỊNH các trang được viết lại; tên khác đi đường tĩnh thường.
-TRANG_GAN_PHIEN_BAN = ("index.html", "thay-logo.html", "settings.html", "huong-dan.html")
+TRANG_GAN_PHIEN_BAN = ("index.html", "thay-logo.html", "settings.html", "huong-dan.html", "cat-tutorial.html")
 DO_DAI_BAM = 10
 
 # href/src trỏ tới .css/.js nội bộ: tương đối (`a.css`) hoặc từ gốc (`/a.css`); KHÔNG nhận scheme (`https:`),
