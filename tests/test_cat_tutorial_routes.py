@@ -297,3 +297,11 @@ def test_post_tu_trang_khac_bi_chan_cung_nguon_thi_qua():
     assert la.status_code == 403 and la.json()["error"] == ctr.CAU_KHAC_NGUON
     assert cung.status_code != 403
     assert [r.url.path for r in ui.nhan] == ["/api/clear"], "POST từ trang lạ không được tới ui_server"
+
+
+def test_thieu_gach_cuoi_chuyen_sang_co_gach_cuoi_va_van_doi_dang_nhap(access_da_cau_hinh):
+    with TestClient(_app(UiServerGia(), {"email": A})) as c:
+        r = c.get("/cat-tutorial", follow_redirects=False)
+    assert r.status_code == 307 and r.headers["location"] == "/cat-tutorial/"
+    with TestClient(_app(UiServerGia(), None)) as c:  # chưa đăng nhập ⇒ không chuyển hướng
+        assert c.get("/cat-tutorial", follow_redirects=False).status_code == 401

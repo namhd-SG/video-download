@@ -24,7 +24,7 @@ from typing import Callable
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exception_handlers import http_exception_handler
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response, StreamingResponse
 from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.gzip import GZipMiddleware
@@ -155,6 +155,12 @@ def dang_ky(app: FastAPI, *, require_user: Callable, transport: httpx.AsyncBaseT
             # trust_env=False: proxy hệ thống (HTTP_PROXY…) không được chen vào đường 127.0.0.1.
             khach.append(httpx.AsyncClient(transport=transport, trust_env=False, follow_redirects=False))
         return khach[0]
+
+    @app.get(TIEN_TO, include_in_schema=False)
+    async def cat_tutorial_them_gach_cuoi(email: str = Depends(require_user)) -> Response:
+        """`/cat-tutorial` (gõ tay, thiếu `/` cuối) ⇒ chuyển sang `/cat-tutorial/`: trang tool dùng đường TƯƠNG ĐỐI
+        (từ bản 24c06b9), đứng ở `/cat-tutorial` thì `api/state` sẽ trỏ lên gốc Video Desk."""
+        return RedirectResponse(TIEN_TO + "/", status_code=307)
 
     @app.api_route(TIEN_TO + "/{path:path}", methods=["GET", "POST"], include_in_schema=False)
     async def cat_tutorial_chuyen_tiep(path: str, request: Request, email: str = Depends(require_user)) -> Response:
