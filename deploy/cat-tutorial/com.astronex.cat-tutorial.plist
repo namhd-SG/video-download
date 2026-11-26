@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LaunchAgent tool Cắt tutorial (chị Linh) chế độ web, chỉ nghe 127.0.0.1:8790 — CHỈ Video Desk gọi (proxy /cat-tutorial/),
+  KHÔNG đi qua cloudflared. `__HOME__` được deploy/cat-tutorial/cai-venv.sh thay bằng $HOME khi chép vào ~/Library/LaunchAgents.
+  Env kẹp tài nguyên vì máy dùng chung với Video Desk / thay logo / ollama:
+    OMP_NUM_THREADS=2, CAT_TUTORIAL_WORKERS=2 (mặc định code 4), CAT_TUTORIAL_MIN_FREE_GB=15 (mặc định 10).
+  PATH: ffmpeg phải nằm trong đây — vị trí ffmpeg trên ca-n CHƯA XÁC MINH (P1 đo trước khi nạp).
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.astronex.cat-tutorial</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__HOME__/cat-tutorial/run-cat-tutorial.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>OMP_NUM_THREADS</key>
+    <string>2</string>
+    <key>CAT_TUTORIAL_WEB</key>
+    <string>1</string>
+    <key>CAT_TUTORIAL_PORT</key>
+    <string>8790</string>
+    <key>CAT_TUTORIAL_WORKERS</key>
+    <string>2</string>
+    <key>CAT_TUTORIAL_MIN_FREE_GB</key>
+    <string>15</string>
+    <key>CAT_TUTORIAL_NO_OPEN</key>
+    <string>1</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>StandardOutPath</key>
+  <string>__HOME__/Library/Logs/com.astronex.cat-tutorial.log</string>
+  <key>StandardErrorPath</key>
+  <string>__HOME__/Library/Logs/com.astronex.cat-tutorial.log</string>
+</dict>
+</plist>
