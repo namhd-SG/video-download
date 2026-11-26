@@ -691,6 +691,10 @@ KHONG_CAN_KIEM_CHU = {
     "DELETE /me/cookie/instagram": "chính người đang gọi",
     "GET /me/quota": "chính người đang gọi",
     "GET /tinh-nang": "chỉ hằng và cờ cấu hình, không đọc dữ liệu của ai",
+    "GET /cat-tutorial/{path:path}": "chuyển tiếp tới tool Cắt tutorial với cookie khu `ct_ws` = sha256(email `require_user`) do PROXY "
+                                     "đặt (Cookie trình duyệt bị thay hẳn) — ui_server tự lọc theo khu (tests/test_cat_tutorial_routes.py, có đột biến)",
+    "POST /cat-tutorial/{path:path}": "như GET: khu của CHÍNH người gọi theo email; đường ngoài danh sách (api/open|pick|reveal) 404 "
+                                      "(tests/test_cat_tutorial_routes.py)",
     "GET /admin/nguoi-dung": "require_admin — 403 cho người thường",
     "GET /admin/don-vao-bo-loi": "require_admin — 403 cho người thường",
     "GET /admin/worker": "require_admin — 403 cho người thường",

@@ -20,7 +20,6 @@ from typing import Annotated, Literal
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse, JSONResponse
-from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field, StrictInt
 from sse_starlette.sse import EventSourceResponse
 
@@ -32,6 +31,7 @@ from tiktok_music_downloader.nguon import (
 from tiktok_music_downloader.tai_anh_cau_hinh import (
     LOAI_ANH, LOAI_CA_HAI, LOAI_VIDEO, NEN_TANG_CO_ANH, TIEN_TO_ID_ANH, tai_anh_dang_bat)
 from tiktok_music_downloader.utils import che_url
+from web import cat_tutorial_routes
 from web import gan_phien_ban_tai_nguyen
 from web import giai_captcha
 from web import giai_captcha_api
@@ -353,7 +353,9 @@ REVALIDATE_PATHS = REVALIDATE_PATHS | gan_phien_ban_tai_nguyen.duong_dan_tai_ngu
 # 1,73 MB ⇒ mức 9: 244 KB / 20,0 ms · mức 6: +1,1 % / 14,0 ms · mức 4: +8,1 % / 8,7 ms ·
 # mức 1: +29,5 % / 5,6 ms. Mini dùng chung với autotest (load có lúc ~20) ⇒ chọn mức nhỏ
 # nhất mà kích thước tăng ≤ ~10 %.
-app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=4)
+#
+# `GZipTruMedia` = `GZipMiddleware` + bỏ qua video/ảnh/zip chuyển tiếp từ Cắt tutorial (theo đường, web/cat_tutorial_routes.py).
+app.add_middleware(cat_tutorial_routes.GZipTruMedia, minimum_size=1000, compresslevel=4)
 
 
 @app.middleware("http")
@@ -364,6 +366,10 @@ async def add_revalidate_header(request, call_next):
     # cạnh HTML mới ⇒ hỏng âm thầm (không tìm thấy id, gửi trùng job).
     if path in REVALIDATE_PATHS or path.startswith("/thay-logo"):
         response.headers["Cache-Control"] = "no-cache"
+    elif path.startswith("/cat-tutorial"):
+        # Trang khung (cat-tutorial.html/.js/.css) + mọi thứ chuyển tiếp: tái kiểm. `setdefault` để GIỮ `no-store` mà
+        # ui_server tự gửi cho JSON trạng thái của từng người (chặt hơn no-cache).
+        response.headers.setdefault("Cache-Control", "no-cache")
     return response
 
 
@@ -783,6 +789,8 @@ def tinh_nang(nguoi_tao: str = Depends(require_user)) -> dict:
         "nen_tang_tam_tat": sorted(pacer.nen_tang_dang_tat(DB_PATH)),
         "ten_hien_thi": TEN_HIEN_THI,
         "thay_logo_bat": worker_thay_logo is not None,
+        # Tab "Cắt tutorial" (env `CAT_TUTORIAL_BAT=1`): link nav + trang cat-tutorial.html đọc cờ này để hiện/ẩn.
+        "cat_tutorial_bat": cat_tutorial_routes.dang_bat(),
         "tran": {
             "thay_logo_video_mot_luot": thay_logo_routes.TRAN_VIDEO_MOT_JOB,
             "so_luong_mot_luot": MAX_SO_LUONG,
@@ -1592,6 +1600,8 @@ thay_logo_routes.dang_ky_route_member(app, lambda: DATA_DIR / "thay_logo_log.db"
                                       lambda: worker_thay_logo,
                                       lambda email, ids: thay_logo_routes.drive_ids_cua(DB_PATH, email, ids),
                                       lay_jobs_db=lambda: DB_PATH)
+# Cắt tutorial: chuyển tiếp `/cat-tutorial/*` (sau `require_user`) tới tool chị Linh ở 127.0.0.1 — web/cat_tutorial_routes.py.
+cat_tutorial_routes.dang_ky(app, require_user=require_user)
 
 
 # Mounted last so it only catches paths none of the routes above matched —
