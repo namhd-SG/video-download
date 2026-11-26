@@ -1,0 +1,22 @@
+/* Trang "Cắt tutorial": khung Video Desk (topbar chung của app.css) + iframe tool chị Linh chiếm TRỌN phần còn lại của màn.
+   Chỉ dùng token của app.css (`light-dark(...)`) ⇒ sáng/tối theo cùng một nguồn với các trang khác. */
+body.trang-cat-tutorial { height: 100vh; height: 100dvh; overflow: hidden; }
+.trang-cat-tutorial .app {
+  max-width: none; height: 100%;
+  display: flex; flex-direction: column;
+  padding-bottom: var(--s-4);
+}
+.trang-cat-tutorial .topbar { flex: none; }
+.ct-khung {
+  display: block; flex: 1; min-height: 0; width: 100%;
+  border: 1px solid var(--border); border-radius: var(--r-2);
+  background: var(--surface); box-shadow: var(--shadow);
+}
+.ct-khung[hidden] { display: none; }
+.ct-bao {
+  flex: none; margin: 0 0 var(--s-4); padding: var(--s-3) var(--s-4);
+  border: 1px solid var(--border); border-radius: var(--r-2);
+  background: var(--surface-alt); color: var(--text-muted); font-size: .9rem;
+}
+.ct-bao[hidden] { display: none; }
+.ct-bao.loi { background: var(--warn-bg); color: var(--warn); border-color: currentColor; }
